@@ -1,0 +1,5 @@
+# Known false positives, by gitleaks fingerprint. Each entry names why it is safe.
+# A fixed test-only better-auth secret in the auth test harness (never a real credential);
+# replaced by a random per-run secret in a later commit.
+cc5f9745035c8efe9b2f7e6395899493a92d5d21:apps/server/src/testing/auth-harness.ts:generic-api-key:71
+62efca8f8172d4580edd0843571bf1bdb8e4df1b:apps/server/src/testing/auth-harness.ts:generic-api-key:75

@@ -428,7 +428,7 @@ describe("recovery hardening", () => {
     const { b } = await enrolled(h.firstLink(), alex, "Alex");
     const codes = await initialCodes(b);
     const stored = h.db.prepare("SELECT code_hash FROM recovery_code").pluck().all() as string[];
-    const keyed = recoveryCodeHasher("test-secret-0123456789abcdefghijklmnopqrstuvwxyz");
+    const keyed = recoveryCodeHasher(h.secret);
     const plain = (code: string) => createHash("sha256").update(code).digest("hex");
     expect(stored.sort()).toEqual(codes.map((c) => keyed.hash(c.replace("-", ""))).sort());
     for (const c of codes) expect(stored).not.toContain(plain(c.replace("-", "")));

@@ -1,5 +1,6 @@
 // Test support only: the real HTTP app with real better-auth on a fresh SQLite database, driven
 // in-process, with a cookie jar per "browser" and a clock our use cases read that tests can move.
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,6 +31,8 @@ export const ORIGIN = "http://localhost:3000";
 export interface Harness {
   /** The public URL the server runs as (`ORIGIN` unless overridden). */
   readonly origin: string;
+  /** This harness's random auth secret. */
+  readonly secret: string;
   readonly db: Db;
   readonly app: ReturnType<typeof createApp>;
   /** Moves the clock our use cases read (better-auth keeps the real time). */
@@ -72,7 +75,8 @@ export function createHarness(
   };
   const origin = config.publicUrl;
   const logged: string[] = [];
-  const secret = "test-secret-0123456789abcdefghijklmnopqrstuvwxyz";
+  // A fresh random secret per harness: no secret-shaped literal in the repo.
+  const secret = randomBytes(32).toString("base64url");
   const codes = recoveryCodeHasher(secret);
   const gateway = createAuth({
     ...deps,
@@ -92,6 +96,7 @@ export function createHarness(
   });
   return {
     origin,
+    secret,
     db,
     app,
     logged,
