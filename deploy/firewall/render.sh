@@ -327,7 +327,10 @@ table inet pangolin {
     ct state established,related accept
     ct state invalid drop
     # Published ports: only the NPM host, only to the app.
-    ct status dnat $npm_family saddr $NPM_HOST ct original proto-dst $APP_PORT accept
+    # Forwarded packets are already DNAT-ed to the container port, which compose.yaml fixes at
+    # 3000 whatever PANGOLIN_HTTP_PORT is. (Matching ct original proto-dst instead needs a
+    # protocol context that nft 1.1 on Debian 13 refuses to infer.)
+    ct status dnat $npm_family saddr $NPM_HOST tcp dport 3000 accept
     ct status dnat limit rate 10/minute burst 20 packets log prefix "pangolin drop published: "
     ct status dnat drop
     iifname "docker0" jump containers

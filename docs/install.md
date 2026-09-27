@@ -134,7 +134,7 @@ sudo sh deploy/install.sh --non-interactive \
 | `--data-root DIR` | The data directory on the encrypted disk (default `/srv/pangolin`); on a re-run it replaces `PANGOLIN_DATA_ROOT` in `.env` |
 | `--http-port PORT` | The VM port NPM forwards to (default 3000) |
 | `--image REF` | The image (default `ghcr.io/sbwilson/pangolin:latest`); on a re-run it replaces `PANGOLIN_IMAGE` in `.env`. A local image (no `/`, like `pangolin:local`) is never pulled: it must exist |
-| `--build [--ref REF] [--repo URL]` | Build `pangolin:local` on the VM from the repository instead, and set `PANGOLIN_IMAGE` to it (needs the build hosts in the allowlist on a re-run) |
+| `--build [--ref REF] [--repo URL]` | Build `pangolin:local` on the VM from the repository instead (its default branch, or `--ref`), and set `PANGOLIN_IMAGE` to it (needs the build hosts in the allowlist on a re-run) |
 | `--bundle` | Write the recovery bundle again |
 | `--no-docker`, `--root DIR` | For testing: skip Docker; write files under `DIR` and change nothing on the host |
 
@@ -143,7 +143,9 @@ What it does, in order:
 1. Checks it runs as root on a supported distribution, asks its questions, and checks the host.
 2. Installs Docker Engine from Docker's repository (if missing), nftables and curl.
 3. Creates the layout below, generating any secret that does not exist yet.
-4. Signs in to GHCR if you gave a token, then pulls the image (or builds it with `--build`).
+4. Signs in to GHCR if you gave a token, then pulls the image (or builds it with `--build`). If the
+   registry refuses the pull (no release published yet, or a private image), it offers to build
+   the image here or take a token; with `--non-interactive` it stops and names both flags.
 5. Writes `compose.yaml`, the allowlist and the firewall, and turns the firewall on.
 6. Starts the stack and waits up to 90 seconds for `/healthz`. If it is not healthy, it prints
    the container's last log lines and exits 1.

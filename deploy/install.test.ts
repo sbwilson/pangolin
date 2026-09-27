@@ -84,17 +84,39 @@ function install(...extra: string[]): Run {
 /**
  * Runs install.sh under --root with the Docker steps on, against a stub `docker` on PATH that
  * logs its arguments to `docker.log`. `STUB_HEALTH` sets what `inspect` reports (default
- * healthy); `STUB_IMAGE_MISSING=1` makes `image inspect` fail.
+ * healthy); `STUB_IMAGE_MISSING=1` makes `image inspect` fail. `STUB_PULL_DENIED=1` makes
+ * `pull` fail until a `login` has read the token `good-token`. A stub `git` logs to `git.log`.
  */
 function installWithDocker(extra: readonly string[], env: Record<string, string> = {}): Run {
+  const args = ANSWERS.filter((arg) => arg !== "--no-docker");
+  return run("sh", [INSTALL, "--root", root, ...args, ...extra], stubEnv(env));
+}
+
+function stubEnv(env: Record<string, string>): Record<string, string> {
   const bin = at("bin");
   mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    join(bin, "git"),
+    [
+      "#!/bin/sh",
+      `echo "$*" >> "${at("git.log")}"`,
+      'case "$*" in',
+      '  clone*) for last; do :; done; mkdir -p "$last/.git" ;;',
+      "  *rev-parse*) echo abc1234 ;;",
+      "esac",
+      "exit 0",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "git"), 0o755);
   writeFileSync(
     join(bin, "docker"),
     [
       "#!/bin/sh",
       `echo "$*" >> "${at("docker.log")}"`,
       'case "$*" in',
+      `  login*) [ "$(cat)" = good-token ] || exit 1; touch "${at("logged-in")}" ;;`,
+      `  pull*) [ "$STUB_PULL_DENIED" = 1 ] && [ ! -f "${at("logged-in")}" ] && { echo "denied" >&2; exit 1; } ;;`,
       '  "image inspect"*) [ "$STUB_IMAGE_MISSING" = 1 ] && exit 1 ;;',
       '  *" ps -q"*) echo stub-container-id ;;',
       '  inspect*) echo "$STUB_HEALTH" ;;',
@@ -105,15 +127,39 @@ function installWithDocker(extra: readonly string[], env: Record<string, string>
     ].join("\n"),
   );
   chmodSync(join(bin, "docker"), 0o755);
-  const args = ANSWERS.filter((arg) => arg !== "--no-docker");
-  return run("sh", [INSTALL, "--root", root, ...args, ...extra], {
+  return {
     PATH: `${bin}:${process.env.PATH ?? ""}`,
     PANGOLIN_INSTALL_STUB_DOCKER: "1",
     PANGOLIN_HEALTH_TIMEOUT: "1",
     STUB_HEALTH: "healthy",
     STUB_IMAGE_MISSING: "0",
+    STUB_PULL_DENIED: "0",
     ...env,
+  };
+}
+
+/**
+ * Runs install.sh interactively under `script`, which gives it a terminal and types `input`
+ * (one answer per line) into it. Every answer is given as a flag except `--non-interactive`, so
+ * only the questions under test (and the few with no flag) are asked.
+ */
+function installInteractively(
+  input: string,
+  extra: readonly string[],
+  env: Record<string, string> = {},
+): Run {
+  const args = ANSWERS.filter((arg) => arg !== "--no-docker" && arg !== "--non-interactive");
+  const command = ["sh", INSTALL, "--root", root, ...args, ...extra]
+    .map((arg) => `'${arg}'`)
+    .join(" ");
+  const result = spawnSync("script", ["-qec", command, "/dev/null"], {
+    encoding: "utf8",
+    input,
+    env: { ...process.env, SSH_CONNECTION: "", ...stubEnv(env) },
+    timeout: 60_000,
   });
+  // script merges both streams into the terminal's output.
+  return { status: result.status, stdout: result.stdout, stderr: result.stdout };
 }
 
 const dockerLog = () => (existsSync(at("docker.log")) ? read("docker.log") : "");
@@ -410,6 +456,52 @@ describe("install.sh with Docker (a stub docker)", () => {
       expect(text).not.toContain(token);
     }
   });
+
+  it("names --build and --ghcr-token-file when a registry refuses the pull, with --non-interactive", () => {
+    const result = installWithDocker([], { STUB_PULL_DENIED: "1" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Could not pull ghcr.io/sbwilson/pangolin:latest");
+    expect(result.stderr).toMatch(/re-run with --build .* or with --ghcr-token-file FILE/);
+    expect(dockerLog()).not.toMatch(/compose .*up -d/);
+  });
+
+  it("builds the repository's default branch unless --ref names one", () => {
+    const result = installWithDocker(["--build"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(read("git.log")).toMatch(/^clone --quiet --depth 1 https:\S+ \S+\/opt\/pangolin\/src$/m);
+    expect(dockerLog()).toContain("build --build-arg PANGOLIN_VERSION=abc1234 -t pangolin:local");
+    expect(dockerLog()).not.toContain("pull");
+    rmSync(at("opt/pangolin/src"), { recursive: true });
+    expect(installWithDocker(["--build", "--ref", "v1.2.0"]).status).toBe(0);
+    expect(read("git.log")).toMatch(/^clone --quiet --depth 1 --branch v1\.2\.0 /m);
+    expect(dockerLog()).toContain("PANGOLIN_VERSION=v1.2.0");
+  });
+
+  it("offers to build when the pull is refused, and switches .env to the built image", () => {
+    // Proxy mode, Tang server and GHCR token (empty: a public image) are asked first.
+    const result = installInteractively("\n\n\nb\n", [], { STUB_PULL_DENIED: "1" });
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain("Could not pull ghcr.io/sbwilson/pangolin:latest");
+    expect(result.stdout).toContain("Replacing PANGOLIN_IMAGE in .env: pangolin:local");
+    expect(read("opt/pangolin/.env")).toMatch(/^PANGOLIN_IMAGE=pangolin:local$/m);
+    expect(dockerLog()).toContain("-t pangolin:local");
+    expect(result.stdout).toMatch(/Healthy after \d+ s/);
+  });
+
+  it("asks again for a refused token, then stores a good one 0600 and pulls with it", () => {
+    const result = installInteractively("\n\n\nt\nbad-token\nt\ngood-token\n", [], {
+      STUB_PULL_DENIED: "1",
+    });
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain("ghcr.io did not accept that token.");
+    expect(read("opt/pangolin/secrets/ghcr-token")).toBe("good-token");
+    expect(mode("opt/pangolin/secrets/ghcr-token")).toBe(0o600);
+    expect(dockerLog().match(/^pull /gm)).toHaveLength(2);
+    // The terminal echoes all the typed input before the installer starts; nothing after it.
+    const printed = result.stdout.slice(result.stdout.indexOf("Pangolin Money installer"));
+    expect(printed).not.toContain("good-token");
+    expect(result.stdout).toMatch(/Healthy after \d+ s/);
+  });
 });
 
 describe("install.sh, failures", () => {
@@ -557,9 +649,7 @@ describe("firewall/render.sh", () => {
     // Outbound, for the host and the containers: the allowlist only.
     expect(ruleset).toContain("type filter hook output priority filter; policy drop;");
     expect(ruleset).toContain("type filter hook forward priority filter - 10;");
-    expect(ruleset).toContain(
-      "ct status dnat ip saddr 192.168.1.10 ct original proto-dst 3000 accept",
-    );
+    expect(ruleset).toContain("ct status dnat ip saddr 192.168.1.10 tcp dport 3000 accept");
     expect(ruleset).toContain('iifname "br-*" jump containers');
     expect(ruleset.match(/jump allowed/g)).toHaveLength(2);
     expect(result.stderr).toMatch(/skipped, not a host name or address: not a host/);

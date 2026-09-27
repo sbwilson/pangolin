@@ -50,8 +50,13 @@ jobs:
           # The staged ruleset (and the fail-closed fallback) must load: checked, never applied.
           sudo apt-get install -y -q nftables
           sudo nft -c -f "$stage/opt/pangolin/firewall/pangolin.nft"
-          sh deploy/firewall/render.sh --home "$stage/opt/pangolin" fallback > "$RUNNER_TEMP/fallback.nft"
-          sudo nft -c -f "$RUNNER_TEMP/fallback.nft"
+          sh deploy/firewall/render.sh --home "$stage/opt/pangolin" fallback > "$stage/fallback.nft"
+          sudo nft -c -f "$stage/fallback.nft"
+          # The runner's nft is older than the VM's, and newer parsers reject some syntax old ones
+          # accept, so check both files again with Debian 13's own nftables.
+          docker run --rm --cap-add NET_ADMIN -v "$stage":/s:ro debian:trixie sh -c \
+            'apt-get update -qq && apt-get install -y -qq nftables > /dev/null && nft --version &&
+             nft -c -f /s/opt/pangolin/firewall/pangolin.nft && nft -c -f /s/fallback.nft'
 
   container:
     name: Container and end-to-end

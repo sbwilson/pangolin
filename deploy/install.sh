@@ -25,7 +25,8 @@
 #   --image REF                   the image to run (default ghcr.io/sbwilson/pangolin:latest);
 #                                 replaces PANGOLIN_IMAGE in an existing .env
 #   --build                       build the image here from the repository, as pangolin:local
-#   --ref REF                     the branch or tag --build checks out (default main)
+#   --ref REF                     the branch or tag --build checks out (default: the
+#                                 repository's default branch)
 #   --repo URL                    the repository --build clones
 #   --bundle                      write the recovery bundle again (it is written on first install)
 #   --non-interactive             never prompt; take answers from flags and the existing .env
@@ -48,7 +49,7 @@ NON_INTERACTIVE=0
 NO_DOCKER=0
 BUNDLE=0
 BUILD=0
-REF=main
+REF=
 REPO=$DEFAULT_REPO
 ARG_PROXY=
 ARG_HOST=
@@ -750,18 +751,21 @@ generate_secrets() {
     # to the container's user; app-key and restic-password stay root's until later stories.
     if [ "$name" = auth-secret ]; then own "$file"; fi
   done
-  if [ -n "$TOKEN_SOURCE" ]; then
-    token_file=$secrets/ghcr-token
-    if [ "$TOKEN_SOURCE" = file ]; then
-      (umask 077 && tr -d '\r\n' <"$ARG_TOKEN_FILE" >"$token_file.new")
-    else
-      (umask 077 && printf '%s' "$ARG_TOKEN" >"$token_file.new")
-    fi
-    mv "$token_file.new" "$token_file"
-    # Root's only: the container never needs it.
-    chmod 0600 "$token_file"
-    say "Stored the GHCR token"
+  if [ -n "$TOKEN_SOURCE" ]; then store_token; fi
+}
+
+# Stores the GHCR token from --ghcr-token-file, --ghcr-token or the prompt (TOKEN_SOURCE).
+store_token() {
+  token_file=$(path "$INSTALL_DIR/secrets/ghcr-token")
+  if [ "$TOKEN_SOURCE" = file ]; then
+    (umask 077 && tr -d '\r\n' <"$ARG_TOKEN_FILE" >"$token_file.new")
+  else
+    (umask 077 && printf '%s' "$ARG_TOKEN" | tr -d '\r\n' >"$token_file.new")
   fi
+  mv "$token_file.new" "$token_file"
+  # Root's only: the container never needs it.
+  chmod 0600 "$token_file"
+  say "Stored the GHCR token"
 }
 
 write_bundle() {
@@ -865,18 +869,92 @@ compose() {
   docker compose --project-directory "$INSTALL_DIR" -f "$INSTALL_DIR/compose.yaml" "$@"
 }
 
+build_image() {
+  step "Building $IMAGE from $REPO at ${REF:-its default branch}"
+  src=$(path "$INSTALL_DIR/src")
+  # With no --ref, build the repository's default branch (HEAD) rather than assume its name.
+  if [ -d "$src/.git" ]; then
+    git -C "$src" fetch --depth 1 origin "${REF:-HEAD}"
+    git -C "$src" checkout --quiet --force FETCH_HEAD
+  elif [ -n "$REF" ]; then
+    git clone --quiet --depth 1 --branch "$REF" "$REPO" "$src"
+  else
+    git clone --quiet --depth 1 "$REPO" "$src"
+  fi
+  version=${REF:-$(git -C "$src" rev-parse --short HEAD)}
+  docker build --build-arg "PANGOLIN_VERSION=$version" -t pangolin:local "$src"
+}
+
+# Signs in to ghcr.io with the stored token, when there is one and the image is on GHCR.
+ghcr_login() {
+  token_file=$(path "$INSTALL_DIR/secrets/ghcr-token")
+  [ -s "$token_file" ] || return 0
+  case "$IMAGE" in
+    ghcr.io/*)
+      user=$ARG_GHCR_USER
+      if [ -z "$user" ]; then
+        user=${IMAGE#ghcr.io/}
+        user=${user%%/*}
+      fi
+      docker login ghcr.io --username "$user" --password-stdin <"$token_file" >/dev/null ||
+        return 1
+      say "Signed in to ghcr.io as $user"
+      ;;
+  esac
+}
+
+pull_image() {
+  step "Pulling $IMAGE"
+  docker pull "$IMAGE"
+}
+
+# The pull failed: the registry refuses a private image without a token, and answers the same
+# "denied" for an image that was never published. Offer both ways out, or name them and stop.
+pull_failed() {
+  printf '\nCould not pull %s.\n' "$IMAGE" >&2
+  printf '%s\n' \
+    "The registry refused it: either no release has been published yet, or the image is" \
+    "private and needs a read-only token (packages: read)." >&2
+  if [ "$NON_INTERACTIVE" -eq 1 ]; then
+    die "re-run with --build to build the image on this VM, or with --ghcr-token-file FILE for a private image"
+  fi
+  while :; do
+    choice=$(ask "Build it here from $REPO (${REF:-default branch}) [b], give a GHCR token [t], or quit [q]?" b)
+    case "$choice" in
+      b | B | build)
+        BUILD=1
+        IMAGE=pangolin:local
+        env_replace PANGOLIN_IMAGE "$IMAGE"
+        say "Replacing PANGOLIN_IMAGE in .env: $IMAGE"
+        build_image
+        return 0
+        ;;
+      t | T | token)
+        ARG_TOKEN=$(ask_secret "GHCR read-only token (packages: read)")
+        if [ -z "$ARG_TOKEN" ]; then
+          say "No token entered."
+          continue
+        fi
+        TOKEN_SOURCE=arg
+        store_token
+        ARG_TOKEN=
+        if ! ghcr_login; then
+          say "ghcr.io did not accept that token."
+          continue
+        fi
+        if pull_image; then return 0; fi
+        printf '\nStill could not pull %s with that token.\n' "$IMAGE" >&2
+        ;;
+      q | Q | quit) die "stopped: re-run with --build, or with --ghcr-token-file FILE" ;;
+      *) say "Answer b, t or q." ;;
+    esac
+  done
+}
+
 obtain_image() {
   run_stack || return 0
   if [ "$BUILD" -eq 1 ]; then
-    step "Building $IMAGE from $REPO at $REF"
-    src=$(path "$INSTALL_DIR/src")
-    if [ -d "$src/.git" ]; then
-      git -C "$src" fetch --depth 1 origin "$REF"
-      git -C "$src" checkout --quiet --force FETCH_HEAD
-    else
-      git clone --quiet --depth 1 --branch "$REF" "$REPO" "$src"
-    fi
-    docker build --build-arg "PANGOLIN_VERSION=$REF" -t pangolin:local "$src"
+    build_image
     return 0
   fi
   case "$IMAGE" in
@@ -889,22 +967,9 @@ obtain_image() {
       return 0
       ;;
   esac
-  token_file=$(path "$INSTALL_DIR/secrets/ghcr-token")
-  if [ -s "$token_file" ]; then
-    case "$IMAGE" in
-      ghcr.io/*)
-        user=$ARG_GHCR_USER
-        if [ -z "$user" ]; then
-          user=${IMAGE#ghcr.io/}
-          user=${user%%/*}
-        fi
-        docker login ghcr.io --username "$user" --password-stdin <"$token_file" >/dev/null
-        say "Signed in to ghcr.io as $user"
-        ;;
-    esac
-  fi
-  step "Pulling $IMAGE"
-  docker pull "$IMAGE"
+  ghcr_login || say "ghcr.io did not accept the stored token."
+  if pull_image; then return 0; fi
+  pull_failed
 }
 
 # Where compose.yaml, allowlist.conf.default and firewall/ come from: next to this script (a
