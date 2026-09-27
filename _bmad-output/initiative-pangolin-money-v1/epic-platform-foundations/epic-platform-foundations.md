@@ -21,7 +21,7 @@ We can install, log in, back up and restore with confidence before any real data
 ## Done when
 
 1. On a fresh Debian 12 VM, `install.sh` goes from nothing to the one-time setup link, and then to a passkey login, in one command. (M0 gate)
-2. CI backs up and restores a synthetic database on every release. The restore verifies integrity_check, row counts and balance sums. (M0 gate)
+2. CI backs up and restores a synthetic database on every release. The restore verifies integrity_check, row counts and per-table checksums; per-account balance sums join the manifest in epic-ledger-accounts-privacy (spine AD-19). (M0 gate)
 3. Registration closes once both partners exist. Recovery codes and partner-assisted re-enrolment each restore access in a test, and the partner reset link expires after 24 hours.
 4. `pangolin upgrade` rolls back automatically when a seeded health check fails. The release image is signed with cosign, and the signature is verified before the image is pulled.
 5. The app container runs non-root and read-only. The VM firewall allows inbound traffic only from NPM and outbound traffic only to the allowlist.
@@ -43,3 +43,8 @@ Platform baseline: repo scaffold (pnpm workspace per tech-stack.md), CI/CD, depl
 ## Notes
 
 - Decision: the cross-epic contracts this epic adopts are settled in the architecture spine (final, 2026-09-27); see References.
+- Decision (2026-09-27): inception agreed 13 entries. Tracer bullet is entry 1 (workspace to container: PWA shell → Hono → app → db → SQLite, in Compose and CI).
+- Decision (2026-09-27): the VM install (entry 8) follows the tracer as the least certain piece; the passkey-login part of M0 gate 1 is proven in the gate rehearsal (entry 13).
+- Decision (2026-09-27): the M0 restore manifest has row counts and per-table checksums; per-account balance sums are added by epic 2 through balanceAsOf (spine AD-19).
+- Decision (2026-09-27): the closing check is an on-VM M0 gate rehearsal (entry 13, hitl), not an automated end-to-end suite; a refactor sweep (entry 12) precedes it.
+- Decision (2026-09-27): built with bmad-build-auto; plan and done checkpoints on entries 1, 8 and 10, done checkpoints on 11 and 13. After entry 1, entries 2, 3 and 7 can run in parallel, then 4 and 5.

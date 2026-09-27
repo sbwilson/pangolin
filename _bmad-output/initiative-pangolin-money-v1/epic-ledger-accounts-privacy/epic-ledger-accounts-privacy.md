@@ -39,3 +39,4 @@ The ledger and classification tables in data-model.md, except import_*, rule and
 ## Notes
 
 - Decision: the cross-epic contracts this epic adopts are settled in the architecture spine (final, 2026-09-27); see References.
+- Handoff (2026-09-27): this epic adds per-account balance sums (balanceAsOf, spine AD-19) to the backup manifest that epic-platform-foundations entry 10 builds.

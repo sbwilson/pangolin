@@ -1,0 +1,165 @@
+# tickets.toml — epic-platform-foundations (epic 1). Table order is build order; `id` is permanent and not an order.
+# Built with bmad-build-auto: checkpoints on the tracer (1), the VM install (8) and backups (10).
+
+[[entry]]
+id = 1
+type = "story"
+title = "Tracer bullet: workspace to container"
+description = "Scaffolds the pnpm workspace with every package, TypeScript 7, Biome and import-boundary lint rules, and runs one system.health use case from the PWA shell through Hono, app and db to SQLite via our own migration runner, packaged as a container and exercised in CI."
+verify = "docker compose up locally shows the PWA reporting healthy with the schema version, and CI runs lint, types, Vitest, the STRICT-table check and one Playwright test against the container, all green."
+covers = ["CAP-16"]
+after = []
+hitl = false
+risk = "medium"
+references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, Design Paradigm, AD-1, AD-2, Consistency Conventions (Migrations, Tables, Health and upgrade)", "stack — _bmad-output/specs/spec-pangolin-money/tech-stack.md, Repo layout"]
+plan_checkpoint = true
+done_checkpoint = true
+
+[[entry]]
+id = 8
+type = "story"
+title = "Install on the VM behind NPM"
+description = "Adds the production Compose file (non-root, read-only, data volume, /run tmpfs), install.sh (distro detection, Docker, proxy mode, hostname, backup server, secrets, recovery bundle, NPM settings) and firewall rules generated from the allowlist config, with /healthz."
+verify = "On a fresh Debian VM with LUKS unlocked by Clevis and Tang, one install.sh run ends with the one-time setup link reachable through NPM, /healthz green, and the firewall allowing inbound only from NPM and outbound only to the allowlist."
+covers = ["CAP-16"]
+after = [1]
+hitl = true
+risk = "high"
+unknown = "Rocky Linux and Ubuntu paths are written but only Debian is proven here; other distros are deferred per the spine."
+references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Host, Configuration, Install and upgrade", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-27, Consistency Conventions (Outbound allowlist, Environments)"]
+plan_checkpoint = true
+done_checkpoint = true
+
+[[entry]]
+id = 2
+type = "story"
+title = "Shared core: money, IDs, time and periods"
+description = "Adds Cents with allocate (largest remainder) and toCents (half-even), server-generated branded ULIDs, shared/temporal, shared/period with fortnight and clamped-month cadences and FY labels, and the Clock port."
+verify = "Unit tests show allocate parts always sum to the whole, toCents rounds half-even, FY2025 spans 2024-07-01 to 2025-06-30, and a 31st monthly anchor clamps in February."
+covers = []
+after = [1]
+hitl = false
+risk = "low"
+references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-5, AD-12, AD-13, AD-14"]
+
+[[entry]]
+id = 3
+type = "story"
+title = "Use-case framework and audit"
+description = "Adds Viewer and SystemViewer (factory importable only from the jobs and admin entries), AppError with the JSON error shape, the synchronous write-transaction helper that writes audit rows, and the person and household_settings tables."
+verify = "Tests show a use case writes its row and audit row in one transaction, lint fails when http code imports the SystemViewer factory, and an AppError maps to its HTTP status and error shape."
+covers = ["CAP-15", "CAP-16"]
+after = [1]
+hitl = false
+risk = "medium"
+references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-1, AD-2, AD-6, Consistency Conventions (Use cases, Errors, Audit)"]
+
+[[entry]]
+id = 7
+type = "story"
+title = "Seed world and mock servers"
+description = "Adds the seed world model, the SeedModule contract with per-module random streams, a fixed today and emitted expectations, a people-and-household module, the mock LLM server replaying OpenAI- and Anthropic-format responses, the mock price server, and demo mode."
+verify = "Two seed runs produce byte-identical output, adding a dummy module leaves existing modules' output unchanged, and the mock servers answer the recorded fixtures including malformed JSON, timeouts and 429s."
+covers = ["CAP-16"]
+after = [2, 3]
+hitl = false
+risk = "medium"
+references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-15", "ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Synthetic data and offline CI", "llm tests — _bmad-output/specs/spec-pangolin-money/categorisation.md, Providers (Tests)"]
+
+[[entry]]
+id = 4
+type = "story"
+title = "Job runner and review inbox"
+description = "Adds the job outbox enqueued inside the business transaction, lanes with configurable concurrency, leased atomic claims, retries with backoff to dead, schedules defined in code, review_item with a kind registry and scoped visibility, and a status page showing job kind and time only."
+verify = "Tests show a crashed job is re-claimed after its lease, duplicate enqueues collapse on dedupe_key, a job that needs a person raises one review_item when dead, and schedules exist after restart."
+covers = ["CAP-16"]
+after = [3]
+hitl = false
+risk = "medium"
+references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-9, AD-17"]
+
+[[entry]]
+id = 5
+type = "story"
+title = "Passkey login"
+description = "Adds better-auth with passkeys and TOTP fallback, the one-time setup link, registration closing after two people, login rate limiting and lockout, the per-action re-auth window, strict cookies, the Origin check and the nonce-based CSP."
+verify = "Playwright enrols a passkey from the setup link and logs in, falls back to password plus TOTP, is refused a third registration, is locked out after repeated failures, and fails the run on any CSP violation."
+covers = ["CAP-15"]
+after = [3]
+hitl = false
+risk = "high"
+references = ["security — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md, Threats and mitigations", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, Consistency Conventions (Re-authentication, Web security)"]
+
+[[entry]]
+id = 6
+type = "story"
+title = "Account recovery"
+description = "Adds ten hashed one-time recovery codes that force a new passkey, the partner-issued 24-hour re-enrolment link that is audited and raises an in-app notice, and the reset-user use case."
+verify = "Tests show a recovery code forces passkey enrolment and cannot be reused, the partner link works once and expires after 24 hours, both events are audited, and the notice reaches only the affected person."
+covers = ["CAP-15"]
+after = [4, 5]
+hitl = false
+risk = "medium"
+references = ["security — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md, Account recovery", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-17, AD-27"]
+
+[[entry]]
+id = 9
+type = "story"
+title = "CLI and admin socket"
+description = "Adds the admin Unix socket on /run (mode 0600, peer uid check, fixed commands run as audited use cases) and the pangolin CLI's status and reset-user commands for a running or stopped stack."
+verify = "pangolin status reports health and job state through the socket, a connection from another uid is refused, and reset-user works with the stack running and, under the exclusive lock, stopped."
+covers = ["CAP-15", "CAP-16"]
+after = [4, 6, 8]
+hitl = false
+risk = "medium"
+references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-16"]
+
+[[entry]]
+id = 10
+type = "story"
+title = "Backups and restore"
+description = "Adds the nightly VACUUM INTO snapshot (local lane) and restic push over WireGuard (net lane) with a manifest of row counts and per-table checksums, verified restore that swaps files and cancels pending external-effect jobs, weekly restic check, the monthly drill, and CI restore tests including a clean-host restore from the recovery bundle alone."
+verify = "CI backs up and restores the seeded database with integrity_check and manifest checks passing, a clean-host restore from only the bundle decrypts a sample blob and logs in with TOTP, and on the server a manual backup lands in the append-only repository and cannot be deleted from the VM."
+covers = ["CAP-16"]
+after = [4, 7, 8, 9]
+hitl = true
+risk = "high"
+references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Backups and restore", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-16, AD-19, AD-27"]
+plan_checkpoint = true
+done_checkpoint = true
+
+[[entry]]
+id = 11
+type = "story"
+title = "Release and upgrade"
+description = "Adds the tagged release workflow (amd64 and arm64 Debian-slim images, SBOM, vulnerability scan, cosign signing, GHCR push), pangolin upgrade (verify signature, snapshot, migrate, health check, automatic rollback) and Renovate."
+verify = "A tagged release publishes signed multi-arch images, and on the server pangolin upgrade to that tag succeeds, while an upgrade to an image whose health check is forced to fail rolls back to the previous image and snapshot."
+covers = ["CAP-16"]
+after = [9, 10]
+hitl = true
+risk = "medium"
+references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Install and upgrade, CI/CD", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, Consistency Conventions (Health and upgrade)"]
+done_checkpoint = true
+
+[[entry]]
+id = 12
+type = "story"
+title = "Refactor sweep"
+description = "Cleans up code across the epic, scoped when it starts from the build records and review findings deferred during the epic."
+verify = "CI is green and every deferred review finding for this epic is closed or recorded with a reason."
+covers = []
+after = [1, 8, 2, 3, 7, 4, 5, 6, 9, 10, 11]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 13
+type = "story"
+title = "M0 gate rehearsal"
+description = "Runs the epic's Done when on the real VM: fresh install to passkey login in one command, upgrade with automatic rollback, a restore drill, the recovery flows and the firewall checks."
+verify = "Each Done when item of epic-platform-foundations is demonstrated on the home server and recorded, with CI green on the release tag."
+covers = ["CAP-15", "CAP-16"]
+after = [12]
+hitl = true
+risk = "medium"
+done_checkpoint = true
