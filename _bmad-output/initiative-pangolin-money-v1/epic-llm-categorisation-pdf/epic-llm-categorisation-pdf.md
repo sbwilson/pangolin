@@ -36,7 +36,8 @@ packages/llm and PDF extraction in packages/importers. CAP-2 part: LLM suggestio
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-1, CAP-2
 - llm — _bmad-output/specs/spec-pangolin-money/categorisation.md
 - pdf — _bmad-output/specs/spec-pangolin-money/import-pipeline.md, section PDF statements
+- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-6, AD-8, AD-9, AD-10, AD-17, AD-18, AD-21
 
 ## Notes
 
-- Open question: architecture spine (bmad-architecture, pending) must settle the job table/runner contract and the visibleAccounts()/redact() contract before inception; cite its section in References once written.
+- Decision: the cross-epic contracts this epic adopts are settled in the architecture spine (final, 2026-09-27); see References.

@@ -33,7 +33,8 @@ Projection services and their views. Monte Carlo bands are a spec non-goal.
 
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-8
 - forecasting — _bmad-output/specs/spec-pangolin-money/budgets-goals-forecasting.md, section Forecasting
+- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-11, AD-12, AD-14, AD-19, AD-23, AD-25
 
 ## Notes
 
-- Open question: architecture spine (bmad-architecture, pending) must settle the period, payday-anchor and FY helpers before inception; cite its section in References once written.
+- Decision: the cross-epic contracts this epic adopts are settled in the architecture spine (final, 2026-09-27); see References.

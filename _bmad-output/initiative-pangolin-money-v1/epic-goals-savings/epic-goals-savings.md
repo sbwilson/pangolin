@@ -34,7 +34,8 @@ goal, goal_rule, goal_allocation and allocation_stage, the goals page, and the r
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-6, CAP-7
 - goals — _bmad-output/specs/spec-pangolin-money/budgets-goals-forecasting.md, sections Goals and savings allocation, Goal priorities and stages, Reconciling goals with the savings account
 - decision — _bmad-output/specs/spec-pangolin-money/decisions.md, section Periods where spend exceeds income
+- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-11, AD-13, AD-14, AD-17, AD-19, AD-22, AD-24, AD-26
 
 ## Notes
 
-- Open question: architecture spine (bmad-architecture, pending) must settle the period, payday-anchor and FY helpers before inception; cite its section in References once written.
+- Decision: the cross-epic contracts this epic adopts are settled in the architecture spine (final, 2026-09-27); see References.

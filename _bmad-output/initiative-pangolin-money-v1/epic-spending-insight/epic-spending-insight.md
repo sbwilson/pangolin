@@ -21,7 +21,7 @@ We can see where our money went without a spreadsheet; report totals matching ha
 ## Done when
 
 1. On the seeded household, the totals in the Sankey, the P&L and any-period spending equal a hand sum of splits for the chosen period.
-2. Net worth excludes private accounts from the partner's view and from the shared view, and the owner's view includes them.
+2. Net worth shows each person everything they can see, including their own private accounts and never the other partner's. Shared figures (shared-beneficiary spending, contribution) are identical for both partners.
 3. Contribution apportionment produces the documented percentages from seeded transfers and shared expenses. The 50/50 setting overrides it.
 4. Deployed to the home server with `pangolin upgrade`, and CI (lint, types, unit, migration, Playwright) is green on the release tag.
 
@@ -33,7 +33,8 @@ Reports and charts (ECharts) over splits. CAP-14 part: contribution and apportio
 
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-14, CAP-17
 - shared spending — _bmad-output/specs/spec-pangolin-money/budgets-goals-forecasting.md, section Shared spending and who paid
+- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-4, AD-7, AD-11, AD-13, AD-19, AD-23
 
 ## Notes
 
-- Open question: architecture spine (bmad-architecture, pending) must settle the visibleAccounts()/redact() contract before inception; cite its section in References once written.
+- Decision: the cross-epic contracts this epic adopts are settled in the architecture spine (final, 2026-09-27); see References.

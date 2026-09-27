@@ -34,7 +34,8 @@ The ledger and classification tables in data-model.md, except import_*, rule and
 
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-3, CAP-14, CAP-18
 - data model — _bmad-output/specs/spec-pangolin-money/data-model.md, sections Conventions, Tables, Privacy enforcement
+- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-4, AD-5, AD-7, AD-10, AD-17, AD-18, AD-22, AD-26
 
 ## Notes
 
-- Open question: architecture spine (bmad-architecture, pending) must settle the visibleAccounts()/redact() contract before inception; cite its section in References once written.
+- Decision: the cross-epic contracts this epic adopts are settled in the architecture spine (final, 2026-09-27); see References.

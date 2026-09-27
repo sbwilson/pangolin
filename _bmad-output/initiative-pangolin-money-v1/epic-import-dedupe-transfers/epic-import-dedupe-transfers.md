@@ -12,7 +12,7 @@ risk: high
 
 ## Description
 
-Every v1 format except PDF goes through one idempotent pipeline: parse, normalise, dedupe, match payee, apply rules, match transfers, reconcile, and review. The formats are CommBank OFX/CSV/QIF, ubank CSV, Up CSV, CMC confirmations, the FY2025 multi-bank profile and a generic CSV mapper. M1 carries the most risk, because every later report depends on this epic. Milestone M1.
+Every v1 format except PDF goes through one idempotent pipeline: parse, normalise, dedupe, match payee, apply rules, match transfers, reconcile, and review. The formats are CommBank OFX/CSV/QIF, ubank CSV, Up CSV, the FY2025 multi-bank profile and a generic CSV mapper. M1 carries the most risk, because every later report depends on this epic. Milestone M1.
 
 ## Outcome
 
@@ -28,15 +28,16 @@ Our real history since 1 July 2024 is in the ledger and reconciles to the bank. 
 
 ## Boundaries
 
-packages/importers and the import, payee-matching, rules and transfer stages in domain. CAP-1 part: every format except PDF. CAP-2 part: rules, payee default and review inbox; LLM suggestions belong to epic-llm-categorisation-pdf. Owns touch point NetBank history export (a person does it).
+packages/importers and the import, payee-matching, rules and transfer stages in domain. CAP-1 part: every format except PDF. CAP-2 part: rules, payee default and review inbox; LLM suggestions belong to epic-llm-categorisation-pdf. CMC Invest confirmations belong to epic-investments-super (spine AD-10). Owns touch point NetBank history export (a person does it).
 
 ## References
 
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-1, CAP-2
 - pipeline — _bmad-output/specs/spec-pangolin-money/import-pipeline.md
 - categories — _bmad-output/specs/spec-pangolin-money/categorisation.md, section Default categories
+- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-10, AD-12, AD-15, AD-17, AD-19, AD-20, AD-23
 
 ## Notes
 
 - Unknown: pre-FY2026 CommBank history must be exported from NetBank before the M1 gate; a person does it.
-- Open question: architecture spine (bmad-architecture, pending) must settle the visibleAccounts()/redact() contract and the seed-generator extension format before inception; cite its section in References once written.
+- Decision: the cross-epic contracts this epic adopts are settled in the architecture spine (final, 2026-09-27); see References.

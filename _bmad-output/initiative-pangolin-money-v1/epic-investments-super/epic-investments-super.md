@@ -2,7 +2,7 @@
 type: epic
 title: "Investments and super"
 parent: initiative-pangolin-money-v1
-covers: [CAP-9, CAP-10]
+covers: [CAP-9, CAP-10, CAP-1]
 after: []
 assignee: ""
 risk: high
@@ -28,13 +28,14 @@ Our investments and super sit beside our cash, valued daily, and their tax numbe
 
 ## Boundaries
 
-The Invest and Super tables, packages/connectors, and the investment and super views. Cap amounts live in a per-FY config table, not in code. Owns touch points Yahoo Finance, issuer NAV pages and the QSuper and Aware unit-price pages. Not Betashares statement parsing (a spec non-goal).
+The Invest and Super tables, packages/connectors, and the investment and super views. Cap amounts live in a per-FY config table, not in code. Owns touch points Yahoo Finance, issuer NAV pages and the QSuper and Aware unit-price pages. CAP-1 part: CMC Invest confirmations, through an investment_event target it adds to the import pipeline (spine AD-10). Not Betashares statement parsing (a spec non-goal).
 
 ## References
 
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-9, CAP-10
 - investments — _bmad-output/specs/spec-pangolin-money/investments-super-tax.md, sections ETFs and Super
+- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-10, AD-11, AD-13, AD-19, AD-20, AD-25
 
 ## Notes
 
-- Open question: architecture spine (bmad-architecture, pending) must settle the job table/runner contract and the period, payday-anchor and FY helpers before inception; cite its section in References once written.
+- Decision: the cross-epic contracts this epic adopts are settled in the architecture spine (final, 2026-09-27); see References.

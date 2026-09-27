@@ -27,13 +27,14 @@ Each of us can see whether this fortnight is on track, and bill rises are spotte
 
 ## Boundaries
 
-Budgets and recurring_series, with their UI. Owns the period and payday-anchor helpers that goals, forecasting and tax reuse, per the spine. Not goals and not forecasting.
+Budgets and recurring_series, with their UI. Owns pay_anchor, pay-deposit detection and PayCalendar resolution (spine AD-14, AD-25); the calendar and FY maths in shared/period come from epic-platform-foundations. Not goals and not forecasting.
 
 ## References
 
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-4, CAP-5
 - budgets — _bmad-output/specs/spec-pangolin-money/budgets-goals-forecasting.md, sections Budgets and Recurring bills
+- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-11, AD-14, AD-17, AD-22, AD-23, AD-25
 
 ## Notes
 
-- Open question: architecture spine (bmad-architecture, pending) must settle the period, payday-anchor and FY helpers and the job table/runner contract before inception; cite its section in References once written.
+- Decision: the cross-epic contracts this epic adopts are settled in the architecture spine (final, 2026-09-27); see References.

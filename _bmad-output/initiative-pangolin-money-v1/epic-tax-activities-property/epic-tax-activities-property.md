@@ -35,7 +35,8 @@ Tax reports, attachments and receipts, activities, and the property view. The ap
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-11, CAP-12, CAP-13
 - tax — _bmad-output/specs/spec-pangolin-money/investments-super-tax.md, sections Investment property and Tax and activities
 - csv export — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md, section Threats and mitigations
+- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-4, AD-13, AD-14, AD-21, AD-22, AD-23, AD-24
 
 ## Notes
 
-- Open question: architecture spine (bmad-architecture, pending) must settle the period/FY helpers and the visibleAccounts()/redact() contract before inception; cite its section in References once written.
+- Decision: the cross-epic contracts this epic adopts are settled in the architecture spine (final, 2026-09-27); see References.

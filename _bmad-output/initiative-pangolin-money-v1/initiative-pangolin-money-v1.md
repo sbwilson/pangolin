@@ -45,11 +45,12 @@ Capability boundaries, ordered by milestone. Each milestone gate is the Done-whe
 - constraint — _bmad-output/specs/spec-pangolin-money/SPEC.md, section Constraints (privacy, outbound allowlist, single writer, integer money)
 - milestones — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, section Milestones
 - diagrams — _bmad-output/specs/spec-pangolin-money/architecture-diagrams.md
+- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, all ADs
 
 ## Notes
 
 - Decision: 10 epics along capabilities, grouped by milestone; not one epic per milestone (user's decision, 2026-09-27).
 - Decision: investment property (CAP-11) goes with the tax pack, not with insight (user's decision, 2026-09-27).
 - Decision: the cross-epic contracts are to be settled in an architecture spine by bmad-architecture, not as stories in the opening epic (user's decision, 2026-09-27).
-- Open question: the spine must settle four contracts before the epics that adopt them are incepted: (a) the `visibleAccounts()`/`redact()` contract, (b) the job table and runner contract, (c) the seed-generator extension format, (d) period, payday-anchor and FY helpers. Adopters: (a) epics 2–5 and 9–10, (b) epics 1, 5, 6 and 9, (c) all epics, (d) epics 6–8 and 10.
-- Shared: CAP-1 splits between epic 3 (all non-PDF formats) and epic 5 (PDF). CAP-2 splits between epic 3 (rules, payee default, review inbox) and epic 5 (LLM suggestions). CAP-14 splits between epic 2 (beneficiary on each split) and epic 4 (contribution apportionment in reports).
+- Decision: the four cross-epic contracts are settled in the architecture spine (final, 2026-09-27): (a) AD-3, AD-4, AD-22; (b) AD-8, AD-9; (c) AD-15; (d) AD-14. Each epic cites the ADs it adopts.
+- Shared: CAP-1 splits between epic 3 (non-PDF bank formats), epic 5 (PDF) and epic 9 (CMC Invest confirmations). CAP-2 splits between epic 3 (rules, payee default, review inbox) and epic 5 (LLM suggestions). CAP-14 splits between epic 2 (beneficiary on each split) and epic 4 (contribution apportionment in reports).
