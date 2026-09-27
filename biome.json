@@ -31,9 +31,68 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": ["temporal-polyfill", "temporal-polyfill/**"],
+                "message": "Import Temporal and PlainDate from @pangolin/shared/temporal (AD-14)."
+              },
+              {
+                "group": ["ulid", "ulid/**"],
+                "message": "Mint IDs with newId from @pangolin/app (AD-5); only packages/app/src/ids.ts imports ulid."
+              }
+            ]
+          }
+        }
+      }
     }
   },
+  "overrides": [
+    {
+      "includes": ["packages/shared/src/temporal/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["ulid", "ulid/**"],
+                    "message": "Mint IDs with newId from @pangolin/app (AD-5); only packages/app/src/ids.ts imports ulid."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/app/src/ids.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["temporal-polyfill", "temporal-polyfill/**"],
+                    "message": "Import Temporal and PlainDate from @pangolin/shared/temporal (AD-14)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "assist": {
     "enabled": true,
     "actions": {

@@ -11,5 +11,10 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "decimal.js": "10.6.0",
+    "temporal-polyfill": "1.0.5",
+    "zod": "4.6.5"
   }
 }
