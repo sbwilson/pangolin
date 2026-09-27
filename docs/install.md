@@ -94,8 +94,11 @@ host reboot. If you use Proxmox Backup Server, turn on its client-side encryptio
 - The network you SSH in from (e.g. `192.168.1.0/24`): SSH from anywhere else is refused once
   the firewall is on. The installer warns if your current SSH session comes from outside it.
 - Your Tang server's URL (e.g. `http://tang.lan`), so it can be allowlisted.
-- Optional: your restic REST server URL (e.g. `rest:https://nas.lan:8000/pangolin`). It is only
-  stored and allowlisted for now; nightly backups arrive in a later release.
+- Optional but strongly advised: your restic REST server URL (e.g.
+  `rest:https://nas.lan:8000/pangolin`), a [rest-server](https://github.com/restic/rest-server)
+  started with `--append-only` (the TrueNAS app, or a container). Nightly backups go there; see
+  [Backups and restore](#10-backups-and-restore). The VM must reach it directly: on the LAN, or
+  over a tunnel you run yourself. Without it, nothing is backed up.
 - For a private image: a GitHub fine-grained token with **packages: read** only.
 
 ## 4. Run the installer
@@ -159,21 +162,22 @@ What it does, in order:
 | `/opt/pangolin/compose.yaml` | 0644 | The production stack (replaced on every run; put settings in `.env`) |
 | `/opt/pangolin/.env` | 0600 | Every setting: image, public URL, NPM host, admin network, ports, data root, backup repository |
 | `/opt/pangolin/allowlist.conf` | 0644 | The outbound allowlist, one `host[:port]` per line |
-| `/opt/pangolin/secrets/` | 0700 | Each file 0600: `auth-secret`, owned by the container's user (uid 1000), the only one mounted into the container; `app-key` (32 random bytes, base64) and `restic-password`, root's, held for the stories that use them (attachments, backups); `ghcr-token` (root's) if you gave one |
+| `/opt/pangolin/secrets/` | 0700 | `auth-secret` (0600) and `restic-password` (0400), owned by the container's user (uid 1000) and each mounted read-only into the container as a single file; `app-key` (0600, 32 random bytes, base64), root's, held for the attachments story; `ghcr-token` (0600, root's) if you gave one |
 | `/opt/pangolin/firewall/` | | `render.sh` and the last applied `pangolin.nft`, which loads at boot |
 | `/opt/pangolin/proxmox-firewall.txt` | 0644 | The equivalent Proxmox VM rules |
 | `/etc/systemd/system/pangolin-firewall.service` | 0644 | Loads the saved ruleset early at boot, before the network and Docker |
 | `/etc/systemd/system/pangolin-allowlist.{service,timer}` | 0644 | Re-resolves the allowlist every 15 minutes, reloads and saves the ruleset |
 | `/etc/systemd/system/docker.service.d/pangolin-data.conf` | 0644 | Docker waits for the data disk (when the data root is a mount point) |
 | `/srv/pangolin/` | 0700 | The database and attachments (the container's `/data`) |
+| `/srv/pangolin/backup/` | | Backup staging (`staging/<id>/`: a snapshot waiting to be pushed, removed once pushed) and restic's cache (`cache/`) |
 | `/srv/pangolin/pangolin.lock` | | An empty lock file: the server (or `pangolin reset-user` on a stopped stack) holds a lock on it so only one process writes the database. It holds no data and may be left out of backups; never delete it while anything runs |
 | `/root/pangolin-recovery-bundle-<date>.txt` | 0600 | The recovery bundle (first install, or `--bundle`) |
 | `/usr/local/bin/pangolin` | 0755 | The admin command (see [Administration](#9-administration)) |
 
 The container runs as a non-root user with a read-only root filesystem, no capabilities and
-`no-new-privileges`. It sees the data root at `/data`, the auth secret read-only at
-`/secrets/auth-secret`, and
-has a `/run` tmpfs for the admin socket the `pangolin` command talks to.
+`no-new-privileges`. It sees the data root at `/data`, the auth secret and the restic password
+read-only at `/secrets/auth-secret` and `/secrets/restic-password` (never in `.env`), and has a
+`/run` tmpfs for the admin socket the `pangolin` command talks to.
 
 ### Re-running
 
@@ -304,15 +308,19 @@ never on the data disk), so the CLI never opens the database beside the server. 
 (it reads `/opt/pangolin/.env`):
 
 ```sh
-sudo pangolin status                       # version, schema, readiness, job counts, dead jobs
+sudo pangolin status                       # version, schema, readiness, jobs, last backup
+sudo pangolin backup                       # back up now
+sudo pangolin restore latest               # restore the newest backup (see section 10)
 sudo pangolin reset-user alex@example.com  # both of you locked out: reset one person
 sudo pangolin --help
 ```
 
 - **`status`** prints the release, the schema version against the one the build expects,
-  readiness (`ok`, or the failing checks as `/healthz` names them) and how many jobs are
-  pending, running and dead, with each dead job's kind and time. It exits 0 when ready, 1 when
+  readiness (`ok`, or the failing checks as `/healthz` names them), how many jobs are
+  pending, running and dead, with each dead job's kind and time, and the last backup (its time
+  and restic snapshot ID, "none yet", or "not configured"). It exits 0 when ready, 1 when
   not, and 3 with "Pangolin is not running" when the server is down (it then opens nothing).
+- **`backup`** and **`restore`**: see [Backups and restore](#10-backups-and-restore).
 - **`reset-user <email or person ID>`** is for when both of you are locked out (otherwise your
   partner's link in the app does it). It clears the person's passkeys, authenticator, sessions,
   recovery codes and password at once and prints a one-time link, valid 24 hours, to set them
@@ -328,6 +336,86 @@ client just created in the socket's directory, which the server checks is its ow
 `PANGOLIN_ADMIN_SOCKET` in `.env` to move the socket (keep it on a tmpfs), or to an empty value
 to turn it off; `pangolin status` then cannot reach the server.
 
+## 10. Backups and restore
+
+With `PANGOLIN_BACKUP_REPOSITORY` set in `.env` (`install.sh --backup-server`), the server backs
+up every night at **02:30 household time**:
+
+1. A `local` job writes a consistent copy of the database (`VACUUM INTO`, on its own connection,
+   so the app keeps working) to `/srv/pangolin/backup/staging/<id>/`, with a manifest: every
+   table's row count and a SHA-256 of its rows.
+2. A `net` job pushes that directory, and `/srv/pangolin/attachments/` when it exists, with
+   restic (0.19, shipped in the image) to the repository, then empties the staging directory.
+   restic encrypts everything with the restic password before it leaves the VM.
+
+A failed push is retried with backoff (about an hour in all); if it still fails, the job is
+dead, `pangolin status` and the status page list it, and it raises a "job.dead" review item.
+The status page and `pangolin status` show the last backup's time and snapshot ID. With
+`PANGOLIN_BACKUP_REPOSITORY` empty, nothing is scheduled, both say "not configured", and
+`pangolin backup` exits 1.
+
+**The repository.** Run restic's rest-server with `--append-only`: the VM can add backups but
+never delete or rewrite them, so a compromised VM cannot destroy its own history. The VM never
+runs `forget` or `prune`; apply retention (7 daily, 4 weekly, 12 monthly) on the server itself,
+e.g. a TrueNAS cron job running `restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 12
+--prune` against the repository's directory. The first backup initialises the repository with
+the restic password. Its host must be in `allowlist.conf` (`install.sh --backup-server` adds it).
+
+**Back up now:**
+
+```sh
+sudo pangolin backup
+```
+
+It asks the running server for a backup and waits, printing the restic snapshot ID when the push
+is done (exit 0). A second `pangolin backup` while one runs joins it. Exit 1 when the backup
+failed or is not configured, 3 when the server is not running.
+
+**Restore:**
+
+```sh
+sudo pangolin restore             # the newest backup
+sudo pangolin restore 1a2b3c4d    # a snapshot by ID, as pangolin backup and status print it
+```
+
+It stops the stack, then in a one-off container, under the exclusive lock on the data directory:
+
+1. restores the snapshot into a fresh `/srv/pangolin/restore-<time>/`;
+2. verifies it: `PRAGMA integrity_check` is `ok`, every table's row count and checksum match
+   the manifest, and its schema is not newer than the running release;
+3. swaps it in, moving the replaced database and attachments to
+   `/srv/pangolin/pre-restore-<time>/` (delete that once you are happy);
+4. before the server starts, marks every pending job that reaches outside the VM (a backup push,
+   later price fetches and emails) `dead` with reason `restored`, so nothing from the past is
+   replayed; the schedules are re-created when the server starts.
+
+Then it starts the stack again. When a check fails, it names it, swaps nothing, exits 1 and
+starts the stack on the database it had. It refuses while anything else holds the data
+directory. A backup job that was running when the snapshot was taken runs again about a minute
+after the restored server starts, so the repository soon holds the restored state too.
+
+**Onto a new host** (the old VM is gone): install as usual with the same `--backup-server`
+(it generates new secrets and a new bundle: shred that one, you keep the old bundle), then,
+before first use, stop the stack, put the old recovery bundle's values back and restore:
+
+```sh
+sudo docker compose -f /opt/pangolin/compose.yaml stop
+# The values of PANGOLIN_AUTH_SECRET and RESTIC_PASSWORD in the old recovery bundle:
+printf '%s\n' '<PANGOLIN_AUTH_SECRET>' | sudo tee /opt/pangolin/secrets/auth-secret > /dev/null
+printf '%s\n' '<RESTIC_PASSWORD>' | sudo tee /opt/pangolin/secrets/restic-password > /dev/null
+sudo chown 1000:1000 /opt/pangolin/secrets/auth-secret /opt/pangolin/secrets/restic-password
+sudo pangolin restore latest
+```
+
+Everyone then signs in as before, with their password and authenticator app (the auth secret
+decrypts the authenticator secrets). Passkeys work when the host name is unchanged. CI proves
+this on every push: it backs up the end-to-end household to an append-only rest-server, checks
+`restic forget` is refused, restores into the running stack, restores onto a fresh volume using
+only the bundle's values, and signs in with the saved password and TOTP code.
+
+Decrypting restored attachments with the application key arrives with the attachment store
+(epic 5). The weekly `restic check` and a monthly restore drill come in a later release.
+
 ## Ubuntu 24.04 and Rocky Linux 9 (unproven)
 
 The same command works on both, with warnings that the path is not yet proven. Ubuntu uses
@@ -337,6 +425,11 @@ mounts for SELinux (`:Z`, through `PANGOLIN_DATA_MOUNT_MODE` and
 alongside the nftables table.
 
 ## Troubleshooting
+
+- **A backup job is dead:** `docker compose -f /opt/pangolin/compose.yaml logs pangolin` shows
+  restic's error. Usually the repository is unreachable (check `allowlist.conf` and that the VM
+  reaches it), or the restic password does not match the repository's (a repository initialised
+  with another password).
 
 - **"not healthy after 90 s":** the printed log lines say why; `docker compose -f
   /opt/pangolin/compose.yaml logs pangolin` shows more, and `curl -s localhost:3000/healthz` on

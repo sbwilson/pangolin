@@ -2,9 +2,12 @@
 # pangolin: the Pangolin Money admin CLI on the host, installed to /usr/local/bin by install.sh.
 # It runs the CLI inside the container: over the admin socket when the stack runs, otherwise in a
 # one-off container of the same image (where `reset-user` takes the data-directory lock itself,
-# and `status` reports that the server is not running).
+# and `status` reports that the server is not running). `restore` stops the stack, runs in a
+# one-off container under that lock, and starts the stack again whatever the outcome.
 #
 # Usage: sudo pangolin status
+#        sudo pangolin backup
+#        sudo pangolin restore [snapshot|latest]
 #        sudo pangolin reset-user <email|person-id>
 #        sudo pangolin --help
 set -eu
@@ -25,6 +28,18 @@ command -v docker >/dev/null 2>&1 || die "docker is not installed"
 compose() {
   docker compose --project-directory "$HOME_DIR" -f "$HOME_DIR/compose.yaml" "$@"
 }
+
+# restore: stop → one-off run (which verifies, swaps and cancels jobs under the lock) → start. The
+# stack comes back up even when a check fails, on the database it had.
+if [ "${1:-}" = restore ]; then
+  compose stop pangolin || die "could not stop the stack"
+  set +e
+  compose run --rm --no-deps -T pangolin node dist/cli.js "$@"
+  code=$?
+  set -e
+  compose up -d pangolin || die "the restore exited $code, but the stack did not start again"
+  exit "$code"
+fi
 
 # A failing `ps` (daemon down, a bad .env) must not be taken for a stopped stack.
 running=$(compose ps -q --status running pangolin) ||

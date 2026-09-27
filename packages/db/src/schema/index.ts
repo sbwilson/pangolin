@@ -9,6 +9,7 @@ export {
   authUser,
   authVerification,
 } from "./auth.ts";
+export { backupSnapshot } from "./backup-snapshot.ts";
 export { householdSettings } from "./household-settings.ts";
 export { job } from "./job.ts";
 export { loginAttempt } from "./login-attempt.ts";

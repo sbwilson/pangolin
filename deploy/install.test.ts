@@ -187,16 +187,21 @@ describe("install.sh, fresh install", () => {
 
     expect(mode("opt/pangolin/.env")).toBe(0o600);
     expect(mode("opt/pangolin/secrets")).toBe(0o700);
-    for (const name of SECRET_NAMES) {
-      expect(mode(`opt/pangolin/secrets/${name}`)).toBe(0o600);
-    }
-    // Only the auth secret (the one file the container mounts) is the container user's.
+    expect(mode("opt/pangolin/secrets/auth-secret")).toBe(0o600);
+    expect(mode("opt/pangolin/secrets/app-key")).toBe(0o600);
+    // The container only reads the restic password.
+    expect(mode("opt/pangolin/secrets/restic-password")).toBe(0o400);
+    // Only the files the container mounts (auth secret, restic password) are its user's.
     expect(statSync(at("opt/pangolin/secrets")).uid).toBe(uid);
     expect(statSync(at("opt/pangolin/secrets/app-key")).uid).toBe(uid);
-    expect(statSync(at("opt/pangolin/secrets/restic-password")).uid).toBe(uid);
-    if (uid === 0) expect(statSync(at("opt/pangolin/secrets/auth-secret")).uid).toBe(1000);
+    if (uid === 0) {
+      expect(statSync(at("opt/pangolin/secrets/auth-secret")).uid).toBe(1000);
+      expect(statSync(at("opt/pangolin/secrets/restic-password")).uid).toBe(1000);
+    }
     const compose = read("opt/pangolin/compose.yaml");
     expect(compose).toContain("./secrets/auth-secret:/secrets/auth-secret:");
+    expect(compose).toContain("./secrets/restic-password:/secrets/restic-password:");
+    expect(compose).toContain("PANGOLIN_RESTIC_PASSWORD_FILE: /secrets/restic-password");
     expect(compose).not.toMatch(/- \.\/secrets:/);
     expect(mode("srv/pangolin")).toBe(0o700);
     expect(mode("opt/pangolin/compose.yaml")).toBe(0o644);
@@ -308,7 +313,11 @@ describe("the pangolin command", () => {
   });
 
   /** Runs the wrapper against a stub `docker` that logs its arguments; `stack` sets `ps`. */
-  function wrapper(args: readonly string[], stack: "running" | "stopped" | "broken"): Run {
+  function wrapper(
+    args: readonly string[],
+    stack: "running" | "stopped" | "broken",
+    runExit = 0,
+  ): Run {
     const home = at("opt/pangolin");
     mkdirSync(home, { recursive: true });
     writeFileSync(join(home, "compose.yaml"), "services: {}\n");
@@ -324,6 +333,7 @@ describe("the pangolin command", () => {
         '  *" ps "*)',
         `    [ "${stack}" = broken ] && { echo "Cannot connect to the Docker daemon" >&2; exit 1; }`,
         `    [ "${stack}" = running ] && echo stub-container-id ;;`,
+        `  *" run "*) exit ${runExit} ;;`,
         "esac",
         "exit 0",
         "",
@@ -353,6 +363,24 @@ describe("the pangolin command", () => {
       "run --rm --no-deps -T pangolin node dist/cli.js reset-user alex@example.com",
     );
     expect(dockerLog()).not.toContain(" exec ");
+  });
+
+  it("restore stops the stack, restores in a one-off container, and starts the stack again", () => {
+    const home = at("opt/pangolin");
+    const compose = `compose --project-directory ${home} -f ${home}/compose.yaml`;
+    const result = wrapper(["restore", "latest"], "running");
+    expect(result.status, result.stderr).toBe(0);
+    expect(dockerLog().trim().split("\n")).toEqual([
+      `${compose} stop pangolin`,
+      `${compose} run --rm --no-deps -T pangolin node dist/cli.js restore latest`,
+      `${compose} up -d pangolin`,
+    ]);
+  });
+
+  it("restore starts the stack again after a failed check, and keeps the CLI's exit code", () => {
+    const result = wrapper(["restore"], "running", 1);
+    expect(result.status).toBe(1);
+    expect(dockerLog().trim().split("\n").at(-1)).toMatch(/ up -d pangolin$/);
   });
 
   it("stops clearly when docker compose ps fails, never falling through to run", () => {
@@ -555,6 +583,8 @@ describe("install.sh with Docker (a stub docker)", () => {
 
   const BUILD_HOSTS = [
     "github.com:443",
+    "release-assets.githubusercontent.com:443",
+    "objects.githubusercontent.com:443",
     "registry.npmjs.org:443",
     "registry-1.docker.io:443",
     "auth.docker.io:443",

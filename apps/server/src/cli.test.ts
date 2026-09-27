@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -13,15 +14,24 @@ import { type Db, loadMigrations, openDatabase, packageMigrationsDir } from "@pa
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { acquireDataDirLock } from "./admin/lock.ts";
 import { EXIT_FAILED, EXIT_NOT_RUNNING, EXIT_OK, EXIT_USAGE, runCli } from "./cli.ts";
-import { DEFAULT_JOBS_CONFIG, defaultAuthConfig } from "./config.ts";
+import {
+  type BackupConfig,
+  DEFAULT_BACKUP_CONFIG,
+  DEFAULT_JOBS_CONFIG,
+  defaultAuthConfig,
+} from "./config.ts";
 import { type RunningServer, startServer } from "./server.ts";
 import { addLogin, signIn } from "./testing/logins.ts";
+import { stubRestic } from "./testing/restic.ts";
 
 let dir: string;
 let server: RunningServer | undefined;
+/** The backup settings the server and the CLI both read; none unless a test sets them. */
+let backup: BackupConfig = DEFAULT_BACKUP_CONFIG;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "pangolin-cli-"));
+  backup = DEFAULT_BACKUP_CONFIG;
 });
 
 afterEach(async () => {
@@ -41,6 +51,7 @@ async function boot(): Promise<RunningServer> {
       port: 0,
       demo: false,
       jobs: DEFAULT_JOBS_CONFIG,
+      backup,
       auth: { ...defaultAuthConfig(dataDir()), publicUrl: PUBLIC_URL },
       trustedProxies: [],
       adminSocket: socketPath(),
@@ -74,8 +85,12 @@ async function cli(argv: string[], migrationsDir = packageMigrationsDir) {
       PANGOLIN_DATA_DIR: dataDir(),
       PANGOLIN_ADMIN_SOCKET: socketPath(),
       PANGOLIN_PUBLIC_URL: PUBLIC_URL,
+      PANGOLIN_BACKUP_REPOSITORY: backup.repository ?? "",
+      PANGOLIN_RESTIC_PASSWORD_FILE: backup.passwordFile,
+      PANGOLIN_RESTIC_BIN: backup.resticBin,
     },
     migrationsDir,
+    pollMs: 20,
     io: { out: (text) => out.push(text), err: (text) => err.push(text) },
   });
   return { code, out: out.join("\n"), err: err.join("\n") };
@@ -85,7 +100,10 @@ describe("pangolin (the admin CLI)", () => {
   it("prints help, and refuses a missing or unknown command as usage", async () => {
     expect(await cli(["--help"])).toMatchObject({ code: EXIT_OK, out: /reset-user/ });
     expect(await cli([])).toMatchObject({ code: EXIT_USAGE, err: /name a command/ });
-    expect(await cli(["backup"])).toMatchObject({ code: EXIT_USAGE, err: /unknown command/ });
+    expect(await cli(["prune"])).toMatchObject({ code: EXIT_USAGE, err: /unknown command/ });
+    expect(await cli(["backup", "now"])).toMatchObject({ code: EXIT_USAGE });
+    expect(await cli(["restore", "a", "b"])).toMatchObject({ code: EXIT_USAGE });
+    expect(await cli(["restore", "../etc"])).toMatchObject({ code: EXIT_USAGE });
     expect(await cli(["status", "extra"])).toMatchObject({ code: EXIT_USAGE });
     expect(await cli(["reset-user", "a", "b"])).toMatchObject({ code: EXIT_USAGE });
   });
@@ -254,5 +272,131 @@ describe("pangolin (the admin CLI)", () => {
     mkdirSync(dataDir());
     const result = await cli(["reset-user", "alex@example.com"]);
     expect(result).toMatchObject({ code: EXIT_FAILED, err: /never run here/ });
+  });
+});
+
+// The server's runner ticks once a second, so each backup takes a couple of seconds.
+describe("pangolin backup and restore", { timeout: 20_000 }, () => {
+  it("backup refuses when no repository is configured, exit 1, and status says so", async () => {
+    await boot();
+    expect(await cli(["backup"])).toMatchObject({
+      code: EXIT_FAILED,
+      err: /Backups are not configured: set PANGOLIN_BACKUP_REPOSITORY/,
+    });
+    expect((await cli(["status"])).out).toContain(
+      "Backups:   not configured (PANGOLIN_BACKUP_REPOSITORY is empty)",
+    );
+    // Nothing was enqueued, and no nightly schedule exists.
+    expect(withDb((db) => db.prepare("SELECT COUNT(*) FROM job").pluck().get())).toBe(0);
+  });
+
+  it("backup on a stopped server says it is not running, exit 3", async () => {
+    backup = stubRestic(join(dir, "stub")).config;
+    mkdirSync(dataDir());
+    expect(await cli(["backup"])).toMatchObject({ code: EXIT_NOT_RUNNING, out: /not running/ });
+  });
+
+  it("backup waits for the running server's jobs and prints the snapshot ID; status shows it", async () => {
+    const stub = stubRestic(join(dir, "stub"));
+    backup = stub.config;
+    await boot();
+    expect((await cli(["status"])).out).toContain(
+      "Backups:   none yet (nightly at 02:30, household time)",
+    );
+    // The nightly schedule's row waits for 02:30.
+    expect(
+      withDb((db) =>
+        db.prepare("SELECT dedupe_key FROM job WHERE status = 'pending'").pluck().all(),
+      ),
+    ).toEqual(["schedule:backup-nightly"]);
+    const result = await cli(["backup"]);
+    expect(result.err).toBe("");
+    expect(result.code).toBe(EXIT_OK);
+    const id = /snapshot ([0-9a-f]{64})$/m.exec(result.out)?.[1];
+    expect(id).toBeDefined();
+    expect(result.out).toMatch(/^Backup \w+ started$/m);
+    expect((await cli(["status"])).out).toMatch(
+      new RegExp(`^Backups:   last at \\S+, snapshot ${id}$`, "m"),
+    );
+    expect(
+      withDb((db) =>
+        db
+          .prepare("SELECT actor FROM audit_log WHERE entity LIKE 'backup%' ORDER BY rowid")
+          .pluck()
+          .all(),
+      ),
+    ).toEqual(["cli:backup", "job:backup-snapshot", "job:backup-push"]);
+  });
+
+  it("backup reports a push that died, exit 1", async () => {
+    backup = stubRestic(join(dir, "stub")).config;
+    await boot();
+    // An empty password file: the push fails and waits to retry.
+    rmSync(backup.passwordFile);
+    writeFileSync(backup.passwordFile, "");
+    const done = cli(["backup"]);
+    const pushStatus = () =>
+      withDb((db) =>
+        db.prepare("SELECT status, attempts FROM job WHERE kind = 'backup-push'").get(),
+      ) as { status: string; attempts: number } | undefined;
+    for (let i = 0; i < 200; i++) {
+      const push = pushStatus();
+      if (push?.status === "pending" && push.attempts > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    // Its retries run out (as if an hour had passed).
+    withDb((db) =>
+      db
+        .prepare(
+          "UPDATE job SET status = 'dead', finished_at = '2026-09-27T01:00:00.000Z' WHERE kind = 'backup-push'",
+        )
+        .run(),
+    );
+    expect(await done).toMatchObject({
+      code: EXIT_FAILED,
+      err: /the backup failed \(pushing it\)/,
+    });
+    expect((await done).out).toContain(
+      "Pushing it with restic (an attempt failed; it will retry) …",
+    );
+  });
+
+  it("restore on a stopped stack swaps in the latest backup; on a running one it refuses", async () => {
+    backup = stubRestic(join(dir, "stub")).config;
+    await boot();
+    withDb((db) => addLogin(db, "alex@example.com", "Alex"));
+    expect((await cli(["backup"])).code).toBe(EXIT_OK);
+    const refused = await cli(["restore"]);
+    expect(refused).toMatchObject({ code: EXIT_FAILED, err: /Another process holds/ });
+    await stop();
+    withDb((db) => db.prepare("DELETE FROM person").run());
+    const result = await cli(["restore", "latest"]);
+    expect(result.err).toBe("");
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.out).toContain("integrity_check: ok");
+    expect(result.out).toMatch(/Manifest: all \d+ tables match/);
+    expect(result.out).toMatch(/Swapped in snapshot [0-9a-f]{64}; the replaced files are in /);
+    expect(result.out).toContain("Cancelled 0 pending jobs with external effects");
+    expect(withDb((db) => db.prepare("SELECT COUNT(*) FROM person").pluck().get())).toBe(1);
+  });
+
+  it("restore of a snapshot that fails a check exits 1 naming it, and swaps nothing", async () => {
+    const stub = stubRestic(join(dir, "stub"));
+    backup = stub.config;
+    await boot();
+    expect((await cli(["backup"])).code).toBe(EXIT_OK);
+    await stop();
+    // Truncate every pushed database file.
+    const tree = join(stub.repoDir, "snapshots");
+    for (const snap of readdirSync(tree)) {
+      const staging = join(tree, snap, "tree", dataDir(), "backup", "staging");
+      for (const id of readdirSync(staging))
+        writeFileSync(join(staging, id, "pangolin.sqlite"), "junk");
+    }
+    const result = await cli(["restore"]);
+    expect(result).toMatchObject({
+      code: EXIT_FAILED,
+      err: /the integrity check failed: [\s\S]*Nothing was swapped in/,
+    });
   });
 });

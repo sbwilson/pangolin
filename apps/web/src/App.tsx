@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import {
   ApiError,
   dismissNotice,
+  fetchBackupStatus,
   fetchDeadJobs,
   fetchHealth,
   fetchMe,
@@ -66,6 +67,26 @@ function DeadJobs() {
         ))}
       </ul>
     </section>
+  );
+}
+
+/** The last backup: its time and restic snapshot ID, or why there is none. */
+function LastBackup() {
+  const backup = useQuery({
+    queryKey: ["system", "backup"],
+    queryFn: fetchBackupStatus,
+    retry: false,
+  });
+  if (backup.isPending) return null;
+  if (backup.isError) return <p>Backup status unavailable</p>;
+  const { configured, last } = backup.data;
+  if (!configured) return <p>Backups not configured</p>;
+  if (last === null) return <p>No backup yet</p>;
+  return (
+    <p>
+      Last backup <time dateTime={last.pushedAt}>{last.pushedAt}</time> (snapshot{" "}
+      <code title={last.snapshotId}>{last.snapshotId.slice(0, 8)}</code>)
+    </p>
   );
 }
 
@@ -249,6 +270,7 @@ function Home({
       </p>
       <Notices />
       <HealthStatus />
+      <LastBackup />
       <DeadJobs />
       {me.canInvite && !me.demo ? <InvitePartner onSignOut={onSignOut} /> : null}
       {me.demo ? null : (

@@ -171,3 +171,40 @@ export function failJob(ctx: UseCaseContext, input: FailInput): FailOutcome {
     return markDead(tx, audit, ctx, input, formatInstant(now), error) ? "dead" : "lost";
   });
 }
+
+/** The error a restore records on each job it cancels. */
+export const RESTORED_REASON = "restored";
+
+export interface CancelJobsForRestoreInput {
+  /** The kinds with external effects. */
+  readonly kinds: readonly string[];
+  /** The restic snapshot that was swapped in, for the audit row. */
+  readonly snapshot: string;
+}
+
+/**
+ * After a restore swaps a snapshot in and before the server starts (AD-16): every pending or
+ * running job of `kinds` becomes `dead` with the reason `restored`, so no push, fetch or email
+ * from the snapshot's past runs again. Audited once, with the count. Returns how many it
+ * cancelled.
+ */
+export function cancelJobsForRestore(
+  ctx: UseCaseContext,
+  input: CancelJobsForRestoreInput,
+): number {
+  return write(ctx, (tx, audit) => {
+    const cancelled = tx.jobs.cancelLive(
+      input.kinds,
+      formatInstant(ctx.clock.now()),
+      RESTORED_REASON,
+    );
+    audit({
+      entity: "job",
+      entityId: "restore",
+      action: "cancel-for-restore",
+      before: null,
+      after: { snapshot: input.snapshot, kinds: input.kinds, cancelled },
+    });
+    return cancelled;
+  });
+}

@@ -93,6 +93,8 @@ interface Run {
   /** The latest claimed row; replaced when this runner re-claims the job. */
   job: JobRow;
   readonly ctx: RunContext;
+  /** Aborted when the attempt times out or `stop()` gives up on it. */
+  readonly abort: AbortController;
   renewedAt: number;
   done: Promise<void>;
 }
@@ -108,6 +110,22 @@ function positiveInteger(name: string, value: number, min = 1): number {
     throw new RangeError(`createRunner: ${name} must be an integer >= ${min}, got ${value}`);
   }
   return value;
+}
+
+/** An attempt ran past its kind's `timeoutMs`. */
+export class JobTimeout extends Error {
+  constructor(ms: number) {
+    super(`Timed out after ${ms} ms`);
+    this.name = "JobTimeout";
+  }
+}
+
+/** The runner stopped before the attempt finished. */
+export class RunnerStopped extends Error {
+  constructor() {
+    super("The job runner stopped");
+    this.name = "RunnerStopped";
+  }
 }
 
 function errorText(error: unknown): string {
@@ -219,12 +237,35 @@ export function createRunner(options: RunnerOptions): Runner {
     const ctx: JobContext = {
       ...run.ctx,
       job: { id: job.id, kind: job.kind, attempt: job.attempts },
+      signal: run.abort.signal,
     };
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await handler(ctx, payload);
+      const work = handler(ctx, payload);
+      if (kind.timeoutMs === undefined) {
+        await work;
+      } else {
+        const limit = kind.timeoutMs;
+        // The attempt fails at the limit; the aborted signal tells the handler to stop its I/O.
+        // A later settlement of `work` is ignored.
+        work.catch(() => {});
+        await Promise.race([
+          work,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              const error = new JobTimeout(limit);
+              run.abort.abort(error);
+              reject(error);
+            }, limit);
+            timer.unref?.();
+          }),
+        ]);
+      }
     } catch (error) {
       fail(run, kind, errorText(error), false);
       return;
+    } finally {
+      clearTimeout(timer);
     }
     complete(run);
   }
@@ -233,6 +274,7 @@ export function createRunner(options: RunnerOptions): Runner {
     const run: Run = {
       job,
       ctx: contextFor(job.kind),
+      abort: new AbortController(),
       renewedAt: clock.now().epochMilliseconds,
       done: Promise.resolve(),
     };
@@ -352,6 +394,8 @@ export function createRunner(options: RunnerOptions): Runner {
         log("warn", "stopped with handlers still running; their leases will expire", {
           running: running.size,
         });
+        // Tell them to stop their I/O (a child process, a worker) rather than run on unowned.
+        for (const run of running.values()) run.abort.abort(new RunnerStopped());
       }
     },
   };

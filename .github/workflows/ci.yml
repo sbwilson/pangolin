@@ -79,6 +79,21 @@ jobs:
           fail-build: true
           severity-cutoff: critical
           only-fixed: true
+      - name: Backup settings (an append-only rest-server in the stack, a restic password file)
+        run: |
+          secrets="$RUNNER_TEMP/secrets"
+          mkdir -p "$secrets"
+          head -c 32 /dev/urandom | base64 | tr -d '\n=' | tr '+/' '-_' > "$secrets/restic-password"
+          chmod 0400 "$secrets/restic-password"
+          sudo chown 1000:1000 "$secrets/restic-password"
+          # Compose reads .env for every later command, including the host's pangolin wrapper.
+          {
+            echo "COMPOSE_PROFILES=backup"
+            echo "PANGOLIN_BACKUP_REPOSITORY=rest:http://restic:8000/pangolin"
+            echo "PANGOLIN_RESTIC_PASSWORD_HOST_FILE=$secrets/restic-password"
+            echo "PANGOLIN_PUBLIC_URL=http://localhost:3000"
+            echo "PANGOLIN_AUTH_RATE_LIMIT=100"
+          } > .env
       - name: Start the stack
         run: docker compose up -d
         env:
@@ -146,6 +161,95 @@ jobs:
           E2E_BASE_URL: http://localhost:3000
           # The first-boot setup link lives in the container's data volume.
           E2E_SETUP_LINK_COMMAND: docker compose exec -T pangolin cat /data/setup-link.txt
+      - name: Back up the end-to-end household (pangolin backup over the admin socket)
+        run: |
+          out=$(docker compose exec -T pangolin node dist/cli.js backup)
+          echo "$out"
+          echo "$out" | grep -Eq '^Backup done at .*: snapshot [0-9a-f]{64}$'
+          status=$(docker compose exec -T pangolin node dist/cli.js status)
+          echo "$status"
+          echo "$status" | grep -Eq '^Backups:   last at .*, snapshot [0-9a-f]{64}$'
+          # The staging directory is emptied once pushed.
+          test -z "$(docker compose exec -T pangolin ls -A /data/backup/staging)"
+      - name: The repository is append-only (restic forget from the app container is refused)
+        run: |
+          restic() {
+            docker compose exec -T -e RESTIC_REPOSITORY=rest:http://restic:8000/pangolin \
+              -e RESTIC_PASSWORD_FILE=/secrets/restic-password -e RESTIC_CACHE_DIR=/tmp/restic-cache \
+              pangolin restic "$@"
+          }
+          set +e
+          out=$(restic forget latest 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          test "$code" -ne 0
+          echo "$out" | grep -q "403 Forbidden"
+          test "$(restic snapshots --json | jq length)" -ge 1
+      - name: Restore into the running stack's volume (the host's pangolin restore)
+        run: |
+          out=$(PANGOLIN_HOME="$PWD" sh deploy/pangolin restore latest)
+          echo "$out"
+          echo "$out" | grep -qx 'integrity_check: ok'
+          echo "$out" | grep -Eq '^Manifest: all [0-9]+ tables match'
+          echo "$out" | grep -Eq '^Swapped in snapshot [0-9a-f]{64}'
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/healthz; then echo; exit 0; fi
+            sleep 1
+          done
+          echo "The restored stack never became healthy" >&2
+          exit 1
+      - name: Sign in to the restored household (password and TOTP)
+        run: pnpm --filter @pangolin/e2e exec playwright test
+        env:
+          E2E_BASE_URL: http://localhost:3000
+          E2E_RESTORED: "1"
+      - name: Restore onto a clean host from the recovery bundle's values alone
+        run: |
+          # The recovery bundle as install.sh writes it (the application key has no use yet).
+          bundle="$RUNNER_TEMP/recovery-bundle.txt"
+          {
+            echo "PANGOLIN_AUTH_SECRET=$(docker compose exec -T pangolin cat /data/auth-secret)"
+            echo "RESTIC_PASSWORD=$(sudo cat "$RUNNER_TEMP/secrets/restic-password")"
+            echo "RESTIC_REPOSITORY=rest:http://restic:8000/pangolin"
+          } > "$bundle"
+          # A clean host: the image, a fresh volume and those three values, nothing else.
+          value() { sed -n "s/^$1=//p" "$bundle"; }
+          clean="$RUNNER_TEMP/clean-host"
+          mkdir -p "$clean"
+          value PANGOLIN_AUTH_SECRET > "$clean/auth-secret"
+          value RESTIC_PASSWORD > "$clean/restic-password"
+          chmod 0400 "$clean/auth-secret" "$clean/restic-password"
+          sudo chown 1000:1000 "$clean/auth-secret" "$clean/restic-password"
+          docker volume create pangolin-clean-data
+          network=$(docker inspect -f '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' "$(docker compose ps -q restic)")
+          set -- --network "$network" --read-only --tmpfs /tmp \
+            --tmpfs /run:mode=0700,uid=1000,gid=1000,size=1m \
+            -v pangolin-clean-data:/data \
+            -v "$clean/auth-secret:/secrets/auth-secret:ro" \
+            -v "$clean/restic-password:/secrets/restic-password:ro" \
+            -e PANGOLIN_AUTH_SECRET_FILE=/secrets/auth-secret \
+            -e PANGOLIN_RESTIC_PASSWORD_FILE=/secrets/restic-password \
+            -e "PANGOLIN_BACKUP_REPOSITORY=$(value RESTIC_REPOSITORY)" \
+            -e PANGOLIN_PUBLIC_URL=http://localhost:3002 \
+            -e PANGOLIN_AUTH_RATE_LIMIT=100
+          out=$(docker run --rm "$@" pangolin:local node dist/cli.js restore latest)
+          echo "$out"
+          echo "$out" | grep -qx 'integrity_check: ok'
+          echo "$out" | grep -Eq '^Manifest: all [0-9]+ tables match'
+          docker run -d --name pangolin-clean -p 3002:3000 "$@" pangolin:local
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:3002/healthz; then echo; exit 0; fi
+            sleep 1
+          done
+          echo "The clean host never became healthy" >&2
+          docker logs pangolin-clean >&2
+          exit 1
+      - name: Sign in on the clean host (password and TOTP)
+        run: pnpm --filter @pangolin/e2e exec playwright test
+        env:
+          E2E_BASE_URL: http://localhost:3002
+          E2E_RESTORED: "1"
       - name: The admin CLI on the stopped stack (lock path, bundled)
         run: |
           docker compose stop pangolin
@@ -164,7 +268,9 @@ jobs:
           test "$code" -eq 3
       - name: Container logs
         if: failure()
-        run: docker compose logs
+        run: |
+          docker compose logs
+          docker logs pangolin-clean || true
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -175,7 +281,10 @@ jobs:
           retention-days: 7
       - name: Stop the stack
         if: always()
-        run: docker compose down --volumes
+        run: |
+          docker rm -f pangolin-clean || true
+          docker volume rm pangolin-clean-data || true
+          docker compose down --volumes
 
   secrets:
     name: Secret scan

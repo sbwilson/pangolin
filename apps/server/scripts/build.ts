@@ -1,6 +1,7 @@
-// Bundles the server to dist/main.js and the admin CLI to dist/cli.js (better-sqlite3 stays
-// external: it is a native addon), then copies the committed migrations and the built PWA next to
-// them, and generates the demo seed (dist/demo-seed.json) by running the seed CLI.
+// Bundles the server to dist/main.js, the admin CLI to dist/cli.js and the backup snapshot worker
+// to dist/backup-worker.js (better-sqlite3 stays external: it is a native addon), then copies the
+// committed migrations and the built PWA next to them, and generates the demo seed
+// (dist/demo-seed.json) by running the seed CLI.
 import { cpSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +21,12 @@ if (!existsSync(join(webDist, "index.html"))) {
 rmSync(dist, { recursive: true, force: true });
 
 await build({
-  entryPoints: [join(serverDir, "src", "main.ts"), join(serverDir, "src", "cli.ts")],
+  entryPoints: {
+    main: join(serverDir, "src", "main.ts"),
+    cli: join(serverDir, "src", "cli.ts"),
+    // Loaded by src/backup/snapshot.ts next to the bundle that runs it.
+    "backup-worker": join(serverDir, "src", "backup", "snapshot-worker.ts"),
+  },
   outdir: dist,
   bundle: true,
   platform: "node",

@@ -3,6 +3,8 @@
 // reads or writes a repository itself, and there is no generic query, export or eval command.
 import {
   AppError,
+  type BackupProgress,
+  backupProgress,
   type Clock,
   type DeadJob,
   deadJobs,
@@ -10,11 +12,14 @@ import {
   type IdGenerator,
   type JobCounts,
   jobCounts,
+  type LastBackup,
+  lastBackup,
   listLogins,
   type ReadinessOutput,
   type RunnerLiveness,
   readiness,
   reEnrolmentUrl,
+  requestBackup,
   resetUser,
   type SystemHealthPort,
   type TokenPort,
@@ -24,7 +29,7 @@ import {
 import { systemViewer } from "@pangolin/app/system-viewer";
 import { z } from "zod";
 
-export const ADMIN_COMMANDS = ["status", "reset-user"] as const;
+export const ADMIN_COMMANDS = ["status", "reset-user", "backup", "backup-status"] as const;
 export type AdminCommand = (typeof ADMIN_COMMANDS)[number];
 
 /** Everything the commands run with; the server builds it once at startup. */
@@ -42,6 +47,8 @@ export interface AdminDeps {
   readonly runner: () => RunnerLiveness | undefined;
   /** The release (`PANGOLIN_VERSION`), `dev` for local builds. */
   readonly version: string;
+  /** Whether a backup repository is configured (`PANGOLIN_BACKUP_REPOSITORY`). */
+  readonly backupConfigured: boolean;
 }
 
 /** What `reset-user` needs: enough to run on a stopped stack, without the runner. */
@@ -55,7 +62,23 @@ export interface StatusResult {
   readonly jobs: JobCounts;
   /** Dead jobs by kind and failure time only, newest first (AD-9). */
   readonly deadJobs: readonly DeadJob[];
+  readonly backup: BackupStatus;
 }
+
+/** Backups as `status` reports them: whether configured, and the last pushed backup. */
+export interface BackupStatus {
+  readonly configured: boolean;
+  readonly last: LastBackup | null;
+}
+
+/** What `backup` answers: the manual backup's snapshot job, which `backup-status` follows. */
+export interface BackupStarted {
+  readonly jobId: string;
+}
+
+/** The message `backup` refuses with when no repository is configured. */
+export const BACKUPS_NOT_CONFIGURED =
+  "Backups are not configured: set PANGOLIN_BACKUP_REPOSITORY (install.sh --backup-server)";
 
 export interface ResetUserOutput {
   readonly displayName: string;
@@ -72,6 +95,8 @@ export interface LoginChoice {
 }
 
 const statusArgs = z.object({}).strict();
+const backupArgs = z.object({}).strict();
+const backupStatusArgs = z.object({ jobId: z.string().min(1).max(64) }).strict();
 const resetUserArgs = z
   .object({
     /** A login email (any case) or a person ID. */
@@ -110,7 +135,28 @@ export function statusCommand(deps: AdminDeps, args: unknown = {}): StatusResult
     ),
     jobs: jobCounts(ctx),
     deadJobs: deadJobs(ctx),
+    backup: {
+      configured: deps.backupConfigured,
+      last: deps.backupConfigured ? lastBackup(ctx) : null,
+    },
   };
+}
+
+/**
+ * `backup`: enqueues a manual backup (or joins the one already waiting or running) and answers
+ * at once with its snapshot job; the CLI then polls `backup-status`. Nothing long runs on the
+ * socket. `Validation` when backups are not configured.
+ */
+export function backupCommand(deps: AdminDeps, args: unknown = {}): BackupStarted {
+  parseArgs(backupArgs, args);
+  if (!deps.backupConfigured) throw new AppError("Validation", BACKUPS_NOT_CONFIGURED);
+  return { jobId: requestBackup(context(deps, "backup")) };
+}
+
+/** `backup-status { jobId }`: how far that backup has got. A read: no audit row. */
+export function backupStatusCommand(deps: AdminDeps, args: unknown = {}): BackupProgress {
+  const { jobId } = parseArgs(backupStatusArgs, args);
+  return backupProgress({ uow: deps.uow }, { jobId });
 }
 
 /**
@@ -158,5 +204,9 @@ export function runAdminCommand(deps: AdminDeps, command: string, args: unknown)
       return statusCommand(deps, args);
     case "reset-user":
       return resetUserCommand(deps, args);
+    case "backup":
+      return backupCommand(deps, args);
+    case "backup-status":
+      return backupStatusCommand(deps, args);
   }
 }

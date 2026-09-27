@@ -34,6 +34,11 @@ export interface JobKind<P = unknown> {
   readonly externalEffects: boolean;
   /** When the job dies, raise a household `job.dead` review item. */
   readonly needsPersonWhenDead: boolean;
+  /**
+   * How long one attempt may run, in milliseconds, before the runner aborts its signal and fails
+   * the attempt; undefined for no limit.
+   */
+  readonly timeoutMs: number | undefined;
 }
 
 export interface JobKindSpec<P> {
@@ -43,6 +48,7 @@ export interface JobKindSpec<P> {
   readonly retry?: Partial<RetryPolicy>;
   readonly externalEffects: boolean;
   readonly needsPersonWhenDead: boolean;
+  readonly timeoutMs?: number | undefined;
 }
 
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -68,6 +74,12 @@ export function defineJobKind<P>(spec: JobKindSpec<P>): JobKind<P> {
   ) {
     throw new TypeError(`defineJobKind: invalid retry policy for ${spec.kind}`);
   }
+  if (
+    spec.timeoutMs !== undefined &&
+    (!Number.isSafeInteger(spec.timeoutMs) || spec.timeoutMs < 1)
+  ) {
+    throw new TypeError(`defineJobKind: invalid timeout for ${spec.kind}`);
+  }
   return Object.freeze({
     kind: spec.kind,
     schema: spec.schema,
@@ -75,6 +87,7 @@ export function defineJobKind<P>(spec: JobKindSpec<P>): JobKind<P> {
     retry: Object.freeze(retry),
     externalEffects: spec.externalEffects,
     needsPersonWhenDead: spec.needsPersonWhenDead,
+    timeoutMs: spec.timeoutMs,
   });
 }
 
@@ -83,10 +96,24 @@ export function backoffMs(retry: RetryPolicy, attempts: number): number {
   return Math.min(retry.maxDelayMs, retry.baseDelayMs * 2 ** Math.max(0, attempts - 1));
 }
 
+/** The part of an `AbortSignal` a handler reads (`app` has no DOM or Node types). */
+export interface JobSignal {
+  readonly aborted: boolean;
+  readonly reason: unknown;
+  addEventListener(type: "abort", listener: () => void, options?: { once?: boolean }): void;
+  removeEventListener(type: "abort", listener: () => void): void;
+}
+
 /** What a handler runs with: a use-case context whose viewer is `SystemViewer` `job:<kind>`. */
 export interface JobContext extends UseCaseContext {
   readonly viewer: SystemViewer;
   readonly job: { readonly id: Id<"Job">; readonly kind: string; readonly attempt: number };
+  /**
+   * Aborted when the attempt times out (the kind's `timeoutMs`) or the runner gives up waiting
+   * for it at stop. A handler stops its I/O (kills its child process, terminates its worker) and
+   * throws.
+   */
+  readonly signal: JobSignal;
 }
 
 /**

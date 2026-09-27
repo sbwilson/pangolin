@@ -58,6 +58,7 @@ beforeEach(() => {
     publicUrl: "https://money.example.com",
     systemHealth: createSystemHealthRepo(db),
     expectedSchemaVersion: migrations.length,
+    backupConfigured: false,
     runner: () => ({ running: true, lastTickAt: Date.now(), pollMs: 1000 }),
     version: "v9.9.9",
   };
@@ -124,6 +125,7 @@ describe("the admin socket", () => {
       readiness: { ok: true },
       jobs: { pending: 0, running: 0, dead: 0 },
       deadJobs: [],
+      backup: { configured: false, last: null },
     });
     // The client removed its proof; the server consumed it.
     expect(readdirSync(join(dir, "run"))).toEqual(["admin.sock"]);
@@ -234,7 +236,8 @@ describe("the admin socket", () => {
     expect(
       await raw(`${JSON.stringify({ command: "status", proof: "p", extra: 1 })}\n`),
     ).toMatchObject({ error: { code: "Validation" } });
-    for (const command of ["eval", "query", "backup", "__proto__"]) {
+    // `restore` never runs on the socket: only on a stopped stack.
+    for (const command of ["eval", "query", "restore", "__proto__"]) {
       proofFile("proof-unknown000000000000000");
       expect(
         await raw(
@@ -252,7 +255,7 @@ describe("the admin socket", () => {
     expect(handle.mock.calls.map(([command]) => command)).toEqual([
       "eval",
       "query",
-      "backup",
+      "restore",
       "__proto__",
       "status",
     ]);

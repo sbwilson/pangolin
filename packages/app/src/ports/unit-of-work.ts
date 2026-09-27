@@ -106,6 +106,43 @@ export interface JobRepo {
   listDead(limit: number): DeadJobRow[];
   /** How many jobs have each status; a status with none is 0. */
   countByStatus(): Readonly<Record<JobStatus, number>>;
+  /** The job with `id`, if any. Its `lastError` is for the server only. */
+  find(id: Id<"Job">): JobRow | undefined;
+  /**
+   * Makes every pending or running job of one of `kinds` `dead` at `now` with `reason` as its
+   * error, whoever holds its lease (restore, AD-16). Returns how many it changed.
+   */
+  cancelLive(kinds: readonly string[], now: string, reason: string): number;
+}
+
+/** One `backup_snapshot` row (story 1.10). Times are `formatInstant` text. */
+export interface BackupSnapshotRow {
+  /** The ID of the `backup-snapshot` job that took it. */
+  readonly id: string;
+  readonly takenAt: string;
+  readonly schemaVersion: number;
+  readonly tableCount: number;
+  readonly rowCount: number;
+  /** SHA-256 of the manifest pushed beside the snapshot, hex. */
+  readonly manifestSha256: string;
+  readonly pushJobId: Id<"Job">;
+  /** restic's snapshot ID, once pushed; null until then. */
+  readonly resticSnapshotId: string | null;
+  readonly pushedAt: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface BackupSnapshotRepo {
+  insert(row: BackupSnapshotRow): void;
+  find(id: string): BackupSnapshotRow | undefined;
+  /**
+   * Records the push of an unpushed snapshot. False, changing nothing, when there is no such
+   * snapshot or it was already pushed.
+   */
+  markPushed(id: string, resticSnapshotId: string, pushedAt: string): boolean;
+  /** The snapshot pushed last, if any. */
+  latestPushed(): BackupSnapshotRow | undefined;
 }
 
 /** One `review_item` row (AD-17). Open while `resolvedAt` is null. */
@@ -322,6 +359,7 @@ export interface TxRepos {
   readonly audit: AuditRepo;
   readonly jobs: JobRepo;
   readonly reviewItems: ReviewItemRepo;
+  readonly backups: BackupSnapshotRepo;
 }
 
 /** The read-only subset of `TxRepos`, for queries. */
@@ -333,8 +371,9 @@ export interface ReadRepos {
   readonly loginAttempts: Pick<LoginAttemptRepo, "listSince">;
   readonly recoveryCodes: Pick<RecoveryCodeRepo, "counts">;
   readonly reEnrolmentLinks: Pick<ReEnrolmentLinkRepo, "findByTokenHash" | "findById">;
-  readonly jobs: Pick<JobRepo, "listDead" | "countByStatus">;
+  readonly jobs: Pick<JobRepo, "listDead" | "countByStatus" | "find">;
   readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
+  readonly backups: Pick<BackupSnapshotRepo, "find" | "latestPushed">;
 }
 
 export interface UnitOfWork {

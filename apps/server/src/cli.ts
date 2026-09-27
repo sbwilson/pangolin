@@ -1,14 +1,15 @@
 // Entry point of the bundled admin CLI (dist/cli.js), which the host's `pangolin` wrapper runs in
 // the container (story 1.9, AD-16). It reaches a running server over the admin socket and never
-// opens SQLite beside it. Only `reset-user` has a stopped-stack path: under the data-directory
-// lock it runs the same command in-process. `status` on a stopped stack opens nothing
-// but the lock file, to tell "stopped" from "running without a reachable socket".
+// opens SQLite beside it. `reset-user` also has a stopped-stack path: under the data-directory
+// lock it runs the same command in-process. `restore` runs only on a stopped stack, under that
+// lock (story 1.10). `status` and `backup` on a stopped stack open nothing but the lock file, to
+// tell "stopped" from "running without a reachable socket".
 //
 // Exit codes: 0 done (status: ready), 1 failed (status: not ready), 2 usage, 3 not running.
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { newId, systemClock } from "@pangolin/app";
+import { type BackupProgress, newId, systemClock } from "@pangolin/app";
 import {
   createUnitOfWork,
   type Db,
@@ -19,16 +20,20 @@ import {
 import {
   AdminUnreachable,
   acquireDataDirLock,
+  BACKUPS_NOT_CONFIGURED,
+  type BackupStarted,
   callAdmin,
   type DataDirLock,
   DataDirLocked,
   type LoginChoice,
   type ResetUserOutput,
   resetUserCommand,
+  restoreStopped,
   type StatusResult,
 } from "./admin/index.ts";
 import type { AdminResponse } from "./admin/socket.ts";
 import { nodeTokens } from "./auth/secret.ts";
+import type { Restic } from "./backup/restic.ts";
 import { type Config, loadConfig } from "./config.ts";
 
 export const EXIT_OK = 0;
@@ -44,6 +49,11 @@ Commands:
   reset-user <email|person-id>  clear a person's sign-in (passkeys, authenticator, sessions,
                                 recovery codes and password) and print a 24-hour re-enrolment
                                 link; with no person, lists the people with a login
+  backup                        back up now (a snapshot pushed with restic) and print the
+                                snapshot ID; joins a manual backup already running
+  restore [snapshot|latest]     on a stopped stack: fetch the snapshot (default latest), verify
+                                it, swap it in and cancel pending jobs with external effects
+                                (the host's pangolin stops and starts the stack around it)
   --help                        show this help`;
 
 export interface CliIo {
@@ -56,6 +66,10 @@ export interface CliOptions {
   /** The migrations this build ships (dist/migrations next to the bundle). */
   readonly migrationsDir: string;
   readonly io: CliIo;
+  /** How often `backup` polls the server, in milliseconds. Defaults to 1 s. */
+  readonly pollMs?: number;
+  /** Replaces restic for `restore`, for tests. */
+  readonly restic?: Restic;
 }
 
 function printError(io: CliIo, error: { code: string; message: string; details?: unknown }) {
@@ -81,6 +95,14 @@ function printStatus(io: CliIo, status: StatusResult): void {
     `Readiness: ${readiness.ok ? "ok" : `not ready (failing: ${readiness.failing.join(", ")})`}`,
   );
   io.out(`Jobs:      ${jobs.pending} pending, ${jobs.running} running, ${jobs.dead} dead`);
+  const { backup } = status;
+  if (!backup.configured) {
+    io.out("Backups:   not configured (PANGOLIN_BACKUP_REPOSITORY is empty)");
+  } else if (backup.last === null) {
+    io.out("Backups:   none yet (nightly at 02:30, household time)");
+  } else {
+    io.out(`Backups:   last at ${backup.last.pushedAt}, snapshot ${backup.last.snapshotId}`);
+  }
   if (status.deadJobs.length > 0) {
     const shown = status.deadJobs.length;
     io.out(
@@ -120,21 +142,9 @@ async function status(config: Config, io: CliIo): Promise<number> {
     return EXIT_FAILED;
   }
   const response = await viaSocket(config, "status", {});
-  if (response === undefined) {
-    // No answer, but a server may still hold the data directory (starting up, or its socket
-    // failed). Probe only the lock file, never the database.
-    if (existsSync(config.dataDir)) {
-      try {
-        acquireDataDirLock(config.dataDir).release();
-      } catch (error) {
-        if (!(error instanceof DataDirLocked)) throw error;
-        io.err("pangolin: the server is running but its admin socket is unreachable");
-        return EXIT_FAILED;
-      }
-    }
-    io.out("Pangolin is not running");
-    return EXIT_NOT_RUNNING;
-  }
+  // No answer, but a server may still hold the data directory (starting up, or its socket
+  // failed). Probe only the lock file, never the database.
+  if (response === undefined) return notAnswering(config, io);
   if (!response.ok) {
     printError(io, response.error);
     return EXIT_FAILED;
@@ -240,6 +250,112 @@ async function resetUserCli(
   return EXIT_OK;
 }
 
+/** Where no server answered: tells "stopped" from "running with an unreachable socket". */
+function notAnswering(config: Config, io: CliIo): number {
+  if (existsSync(config.dataDir)) {
+    try {
+      acquireDataDirLock(config.dataDir).release();
+    } catch (error) {
+      if (!(error instanceof DataDirLocked)) throw error;
+      io.err("pangolin: the server is running but its admin socket is unreachable");
+      return EXIT_FAILED;
+    }
+  }
+  io.out("Pangolin is not running");
+  return EXIT_NOT_RUNNING;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function progressLine(progress: BackupProgress & { state: "running" }): string {
+  const step = progress.step === "snapshot" ? "Taking the snapshot" : "Pushing it with restic";
+  return `${step}${progress.retrying ? " (an attempt failed; it will retry)" : ""} …`;
+}
+
+/**
+ * `backup`: asks the running server for a manual backup, which its job runner does; this only
+ * polls until the push is done (nothing long runs on the socket). Exit 0 with the snapshot ID,
+ * 1 when not configured or failed, 3 when the server is not running.
+ */
+async function backupCli(config: Config, options: CliOptions): Promise<number> {
+  const { io } = options;
+  if (config.backup.repository === null) {
+    io.err(`pangolin: ${BACKUPS_NOT_CONFIGURED}`);
+    return EXIT_FAILED;
+  }
+  if (config.adminSocket === null) {
+    io.err("pangolin: the admin socket is disabled (PANGOLIN_ADMIN_SOCKET is empty)");
+    return EXIT_FAILED;
+  }
+  const started = await viaSocket(config, "backup", {});
+  if (started === undefined) return notAnswering(config, io);
+  if (!started.ok) {
+    printError(io, started.error);
+    return EXIT_FAILED;
+  }
+  const { jobId } = started.result as BackupStarted;
+  io.out(`Backup ${jobId} started`);
+  let shown = "";
+  for (;;) {
+    const response = await viaSocket(config, "backup-status", { jobId });
+    if (response === undefined) {
+      io.err("pangolin: the server stopped; the backup resumes when it starts again");
+      return EXIT_NOT_RUNNING;
+    }
+    if (!response.ok) {
+      printError(io, response.error);
+      return EXIT_FAILED;
+    }
+    const progress = response.result as BackupProgress;
+    if (progress.state === "done") {
+      io.out(`Backup done at ${progress.pushedAt}: snapshot ${progress.snapshotId}`);
+      return EXIT_OK;
+    }
+    if (progress.state === "failed") {
+      io.err(
+        `pangolin: the backup failed (${progress.step === "snapshot" ? "taking the snapshot" : "pushing it"}); pangolin status lists the dead job and the server log says why`,
+      );
+      return EXIT_FAILED;
+    }
+    const line = progressLine(progress);
+    if (line !== shown) io.out(line);
+    shown = line;
+    await sleep(options.pollMs ?? 1000);
+  }
+}
+
+const VERIFY_CHECKS = new Set(["integrity", "manifest", "schema"]);
+
+/** `restore [snapshot|latest]` on a stopped stack. Exit 0 when swapped in, 1 when not. */
+async function restoreCli(config: Config, options: CliOptions, ref: string): Promise<number> {
+  const { io } = options;
+  const result = await restoreStopped(ref, {
+    config,
+    migrationsDir: options.migrationsDir,
+    out: io.out,
+    ...(options.restic === undefined ? {} : { restic: options.restic }),
+  });
+  if (!result.ok) {
+    if (VERIFY_CHECKS.has(result.failed)) {
+      io.err(`pangolin: the ${result.failed} check failed: ${result.message}`);
+      io.err("Nothing was swapped in; the database is unchanged.");
+    } else {
+      io.err(`pangolin: ${result.message}`);
+    }
+    return EXIT_FAILED;
+  }
+  io.out(`Schema:    version ${result.schemaVersion}`);
+  io.out(
+    `Swapped in snapshot ${result.snapshotId}; the replaced files are in ${result.preRestoreDir}`,
+  );
+  io.out(
+    `Cancelled ${result.cancelled} pending job${result.cancelled === 1 ? "" : "s"} with external effects`,
+  );
+  return EXIT_OK;
+}
+
+const SNAPSHOT_REF = /^(?:latest|[0-9a-f]{4,64})$/;
+
 /** Runs the CLI with `argv` (the arguments after the script) and returns its exit code. */
 export async function runCli(argv: readonly string[], options: CliOptions): Promise<number> {
   const { io } = options;
@@ -254,11 +370,17 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
     return EXIT_USAGE;
   };
   if (command === undefined) return usage("name a command");
-  if (command !== "status" && command !== "reset-user") {
+  if (!["status", "reset-user", "backup", "restore"].includes(command)) {
     return usage(`unknown command ${JSON.stringify(command)}`);
   }
   if (command === "status" && rest.length > 0) return usage("status takes no arguments");
   if (command === "reset-user" && rest.length > 1) return usage("reset-user takes one person");
+  if (command === "backup" && rest.length > 0) return usage("backup takes no arguments");
+  if (command === "restore" && rest.length > 1) return usage("restore takes one snapshot");
+  const ref = rest[0] ?? "latest";
+  if (command === "restore" && !SNAPSHOT_REF.test(ref)) {
+    return usage("name a snapshot by its ID (hex) or latest");
+  }
 
   let config: Config;
   try {
@@ -268,9 +390,16 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
     return EXIT_FAILED;
   }
   try {
-    return command === "status"
-      ? await status(config, io)
-      : await resetUserCli(config, options, rest[0]);
+    switch (command) {
+      case "status":
+        return await status(config, io);
+      case "backup":
+        return await backupCli(config, options);
+      case "restore":
+        return await restoreCli(config, options, ref);
+      default:
+        return await resetUserCli(config, options, rest[0]);
+    }
   } catch (error) {
     io.err(`pangolin: ${error instanceof Error ? error.message : String(error)}`);
     return EXIT_FAILED;

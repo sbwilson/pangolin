@@ -29,7 +29,13 @@ import {
 } from "@pangolin/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { createRunner, type RunnerLog, type RunnerOptions } from "./runner.ts";
+import {
+  createRunner,
+  JobTimeout,
+  type RunnerLog,
+  type RunnerOptions,
+  RunnerStopped,
+} from "./runner.ts";
 
 const LEASE = 60_000;
 const payload = z.object({ n: z.number() }).strict();
@@ -429,6 +435,72 @@ describe("runner", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("fails an attempt that runs past its kind's timeout, aborting the handler's signal", async () => {
+    const slow = defineJobKind({
+      kind: "test-slow",
+      schema: payload,
+      lane: "local",
+      retry: { maxAttempts: 2, baseDelayMs: 1000, maxDelayMs: 1000 },
+      externalEffects: false,
+      needsPersonWhenDead: true,
+      timeoutMs: 30,
+    });
+    let signal: JobContext["signal"] | undefined;
+    let aborted: unknown;
+    const r = runner([
+      jobHandler(slow, async (ctx) => {
+        signal = ctx.signal;
+        await new Promise<void>((resolve) => {
+          ctx.signal.addEventListener("abort", () => {
+            aborted = ctx.signal.reason;
+            resolve();
+          });
+        });
+        // Too late: the attempt already failed; this completion must not count.
+      }),
+    ]);
+    enqueue(slow);
+    await r.tick();
+    expect(signal?.aborted).toBe(true);
+    expect(aborted).toBeInstanceOf(JobTimeout);
+    expect(jobs()[0]).toMatchObject({
+      status: "pending",
+      attempts: 1,
+      last_error: "JobTimeout: Timed out after 30 ms",
+    });
+    // Within the limit, a job of that kind completes as usual.
+    const quick = runner([jobHandler(slow, async () => {})]);
+    advance(1000);
+    await quick.tick();
+    expect(jobs()[0]).toMatchObject({ status: "done", attempts: 2 });
+  });
+
+  it("aborts the signals of handlers still running when stop gives up on them", async () => {
+    let signal: JobContext["signal"] | undefined;
+    const r = runner(
+      [
+        jobHandler(echo, async (ctx) => {
+          signal = ctx.signal;
+          await new Promise<void>((resolve) =>
+            ctx.signal.addEventListener("abort", () => resolve()),
+          );
+          throw ctx.signal.reason;
+        }),
+      ],
+      { stopTimeoutMs: 20 },
+    );
+    enqueue();
+    const ticked = r.tick();
+    await r.stop();
+    expect(signal?.aborted).toBe(true);
+    expect(signal?.reason).toBeInstanceOf(RunnerStopped);
+    await ticked;
+    expect(jobs()[0]).toMatchObject({
+      status: "pending",
+      last_error: "RunnerStopped: The job runner stopped",
+    });
   });
 
   it("waits for running handlers on stop, then claims nothing more", async () => {

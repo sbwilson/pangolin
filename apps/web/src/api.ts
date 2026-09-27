@@ -29,6 +29,23 @@ export async function fetchDeadJobs(): Promise<DeadJob[]> {
   return body.dead;
 }
 
+/** The last backup as the status page shows it (story 1.10). */
+export interface BackupStatus {
+  /** False when no backup repository is configured. */
+  readonly configured: boolean;
+  readonly last: {
+    readonly snapshotId: string;
+    readonly takenAt: string;
+    readonly pushedAt: string;
+  } | null;
+}
+
+export async function fetchBackupStatus(): Promise<BackupStatus> {
+  const res = await api.api.system.backup.$get();
+  if (!res.ok) throw new Error(`GET /api/system/backup failed with ${res.status}`);
+  return await res.json();
+}
+
 /** An error answered in the API's error shape. */
 export class ApiError extends Error {
   readonly code: string;

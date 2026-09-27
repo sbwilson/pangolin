@@ -1,6 +1,6 @@
 import type { JobLane, JobRepo, JobRow, JobStatus } from "@pangolin/app";
 import type { Id } from "@pangolin/shared";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { job } from "./schema/job.ts";
 
@@ -145,6 +145,28 @@ export function createJobRepo(orm: Orm, check: () => void): JobRepo {
         .all();
       for (const row of rows) counts[row.status as JobStatus] = row.n;
       return counts;
+    },
+
+    find: (id) => {
+      check();
+      return orm.select().from(job).where(eq(job.id, id)).get() as JobRow | undefined;
+    },
+
+    cancelLive: (kinds, now, reason) => {
+      check();
+      if (kinds.length === 0) return 0;
+      return orm
+        .update(job)
+        .set({
+          status: "dead",
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          lastError: reason,
+          finishedAt: now,
+          updatedAt: now,
+        })
+        .where(and(inArray(job.kind, [...kinds]), LIVE))
+        .run().changes;
     },
   };
 }

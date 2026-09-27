@@ -41,6 +41,8 @@ fc.yahoo.com:443
 # Building the image on this VM (install.sh --build) also needs these, and git in its clone:
 # install.sh --build adds them uncommented.
 # github.com:443
+# release-assets.githubusercontent.com:443
+# objects.githubusercontent.com:443
 # registry.npmjs.org:443
 # registry-1.docker.io:443
 # auth.docker.io:443

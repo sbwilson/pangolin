@@ -120,7 +120,7 @@ describe("GET /api/system/health", () => {
     const app = createApp(deps(openDb()));
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 5, writable: true });
+    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 6, writable: true });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
@@ -128,7 +128,7 @@ describe("GET /api/system/health", () => {
     const app = createApp(deps(openDb(true)));
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ status: "unhealthy", schemaVersion: 5, writable: false });
+    expect(await res.json()).toEqual({ status: "unhealthy", schemaVersion: 6, writable: false });
   });
 });
 
@@ -277,6 +277,56 @@ describe("GET /api/system/jobs", () => {
     const res = await createApp(deps(db)).request("/api/system/jobs", signedIn);
     const body = (await res.json()) as { dead: unknown[] };
     expect(body.dead).toHaveLength(50);
+  });
+});
+
+describe("GET /api/system/backup", () => {
+  function insertBackup(db: Db, id: string, resticId: string | null, pushedAt: string | null) {
+    db.prepare(
+      `INSERT INTO backup_snapshot (id, taken_at, schema_version, table_count, row_count,
+         manifest_sha256, push_job_id, restic_snapshot_id, pushed_at, created_at, updated_at)
+       VALUES (?, '2026-09-27T00:00:00.000Z', 6, 10, 100, 'x', 'j', ?, ?, 'x', 'x')`,
+    ).run(id, resticId, pushedAt);
+  }
+
+  it("answers 401 without a session", async () => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp({ ...deps(db), backupConfigured: true }).request(
+      "/api/system/backup",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("says when backups are not configured", async () => {
+    const db = openDb();
+    addPerson(db);
+    insertBackup(db, "A", "1".repeat(64), "2026-09-27T00:05:00.000Z");
+    const res = await createApp(deps(db)).request("/api/system/backup", signedIn);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.json()).toEqual({ configured: false, last: null });
+  });
+
+  it("shows the last pushed backup's times and restic snapshot ID", async () => {
+    const db = openDb();
+    addPerson(db);
+    const app = createApp({ ...deps(db), backupConfigured: true });
+    expect(await (await app.request("/api/system/backup", signedIn)).json()).toEqual({
+      configured: true,
+      last: null,
+    });
+    insertBackup(db, "A", "1".repeat(64), "2026-09-27T00:05:00.000Z");
+    insertBackup(db, "B", "2".repeat(64), "2026-09-28T00:05:00.000Z");
+    insertBackup(db, "C", null, null);
+    expect(await (await app.request("/api/system/backup", signedIn)).json()).toEqual({
+      configured: true,
+      last: {
+        snapshotId: "2".repeat(64),
+        takenAt: "2026-09-27T00:00:00.000Z",
+        pushedAt: "2026-09-28T00:05:00.000Z",
+      },
+    });
   });
 });
 

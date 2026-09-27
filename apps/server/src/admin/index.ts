@@ -4,6 +4,11 @@ export {
   ADMIN_COMMANDS,
   type AdminCommand,
   type AdminDeps,
+  BACKUPS_NOT_CONFIGURED,
+  type BackupStarted,
+  type BackupStatus,
+  backupCommand,
+  backupStatusCommand,
   isAdminCommand,
   type LoginChoice,
   type ResetUserDeps,
@@ -14,6 +19,7 @@ export {
   statusCommand,
 } from "./commands.ts";
 export { acquireDataDirLock, type DataDirLock, DataDirLocked, LOCK_FILE } from "./lock.ts";
+export { type RestoreDeps, type RestoreResult, restoreStopped } from "./restore.ts";
 export { type AppliedSeed, applySeed, parseSeed, type SeedDeps } from "./seed.ts";
 export { type FirstSetupLinkDeps, SETUP_LINK_FILE, writeFirstSetupLink } from "./setup-link.ts";
 export {

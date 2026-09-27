@@ -16,11 +16,28 @@ services:
       PANGOLIN_PUBLIC_URL: ${PANGOLIN_PUBLIC_URL:-http://localhost:3000}
       # Password sign-ins and two-factor requests per client per minute.
       PANGOLIN_AUTH_RATE_LIMIT: ${PANGOLIN_AUTH_RATE_LIMIT:-10}
+      # Backups (story 1.10): empty turns them off. With the `backup` profile,
+      # rest:http://restic:8000/pangolin is the append-only rest-server below.
+      PANGOLIN_BACKUP_REPOSITORY: ${PANGOLIN_BACKUP_REPOSITORY:-}
     ports:
       - "3000:3000"
     volumes:
       - pangolin-data:/data
+      # The restic password as a read-only file (readable by uid 1000); /dev/null (empty) when
+      # backups are off.
+      - ${PANGOLIN_RESTIC_PASSWORD_HOST_FILE:-/dev/null}:/secrets/restic-password:ro
     restart: unless-stopped
+
+  # An append-only restic REST server, as on the NAS: backups can be added, never removed.
+  restic:
+    image: restic/rest-server:0.14.0
+    profiles: [backup]
+    environment:
+      DISABLE_AUTHENTICATION: "1"
+      OPTIONS: --append-only
+    volumes:
+      - restic-repo:/data
 
 volumes:
   pangolin-data:
+  restic-repo:

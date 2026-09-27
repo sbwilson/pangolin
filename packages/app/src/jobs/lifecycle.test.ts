@@ -6,7 +6,15 @@ import { systemViewer } from "../system-viewer.ts";
 import { manualClock, memoryContext } from "../testing/fixtures.ts";
 import { write } from "../write.ts";
 import { enqueueJob } from "./enqueue.ts";
-import { claimJob, completeJob, ensureSchedules, failJob, renewJobLease } from "./lifecycle.ts";
+import {
+  cancelJobsForRestore,
+  claimJob,
+  completeJob,
+  ensureSchedules,
+  failJob,
+  RESTORED_REASON,
+  renewJobLease,
+} from "./lifecycle.ts";
 import { defineJobKind, defineSchedule, type JobKind } from "./registry.ts";
 
 const LEASE = 60_000;
@@ -275,5 +283,48 @@ describe("schedules", () => {
       "retry",
     );
     expect(uow.state.jobs).toHaveLength(1);
+  });
+});
+
+describe("cancelJobsForRestore", () => {
+  it("makes live jobs of the given kinds dead with reason restored, leaving others, audited once", () => {
+    const { ctx, uow } = setup();
+    const completed = enqueue(ctx, flaky, 1);
+    const running = enqueue(ctx, flaky, 2);
+    const other = enqueue(ctx, quiet, 3);
+    const waiting = enqueue(ctx, flaky, 4);
+    const doneRow = claim(ctx, "net", "old-runner");
+    expect(doneRow.id).toBe(completed);
+    completeJob(ctx, { job: doneRow, owner: "old-runner", schedules: [] });
+    // `running` is now claimed by a runner from before the restore.
+    const claimed = claim(ctx, "net", "old-runner");
+    expect(claimed.id).toBe(running);
+    const auditBefore = uow.state.audit.length;
+
+    const restoreCtx = { ...ctx, viewer: systemViewer("cli:restore") };
+    expect(cancelJobsForRestore(restoreCtx, { kinds: ["test-flaky"], snapshot: "abc" })).toBe(2);
+    const byId = (id: string) => uow.state.jobs.find((job) => job.id === id);
+    for (const id of [running, waiting]) {
+      expect(byId(id)).toMatchObject({
+        status: "dead",
+        lastError: RESTORED_REASON,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+        finishedAt: "2026-09-27T00:00:00.000Z",
+      });
+    }
+    expect(byId(completed)?.status).toBe("done");
+    expect(byId(other)?.status).toBe("pending");
+    // No review item: a restore's cancellations are expected, not failures.
+    expect(uow.state.reviewItems).toEqual([]);
+    expect(uow.state.audit.slice(auditBefore)).toEqual([
+      expect.objectContaining({
+        actor: "cli:restore",
+        entity: "job",
+        action: "cancel-for-restore",
+        after: JSON.stringify({ snapshot: "abc", kinds: ["test-flaky"], cancelled: 2 }),
+      }),
+    ]);
+    expect(cancelJobsForRestore(restoreCtx, { kinds: [], snapshot: "abc" })).toBe(0);
   });
 });

@@ -8,8 +8,8 @@
 #
 #   --proxy npm|caddy|tailscale   proxy mode; only npm (an existing Nginx Proxy Manager) today
 #   --hostname NAME               public host name; the app is served at https://NAME
-#   --backup-server URL           restic REST URL, e.g. rest:https://nas.lan:8000/pangolin
-#                                 (stored and allowlisted; backups arrive in a later release)
+#   --backup-server URL           restic REST URL, e.g. rest:https://nas.lan:8000/pangolin, of an
+#                                 append-only rest-server: nightly backups go there (allowlisted)
 #   --npm-host IP                 the NPM host: the only address that may reach the app port
 #   --admin-network CIDR          the network SSH is allowed from, e.g. 192.168.1.0/24
 #   --tang-url URL                the Tang server that unlocks the data disk, e.g. http://tang.lan
@@ -746,10 +746,14 @@ generate_secrets() {
       GENERATED=1
       say "Generated the secret $name"
     fi
-    chmod 0600 "$file"
-    # Only the auth secret is mounted into the container (as a single file), so only it belongs
-    # to the container's user; app-key and restic-password stay root's until later stories.
-    if [ "$name" = auth-secret ]; then own "$file"; fi
+    # The auth secret and the restic password are mounted into the container (each as a single
+    # read-only file), so they belong to the container's user; the restic password is 0400, as
+    # the container only ever reads it. app-key stays root's until the story that uses it.
+    case "$name" in
+      auth-secret) chmod 0600 "$file" && own "$file" ;;
+      restic-password) chmod 0400 "$file" && own "$file" ;;
+      *) chmod 0600 "$file" ;;
+    esac
   done
   if [ -n "$TOKEN_SOURCE" ]; then store_token; fi
 }
@@ -869,9 +873,10 @@ compose() {
   docker compose --project-directory "$INSTALL_DIR" -f "$INSTALL_DIR/compose.yaml" "$@"
 }
 
-# What building on this VM reaches: the repository (also for a later git pull in the clone),
+# What building on this VM reaches: the repository (also for a later git pull in the clone) and
+# the release downloads it redirects to (the restic binary),
 # Docker Hub for the base image, and npm for pnpm and the dependencies.
-BUILD_HOSTS="github.com:443 registry.npmjs.org:443 registry-1.docker.io:443 auth.docker.io:443 production.cloudflare.docker.com:443"
+BUILD_HOSTS="github.com:443 release-assets.githubusercontent.com:443 objects.githubusercontent.com:443 registry.npmjs.org:443 registry-1.docker.io:443 auth.docker.io:443 production.cloudflare.docker.com:443"
 
 # allowlist_add FILE COMMENT ENTRY...: appends the entries FILE lacks, under COMMENT. True when it
 # added any.
@@ -1297,7 +1302,9 @@ summary() {
   fi
 
   step "Administration"
-  printf '%s\n' "  sudo pangolin status                 is the server up and ready, and how are its jobs?" \
+  printf '%s\n' "  sudo pangolin status                 is the server up and ready, its jobs and last backup?" \
+    "  sudo pangolin backup                 back up now (nightly at 02:30 otherwise)" \
+    "  sudo pangolin restore [latest|ID]    stop, verify and swap in a backup, start again" \
     "  sudo pangolin reset-user <email>     both of you locked out: clears that person's sign-in" \
     "                                       and prints a 24-hour link to set it up again"
 

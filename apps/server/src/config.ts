@@ -12,6 +12,9 @@ const minutes = (fallback: number) =>
 /** Where the admin socket listens unless `PANGOLIN_ADMIN_SOCKET` says otherwise. */
 export const DEFAULT_ADMIN_SOCKET = "/run/pangolin/admin.sock";
 
+/** Where the restic password file is mounted unless `PANGOLIN_RESTIC_PASSWORD_FILE` says otherwise. */
+export const DEFAULT_RESTIC_PASSWORD_FILE = "/secrets/restic-password";
+
 /** Every environment variable the server reads, parsed once at startup. */
 const envSchema = z.object({
   PANGOLIN_DATA_DIR: z.string().min(1).default("/data"),
@@ -66,7 +69,37 @@ const envSchema = z.object({
     .pipe(z.string().startsWith("/", { message: "Expected an absolute path" }).nullable()),
   /** The release, set by the image build (`dev` for local builds). */
   PANGOLIN_VERSION: z.string().min(1).max(100).default("dev"),
+  /**
+   * The restic repository backups go to, e.g. `rest:https://nas.lan:8000/pangolin` (story 1.10).
+   * Empty: no backups are scheduled and `pangolin backup` refuses.
+   */
+  PANGOLIN_BACKUP_REPOSITORY: z
+    .string()
+    .default("")
+    .transform((value) => (value.trim() === "" ? null : value.trim())),
+  /** The restic password, as a read-only file (never a value in the environment). */
+  PANGOLIN_RESTIC_PASSWORD_FILE: z
+    .string()
+    .default(DEFAULT_RESTIC_PASSWORD_FILE)
+    .pipe(z.string().startsWith("/", { message: "Expected an absolute path" })),
+  /** The restic binary; the image ships a pinned one on the PATH. */
+  PANGOLIN_RESTIC_BIN: z.string().min(1).default("restic"),
 });
+
+export interface BackupConfig {
+  /** The restic repository; null when backups are not configured. */
+  readonly repository: string | null;
+  /** The file holding the restic password. */
+  readonly passwordFile: string;
+  /** The restic binary to run. */
+  readonly resticBin: string;
+}
+
+export const DEFAULT_BACKUP_CONFIG: BackupConfig = {
+  repository: null,
+  passwordFile: DEFAULT_RESTIC_PASSWORD_FILE,
+  resticBin: "restic",
+};
 
 export interface JobsConfig {
   readonly concurrency: { readonly llm: number; readonly net: number; readonly local: number };
@@ -106,6 +139,7 @@ export interface Config {
   readonly adminSocket: string | null;
   /** The release (`PANGOLIN_VERSION`); `dev` for local builds. */
   readonly version: string;
+  readonly backup: BackupConfig;
 }
 
 /** The auth settings for `dataDir` with every default, for tests and callers without an env. */
@@ -172,5 +206,10 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
     trustedProxies: parsed.PANGOLIN_TRUSTED_PROXIES,
     adminSocket: parsed.PANGOLIN_ADMIN_SOCKET,
     version: parsed.PANGOLIN_VERSION,
+    backup: {
+      repository: parsed.PANGOLIN_BACKUP_REPOSITORY,
+      passwordFile: parsed.PANGOLIN_RESTIC_PASSWORD_FILE,
+      resticBin: parsed.PANGOLIN_RESTIC_BIN,
+    },
   };
 }

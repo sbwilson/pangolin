@@ -1,7 +1,7 @@
 # Production stack for one Pangolin Money server, installed to /opt/pangolin by install.sh.
 # Every setting comes from /opt/pangolin/.env (0600), which install.sh writes; secrets live only
-# in /opt/pangolin/secrets (0700); the one the app reads reaches it as a read-only file, never as a
-# value here.
+# in /opt/pangolin/secrets (0700); those the app reads reach it as read-only files, never as
+# values here or in .env. PANGOLIN_BACKUP_REPOSITORY (in .env) turns on nightly backups.
 # The local and CI stack is the compose.yaml at the repository root.
 name: pangolin
 
@@ -17,6 +17,7 @@ services:
     environment:
       PANGOLIN_DATA_DIR: /data
       PANGOLIN_AUTH_SECRET_FILE: /secrets/auth-secret
+      PANGOLIN_RESTIC_PASSWORD_FILE: /secrets/restic-password
     tmpfs:
       - /tmp:mode=1777,size=64m
       # The admin socket's home (story 1.9): never on the data volume.
@@ -25,9 +26,10 @@ services:
       # The data root must be on the LUKS-encrypted data disk (docs/install.md). On SELinux hosts
       # install.sh sets the modes to `rw,Z` and `ro,Z`.
       - ${PANGOLIN_DATA_ROOT:-/srv/pangolin}:/data:${PANGOLIN_DATA_MOUNT_MODE:-rw}
-      # Only the auth secret: app-key and restic-password stay root's on the host until the stories
-      # that use them.
+      # The auth secret and the restic password (0400, uid 1000), one file each; app-key stays
+      # root's on the host until the story that uses it.
       - ./secrets/auth-secret:/secrets/auth-secret:${PANGOLIN_SECRETS_MOUNT_MODE:-ro}
+      - ./secrets/restic-password:/secrets/restic-password:${PANGOLIN_SECRETS_MOUNT_MODE:-ro}
     # Bound on every interface; the nftables firewall admits only the NPM host to this port.
     ports:
       - "0.0.0.0:${PANGOLIN_HTTP_PORT:-3000}:3000"

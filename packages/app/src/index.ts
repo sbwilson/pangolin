@@ -117,14 +117,17 @@ export {
 export { createIdGenerator, type IdGenerator, type IdSources, newId } from "./ids.ts";
 export { type EnqueueOptions, enqueueJob } from "./jobs/enqueue.ts";
 export {
+  type CancelJobsForRestoreInput,
   type ClaimInput,
   type CompleteInput,
+  cancelJobsForRestore,
   claimJob,
   completeJob,
   ensureSchedules,
   type FailInput,
   type FailOutcome,
   failJob,
+  RESTORED_REASON,
   renewJobLease,
 } from "./jobs/lifecycle.ts";
 export {
@@ -138,6 +141,7 @@ export {
   type JobKind,
   type JobKindSpec,
   type JobRegistration,
+  type JobSignal,
   jobHandler,
   type RetryPolicy,
   type Schedule,
@@ -149,6 +153,8 @@ export type { CodeHasher, TokenPort } from "./ports/tokens.ts";
 export type {
   AuditRepo,
   AuditRow,
+  BackupSnapshotRepo,
+  BackupSnapshotRow,
   CredentialRepo,
   DeadJobRow,
   HouseholdSettingsRepo,
@@ -177,6 +183,31 @@ export type {
   UserEnrolment,
   UserRepo,
 } from "./ports/unit-of-work.ts";
+export {
+  BACKUP_PUSH_JOB,
+  BACKUP_SCHEDULE_NAME,
+  BACKUP_SNAPSHOT_JOB,
+  BACKUP_TIME,
+  type BackupProgress,
+  type BackupProgressInput,
+  backupProgress,
+  backupProgressInput,
+  dailyAt,
+  getBackupSnapshot,
+  getBackupSnapshotInput,
+  type LastBackup,
+  lastBackup,
+  MANUAL_BACKUP_KEY,
+  nightlyBackupSchedule,
+  type RecordBackupPushInput,
+  type RecordBackupSnapshotInput,
+  type RecordedBackupPush,
+  recordBackupPush,
+  recordBackupPushInput,
+  recordBackupSnapshot,
+  recordBackupSnapshotInput,
+  requestBackup,
+} from "./system/backups.ts";
 export {
   type HealthContext,
   type HealthInput,

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   dismissNotice,
+  fetchBackupStatus,
   fetchDeadJobs,
   fetchHealth,
   fetchMe,
@@ -51,6 +52,26 @@ describe("fetchDeadJobs", () => {
   it("throws on an error response", async () => {
     stubFetch(500, { error: { code: "Internal", message: "Internal error" } });
     await expect(fetchDeadJobs()).rejects.toThrow(/500/);
+  });
+});
+
+describe("fetchBackupStatus", () => {
+  it("returns whether backups are configured and the last one", async () => {
+    const body = {
+      configured: true,
+      last: {
+        snapshotId: "a".repeat(64),
+        takenAt: "2026-09-27T16:30:00.000Z",
+        pushedAt: "2026-09-27T16:31:00.000Z",
+      },
+    };
+    stubFetch(200, body);
+    expect(await fetchBackupStatus()).toEqual(body);
+  });
+
+  it("throws on an error response", async () => {
+    stubFetch(401, { error: { code: "Unauthenticated", message: "Sign in first" } });
+    await expect(fetchBackupStatus()).rejects.toThrow(/401/);
   });
 });
 

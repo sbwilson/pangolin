@@ -5,6 +5,8 @@
 import type { Id } from "@pangolin/shared";
 import type {
   AuditRow,
+  BackupSnapshotRepo,
+  BackupSnapshotRow,
   CredentialRepo,
   HouseholdSettingsRow,
   JobRepo,
@@ -34,6 +36,7 @@ export interface MemoryState {
   audit: AuditRow[];
   jobs: JobRow[];
   reviewItems: ReviewItemRow[];
+  backups: BackupSnapshotRow[];
   /** IDs of better-auth users; tests add them to stand in for better-auth's inserts. */
   users: string[];
   /** Email per user ID, standing in for `auth_user.email`. */
@@ -161,6 +164,58 @@ function jobRepo(working: MemoryState, check: () => void): JobRepo {
       const counts = { pending: 0, running: 0, done: 0, dead: 0 };
       for (const job of working.jobs) counts[job.status]++;
       return counts;
+    },
+    find: (id) => {
+      check();
+      return working.jobs.find((job) => job.id === id);
+    },
+    cancelLive: (kinds, now, reason) => {
+      check();
+      let changed = 0;
+      working.jobs = working.jobs.map((job) => {
+        if (!kinds.includes(job.kind) || !isLive(job)) return job;
+        changed++;
+        return {
+          ...job,
+          status: "dead",
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          lastError: reason,
+          finishedAt: now,
+          updatedAt: now,
+        };
+      });
+      return changed;
+    },
+  };
+}
+
+function backupRepo(working: MemoryState, check: () => void): BackupSnapshotRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.backups.some((b) => b.id === row.id)) {
+        throw new Error("UNIQUE constraint failed: backup_snapshot.id");
+      }
+      working.backups.push(row);
+    },
+    find: (id) => {
+      check();
+      return working.backups.find((b) => b.id === id);
+    },
+    markPushed: (id, resticSnapshotId, pushedAt) => {
+      check();
+      const index = working.backups.findIndex((b) => b.id === id && b.resticSnapshotId === null);
+      const row = working.backups[index];
+      if (row === undefined) return false;
+      working.backups[index] = { ...row, resticSnapshotId, pushedAt, updatedAt: pushedAt };
+      return true;
+    },
+    latestPushed: () => {
+      check();
+      return working.backups
+        .filter((b) => b.pushedAt !== null)
+        .sort((a, b) => (`${a.pushedAt}|${a.id}` < `${b.pushedAt}|${b.id}` ? 1 : -1))[0];
     },
   };
 }
@@ -449,6 +504,7 @@ export function memoryUnitOfWork(
       audit: [],
       jobs: [],
       reviewItems: [],
+      backups: [],
       users: [],
       emails: {},
       enrolments: {},
@@ -467,6 +523,7 @@ export function memoryUnitOfWork(
         audit: [...uow.state.audit],
         jobs: [...uow.state.jobs],
         reviewItems: [...uow.state.reviewItems],
+        backups: [...uow.state.backups],
         users: [...uow.state.users],
         emails: uow.state.emails,
         enrolments: uow.state.enrolments,
@@ -508,6 +565,7 @@ export function memoryUnitOfWork(
         },
         jobs: jobRepo(working, check),
         reviewItems: reviewItemRepo(working, check),
+        backups: backupRepo(working, check),
       };
       try {
         const result = fn(tx);
@@ -516,6 +574,7 @@ export function memoryUnitOfWork(
         uow.state.audit = working.audit;
         uow.state.jobs = working.jobs;
         uow.state.reviewItems = working.reviewItems;
+        uow.state.backups = working.backups;
         uow.state.users = working.users;
         uow.state.setupLinks = working.setupLinks;
         uow.state.loginAttempts = working.loginAttempts;
@@ -551,8 +610,13 @@ export function memoryUnitOfWork(
         jobs: {
           listDead: jobRepo(uow.state, check).listDead,
           countByStatus: jobRepo(uow.state, check).countByStatus,
+          find: jobRepo(uow.state, check).find,
         },
         reviewItems: { listOpenFor: reviewItemRepo(uow.state, check).listOpenFor },
+        backups: {
+          find: backupRepo(uow.state, check).find,
+          latestPushed: backupRepo(uow.state, check).latestPushed,
+        },
       });
     },
   };

@@ -3,13 +3,13 @@ title: 'Backups and restore'
 type: 'feature'
 ticket: '10'
 created: '2026-09-27'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: 'b90c532e2d672bff99b8d176600e0a8da52d2b3f'
 route: 'full'
 route_source: 'auto'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'thorough'
+review_source: 'auto'
+lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/specs/spec-pangolin-money/deployment-and-ops.md'
@@ -72,13 +72,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/db` + migration -- a STRICT `backup_snapshot` table (restic ID, time, manifest summary); manifest builder (per table: count, SHA-256 of rows in key order) and verifier; job cancel method -- storage and checks.
-- [ ] `apps/server/src/backup/` -- snapshot (worker `VACUUM INTO` + manifest), push (restic child process, password file, cache under `/data/backup`), restore (restic restore to `/data/restore-<ts>`, verify, swap, cancel) -- the mechanism.
-- [ ] `apps/server/src/jobs/` -- kinds `backup-snapshot` (local) and `backup-push` (net, `externalEffects`, `needsPersonWhenDead`), nightly schedule, per-kind timeout.
-- [ ] `apps/server/src/admin/`, `cli.ts`, `deploy/pangolin` -- `backup`, `restore`, status fields.
-- [ ] `Dockerfile`, compose files, `install.sh`, `docs/install.md` -- restic, secret mount, docs.
-- [ ] Web status line and `/api/system` field.
-- [ ] Tests: unit tests of manifest, verify (corrupt db, count mismatch, newer schema), swap and cancel, with a stub restic; CI container job: rest-server `--append-only` container, backup, `restic forget` refused, restore into the running stack's volume, and a clean-host restore into a fresh volume using only the bundle's values, then a Playwright spec signing in with the saved account's password and TOTP.
+- [x] `packages/db` + migration -- a STRICT `backup_snapshot` table (restic ID, time, manifest summary); manifest builder (per table: count, SHA-256 of rows in key order) and verifier; job cancel method -- storage and checks.
+- [x] `apps/server/src/backup/` -- snapshot (worker `VACUUM INTO` + manifest), push (restic child process, password file, cache under `/data/backup`), restore (restic restore to `/data/restore-<ts>`, verify, swap, cancel) -- the mechanism.
+- [x] `apps/server/src/jobs/` -- kinds `backup-snapshot` (local) and `backup-push` (net, `externalEffects`, `needsPersonWhenDead`), nightly schedule, per-kind timeout.
+- [x] `apps/server/src/admin/`, `cli.ts`, `deploy/pangolin` -- `backup`, `restore`, status fields.
+- [x] `Dockerfile`, compose files, `install.sh`, `docs/install.md` -- restic, secret mount, docs.
+- [x] Web status line and `/api/system` field.
+- [x] Tests: unit tests of manifest, verify (corrupt db, count mismatch, newer schema), swap and cancel, with a stub restic; CI container job: rest-server `--append-only` container, backup, `restic forget` refused, restore into the running stack's volume, and a clean-host restore into a fresh volume using only the bundle's values, then a Playwright spec signing in with the saved account's password and TOTP.
 
 **Acceptance Criteria:**
 - Given the e2e household, when CI backs it up and restores it, then `integrity_check` is `ok` and every table matches the manifest.
@@ -86,6 +86,15 @@ context:
 - Given the VM, when `pangolin backup` runs, then a snapshot lands in the repository and `restic forget` from the VM is refused.
 
 ## Implementation Notes
+
+- Staging is per snapshot: `/data/backup/staging/<snapshot-job-id>/` (`pangolin.sqlite` + `manifest.json`), written as `<id>.partial` and renamed when complete, so an overlapping nightly and manual backup never share a directory. A successful push removes its own directory and those of snapshots already pushed or whose push died; restic's cache is `/data/backup/cache` and its `TMPDIR` is `/data/backup/tmp` (the container's `/tmp` is a 64 MB tmpfs).
+- `backup_snapshot.id` is the snapshot job's ID, which makes the snapshot handler idempotent and lets `pangolin backup` follow one backup (`backup-status { jobId }`); the snapshot job enqueues the push in the same transaction that records the row.
+- The worker (`apps/server/src/backup/snapshot-worker.ts`, bundled as `dist/backup-worker.js`) calls `writeSnapshot` from `@pangolin/db/manifest`: `VACUUM INTO` on its own read-only connection, the copy switched to a rollback journal, the manifest built from the copy.
+- Manifest checksums hash typed values in primary-key order (every column, `COLLATE BINARY`, for a table without one), never rowid, which VACUUM may renumber.
+- Restore finds the database and attachments in a restic snapshot from its recorded paths, so it works whatever data directory pushed it. After the swap it migrates the database under the lock (as the server would at start) before cancelling jobs, and undoes the swap if that fails.
+- A `backup-snapshot` job running when the snapshot was taken is in the snapshot as `running`; after a restore its lease expires and it runs again about a minute after start (it has no external effects, so it is not cancelled). Documented in `docs/install.md`.
+- Runner: kinds take an optional `timeoutMs`; handlers get `ctx.signal` (a structural `JobSignal`, as `app` has no DOM or Node types), aborted on timeout and when `stop()` gives up.
+- CI writes the backup settings to `.env`, so the host's `deploy/pangolin` wrapper (`PANGOLIN_HOME=$PWD`) performs the running-stack restore exactly as on the VM; the root `compose.yaml` gains a `backup` profile with `restic/rest-server:0.14.0 --append-only`.
 
 ## Plan Change Log
 

@@ -34,6 +34,29 @@ RUN pnpm build
 # Production node_modules for the bundle: only its runtime dependency (better-sqlite3).
 RUN pnpm --filter @pangolin/server deploy --prod --legacy /out
 
+# ---- restic: the pinned release binary for backups (story 1.10), checked against its SHA-256 ----
+FROM debian:trixie-slim AS restic
+ARG TARGETARCH
+ARG RESTIC_VERSION=0.19.0
+# From the release's SHA256SUMS (https://github.com/restic/restic/releases/tag/v0.19.0).
+ARG RESTIC_SHA256_AMD64=13176fe6d89d4357947a2cd107218ab2873a5f9d8e1ac2d4cd1c8e07e6839c21
+ARG RESTIC_SHA256_ARM64=e522ce6bf748d753fee8093e8ec59359972cf5b6bc65fc7c7cf38ae952351d91
+RUN --mount=type=secret,id=ca,required=false \
+    if [ -f /run/secrets/ca ]; then export CURL_CA_BUNDLE=/run/secrets/ca; fi \
+ && apt-get update -qq \
+ && apt-get install -y -qq --no-install-recommends ca-certificates curl bzip2 > /dev/null \
+ && case "${TARGETARCH:-amd64}" in \
+      amd64) sha="$RESTIC_SHA256_AMD64" ;; \
+      arm64) sha="$RESTIC_SHA256_ARM64" ;; \
+      *) echo "no restic checksum pinned for $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+ && curl -fsSL -o /tmp/restic.bz2 \
+      "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${TARGETARCH:-amd64}.bz2" \
+ && echo "$sha  /tmp/restic.bz2" | sha256sum -c - \
+ && bunzip2 /tmp/restic.bz2 \
+ && install -m 0755 /tmp/restic /usr/local/bin/restic \
+ && /usr/local/bin/restic version
+
 # ---- runtime: one Node process serving the PWA and /api/* ----
 FROM node:26-trixie-slim AS runtime
 # The release workflow passes the tag (e.g. v1.2.3); local builds report "dev".
@@ -48,6 +71,7 @@ WORKDIR /app
 COPY --from=build /out/package.json ./package.json
 COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /src/apps/server/dist ./dist
+COPY --from=restic /usr/local/bin/restic /usr/local/bin/restic
 # The production compose file, allowlist and firewall, for an install.sh downloaded on its own.
 COPY --from=build /src/deploy ./deploy
 

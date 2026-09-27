@@ -27,7 +27,13 @@ import { openDatabase, packageMigrationsDir, schemaVersion } from "@pangolin/db"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { generateSeedFile } from "../scripts/demo-seed.ts";
-import { DEFAULT_JOBS_CONFIG, defaultAuthConfig, type JobsConfig, loadConfig } from "./config.ts";
+import {
+  DEFAULT_BACKUP_CONFIG,
+  DEFAULT_JOBS_CONFIG,
+  defaultAuthConfig,
+  type JobsConfig,
+  loadConfig,
+} from "./config.ts";
 import { type RunningServer, type StartOptions, startServer } from "./server.ts";
 
 let dir: string;
@@ -53,6 +59,7 @@ async function boot(
       port: 0,
       demo: false,
       jobs: jobsConfig,
+      backup: DEFAULT_BACKUP_CONFIG,
       auth: defaultAuthConfig(dataDir()),
       trustedProxies: [],
       adminSocket: null,
@@ -79,7 +86,7 @@ describe("startServer", () => {
     try {
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 5, writable: true },
+        body: { status: "ok", schemaVersion: 6, writable: true },
       });
     } finally {
       await server.close();
@@ -92,7 +99,7 @@ describe("startServer", () => {
     try {
       expect((await getHealth(server.port)).body).toEqual({
         status: "ok",
-        schemaVersion: 5,
+        schemaVersion: 6,
         writable: true,
       });
     } finally {
@@ -113,7 +120,7 @@ describe("startServer", () => {
       try {
         expect(await getHealth(server.port)).toEqual({
           status: 503,
-          body: { status: "unhealthy", schemaVersion: 5, writable: false },
+          body: { status: "unhealthy", schemaVersion: 6, writable: false },
         });
       } finally {
         await server.close();
@@ -135,7 +142,7 @@ describe("startServer", () => {
 
     await expect(boot(migrationsDir)).rejects.toThrow(/Migration 0099_broken failed/);
     const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
-    expect(schemaVersion(db)).toBe(5);
+    expect(schemaVersion(db)).toBe(6);
     db.close();
   });
 });
@@ -432,6 +439,7 @@ describe("startServer in demo mode", () => {
         port: 0,
         demo: true,
         jobs: DEFAULT_JOBS_CONFIG,
+        backup: DEFAULT_BACKUP_CONFIG,
         auth: defaultAuthConfig(dataDir()),
         trustedProxies: [],
         adminSocket: null,
@@ -460,7 +468,7 @@ describe("startServer in demo mode", () => {
       );
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 5, writable: true },
+        body: { status: "ok", schemaVersion: 6, writable: true },
       });
       // Demo mode runs no jobs, so /healthz skips the runner check.
       expect(await getHealthz(server.port)).toEqual({ status: 200, body: { ok: true } });
@@ -552,8 +560,32 @@ describe("loadConfig", () => {
       trustedProxies: [],
       adminSocket: "/run/pangolin/admin.sock",
       version: "dev",
+      backup: DEFAULT_BACKUP_CONFIG,
     });
     expect(loadConfig({}).auth).toEqual(defaultAuthConfig("/data"));
+  });
+
+  it("reads the backup repository (empty means not configured) and the restic password file", () => {
+    expect(loadConfig({}).backup).toEqual({
+      repository: null,
+      passwordFile: "/secrets/restic-password",
+      resticBin: "restic",
+    });
+    expect(loadConfig({ PANGOLIN_BACKUP_REPOSITORY: "  " }).backup.repository).toBeNull();
+    expect(
+      loadConfig({
+        PANGOLIN_BACKUP_REPOSITORY: " rest:https://nas.lan:8000/pangolin ",
+        PANGOLIN_RESTIC_PASSWORD_FILE: "/run/secrets/restic",
+        PANGOLIN_RESTIC_BIN: "/opt/restic",
+      }).backup,
+    ).toEqual({
+      repository: "rest:https://nas.lan:8000/pangolin",
+      passwordFile: "/run/secrets/restic",
+      resticBin: "/opt/restic",
+    });
+    expect(() => loadConfig({ PANGOLIN_RESTIC_PASSWORD_FILE: "restic-password" })).toThrow(
+      /absolute path/,
+    );
   });
 
   it("reads the auth settings", () => {
@@ -668,6 +700,7 @@ describe("startServer admin socket", () => {
         port: 0,
         demo,
         jobs: DEFAULT_JOBS_CONFIG,
+        backup: DEFAULT_BACKUP_CONFIG,
         auth: defaultAuthConfig(dataDir()),
         trustedProxies: [],
         adminSocket,

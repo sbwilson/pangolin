@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { packageMigrationsDir } from "@pangolin/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_JOBS_CONFIG, defaultAuthConfig } from "../config.ts";
+import { DEFAULT_BACKUP_CONFIG, DEFAULT_JOBS_CONFIG, defaultAuthConfig } from "../config.ts";
 import { startServer } from "../server.ts";
 import { acquireDataDirLock, DataDirLocked } from "./lock.ts";
 
@@ -84,6 +84,7 @@ describe("acquireDataDirLock", () => {
           port: 0,
           demo: false,
           jobs: DEFAULT_JOBS_CONFIG,
+          backup: DEFAULT_BACKUP_CONFIG,
           auth: defaultAuthConfig(dataDir),
           trustedProxies: [],
           adminSocket: null,

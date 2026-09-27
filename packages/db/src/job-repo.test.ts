@@ -237,6 +237,41 @@ describe("job repository on SQLite", () => {
     expect(jobCounts(ctx)).toEqual({ pending: 1, running: 1, dead: 0 });
   });
 
+  it("finds a job by ID, and cancels the live jobs of given kinds whoever holds them", () => {
+    const waiting = enqueue(1);
+    const held = enqueue(2);
+    const finished = enqueue(3);
+    const first = claim("old");
+    completeJob(ctx, { job: first, owner: "old", schedules: [] });
+    const second = claim("old");
+    expect([first.id, second.id]).toEqual([waiting, held]);
+    expect(ctx.uow.read((repos) => repos.jobs.find(held))).toMatchObject({
+      id: held,
+      status: "running",
+      leaseOwner: "old",
+    });
+    expect(ctx.uow.read((repos) => repos.jobs.find("nope" as typeof held))).toBeUndefined();
+    const cancelled = write(ctx, (tx) => ({
+      none: tx.jobs.cancelLive([], "2026-09-27T01:00:00.000Z", "restored"),
+      other: tx.jobs.cancelLive(["test-other"], "2026-09-27T01:00:00.000Z", "restored"),
+      flaky: tx.jobs.cancelLive(["test-flaky"], "2026-09-27T01:00:00.000Z", "restored"),
+    }));
+    expect(cancelled).toEqual({ none: 0, other: 0, flaky: 2 });
+    const rows = jobs();
+    expect(rows.find((row) => row.id === waiting)).toMatchObject({ status: "done" });
+    for (const id of [held, finished]) {
+      expect(rows.find((row) => row.id === id)).toMatchObject({
+        status: "dead",
+        last_error: "restored",
+        lease_owner: null,
+        lease_expires_at: null,
+        finished_at: "2026-09-27T01:00:00.000Z",
+      });
+    }
+    // The old runner's completion is now refused.
+    expect(completeJob(ctx, { job: second, owner: "old", schedules: [] })).toBe(false);
+  });
+
   it("refuses repository calls after the transaction ended", () => {
     const tx = createUnitOfWork(db).transaction((repos) => repos);
     expect(() => tx.jobs.listDead(1)).toThrow(/outside its transaction/);

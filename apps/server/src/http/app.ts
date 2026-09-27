@@ -17,6 +17,7 @@ import {
   issueInitialRecoveryCodes,
   issueReEnrolmentLink,
   issueSetupLink,
+  lastBackup,
   listNotices,
   me,
   type ReadinessOutput,
@@ -57,6 +58,8 @@ export interface ApiDeps {
   readonly publicUrl: string;
   /** Live sign-in through better-auth, or demo mode's fixed viewer. */
   readonly authn: Authn;
+  /** Whether a backup repository is configured (`PANGOLIN_BACKUP_REPOSITORY`); default false. */
+  readonly backupConfigured?: boolean;
 }
 
 export interface AppDeps extends ApiDeps {
@@ -180,6 +183,12 @@ export function createApi(deps: ApiDeps) {
       // Kind and failure time only: never payload, error text or IDs (AD-9).
       c.header("Cache-Control", "no-store");
       return c.json({ dead: deadJobs({ uow: deps.uow }, {}) }, 200);
+    })
+    .get("/api/system/backup", (c) => {
+      // The last pushed backup's time and restic ID, read from `backup_snapshot` (AD-9).
+      c.header("Cache-Control", "no-store");
+      const configured = deps.backupConfigured ?? false;
+      return c.json({ configured, last: configured ? lastBackup({ uow: deps.uow }) : null }, 200);
     })
     .get("/api/identity/me", (c) => {
       c.header("Cache-Control", "no-store");
