@@ -3,7 +3,7 @@ title: 'CLI and admin socket'
 type: 'feature'
 ticket: '9'
 created: '2026-09-27'
-status: 'in-review'
+status: 'built'
 baseline_revision: 'fe7da64d32363ec156d9d866ed1b3b3a41241f0a'
 route: 'full'
 route_source: 'auto'
@@ -11,7 +11,7 @@ review: 'thorough'
 review_source: 'auto'
 lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md'
 warnings: [oversized]
@@ -103,6 +103,47 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-09-27 — Review pass
+- verdicts: 37 findings — high 0, medium 10, low 18, false 9, maybe-false 0
+- findings:
+  - `[medium]` `patch` (verification-gap) `pangolin status` not-ready output and exit 1 untested — added a runCli case: 51 dead jobs, runner stopped; asserts exit 1, the failing line and "newest 50 of 51".
+  - `[medium]` `patch` (verification-gap) bundled stopped-stack path never runs — CI now stops the service and runs `dist/cli.js reset-user` (no person: exit 1, lists logins, resets nobody) and `status` (exit 3) in a one-off container.
+  - `[low]` `patch` (verification-gap) docs say a server started during a stopped reset "waits" — reworded: it exits with DataDirLocked and Docker restarts it.
+  - `[false]` `reject` (intent-alignment) peer uid checked via a proof file, not SO_PEERCRED — the intent contract fixes this mechanism: the kernel stamps the proof's owner, so the request is tied to the client's uid (Node has no SO_PEERCRED).
+  - `[medium]` `patch` (intent-alignment) status verified in-process only; CI asserts only its exit code — grouped with the CI steps above and the foreign-uid step below.
+  - `[medium]` `patch` (intent-alignment) foreign-uid test skipped on non-root CI — CI now runs `status` as uid 65534 in the real container and expects a permission refusal; non-root checkProof tests added.
+  - `[false]` `reject` (intent-alignment) proof ownership instead of peer credentials, untested gap — same refutation as the mechanism row.
+  - `[medium]` `patch` (intent-alignment) reset-user never run in Docker, running or stopped — grouped with the stopped-stack CI step (the lock across containers; the running path shares the socket code CI exercises with status).
+  - `[false]` `reject` (intent-alignment) status writes no audit row — Design Notes: the audit log records writes; commands run as `cli:<command>` and reset-user's changes are audited so.
+  - `[false]` `reject` (intent-alignment) health/readiness run without the viewer — those use cases take the system-health port by design (story 1.8); job reads take the `cli:status` viewer.
+  - `[low]` `patch` (intent-alignment) docs lock wording — same fix as the verification-gap row.
+  - `[low]` `patch` (blind-hunter) docs lock wording — same fix.
+  - `[low]` `reject` (blind-hunter) exit 1 covers not-ready and CLI failures — every non-zero is a problem for a monitor; a new code adds surface for no everyday gain.
+  - `[medium]` `patch` (blind-hunter) status says "not running" when the socket failed — on an unreachable socket status now probes pangolin.lock (never the database): held → "running but its admin socket is unreachable", exit 1.
+  - `[medium]` `patch` (blind-hunter) prepare() chmods an existing directory — never chmods an existing directory; refuses one with group/other bits (server warns, keeps serving); test added.
+  - `[medium]` `patch` (blind-hunter) security property untested in CI; nlink unchecked — hard-link and symlink proof tests (no root) and the CI uid-65534 step.
+  - `[low]` `reject` (blind-hunter) proof files left by a killed CLI — empty files on a 1 MiB tmpfs that resets with the container; a sweeper adds code for a rare case.
+  - `[low]` `reject` (blind-hunter) wrapper starts a one-off container for status/--help when stopped — correct result, only slower.
+  - `[low]` `patch` (blind-hunter) wrapper hides a failing `compose ps` — redirect dropped; it now dies naming Docker/.env, with a test. (The restarting-container race it also raises is safe: the lock lets only one side write.)
+  - `[low]` `reject` (blind-hunter) wrapper tests thin; duplicated compose line — exec passes exit codes through; a function cannot be exec'd, so the line repeats deliberately.
+  - `[medium]` `patch` (blind-hunter) no real-image test of stopped path or cross-container lock — grouped with the stopped-stack CI step.
+  - `[low]` `patch` (blind-hunter) cli.test hard-codes schema 5 — now `loadMigrations(packageMigrationsDir).length`.
+  - `[low]` `patch` (blind-hunter) close() can leave the lock held on a rejection — nested try/finally so closeHttp (DB close, lock release) always runs.
+  - `[low]` `patch` (blind-hunter) pangolin.lock undocumented — added to the data-root file table (no data; may be left out of backups; do not delete while running).
+  - `[low]` `patch` (blind-hunter) dead-job list truncation silent — heading reads "newest N of M" when capped.
+  - `[false]` `reject` (blind-hunter) listLogins/resetUser TOCTOU and case-duplicate emails — resetUser re-checks active person and login in its own transaction (NotFound otherwise); auth emails are unique and stored lowercase by better-auth.
+  - `[low]` `reject` (blind-hunter) testing/logins.ts helper casts and counter — test-only; never near 999 calls.
+  - `[false]` `reject` (edge-case) demo mode status says not running — demo mode is the read-only showcase image, not an installed stack the CLI targets; it has no socket by design.
+  - `[medium]` `patch` (edge-case) starting server or failed socket reported as not running — same lock-probe fix.
+  - `[low]` `patch` (edge-case) `compose ps` failure hidden — same wrapper fix.
+  - `[low]` `reject` (edge-case) lowercase person ID refused — IDs are never shown to the operator (the list shows names and emails); email matching ignores case.
+  - `[low]` `reject` (edge-case) empty-string person prints "Invalid arguments" — rare, and still refuses safely.
+  - `[low]` `reject` (edge-case) EACCES/ECONNRESET on connect gives a raw errno message — still exits 1 with the reason; the proof write already maps EACCES first.
+  - `[false]` `reject` (edge-case) CLI via symlink or without extension does nothing — the wrapper and CI always run `node dist/cli.js`.
+  - `[false]` `reject` (edge-case) stale-socket probe hangs — `/run` is a fresh tmpfs per container; a stale socket with a hung listener cannot exist there.
+  - `[low]` `patch` (edge-case) header claim overstated for loosened modes — comment now says the 0700 directory keeps proof names private and the proof check is the second barrier.
+  - `[false]` `reject` (edge-case) docs "waits" claim — counted with the docs fix above (duplicate of the verification-gap row).
+
 ## Design Notes
 
 The lock uses SQLite's own POSIX locking so it is released if either process dies, works across containers sharing the bind-mounted data directory, and needs no new dependency. A `docker compose run` CLI container has its own `/run` tmpfs, so it never sees a running server's socket; the lock is what stops it writing then.
@@ -118,3 +159,12 @@ The proof file stands in for SO_PEERCRED, which Node lacks: the socket's 0600 mo
 - `pnpm --filter @pangolin/server build && ls apps/server/dist/cli.js` -- expected: the CLI is bundled
 - `shellcheck -S warning deploy/pangolin deploy/*.sh` -- expected: clean
 - `docker compose up -d --build && docker compose exec -T pangolin node dist/cli.js status` -- expected: exit 0 with readiness ok
+
+## Auto Run Result
+
+- **Summary:** the server takes an exclusive SQLite-backed lock on its data directory and serves a fixed-command admin socket at `/run/pangolin/admin.sock` (0700 dir, 0600 socket, proof-file uid check); `dist/cli.js` runs `status` and `reset-user` over it, or `reset-user` in-process under the lock when stopped; the host `pangolin` wrapper (installed by install.sh) runs it via Docker Compose.
+- **Files:** `apps/server/src/admin/{lock,socket,commands,client}.ts` (+ tests), `apps/server/src/cli.ts` (+ test), `server.ts`, `config.ts`, `main.ts`, `scripts/build.ts`; `packages/db/src/exclusive-lock.ts`, job and identity repos; `packages/app` `jobCounts`, `listLogins`, ports and memory uow; `compose.yaml` `/run` tmpfs; `deploy/pangolin`, `install.sh` (+ tests); `docs/install.md`, `README.md`; CI steps.
+- **Review:** 37 findings — 20 patch rows (10 medium, 10 low) applied, 0 deferred, 17 rejected with reasons in the triage log.
+- **Follow-up review recommended:** true — ten medium rows were patched; the unverified risk is the new CI container steps (foreign uid, stopped-stack one-off container) which have not yet run on a GitHub runner.
+- **Verification:** `pnpm lint`, `pnpm typecheck`, `pnpm test` (61 files, 701 passed, 1 root-only skip), shellcheck, `pnpm --filter @pangolin/server build` (dist/cli.js) all pass; the implementer ran the stack in Docker locally (status over the socket, root refused, lock across containers).
+- **Residual risks:** the lock relies on POSIX locks on a local filesystem; AD-27's status warning for an unconfirmed recovery bundle is not implemented; CI's stopped-stack step assumes the e2e run created a login.

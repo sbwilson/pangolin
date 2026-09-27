@@ -307,8 +307,8 @@ describe("the pangolin command", () => {
     expect(result.stdout).toMatch(/sudo pangolin reset-user <email>/);
   });
 
-  /** Runs the wrapper against a stub `docker` that logs its arguments; `running` sets `ps`. */
-  function wrapper(args: readonly string[], running: boolean): Run {
+  /** Runs the wrapper against a stub `docker` that logs its arguments; `stack` sets `ps`. */
+  function wrapper(args: readonly string[], stack: "running" | "stopped" | "broken"): Run {
     const home = at("opt/pangolin");
     mkdirSync(home, { recursive: true });
     writeFileSync(join(home, "compose.yaml"), "services: {}\n");
@@ -321,7 +321,9 @@ describe("the pangolin command", () => {
         "#!/bin/sh",
         `echo "$*" >> "${at("docker.log")}"`,
         'case "$*" in',
-        `  *" ps "*) [ "${running ? 1 : 0}" = 1 ] && echo stub-container-id ;;`,
+        '  *" ps "*)',
+        `    [ "${stack}" = broken ] && { echo "Cannot connect to the Docker daemon" >&2; exit 1; }`,
+        `    [ "${stack}" = running ] && echo stub-container-id ;;`,
         "esac",
         "exit 0",
         "",
@@ -335,7 +337,7 @@ describe("the pangolin command", () => {
   }
 
   it("runs the CLI in the running container over the admin socket", () => {
-    const result = wrapper(["status"], true);
+    const result = wrapper(["status"], "running");
     expect(result.status, result.stderr).toBe(0);
     const home = at("opt/pangolin");
     expect(dockerLog().trim().split("\n")).toEqual([
@@ -345,11 +347,19 @@ describe("the pangolin command", () => {
   });
 
   it("runs the CLI in a one-off container when the stack is stopped", () => {
-    const result = wrapper(["reset-user", "alex@example.com"], false);
+    const result = wrapper(["reset-user", "alex@example.com"], "stopped");
     expect(result.status, result.stderr).toBe(0);
     expect(dockerLog()).toContain(
       "run --rm --no-deps -T pangolin node dist/cli.js reset-user alex@example.com",
     );
+    expect(dockerLog()).not.toContain(" exec ");
+  });
+
+  it("stops clearly when docker compose ps fails, never falling through to run", () => {
+    const result = wrapper(["reset-user", "alex@example.com"], "broken");
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/docker compose ps failed/);
+    expect(dockerLog()).not.toContain(" run ");
     expect(dockerLog()).not.toContain(" exec ");
   });
 

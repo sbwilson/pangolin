@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Db, openDatabase, packageMigrationsDir } from "@pangolin/db";
+import { type Db, loadMigrations, openDatabase, packageMigrationsDir } from "@pangolin/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { acquireDataDirLock } from "./admin/lock.ts";
 import { EXIT_FAILED, EXIT_NOT_RUNNING, EXIT_OK, EXIT_USAGE, runCli } from "./cli.ts";
@@ -96,9 +96,54 @@ describe("pangolin (the admin CLI)", () => {
     expect(result.err).toBe("");
     expect(result.code).toBe(EXIT_OK);
     expect(result.out).toContain("Pangolin Money v1.2.3");
-    expect(result.out).toMatch(/Schema: +5 \(this build expects 5\)/);
+    const schema = loadMigrations(packageMigrationsDir).length;
+    expect(result.out).toContain(`Schema:    ${schema} (this build expects ${schema})`);
     expect(result.out).toMatch(/Readiness: ok/);
     expect(result.out).toMatch(/Jobs: +\d+ pending, \d+ running, 0 dead/);
+  });
+
+  it("status on a server that is not ready shows the failing checks and dead jobs, exit 1", async () => {
+    const running = await boot();
+    withDb((db) => {
+      const insert = db.prepare(
+        `INSERT INTO job (id, kind, lane, payload, status, attempts, max_attempts, run_at,
+           created_at, updated_at, finished_at)
+         VALUES (?, 'test-dead', 'local', '{}', 'dead', 1, 1, ?, ?, ?, ?)`,
+      );
+      for (let i = 0; i < 51; i++) {
+        const at = `2026-09-27T00:00:${String(i).padStart(2, "0")}.000Z`;
+        insert.run(`01J00000000000000000000${String(i).padStart(3, "0")}`, at, at, at, at);
+      }
+    });
+    // A stopped runner fails the jobs check.
+    await running.runner?.stop();
+    const result = await cli(["status"]);
+    expect(result.code).toBe(EXIT_FAILED);
+    expect(result.out).toContain("Readiness: not ready (failing: jobs)");
+    expect(result.out).toMatch(/Jobs: +\d+ pending, \d+ running, 51 dead/);
+    expect(result.out).toContain("Dead jobs (newest 50 of 51):");
+    expect(result.out).toContain("  2026-09-27T00:00:50.000Z  test-dead");
+    expect(result.out).not.toContain("2026-09-27T00:00:00.000Z");
+  });
+
+  it("status says the socket is unreachable while the data directory is locked, exit 1", async () => {
+    await boot();
+    await stop();
+    const lock = acquireDataDirLock(dataDir());
+    try {
+      expect(await cli(["status"])).toMatchObject({
+        code: EXIT_FAILED,
+        err: "pangolin: the server is running but its admin socket is unreachable",
+      });
+    } finally {
+      lock.release();
+    }
+    // Free again: stopped, and the probe left the lock free.
+    expect(await cli(["status"])).toMatchObject({
+      code: EXIT_NOT_RUNNING,
+      out: "Pangolin is not running",
+    });
+    acquireDataDirLock(dataDir()).release();
   });
 
   it("status on a stopped server says so, exit 3, and opens no database", async () => {

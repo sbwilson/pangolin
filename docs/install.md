@@ -166,6 +166,7 @@ What it does, in order:
 | `/etc/systemd/system/pangolin-allowlist.{service,timer}` | 0644 | Re-resolves the allowlist every 15 minutes, reloads and saves the ruleset |
 | `/etc/systemd/system/docker.service.d/pangolin-data.conf` | 0644 | Docker waits for the data disk (when the data root is a mount point) |
 | `/srv/pangolin/` | 0700 | The database and attachments (the container's `/data`) |
+| `/srv/pangolin/pangolin.lock` | | An empty lock file: the server (or `pangolin reset-user` on a stopped stack) holds a lock on it so only one process writes the database. It holds no data and may be left out of backups; never delete it while anything runs |
 | `/root/pangolin-recovery-bundle-<date>.txt` | 0600 | The recovery bundle (first install, or `--bundle`) |
 | `/usr/local/bin/pangolin` | 0755 | The admin command (see [Administration](#9-administration)) |
 
@@ -310,8 +311,8 @@ sudo pangolin --help
   server never logs it. Every change is in the audit log as `cli:reset-user`. With no person,
   or one that matches nobody, it lists the people who have a login (name and email) and exits 1.
   With the stack stopped, it runs in a one-off container under an exclusive lock on the data
-  directory, so a server started meanwhile waits until it is done ("another process holds
-  /data"). It refuses a database the release has not migrated yet: start the server once first.
+  directory; a server started meanwhile exits ("another process holds /data") and Docker
+  restarts it, so it comes up once the reset is done. It refuses a database the release has not migrated yet: start the server once first.
 
 Only the server's own user can use the socket: each request must name a one-time file its
 client just created in the socket's directory, which the server checks is its own. Set

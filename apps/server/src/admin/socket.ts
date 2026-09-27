@@ -7,8 +7,10 @@
 // The peer-uid check, without a native addon (Node has no SO_PEERCRED): each request names a
 // one-time proof file its client created in the socket's directory. The server `lstat`s it (a
 // regular file with one link, owned by the server's own uid, changed within 30 s), deletes it, and
-// refuses the request otherwise. The kernel stamps the owner, so only the server's uid can pass,
-// even if the socket's or directory's mode were loosened.
+// refuses the request otherwise. The first barrier is the modes: the 0600 socket in a 0700
+// directory, which also keeps live proof names private. The proof check is the second: the kernel
+// stamps a file's owner, so another uid that got past a loosened socket mode cannot forge a proof
+// of its own (though with a readable directory it could race to name a live one).
 import { chmodSync, lstatSync, mkdirSync, rmSync, type Stats, unlinkSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { dirname, join } from "node:path";
@@ -133,15 +135,27 @@ function answers(path: string): Promise<boolean> {
   });
 }
 
-/** Makes the socket's directory (0700, ours) and clears a stale socket left by a crash. */
+/**
+ * Makes the socket's directory (0700, ours) and clears a stale socket left by a crash. An existing
+ * directory is never chmodded (it may be one the server does not own the purpose of, like $HOME):
+ * it must already be the server user's with no group or other permissions.
+ */
 async function prepare(path: string, relax: boolean): Promise<void> {
   const dir = dirname(path);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const created = mkdirSync(dir, { recursive: true, mode: 0o700 }) !== undefined;
   const stats = lstatSync(dir);
   if (!stats.isDirectory() || stats.uid !== ownUid()) {
     throw new Error(`${dir} must be a directory owned by the server's user`);
   }
-  chmodSync(dir, relax ? 0o777 : 0o700);
+  if (relax) {
+    chmodSync(dir, 0o777);
+  } else if (created) {
+    chmodSync(dir, 0o700);
+  } else if ((stats.mode & 0o077) !== 0) {
+    throw new Error(
+      `${dir} must be accessible to the server's user only (mode 0700); the admin socket is off`,
+    );
+  }
   let existing: Stats | undefined;
   try {
     existing = lstatSync(path);

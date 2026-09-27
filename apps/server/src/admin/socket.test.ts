@@ -2,11 +2,13 @@ import { spawn } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { connect } from "node:net";
@@ -27,7 +29,12 @@ import { nodeTokens } from "../auth/secret.ts";
 import { addLogin, signIn } from "../testing/logins.ts";
 import { callAdmin } from "./client.ts";
 import { ADMIN_COMMANDS, type AdminDeps, runAdminCommand, type StatusResult } from "./commands.ts";
-import { type AdminSocket, type AdminSocketOptions, listenAdminSocket } from "./socket.ts";
+import {
+  type AdminSocket,
+  type AdminSocketOptions,
+  checkProof,
+  listenAdminSocket,
+} from "./socket.ts";
 
 let dir: string;
 let db: Db;
@@ -283,6 +290,45 @@ describe("the admin socket", () => {
     await expect(
       listenAdminSocket({ path: sockPath, handle: () => null, commands: [] }),
     ).rejects.toThrow(/is not a socket/);
+  });
+
+  it("never chmods an existing directory: refuses one others can reach, keeps a 0700 one", async () => {
+    const run = join(dir, "run");
+    mkdirSync(run, { mode: 0o755 });
+    chmodSync(run, 0o755);
+    await expect(
+      listenAdminSocket({ path: sockPath, handle: () => null, commands: [] }),
+    ).rejects.toThrow(/mode 0700/);
+    expect(statSync(run).mode & 0o777).toBe(0o755);
+    expect(existsSync(sockPath)).toBe(false);
+
+    chmodSync(run, 0o700);
+    await listen();
+    expect(statSync(run).mode & 0o777).toBe(0o700);
+    expect((await callAdmin(sockPath, "status")).ok).toBe(true);
+  });
+
+  it("checkProof refuses a hard-linked proof and a symlink, and consumes them", () => {
+    const run = join(dir, "proofs");
+    mkdirSync(run, { mode: 0o700 });
+    const now = Date.now();
+    const fresh = (name: string) => {
+      writeFileSync(join(run, name), "", { mode: 0o600 });
+      return join(run, name);
+    };
+    fresh("proof-good0000000000000000");
+    expect(checkProof(run, "proof-good0000000000000000", now)).toBe(true);
+
+    const target = fresh("proof-target00000000000000");
+    linkSync(target, join(run, "proof-hardlink0000000000"));
+    expect(checkProof(run, "proof-hardlink0000000000", now)).toBe(false);
+    expect(existsSync(join(run, "proof-hardlink0000000000"))).toBe(false);
+
+    symlinkSync(fresh("proof-pointee0000000000000"), join(run, "proof-symlink00000000000000"));
+    expect(checkProof(run, "proof-symlink00000000000000", now)).toBe(false);
+    expect(existsSync(join(run, "proof-symlink00000000000000"))).toBe(false);
+    // The link's target is left alone.
+    expect(existsSync(join(run, "proof-pointee0000000000000"))).toBe(true);
   });
 
   // A foreign uid needs root to spawn, and the relaxed modes let it reach the socket at all.

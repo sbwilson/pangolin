@@ -26,7 +26,10 @@ compose() {
   docker compose --project-directory "$HOME_DIR" -f "$HOME_DIR/compose.yaml" "$@"
 }
 
-if [ -n "$(compose ps -q --status running pangolin 2>/dev/null)" ]; then
+# A failing `ps` (daemon down, a bad .env) must not be taken for a stopped stack.
+running=$(compose ps -q --status running pangolin) ||
+  die "docker compose ps failed (is Docker running, and is $HOME_DIR/.env valid?)"
+if [ -n "$running" ]; then
   exec docker compose --project-directory "$HOME_DIR" -f "$HOME_DIR/compose.yaml" \
     exec -T pangolin node dist/cli.js "$@"
 fi

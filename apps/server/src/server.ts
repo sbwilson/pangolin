@@ -274,9 +274,16 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     clock,
     runner,
     close: async () => {
-      await adminSocket?.close();
-      await runner?.stop();
-      await closeHttp();
+      // The HTTP server, database and lock are released whatever the socket or runner do.
+      try {
+        try {
+          await adminSocket?.close();
+        } finally {
+          await runner?.stop();
+        }
+      } finally {
+        await closeHttp();
+      }
     },
   };
 }

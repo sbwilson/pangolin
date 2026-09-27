@@ -105,6 +105,15 @@ jobs:
           exit 1
       - name: The admin CLI reaches the running server over its socket
         run: docker compose exec -T pangolin node dist/cli.js status
+      - name: The admin CLI refuses another uid
+        run: |
+          set +e
+          out=$(docker compose exec -T -u 65534 pangolin node dist/cli.js status 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          test "$code" -ne 0
+          echo "$out" | grep -qi "permission denied"
       - name: The image carries the deploy files a lone install.sh uses
         run: |
           docker run --rm --entrypoint sh pangolin:local -c \
@@ -137,6 +146,22 @@ jobs:
           E2E_BASE_URL: http://localhost:3000
           # The first-boot setup link lives in the container's data volume.
           E2E_SETUP_LINK_COMMAND: docker compose exec -T pangolin cat /data/setup-link.txt
+      - name: The admin CLI on the stopped stack (lock path, bundled)
+        run: |
+          docker compose stop pangolin
+          set +e
+          out=$(docker compose run --rm --no-deps -T pangolin node dist/cli.js reset-user 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          # No person named: it lists the logins and resets nobody.
+          test "$code" -eq 1
+          echo "$out" | grep -q "People with a login"
+          set +e
+          docker compose run --rm --no-deps -T pangolin node dist/cli.js status
+          code=$?
+          set -e
+          test "$code" -eq 3
       - name: Container logs
         if: failure()
         run: docker compose logs

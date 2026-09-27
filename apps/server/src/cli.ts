@@ -1,7 +1,8 @@
 // Entry point of the bundled admin CLI (dist/cli.js), which the host's `pangolin` wrapper runs in
 // the container (story 1.9, AD-16). It reaches a running server over the admin socket and never
 // opens SQLite beside it. Only `reset-user` has a stopped-stack path: under the data-directory
-// lock it runs the same command in-process. `status` on a stopped stack opens nothing.
+// lock it runs the same command in-process. `status` on a stopped stack opens nothing
+// but the lock file, to tell "stopped" from "running without a reachable socket".
 //
 // Exit codes: 0 done (status: ready), 1 failed (status: not ready), 2 usage, 3 not running.
 import { existsSync } from "node:fs";
@@ -81,7 +82,12 @@ function printStatus(io: CliIo, status: StatusResult): void {
   );
   io.out(`Jobs:      ${jobs.pending} pending, ${jobs.running} running, ${jobs.dead} dead`);
   if (status.deadJobs.length > 0) {
-    io.out("Dead jobs (newest first):");
+    const shown = status.deadJobs.length;
+    io.out(
+      jobs.dead > shown
+        ? `Dead jobs (newest ${shown} of ${jobs.dead}):`
+        : "Dead jobs (newest first):",
+    );
     for (const job of status.deadJobs) io.out(`  ${job.failedAt}  ${job.kind}`);
   }
 }
@@ -115,6 +121,17 @@ async function status(config: Config, io: CliIo): Promise<number> {
   }
   const response = await viaSocket(config, "status", {});
   if (response === undefined) {
+    // No answer, but a server may still hold the data directory (starting up, or its socket
+    // failed). Probe only the lock file, never the database.
+    if (existsSync(config.dataDir)) {
+      try {
+        acquireDataDirLock(config.dataDir).release();
+      } catch (error) {
+        if (!(error instanceof DataDirLocked)) throw error;
+        io.err("pangolin: the server is running but its admin socket is unreachable");
+        return EXIT_FAILED;
+      }
+    }
     io.out("Pangolin is not running");
     return EXIT_NOT_RUNNING;
   }
