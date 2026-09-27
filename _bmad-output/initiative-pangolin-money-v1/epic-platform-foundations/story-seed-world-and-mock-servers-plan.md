@@ -3,7 +3,7 @@ title: 'Seed world and mock servers'
 type: 'feature'
 ticket: '7'
 created: '2026-09-27'
-status: 'built'
+status: done
 baseline_revision: '55969ba2f67b823ad0cf2756d0ef29164808c611'
 route: 'full'
 route_source: 'auto'

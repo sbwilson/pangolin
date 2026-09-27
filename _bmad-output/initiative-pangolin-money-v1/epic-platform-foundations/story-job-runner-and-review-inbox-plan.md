@@ -3,7 +3,7 @@ title: 'Job runner and review inbox'
 type: 'feature'
 ticket: '4'
 created: '2026-09-27'
-status: 'built'
+status: done
 baseline_revision: '179cc7b45bf7089eaa5146b979ec608e0b8f1ad3'
 route: 'full'
 route_source: 'auto'

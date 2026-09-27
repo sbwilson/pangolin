@@ -3,7 +3,7 @@ title: 'Account recovery'
 type: 'feature'
 ticket: '6'
 created: '2026-09-27'
-status: 'built'
+status: done
 baseline_revision: 'cc5f9745035c8efe9b2f7e6395899493a92d5d21'
 route: 'full'
 route_source: 'auto'

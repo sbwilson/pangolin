@@ -3,7 +3,7 @@ title: 'Shared core: money, IDs, time and periods'
 type: 'feature'
 ticket: '2'
 created: '2026-09-27'
-status: 'built'
+status: done
 baseline_revision: 'e9ac56b95053679cff49f5fc2190d06bf6d31339'
 route: 'full'
 route_source: 'auto'

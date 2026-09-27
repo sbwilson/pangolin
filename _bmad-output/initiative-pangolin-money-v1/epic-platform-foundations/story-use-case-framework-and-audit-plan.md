@@ -3,7 +3,7 @@ title: 'Use-case framework and audit'
 type: 'feature'
 ticket: '3'
 created: '2026-09-27'
-status: 'built'
+status: done
 baseline_revision: '2202534587d00c58935c9b3cffe43c9841682abf'
 route: 'full'
 route_source: 'auto'

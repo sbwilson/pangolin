@@ -3,7 +3,7 @@ title: 'Tracer bullet: workspace to container'
 type: 'feature'
 ticket: '1'
 created: '2026-09-27'
-status: 'built'
+status: done
 baseline_revision: 'af96d17f639346d3fb3c1ca37fbc7f3fa8c16c2e'
 route: 'full'
 route_source: 'auto'

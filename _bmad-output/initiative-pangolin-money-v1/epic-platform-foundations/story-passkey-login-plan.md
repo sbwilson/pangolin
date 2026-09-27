@@ -3,7 +3,7 @@ title: 'Passkey login'
 type: 'feature'
 ticket: '5'
 created: '2026-09-27'
-status: 'built'
+status: done
 baseline_revision: '49318b14a61564c008984ad1336b7824d959dfbd'
 route: 'full'
 route_source: 'auto'
