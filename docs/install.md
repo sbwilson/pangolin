@@ -259,7 +259,8 @@ tables are never touched):
   `pangolin-allowlist.timer`. A host whose addresses change faster than that (some CDNs) can
   fail now and then; allowlist an address range instead if it matters.
 
-The default allowlist covers the Debian mirrors, Docker, GHCR, your backup server, your Tang
+The default allowlist covers the Debian mirrors (and every mirror in this VM's apt sources, which
+each run adds if missing), Docker, GHCR, your backup server, your Tang
 server and Yahoo Finance (including its cookie/crumb handshake host). The LLM endpoint is added
 in a later release. After editing `/opt/pangolin/allowlist.conf`:
 
@@ -287,6 +288,13 @@ curl -m 5 http://<vm-ip>:3000/healthz            # times out
 
 If `nftables.service` is enabled, the installer warns: its `flush ruleset` on restart clears
 Docker's rules and Pangolin's until the next timer run.
+
+Never turn the firewall off with `nft flush ruleset`: it also removes Docker's chains, and the
+container then cannot publish its port ("Unable to enable DNAT rule … No chain/target/match").
+To pause Pangolin's rules, run `systemctl stop pangolin-allowlist.timer` and
+`nft delete table inet pangolin`; `systemctl start pangolin-allowlist.service` puts them back.
+After a flush, `systemctl restart docker` rebuilds Docker's chains (install.sh does it when they
+are missing).
 
 ## 9. Administration
 

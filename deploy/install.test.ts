@@ -576,13 +576,45 @@ describe("install.sh with Docker (a stub docker)", () => {
     );
     const rerun = installWithDocker(["--build"]);
     expect(rerun.status, rerun.stderr).toBe(0);
-    expect(rerun.stdout).toMatch(/Added the build hosts to allowlist\.conf: github\.com:443/);
-    expect(rerun.stdout.indexOf("Added the build hosts")).toBeLessThan(
+    expect(rerun.stdout).toMatch(/Added to allowlist\.conf: github\.com:443/);
+    expect(rerun.stdout.indexOf("Added to allowlist.conf: github.com")).toBeLessThan(
       rerun.stdout.indexOf("Building pangolin:local"),
     );
     for (const host of BUILD_HOSTS)
       expect(entries().filter((line) => line === host)).toHaveLength(1);
-    expect(installWithDocker(["--build"]).stdout).not.toContain("Added the build hosts");
+    expect(installWithDocker(["--build"]).stdout).not.toContain("Added to allowlist.conf");
+  });
+
+  it("allowlists the apt mirrors this VM uses, on a first install and on a re-run", () => {
+    mkdirSync(at("etc/apt/sources.list.d"), { recursive: true });
+    writeFileSync(
+      at("etc/apt/sources.list"),
+      [
+        "deb http://ftp.au.debian.org/debian bookworm main",
+        "# deb http://commented.example.org/debian bookworm main",
+        "deb [signed-by=/k.asc] https://deb.debian.org/debian-security bookworm-security main",
+      ].join("\n"),
+    );
+    writeFileSync(
+      at("etc/apt/sources.list.d/debian.sources"),
+      "Types: deb\nURIs: http://mirror.example.net:8080/debian\nSuites: trixie\n",
+    );
+    expect(install().status).toBe(0);
+    const entries = () => read("opt/pangolin/allowlist.conf").split("\n");
+    expect(entries()).toContain("ftp.au.debian.org:80");
+    expect(entries()).toContain("mirror.example.net:8080");
+    expect(entries().filter((line) => line === "deb.debian.org:443")).toHaveLength(1);
+    expect(entries()).not.toContain("commented.example.org:80");
+
+    // A mirror added later is allowlisted on the next run, before apt runs.
+    writeFileSync(
+      at("etc/apt/sources.list.d/extra.list"),
+      "deb http://mirror.aarnet.edu.au/debian bookworm main\n",
+    );
+    const rerun = install();
+    expect(rerun.status, rerun.stderr).toBe(0);
+    expect(rerun.stdout).toContain("Added to allowlist.conf: mirror.aarnet.edu.au:80");
+    expect(entries().filter((line) => line === "ftp.au.debian.org:80")).toHaveLength(1);
   });
 
   it("leaves the build hosts out without --build", () => {

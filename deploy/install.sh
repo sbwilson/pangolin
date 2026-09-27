@@ -873,27 +873,63 @@ compose() {
 # Docker Hub for the base image, and npm for pnpm and the dependencies.
 BUILD_HOSTS="github.com:443 registry.npmjs.org:443 registry-1.docker.io:443 auth.docker.io:443 production.cloudflare.docker.com:443"
 
-# add_build_hosts FILE: appends the build hosts FILE lacks, under one comment. True when it added any.
-add_build_hosts() {
+# allowlist_add FILE COMMENT ENTRY...: appends the entries FILE lacks, under COMMENT. True when it
+# added any.
+allowlist_add() {
+  allowlist_file=$1
+  allowlist_comment=$2
+  shift 2
   missing=
-  for host in $BUILD_HOSTS; do
-    grep -Fqx "$host" "$1" || missing="$missing $host"
+  for entry in "$@"; do
+    grep -Fqx "$entry" "$allowlist_file" || missing="$missing $entry"
   done
   [ -n "$missing" ] || return 1
-  printf '\n# install.sh --build: building the image on this VM, and git in its clone (added by install.sh)\n' >>"$1"
-  for host in $missing; do printf '%s\n' "$host" >>"$1"; done
-  say "Added the build hosts to allowlist.conf:$missing"
+  printf '\n# %s (added by install.sh)\n' "$allowlist_comment" >>"$allowlist_file"
+  for entry in $missing; do printf '%s\n' "$entry" >>"$allowlist_file"; done
+  say "Added to allowlist.conf:$missing"
 }
 
-# On a re-run the firewall is already on: allowlist the build hosts, and apply the change,
-# before the build needs them. (A first install writes them with the rest of allowlist.conf.)
+# On a re-run the firewall is already on: an allowlist change must be applied before the step
+# that needs it. (A first install turns the firewall on only after writing allowlist.conf.)
+apply_allowlist_now() {
+  if ! staging && systemctl is-active --quiet pangolin-allowlist.timer 2>/dev/null; then
+    systemctl start pangolin-allowlist.service ||
+      die "the firewall did not reload: see 'journalctl -u pangolin-allowlist.service'"
+  fi
+}
+
+add_build_hosts() {
+  # shellcheck disable=SC2086 # one word per host
+  allowlist_add "$1" "install.sh --build: building the image on this VM, and git in its clone" $BUILD_HOSTS
+}
+
 allow_build_hosts() {
   allowlist=$(path "$INSTALL_DIR/allowlist.conf")
   [ -f "$allowlist" ] || return 0
-  add_build_hosts "$allowlist" || return 0
-  if ! staging && systemctl is-active --quiet pangolin-allowlist.timer 2>/dev/null; then
-    systemctl start pangolin-allowlist.service ||
-      die "the firewall did not reload with the build hosts: see 'journalctl -u pangolin-allowlist.service'"
+  if add_build_hosts "$allowlist"; then apply_allowlist_now; fi
+}
+
+# The hosts apt fetches from, as allowlist entries (host:80 or host:443, or the URI's own port):
+# every http(s) URI in sources.list, sources.list.d/*.list and deb822 *.sources files.
+apt_mirror_entries() {
+  for file in "$(path /etc/apt/sources.list)" "$(path /etc/apt/sources.list.d)"/*.list \
+    "$(path /etc/apt/sources.list.d)"/*.sources; do
+    [ -f "$file" ] || continue
+    grep -v '^[[:space:]]*#' "$file" | grep -Eo 'https?://[^/[:space:]]+' || true
+  done | awk -F'://' '{
+      host = $2; sub(/^[^@]*@/, "", host)
+      if (host ~ /:[0-9]+$/) { print host } else { print host ":" ($1 == "https" ? 443 : 80) }
+    }' | sort -u
+}
+
+# apt must reach the mirrors this VM actually uses (install.sh itself runs apt-get update).
+allow_package_mirrors() {
+  [ "$PKG" = apt ] || return 0
+  allowlist=$(path "$INSTALL_DIR/allowlist.conf")
+  [ -f "$allowlist" ] || return 0
+  # shellcheck disable=SC2046 # one entry per word
+  if allowlist_add "$allowlist" "apt mirrors this VM uses" $(apt_mirror_entries); then
+    apply_allowlist_now
   fi
 }
 
@@ -1069,6 +1105,10 @@ write_files() {
         printf '%s\n' "" "# Tang server: unlocks the data disk" "$tang_entry"
       fi
     } >"$allowlist.new"
+    if [ "$PKG" = apt ]; then
+      # shellcheck disable=SC2046 # one entry per word
+      allowlist_add "$allowlist.new" "apt mirrors this VM uses" $(apt_mirror_entries) || true
+    fi
     if [ "$BUILD" -eq 1 ]; then add_build_hosts "$allowlist.new" || true; fi
     chmod 0644 "$allowlist.new"
     mv "$allowlist.new" "$allowlist"
@@ -1166,6 +1206,12 @@ install_firewall() {
 start_stack() {
   run_stack || return 0
   step "Starting the stack"
+  # Flushing the whole ruleset (nft flush ruleset, or restarting nftables.service) also removes
+  # Docker's own chains, and containers then fail to publish ports. Restarting Docker rebuilds them.
+  if ! staging && command -v iptables >/dev/null 2>&1 && ! iptables -t nat -n -L DOCKER >/dev/null 2>&1; then
+    warn "Docker's firewall chains are missing (was the ruleset flushed?); restarting Docker to rebuild them"
+    systemctl restart docker
+  fi
   compose up -d --force-recreate --remove-orphans
 }
 
@@ -1277,6 +1323,7 @@ main() {
   settle_all
   check_host
   check_ssh_session
+  allow_package_mirrors
   install_packages
   prepare_dirs
   generate_secrets
