@@ -3,7 +3,7 @@ title: 'Install on the VM behind NPM'
 type: 'feature'
 ticket: '8'
 created: '2026-09-27'
-status: 'built'
+status: done
 baseline_revision: '6198edca77ca3f20bbfbb40657f36e16f6603fc4'
 route: 'full'
 route_source: 'auto'
