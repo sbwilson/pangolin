@@ -5,7 +5,7 @@ purpose: build-substrate
 altitude: initiative
 paradigm: 'hexagonal (ports and adapters) with a functional core'
 scope: 'Pangolin Money v1, the whole system: the contracts that keep its 10 epics (M0–M4) consistent'
-status: draft
+status: final
 created: '2026-09-27'
 updated: '2026-09-27'
 binds: [CAP-1, CAP-2, CAP-3, CAP-4, CAP-5, CAP-6, CAP-7, CAP-8, CAP-9, CAP-10, CAP-11, CAP-12, CAP-13, CAP-14, CAP-15, CAP-16, CAP-17, CAP-18]
