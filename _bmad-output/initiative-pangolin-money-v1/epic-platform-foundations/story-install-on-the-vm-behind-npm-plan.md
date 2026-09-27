@@ -48,7 +48,7 @@ context:
   - `allowlist.conf` is one `host[:port]` per line, with `#` comments. It is the single config artefact the spine requires.
   - Its defaults: Debian mirrors (`deb.debian.org`, `security.debian.org`), Docker (`download.docker.com`), GHCR (`ghcr.io`, `pkg-containers.githubusercontent.com`), the NTP pool, the backup server, and the Yahoo Finance hosts including the cookie/crumb handshake (`query1.finance.yahoo.com`, `query2.finance.yahoo.com`, `fc.yahoo.com`).
   - The LLM endpoint is left for epic 5.
-- **Firewall:** generated only from `allowlist.conf` and the prompts; see Open Questions for the mechanism.
+- **Firewall:** generated only from `allowlist.conf` and the prompts, using the mechanism in Decisions.
   - Inbound: the app port from the NPM host only, and SSH from the admin network only.
   - Outbound: allowlisted hosts only, plus DNS to the configured resolvers.
   - Both apply to container traffic as well as host traffic.
@@ -60,11 +60,20 @@ context:
 - **Checks and warnings:** `install.sh` checks the host requirements and warns, never fails, on: RAM, disk, the data root not on a dm-crypt device, LXC instead of a VM, and a missing AES-NI flag.
 - **Shell:** POSIX `sh`, shellcheck-clean, `set -eu`. Secrets are never echoed, except the bundle path and the setup link.
 
+**Decisions (2026-09-27):**
+- **Firewall: nftables inside the VM, plus printed Proxmox rules.**
+  - `install.sh` installs and enables an nftables ruleset. It covers host traffic (`input`/`output`) and container traffic, the latter by hooking Docker's forward path (the `DOCKER-USER` chain via `iptables-nft`) so containers get the same egress allowlist.
+  - Allowlisted hostnames are resolved to IPs into nft sets, refreshed every 15 minutes by a systemd timer (`pangolin-allowlist.timer`). DNS is allowed only to the configured resolvers.
+  - It also prints the equivalent IP-based Proxmox VM firewall rules, as an optional second layer the operator pastes in.
+- **Proxy mode: NPM only.** The prompt offers bundled Caddy and Tailscale-only, answers "not yet supported" for them, and stops without changing anything.
+- **Image: `--image <ref>` and `--build`.** `--image` defaults to `ghcr.io/sbwilson/pangolin:latest`, with the optional GHCR token used for `docker login`. `--build` clones the repo at `--ref` (default `main`) into `/opt/pangolin/src` and builds the image locally as `pangolin:local`. Signature verification comes with story 1.11.
+- **Disk encryption: documented, not automated.** `docs/install.md` gives the exact LUKS and Clevis/Tang commands, and `install.sh` warns loudly when the data root isn't on a dm-crypt device. `install.sh` never formats or binds disks.
+
 **Never:**
 - No `pangolin` CLI or admin socket (story 1.9).
 - No backups, restic runs or restore (story 1.10).
 - No release, cosign verification or `pangolin upgrade` (story 1.11).
-- No LUKS formatting or Clevis binding by `install.sh` (see Open Questions).
+- No LUKS formatting or Clevis binding by `install.sh`.
 - Never weaken the image's non-root, read-only posture.
 - Never put a secret in `compose.yaml`, or in any file other than `.env`/`secrets/`.
 
@@ -107,7 +116,8 @@ context:
 - [ ] `deploy/compose.yaml` -- image from `${PANGOLIN_IMAGE}`, `env_file: .env`, `read_only`, `init`, `/tmp` and `/run` tmpfs, the data bind mount, the secrets mount (read-only), port bound to `0.0.0.0:3000` (the firewall restricts it), `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, health check, restart policy -- the production stack
 - [ ] `deploy/allowlist.conf.default` -- the default allowlist with comments -- egress config artefact
 - [ ] `deploy/install.sh` -- the full install flow above, split into functions -- the one-command install
-- [ ] `deploy/firewall/*` -- per the chosen mechanism (Open Questions) -- inbound and outbound enforcement
+- [ ] `deploy/firewall/{render.sh,pangolin-allowlist.service,pangolin-allowlist.timer}` -- render the nftables ruleset (host + `DOCKER-USER`) from `allowlist.conf` and the prompts; resolve hostnames into nft sets; a systemd timer refreshes the sets every 15 min; also render the Proxmox rules text -- inbound and outbound enforcement
+- [ ] `vitest.config.ts`, `tsconfig.json` (root) -- add `deploy` to the Vitest `include` glob and the root typecheck `include`, so `deploy/*.test.ts` runs and is typechecked -- otherwise the install tests never run
 - [ ] `deploy/install.test.ts` (Vitest, spawns `sh`) -- `--non-interactive --root <tmp> --no-docker` writes the expected files and modes; a re-run keeps secrets and edits; the firewall output from a fixture allowlist; the failure modes in the matrix -- automated coverage without a VM
 - [ ] `docs/install.md`, `README.md` -- the VM prerequisites (LUKS plus Clevis/Tang steps), the install, NPM settings, what the bundle is -- the operator guide
 - [ ] `.github/workflows/ci.yml` -- shellcheck `deploy/*.sh`; the container job waits on `/healthz`; `docker compose -f deploy/compose.yaml config` validates -- CI
@@ -117,22 +127,6 @@ context:
 - Given the installed VM, when `/healthz` is requested through NPM, then it returns 200 `{ "ok": true }`.
 - Given the firewall, when an outbound connection is attempted from inside the container to a host not on the allowlist, then it fails. Allowlisted hosts succeed, and the app port is unreachable from anything but the NPM host.
 
-## Open Questions
-
-1. **Firewall mechanism.** The spec allows either "Proxmox VM firewall or nftables".
-   - **(a) nftables inside the VM**, managed by `install.sh`. Allowlisted hostnames are resolved into nft sets, refreshed every 15 minutes by a systemd timer, and hooked into both `output` and Docker's forward path (`DOCKER-USER`). It is self-contained and enforces egress for containers, but it's the most complex part and interacts with Docker's own rules.
-   - **(b) Proxmox VM firewall rules.** `install.sh` prints IP-based rules for you to paste into Proxmox. That's simpler and has no Docker interaction, but hostnames are frozen to today's IPs, and the rules sit outside the VM.
-   - **(c) Both.** nftables as the enforcement, plus printed Proxmox rules as a second layer.
-2. **Proxy modes.** The spec lists existing NPM, bundled Caddy, and Tailscale-only.
-   - **(a) NPM only** now. The prompt still offers the other two but says "not yet supported".
-   - **(b) All three** now: more code and prompts, and only NPM gets proven on your VM.
-3. **Where the first image comes from.** No signed release exists yet (story 1.11).
-   - **(a)** Cut a pre-release tag `v0.1.0` now, so `release.yml` publishes a GHCR image, and install pulls it. That needs you to push a tag, and a GHCR token if the repo is private.
-   - **(b)** `install.sh --build` clones the repo and builds the image on the VM for now, switching to GHCR pulls in 1.11.
-   - **(c)** Support both: `--image <ref>` (default GHCR `latest`) plus `--build`.
-4. **LUKS and Clevis/Tang setup.** The ticket's verify step assumes the data disk is already encrypted.
-   - **(a) Documented only:** `docs/install.md` gives the exact commands, and `install.sh` warns if the data root isn't encrypted.
-   - **(b) `install.sh --setup-disk /dev/sdX --tang http://…`** formats and binds the disk. That's destructive; it would ask you to type the device name to confirm.
 
 ## Implementation Notes
 
