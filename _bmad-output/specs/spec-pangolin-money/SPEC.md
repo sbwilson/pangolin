@@ -10,6 +10,7 @@ companions:
   - security-and-recovery.md
   - deployment-and-ops.md
   - decisions.md
+  - architecture-diagrams.md
 sources:
   - ../../../docs/architecture/Pangolin Money Architecture & Data Model.md
 ---
@@ -72,10 +73,16 @@ A couple wants to see where their money goes, what they can save, and how they'r
 - **CAP-16**
   - **intent:** `install.sh` brings up the full stack in one command on Debian (then Ubuntu, Rocky Linux) behind an existing reverse proxy, bundled Caddy, or Tailscale-only, and `pangolin upgrade`/`backup`/`restore` keep it running with a tested restore path.
   - **success:** CI backs up and restores a synthetic database on every release; a monthly restore drill runs automatically on the server; `pangolin upgrade` rolls back automatically on a failed health check.
+- **CAP-17**
+  - **intent:** Either partner can see historical cash flow (Sankey), P&L by group or category, spending over any period, and current net worth, all summed from the splits they can see.
+  - **success:** Against the seeded household, each report's totals match a hand-computed sum of splits for the chosen period, with private accounts excluded from the partner's and shared views.
+- **CAP-18**
+  - **intent:** A partner can browse thousands of transactions with filters held in the URL, edit splits and tags, and work the review inbox.
+  - **success:** An end-to-end test filters the seeded ledger via URL parameters, splits a transaction into two splits summing to the parent, tags it, and clears a review-inbox item.
 
 ## Constraints
 
-- Private data never leaves the server by default; outbound network is limited to an explicit allowlist (price/unit-price hosts, any configured LLM endpoint) — no third-party aggregators, no telemetry.
+- Private data never leaves the server by default; outbound network is limited to an explicit allowlist (price/unit-price hosts, any configured LLM endpoint) — no third-party aggregators, no telemetry. Only the job runner makes outbound calls; API and domain services make none.
 - SQLite is the single source of truth with a single writer (one Node process/container); jobs are polled rows in SQLite, not a separate queue server.
 - Money is stored as integer minor units (branded `Cents` type) — no floats near money. Units are integer micro-units; prices are decimal strings.
 - Cloud LLM use is opt-in only, assigned per purpose, and receives only description/amount/date/category list — never account names, people, or private transactions. PDF statement extraction is restricted to local providers unless explicitly enabled for cloud, because statements carry names, addresses and account numbers.
@@ -101,14 +108,8 @@ A couple wants to see where their money goes, what they can save, and how they'r
 
 ## Success signal
 
-Both partners can import every transaction from 1 July 2024 onward across all listed sources through one idempotent pipeline that reconciles to statement balances (M1's gate — import, deduplication and transfer matching — passes before later milestones build on it), see budgets, goals, net worth and a per-FY tax pack derived live from splits, and trust the install because CI verifies backup and restore on every release and the server runs its own monthly restore drill.
+A fresh install reaches first login in one command with the restore test passing in CI (M0 gate); 12 months of the couple's real data import with no unexplained balance gaps (M1 gate); both partners use it weekly instead of their spreadsheets (M2 gate) and track one full budget cycle each (M3 gate); and the M4 tax pack reproduces hand-checked per-person FY totals. The milestone table is in `deployment-and-ops.md`.
 
 ## Assumptions
 
-- Assumed the two embedded diagrams referenced by the source (system architecture; milestones/gates) are illustrative restatements of prose already captured, not additional undocumented decisions, since no diagram content was included in the source text.
 - Assumed the source's "all are settled" framing for its Decisions table means those choices are recorded here as decisions/constraints rather than open questions, while the rationale tables themselves are preserved verbatim in `decisions.md`.
-
-## Open Questions
-
-- The source embeds two diagrams (system architecture: one app container/one database; milestones: 5 phases/4 gates) as placeholders with no image or diagram content included in the text — should the actual diagrams be sourced and added as an architecture-diagrams companion before downstream architecture or ticketing work starts?
-- Milestones are named as "five milestones, each ending in a check we can actually verify" with 4 gates, but only M1's risk and content are described in prose — should M2–M5's scope and gate criteria be defined before slicing this spec into epics and tickets?

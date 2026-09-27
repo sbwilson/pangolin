@@ -1,0 +1,42 @@
+---
+type: epic
+title: "Import, dedupe and transfer matching"
+parent: initiative-pangolin-money-v1
+covers: [CAP-1, CAP-2]
+after: []
+assignee: ""
+risk: high
+---
+
+# Import, dedupe and transfer matching
+
+## Description
+
+Every v1 format except PDF goes through one idempotent pipeline: parse, normalise, dedupe, match payee, apply rules, match transfers, reconcile, and review. The formats are CommBank OFX/CSV/QIF, ubank CSV, Up CSV, CMC confirmations, the FY2025 multi-bank profile and a generic CSV mapper. M1 carries the most risk, because every later report depends on this epic. Milestone M1.
+
+## Outcome
+
+Our real history since 1 July 2024 is in the ledger and reconciles to the bank. This is the M1 gate.
+
+## Done when
+
+1. Twelve months of our real data are imported with no unexplained balance gaps. (M1 gate)
+2. Each format imports its committed anonymised sample. Re-importing the same file, or an overlapping range, adds zero rows.
+3. Two identical same-day coffees stay two transactions. A unique opposite amount within ±3 days is auto-linked as a transfer, and an ambiguous one goes to review.
+4. Categorisation uses the rule, then the payee default. Anything else lands in the review inbox, and accepting a correction offers a new rule.
+5. Deployed to the home server with `pangolin upgrade`, and CI (lint, types, unit, migration, Playwright) is green on the release tag.
+
+## Boundaries
+
+packages/importers and the import, payee-matching, rules and transfer stages in domain. CAP-1 part: every format except PDF. CAP-2 part: rules, payee default and review inbox; LLM suggestions belong to epic-llm-categorisation-pdf. Owns touch point NetBank history export (a person does it).
+
+## References
+
+- spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-1, CAP-2
+- pipeline — _bmad-output/specs/spec-pangolin-money/import-pipeline.md
+- categories — _bmad-output/specs/spec-pangolin-money/categorisation.md, section Default categories
+
+## Notes
+
+- Unknown: pre-FY2026 CommBank history must be exported from NetBank before the M1 gate; a person does it.
+- Open question: architecture spine (bmad-architecture, pending) must settle the visibleAccounts()/redact() contract and the seed-generator extension format before inception; cite its section in References once written.

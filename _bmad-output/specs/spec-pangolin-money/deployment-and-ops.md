@@ -80,8 +80,16 @@ The server runs one app container under Docker Compose (plus an optional bundled
 
 Five milestones, each ending in a check that can actually be verified. Security, backups and CI come first, because retrofitting them is where self-hosted projects go wrong.
 
+| Milestone | Scope | Gate |
+| --- | --- | --- |
+| M0 · Foundations | Repo, CI, Debian install script behind NPM, passkey login, seed data, mock LLM server; nightly encrypted backup and automated restore test | Fresh install to first login in one command; restore test passes in CI |
+| M1 · Ledger and import | Accounts and ownership, OFX, CSV and QIF import, dedupe, transfer matching, privacy redaction; transaction list with filters, splits, tags, rules and the review inbox | 12 months of our real data imported with no unexplained balance gaps |
+| M2 · Insight | Cash flow (Sankey, P&L by group or category), spending by any period, net worth; LLM categorisation (any OpenAI- or Anthropic-style provider), PDF statement import, merchant logos | We use it weekly instead of the spreadsheets |
+| M3 · Planning | Fortnightly budgets with pace and projection, recurring bill detection and alerts; goals with percentage allocation rules, cash-flow and net-worth forecasts | One full budget cycle tracked for both of us |
+| M4 · Wealth and tax | ETF events, lots and prices; super units, unit prices and contribution caps; tax pack per person per financial year, activities, receipts | — |
+
 M1 is highlighted because it carries the most risk: if import, deduplication and transfer matching aren't trustworthy, every report built on them is wrong. It's worth spending disproportionate time there.
 
 Partner settlement (who owes whom for shared costs paid from personal accounts) follows in v1.1, after M4.
 
-> The source document references an embedded diagram here ("milestones · 5 phases, 4 gates") with no diagram content included in the text — see SPEC.md Open Questions.
+Diagram: `architecture-diagrams.md`.

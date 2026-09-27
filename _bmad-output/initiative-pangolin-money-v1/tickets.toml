@@ -1,0 +1,79 @@
+# tickets.toml — the initiative's epics. Table order is build order; `id` is permanent and not an order.
+
+[[epic]]
+id = 1
+slug = "epic-platform-foundations"
+title = "Platform foundations"
+covers = ["CAP-16", "CAP-15"]
+
+[[epic]]
+id = 2
+slug = "epic-ledger-accounts-privacy"
+title = "Ledger, accounts and privacy"
+covers = ["CAP-3", "CAP-18", "CAP-14"]
+after = [{ epic = 1, needs = "schema and migration tooling, auth sessions, service layer with audit_log, seed generator" }]
+
+[[epic]]
+id = 3
+slug = "epic-import-dedupe-transfers"
+title = "Import, dedupe and transfer matching"
+covers = ["CAP-1", "CAP-2"]
+after = [{ epic = 2, needs = "account, transaction, split and transfer_group tables with visibleAccounts()/redact()" }]
+
+[[epic]]
+id = 4
+slug = "epic-spending-insight"
+title = "Spending and cash-flow insight"
+covers = ["CAP-17", "CAP-14"]
+after = [{ epic = 3, needs = "categorised splits imported from real statements" }]
+
+[[epic]]
+id = 5
+slug = "epic-llm-categorisation-pdf"
+title = "LLM categorisation and PDF statements"
+covers = ["CAP-2", "CAP-1"]
+after = [
+  { epic = 1, needs = "job runner and mock LLM server" },
+  { epic = 3, needs = "import pipeline stages, import_row staging and the review inbox" },
+]
+
+[[epic]]
+id = 6
+slug = "epic-budgets-bills"
+title = "Budgets and recurring bills"
+covers = ["CAP-4", "CAP-5"]
+after = [{ epic = 3, needs = "categorised splits and payees" }]
+
+[[epic]]
+id = 7
+slug = "epic-goals-savings"
+title = "Goals and savings allocation"
+covers = ["CAP-6", "CAP-7"]
+after = [{ epic = 6, needs = "period and payday-anchor helpers" }]
+
+[[epic]]
+id = 8
+slug = "epic-forecasting"
+title = "Forecasting"
+covers = ["CAP-8"]
+after = [
+  { epic = 6, needs = "budgets and confirmed recurring series" },
+  { epic = 7, needs = "savings definition and goal allocations" },
+]
+
+[[epic]]
+id = 9
+slug = "epic-investments-super"
+title = "Investments and super"
+covers = ["CAP-9", "CAP-10"]
+after = [
+  { epic = 1, needs = "job runner for price and unit-price fetches" },
+  { epic = 2, needs = "account and ownership model" },
+]
+
+[[epic]]
+id = 10
+slug = "epic-tax-activities-property"
+title = "Tax pack, activities and property"
+covers = ["CAP-12", "CAP-13", "CAP-11"]
+after = [{ epic = 9, needs = "realised capital gains, distributions and contributions" }]
