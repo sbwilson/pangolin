@@ -7,12 +7,29 @@
 //   3. swap it in, moving the replaced files to `<dataDir>/pre-restore-<stamp>/`;
 //   4. before the server starts, migrate it and make every pending or running job with external
 //      effects `dead` (reason `restored`); the server re-seeds the schedules when it starts.
+//   5. record the restored snapshot as the last backup, so status shows where the data came from.
 // A failed check swaps nothing. A lock held by anyone refuses before anything is touched.
-import { mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { cancelJobsForRestore, newId, systemClock, type UseCaseContext } from "@pangolin/app";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { basename, join } from "node:path";
+import {
+  cancelJobsForRestore,
+  newId,
+  recordBackupPush,
+  recordBackupSnapshot,
+  systemClock,
+  type UseCaseContext,
+} from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
-import { createUnitOfWork, type Db, loadMigrations, migrate, openDatabase } from "@pangolin/db";
+import {
+  createUnitOfWork,
+  type Db,
+  loadMigrations,
+  MANIFEST_FILE,
+  manifestSha256,
+  migrate,
+  openDatabase,
+  parseManifest,
+} from "@pangolin/db";
 import { backupPaths, fileStamp } from "../backup/paths.ts";
 import { createRestic, type Restic } from "../backup/restic.ts";
 import { type FetchedSnapshot, fetchSnapshot, swapIn, verifyFetched } from "../backup/restore.ts";
@@ -54,12 +71,19 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Migrates the swapped-in database and cancels jobs with external effects, as `cli:restore`. */
+/**
+ * Migrates the swapped-in database, cancels jobs with external effects, then records the
+ * restored snapshot as pushed (the database was copied before its own row was written), all as
+ * `cli:restore`. The push job that recording enqueues finds it pushed and does nothing.
+ */
 function afterSwap(
   dbFile: string,
   migrationsDir: string,
-  snapshotId: string,
+  fetched: FetchedSnapshot,
 ): { schemaVersion: number; cancelled: number } {
+  const snapshotId = fetched.snapshot.id;
+  const text = readFileSync(join(fetched.dbDir, MANIFEST_FILE), "utf8");
+  const manifest = parseManifest(text);
   let db: Db | undefined;
   try {
     db = openDatabase(dbFile);
@@ -76,6 +100,17 @@ function afterSwap(
       kinds: EXTERNAL_EFFECT_KINDS,
       snapshot: snapshotId,
     });
+    // The staged directory's name is the snapshot job's ID, the row's ID.
+    const id = basename(fetched.dbDir);
+    recordBackupSnapshot(ctx, {
+      id,
+      takenAt: manifest.takenAt ?? new Date(fetched.snapshot.time).toISOString(),
+      schemaVersion: manifest.schemaVersion,
+      tableCount: manifest.tables.length,
+      rowCount: manifest.tables.reduce((sum, table) => sum + table.rows, 0),
+      manifestSha256: manifestSha256(text),
+    });
+    recordBackupPush(ctx, { id, resticSnapshotId: snapshotId });
     return { schemaVersion, cancelled };
   } finally {
     db?.close();
@@ -107,6 +142,11 @@ export async function restoreStopped(ref: string, deps: RestoreDeps): Promise<Re
   }
   const stamp = fileStamp((deps.now ?? Date.now)());
   const dir = join(config.dataDir, `restore-${stamp}`);
+  // Only a directory this call created is ever removed.
+  let created = false;
+  const cleanUp = () => {
+    if (created) rmSync(dir, { recursive: true, force: true });
+  };
   try {
     const restic =
       deps.restic ??
@@ -120,16 +160,18 @@ export async function restoreStopped(ref: string, deps: RestoreDeps): Promise<Re
     let fetched: FetchedSnapshot;
     try {
       out(`Fetching snapshot ${ref} into ${dir} …`);
+      mkdirSync(dir, { mode: 0o700 });
+      created = true;
       fetched = await fetchSnapshot(restic, ref, dir);
     } catch (error) {
-      rmSync(dir, { recursive: true, force: true });
+      cleanUp();
       return { ok: false, failed: "fetch", message: message(error) };
     }
     const { snapshot } = fetched;
     out(`Restored snapshot ${snapshot.id.slice(0, 8)} (taken ${snapshot.time}); verifying …`);
     const verdict = verifyFetched(fetched, loadMigrations(deps.migrationsDir));
     if (!verdict.ok) {
-      rmSync(dir, { recursive: true, force: true });
+      cleanUp();
       return { ok: false, failed: verdict.check, message: verdict.message };
     }
     out("integrity_check: ok");
@@ -140,22 +182,32 @@ export async function restoreStopped(ref: string, deps: RestoreDeps): Promise<Re
       swapped = swapIn(config.dataDir, fetched, stamp);
     } catch (error) {
       // swapIn has already moved back whatever it had moved.
-      rmSync(dir, { recursive: true, force: true });
+      cleanUp();
       return { ok: false, failed: "swap", message: `${message(error)}; nothing was swapped in` };
     }
     let after: { schemaVersion: number; cancelled: number };
     try {
-      after = afterSwap(paths.dbFile, deps.migrationsDir, snapshot.id);
+      after = afterSwap(paths.dbFile, deps.migrationsDir, fetched);
     } catch (error) {
-      swapped.undo();
-      rmSync(dir, { recursive: true, force: true });
+      try {
+        swapped.undo();
+      } catch (undoError) {
+        // Delete nothing: the previous files are still in the pre-restore directory.
+        created = false;
+        return {
+          ok: false,
+          failed: "swap",
+          message: `${message(error)}; putting the previous database back also failed (${message(undoError)}): the previous database and attachments are in ${swapped.preRestoreDir}`,
+        };
+      }
+      cleanUp();
       return {
         ok: false,
         failed: "swap",
         message: `${message(error)}; the previous database is back in place`,
       };
     }
-    rmSync(dir, { recursive: true, force: true });
+    cleanUp();
     return {
       ok: true,
       snapshotId: snapshot.id,
@@ -166,7 +218,7 @@ export async function restoreStopped(ref: string, deps: RestoreDeps): Promise<Re
       preRestoreDir: swapped.preRestoreDir,
     };
   } catch (error) {
-    rmSync(dir, { recursive: true, force: true });
+    cleanUp();
     throw error;
   } finally {
     lock.release();

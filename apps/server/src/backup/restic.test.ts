@@ -118,7 +118,7 @@ describe("createRestic", () => {
     await restic.ensureRepository();
     const controller = new AbortController();
     const reason = new Error("timed out");
-    const running = restic.backup([stage("A", "x")], controller.signal);
+    const running = restic.backup([stage("A", "x")], { signal: controller.signal });
     controller.abort(reason);
     await expect(running).rejects.toBe(reason);
   });

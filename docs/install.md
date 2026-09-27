@@ -361,6 +361,14 @@ e.g. a TrueNAS cron job running `restic forget --keep-daily 7 --keep-weekly 4 --
 --prune` against the repository's directory. The first backup initialises the repository with
 the restic password. Its host must be in `allowlist.conf` (`install.sh --backup-server` adds it).
 
+Give the NAS rest-server authentication too: create a user with `htpasswd -B` in its
+`.htpasswd` (rest-server's default; never `--no-auth` outside a test), and put the credentials in
+the repository URL, e.g. `rest:https://pangolin:<password>@nas.lan:8000/pangolin` (quote it in
+`.env` if the password has shell characters; Pangolin redacts it from its messages). Serve it over
+TLS (`--tls` with a certificate the VM trusts), or at least keep it on a trusted LAN segment:
+restic encrypts the data either way, but plain HTTP exposes those credentials. `.env` is 0600,
+root's.
+
 **Back up now:**
 
 ```sh

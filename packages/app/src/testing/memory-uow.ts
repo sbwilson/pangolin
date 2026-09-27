@@ -215,7 +215,7 @@ function backupRepo(working: MemoryState, check: () => void): BackupSnapshotRepo
       check();
       return working.backups
         .filter((b) => b.pushedAt !== null)
-        .sort((a, b) => (`${a.pushedAt}|${a.id}` < `${b.pushedAt}|${b.id}` ? 1 : -1))[0];
+        .sort((a, b) => (`${a.takenAt}|${a.id}` < `${b.takenAt}|${b.id}` ? 1 : -1))[0];
     },
   };
 }

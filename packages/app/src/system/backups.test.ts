@@ -206,6 +206,18 @@ describe("recording a backup", () => {
   });
 });
 
+describe("lastBackup", () => {
+  it("is the pushed snapshot taken last, even when an older one's push finished later", () => {
+    const { ctx, clock } = setup();
+    recordBackupSnapshot(ctx, { ...snapshotInput("NEW"), takenAt: "2026-09-28T02:30:00.000Z" });
+    recordBackupSnapshot(ctx, { ...snapshotInput("OLD"), takenAt: "2026-09-27T02:30:00.000Z" });
+    recordBackupPush(ctx, { id: "NEW", resticSnapshotId: RESTIC_1 });
+    clock.advance(60 * 60_000);
+    recordBackupPush(ctx, { id: "OLD", resticSnapshotId: RESTIC_2 });
+    expect(lastBackup(ctx)?.snapshotId).toBe(RESTIC_1);
+  });
+});
+
 describe("backupProgress", () => {
   it("follows the snapshot job, then the push, and reports where it failed", () => {
     const { ctx, clock } = setup();

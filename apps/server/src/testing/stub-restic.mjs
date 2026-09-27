@@ -5,6 +5,7 @@
 // non-empty RESTIC_PASSWORD_FILE and the cache under RESTIC_CACHE_DIR.
 //
 // STUB_RESTIC_FAIL=<subcommand> makes that subcommand fail (exit 1, with a message on stderr).
+// STUB_RESTIC_HANG=<subcommand> makes it write its PID to STUB_RESTIC_PIDFILE and never finish.
 import { randomBytes } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -29,6 +30,10 @@ try {
 if (password === "") fail(1, "an empty password is not allowed");
 if ((process.env.RESTIC_CACHE_DIR ?? "") === "") fail(1, "no cache dir");
 if (process.env.STUB_RESTIC_FAIL === command) fail(1, `${command} failed on purpose`);
+if (process.env.STUB_RESTIC_HANG === command) {
+  writeFileSync(process.env.STUB_RESTIC_PIDFILE ?? "/dev/null", String(process.pid));
+  await new Promise(() => setInterval(() => {}, 60_000));
+}
 
 const repo = repoUrl.slice("stub:".length);
 const config = join(repo, "config");
@@ -90,10 +95,15 @@ switch (command) {
       cpSync(path, join(dir, "tree", path), { recursive: true });
     }
     const now = new Date();
+    const given = flag("--time");
+    // --time is `YYYY-MM-DD HH:MM:SS` in TZ, which Pangolin sets to UTC.
+    if (given !== undefined && process.env.TZ !== "UTC") fail(1, "--time without TZ=UTC");
     const time =
-      last !== undefined && now.toISOString() <= last
-        ? new Date(Date.parse(last) + 1).toISOString()
-        : now.toISOString();
+      given !== undefined
+        ? new Date(`${given.replace(" ", "T")}Z`).toISOString()
+        : last !== undefined && now.toISOString() <= last
+          ? new Date(Date.parse(last) + 1).toISOString()
+          : now.toISOString();
     const meta = { id, time, paths, hostname: flag("--host"), tags: [flag("--tag")] };
     writeFileSync(join(dir, "meta.json"), JSON.stringify(meta));
     process.stdout.write(`${JSON.stringify({ message_type: "status", percent_done: 0.5 })}\n`);

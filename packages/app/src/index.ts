@@ -192,6 +192,8 @@ export {
   type BackupProgressInput,
   backupProgress,
   backupProgressInput,
+  backupsAwaitingPush,
+  backupsAwaitingPushInput,
   dailyAt,
   getBackupSnapshot,
   getBackupSnapshotInput,

@@ -33,13 +33,16 @@ export function createBackupSnapshotRepo(orm: Orm, check: () => void): BackupSna
 
     latestPushed: () => {
       check();
-      return orm
-        .select()
-        .from(backupSnapshot)
-        .where(isNotNull(backupSnapshot.pushedAt))
-        .orderBy(desc(backupSnapshot.pushedAt), desc(backupSnapshot.id))
-        .limit(1)
-        .get() as BackupSnapshotRow | undefined;
+      return (
+        orm
+          .select()
+          .from(backupSnapshot)
+          .where(isNotNull(backupSnapshot.pushedAt))
+          // By when the database was taken, not pushed: a retried older push never wins.
+          .orderBy(desc(backupSnapshot.takenAt), desc(backupSnapshot.id))
+          .limit(1)
+          .get() as BackupSnapshotRow | undefined
+      );
     },
   };
 }

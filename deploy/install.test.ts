@@ -333,7 +333,10 @@ describe("the pangolin command", () => {
         '  *" ps "*)',
         `    [ "${stack}" = broken ] && { echo "Cannot connect to the Docker daemon" >&2; exit 1; }`,
         `    [ "${stack}" = running ] && echo stub-container-id ;;`,
-        `  *" run "*) exit ${runExit} ;;`,
+        // runExit -1: the run is interrupted (SIGTERM to the wrapper, the stub's parent).
+        runExit === -1
+          ? `  *" run "*) kill -TERM $PPID; exit 143 ;;`
+          : `  *" run "*) exit ${runExit} ;;`,
         "esac",
         "exit 0",
         "",
@@ -380,6 +383,25 @@ describe("the pangolin command", () => {
   it("restore starts the stack again after a failed check, and keeps the CLI's exit code", () => {
     const result = wrapper(["restore"], "running", 1);
     expect(result.status).toBe(1);
+    expect(dockerLog().trim().split("\n").at(-1)).toMatch(/ up -d pangolin$/);
+  });
+
+  it("restore refuses bad arguments with a usage error before stopping anything", () => {
+    for (const args of [
+      ["restore", "../x"],
+      ["restore", "latest", "extra"],
+      ["restore", "XYZ"],
+    ]) {
+      const result = wrapper(args, "running");
+      expect(result.status).toBe(2);
+      expect(result.stderr).toMatch(/usage: pangolin restore/);
+    }
+    expect(existsSync(at("docker.log"))).toBe(false);
+  });
+
+  it("restore starts the stack again when the one-off run is interrupted", () => {
+    const result = wrapper(["restore", "latest"], "running", -1);
+    expect(result.status).toBe(143);
     expect(dockerLog().trim().split("\n").at(-1)).toMatch(/ up -d pangolin$/);
   });
 

@@ -1,5 +1,6 @@
 // Where backups and restores live in the data directory (story 1.10). Everything stays on the
 // data volume (the encrypted disk), never `/tmp`: a snapshot is a full copy of the household.
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 
 /** The live database's file name in the data directory. */
@@ -46,10 +47,11 @@ export function stagingDir(paths: BackupPaths, id: string): string {
   return join(paths.stagingRoot, id);
 }
 
-/** `2026-09-27T02-30-00Z`: an instant as a file-name-safe stamp, to the second. */
+/**
+ * `2026-09-27T02-30-00-123Z-1a2b3c`: an instant to the millisecond plus a random suffix, as a
+ * file-name-safe stamp that two restores never share.
+ */
 export function fileStamp(epochMs: number): string {
-  return new Date(epochMs)
-    .toISOString()
-    .replace(/\.\d{3}Z$/, "Z")
-    .replaceAll(":", "-");
+  const time = new Date(epochMs).toISOString().replace(".", "-").replaceAll(":", "-");
+  return `${time}-${randomBytes(3).toString("hex")}`;
 }

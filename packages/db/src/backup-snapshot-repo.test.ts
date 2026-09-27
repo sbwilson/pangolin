@@ -103,4 +103,18 @@ describe("backup_snapshot on SQLite", () => {
       recordBackupPush(ctx, { id: jobId, resticSnapshotId: "3".repeat(64) }).row.resticSnapshotId,
     ).toBe("1".repeat(64));
   });
+
+  it("reports the snapshot taken last as the last backup, whatever order the pushes finished in", () => {
+    recordBackupSnapshot(ctx, { ...input("NEWER"), takenAt: "2026-09-28T02:30:00.000Z" });
+    recordBackupSnapshot(ctx, { ...input("OLDER"), takenAt: "2026-09-27T02:30:00.000Z" });
+    now = now.add({ minutes: 1 });
+    recordBackupPush(ctx, { id: "NEWER", resticSnapshotId: "1".repeat(64) });
+    // The older snapshot's push was retried and finished later.
+    now = now.add({ hours: 1 });
+    recordBackupPush(ctx, { id: "OLDER", resticSnapshotId: "2".repeat(64) });
+    expect(lastBackup(ctx)).toMatchObject({
+      snapshotId: "1".repeat(64),
+      takenAt: "2026-09-28T02:30:00.000Z",
+    });
+  });
 });

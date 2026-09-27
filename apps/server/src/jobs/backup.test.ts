@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  BACKUP_PUSH_JOB,
   backupProgress,
   type Clock,
   createIdGenerator,
@@ -62,18 +63,36 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.STUB_RESTIC_FAIL;
+  delete process.env.STUB_RESTIC_HANG;
+  delete process.env.STUB_RESTIC_PIDFILE;
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
-function runner(configured = true): Runner {
+function runner(configured = true, pushTimeoutMs?: number): Runner {
   const jobs = createJobs({
     timezone: "Australia/Sydney",
     dataDir,
     backup: configured ? stub.config : DEFAULT_BACKUP_CONFIG,
   });
-  return createRunner({ uow, clock, newId, ...jobs, leaseMs: 60_000, log: () => {} });
+  // A copy of the push kind with a short timeout, for the abort test.
+  const kinds = jobs.kinds.map((registration) =>
+    pushTimeoutMs !== undefined && registration.kind.kind === BACKUP_PUSH_JOB.kind
+      ? { ...registration, kind: { ...registration.kind, timeoutMs: pushTimeoutMs } }
+      : registration,
+  );
+  return createRunner({
+    uow,
+    clock,
+    newId,
+    kinds,
+    schedules: jobs.schedules,
+    leaseMs: 60_000,
+    log: () => {},
+  });
 }
+
+const staging = () => readdirSync(backupPaths(dataDir).stagingRoot).sort();
 
 const cli = () => ({ viewer: systemViewer("cli:backup"), clock, newId, uow });
 
@@ -178,5 +197,91 @@ describe("the backup jobs", () => {
     await runner(false).tick();
     expect(backupProgress({ uow }, { jobId })).toEqual({ state: "failed", step: "snapshot" });
     expect(existsSync(backupPaths(dataDir).stagingRoot)).toBe(false);
+  });
+
+  it("keeps at most one earlier snapshot awaiting its push, and drops partial ones, before staging", async () => {
+    const r = runner();
+    process.env.STUB_RESTIC_FAIL = "backup";
+    const first = requestBackup(cli());
+    await r.tick(); // snapshot 1
+    await r.tick(); // push 1 fails and waits to retry
+    const second = requestBackup(cli());
+    await r.tick(); // snapshot 2: snapshot 1 still awaits its push, and is the newest such
+    await r.tick(); // push 2 fails
+    expect(staging()).toEqual([first, second].sort());
+    // Left by an attempt that died mid-snapshot.
+    mkdirSync(join(backupPaths(dataDir).stagingRoot, `${first}X.partial`));
+    const third = requestBackup(cli());
+    await r.tick(); // snapshot 3 keeps only snapshot 2 beside it
+    expect(staging()).toEqual([second, third].sort());
+  });
+
+  it("removes older staged snapshots after a push; their own pushes then finish as superseded", async () => {
+    const r = runner();
+    process.env.STUB_RESTIC_FAIL = "backup";
+    const first = requestBackup(cli());
+    await r.tick();
+    await r.tick(); // push 1 fails and waits a minute to retry
+    const second = requestBackup(cli());
+    await r.tick(); // snapshot 2
+    delete process.env.STUB_RESTIC_FAIL;
+    await r.tick(); // push 2 (push 1 is not due yet) succeeds
+    expect(backupProgress({ uow }, { jobId: second })).toMatchObject({ state: "done" });
+    expect(staging()).toEqual([]);
+    now = now.add({ hours: 2 });
+    await r.tick(); // push 1: its snapshot is gone, and a newer one is pushed
+    expect(
+      db
+        .prepare("SELECT status FROM job WHERE payload = ?")
+        .pluck()
+        .get(JSON.stringify({ backupId: first })),
+    ).toBe("done");
+    expect(listReviewItems({ ...cli(), viewer: systemViewer("job:runner") }, {})).toEqual([]);
+    expect(lastBackup({ uow })).toMatchObject({
+      snapshotId: (backupProgress({ uow }, { jobId: second }) as { snapshotId: string }).snapshotId,
+    });
+  });
+
+  it("pushes with the snapshot's time, so restic orders snapshots by when they were taken", async () => {
+    const r = runner();
+    const jobId = requestBackup(cli());
+    await r.tick();
+    await r.tick();
+    const { snapshotId } = backupProgress({ uow }, { jobId }) as { snapshotId: string };
+    const meta = JSON.parse(
+      readFileSync(join(stub.repoDir, "snapshots", snapshotId, "meta.json"), "utf8"),
+    ) as { time: string };
+    // To the second: restic's --time has no fraction.
+    expect(meta.time).toBe(`${lastBackup({ uow })?.takenAt.slice(0, 19)}.000Z`);
+  });
+
+  it("kills restic when a push runs past its timeout, and the attempt fails as timed out", async () => {
+    const r = runner(true, 300);
+    requestBackup(cli());
+    await r.tick();
+    const pidFile = join(dir, "restic.pid");
+    process.env.STUB_RESTIC_HANG = "backup";
+    process.env.STUB_RESTIC_PIDFILE = pidFile;
+    await r.tick();
+    const push = db
+      .prepare("SELECT status, attempts, last_error FROM job WHERE kind = 'backup-push'")
+      .get();
+    expect(push).toEqual({
+      status: "pending",
+      attempts: 1,
+      last_error: "JobTimeout: Timed out after 300 ms",
+    });
+    const pid = Number(readFileSync(pidFile, "utf8"));
+    const alive = () => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    for (let i = 0; i < 100 && alive(); i++)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(alive()).toBe(false);
   });
 });

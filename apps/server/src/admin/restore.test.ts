@@ -14,6 +14,7 @@ import {
   backupProgress,
   createIdGenerator,
   fixedClockAt,
+  lastBackup,
   requestBackup,
   systemClock,
 } from "@pangolin/app";
@@ -150,9 +151,12 @@ describe("restoreStopped", () => {
     if (!result.ok) throw new Error("unreachable");
     const migrations = loadMigrations(packageMigrationsDir);
     expect(result.schemaVersion).toBe(migrations.length);
-    expect(result.preRestoreDir).toBe(join(dataDir, "pre-restore-2026-09-27T03-00-00Z"));
+    const stamp = "2026-09-27T03-00-00-000Z-[0-9a-f]{6}";
+    expect(result.preRestoreDir).toMatch(new RegExp(`^${join(dataDir, `pre-restore-${stamp}`)}$`));
     expect(out).toEqual([
-      `Fetching snapshot latest into ${join(dataDir, "restore-2026-09-27T03-00-00Z")} …`,
+      expect.stringMatching(
+        new RegExp(`^Fetching snapshot latest into ${join(dataDir, `restore-${stamp}`)} …$`),
+      ),
       expect.stringMatching(
         new RegExp(`^Restored snapshot ${snapshotId.slice(0, 8)} \\(taken .+\\); verifying …$`),
       ),
@@ -174,6 +178,11 @@ describe("restoreStopped", () => {
       expect(db.prepare("SELECT actor, action FROM audit_log WHERE entity = 'job'").all()).toEqual([
         { actor: "cli:restore", action: "cancel-for-restore" },
       ]);
+      // Status shows the snapshot the data came from as the last backup.
+      expect(lastBackup({ uow: createUnitOfWork(db) })).toMatchObject({
+        snapshotId,
+        takenAt: "2026-09-27T00:00:00.000Z",
+      });
     });
     expect(readFileSync(join(dataDir, "attachments", "receipt"), "utf8")).toBe("backed-up blob");
     expect(existsSync(join(dataDir, "attachments", "later"))).toBe(false);

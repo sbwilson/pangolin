@@ -141,7 +141,7 @@ export interface BackupSnapshotRepo {
    * snapshot or it was already pushed.
    */
   markPushed(id: string, resticSnapshotId: string, pushedAt: string): boolean;
-  /** The snapshot pushed last, if any. */
+  /** Of the pushed snapshots, the one taken last (by `takenAt`, then ID), if any. */
   latestPushed(): BackupSnapshotRow | undefined;
 }
 

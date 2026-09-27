@@ -14,3 +14,15 @@ test("the restored household signs in with the saved password and TOTP code", as
   const me = await page.evaluate(async () => (await fetch("/api/identity/me")).json());
   expect(me).toMatchObject({ displayName: "Alex", enrolment: "complete" });
 });
+
+test("the status page shows the restored snapshot as the last backup", async ({ page }) => {
+  // The restic snapshot the restore swapped in, from its output (CI sets it).
+  const snapshot = process.env.E2E_RESTORED_SNAPSHOT ?? "";
+  expect(snapshot).toMatch(/^[0-9a-f]{64}$/);
+  await signInWithPassword(page, loadAccount());
+  await expect(page.getByText(/^Last backup .+ \(snapshot [0-9a-f]{8}\)$/)).toContainText(
+    snapshot.slice(0, 8),
+  );
+  const backup = await page.evaluate(async () => (await fetch("/api/system/backup")).json());
+  expect(backup).toMatchObject({ configured: true, last: { snapshotId: snapshot } });
+});

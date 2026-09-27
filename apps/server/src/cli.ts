@@ -9,7 +9,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type BackupProgress, newId, systemClock } from "@pangolin/app";
+import { BACKUP_TIME, type BackupProgress, newId, systemClock } from "@pangolin/app";
 import {
   createUnitOfWork,
   type Db,
@@ -68,6 +68,8 @@ export interface CliOptions {
   readonly io: CliIo;
   /** How often `backup` polls the server, in milliseconds. Defaults to 1 s. */
   readonly pollMs?: number;
+  /** How long `backup` waits for the backup to finish, in milliseconds. Defaults to 1 hour. */
+  readonly backupWaitMs?: number;
   /** Replaces restic for `restore`, for tests. */
   readonly restic?: Restic;
 }
@@ -99,7 +101,8 @@ function printStatus(io: CliIo, status: StatusResult): void {
   if (!backup.configured) {
     io.out("Backups:   not configured (PANGOLIN_BACKUP_REPOSITORY is empty)");
   } else if (backup.last === null) {
-    io.out("Backups:   none yet (nightly at 02:30, household time)");
+    const at = `${String(BACKUP_TIME.hour).padStart(2, "0")}:${String(BACKUP_TIME.minute).padStart(2, "0")}`;
+    io.out(`Backups:   none yet (nightly at ${at}, household time)`);
   } else {
     io.out(`Backups:   last at ${backup.last.pushedAt}, snapshot ${backup.last.snapshotId}`);
   }
@@ -296,7 +299,12 @@ async function backupCli(config: Config, options: CliOptions): Promise<number> {
   const { jobId } = started.result as BackupStarted;
   io.out(`Backup ${jobId} started`);
   let shown = "";
+  const deadline = Date.now() + (options.backupWaitMs ?? 60 * 60_000);
   for (;;) {
+    if (Date.now() > deadline) {
+      io.err("pangolin: the backup is still running; check `pangolin status`");
+      return EXIT_FAILED;
+    }
     const response = await viaSocket(config, "backup-status", { jobId });
     if (response === undefined) {
       io.err("pangolin: the server stopped; the backup resumes when it starts again");

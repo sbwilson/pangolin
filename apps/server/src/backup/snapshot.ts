@@ -27,6 +27,8 @@ export interface TakeSnapshotOptions {
   readonly dbFile: string;
   /** Where to write `pangolin.sqlite` and `manifest.json`; replaced if it exists. */
   readonly outDir: string;
+  /** Recorded in the manifest as when the snapshot was taken. */
+  readonly takenAt?: string;
   /** Aborting it terminates the worker. */
   readonly signal?: JobSignal;
   readonly workerFile?: URL;
@@ -53,7 +55,7 @@ export function takeSnapshot(options: TakeSnapshotOptions): Promise<SnapshotSumm
   if (signal?.aborted) return Promise.reject(signal.reason);
   return new Promise<SnapshotSummary>((resolve, reject) => {
     const worker = new Worker(options.workerFile ?? defaultWorkerFile(), {
-      workerData: { dbFile: options.dbFile, outDir: options.outDir },
+      workerData: { dbFile: options.dbFile, outDir: options.outDir, takenAt: options.takenAt },
     });
     let result: SnapshotSummary | undefined;
     let settled = false;

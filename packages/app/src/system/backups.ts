@@ -214,6 +214,29 @@ export function getBackupSnapshot(
   return ctx.uow.read((repos) => repos.backups.find(id));
 }
 
+export const backupsAwaitingPushInput = z
+  .object({ ids: z.array(z.string().min(1).max(64)).max(10_000) })
+  .strict();
+
+/**
+ * `system.backupsAwaitingPush`: of the snapshot IDs `ids` (staging directories), those recorded,
+ * not yet pushed, and whose push job is still pending or running.
+ */
+export function backupsAwaitingPush(
+  ctx: { readonly uow: Pick<UnitOfWork, "read"> },
+  raw: z.input<typeof backupsAwaitingPushInput>,
+): string[] {
+  const { ids } = parseInput(backupsAwaitingPushInput, raw);
+  return ctx.uow.read((repos) =>
+    ids.filter((id) => {
+      const row = repos.backups.find(id);
+      if (row === undefined || row.pushedAt !== null) return false;
+      const push = repos.jobs.find(row.pushJobId);
+      return push?.status === "pending" || push?.status === "running";
+    }),
+  );
+}
+
 /** Where a backup is, as the CLI polls it. Read from the snapshot row and its two jobs. */
 export type BackupProgress =
   | {

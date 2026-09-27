@@ -328,6 +328,29 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
     ).toEqual(["cli:backup", "job:backup-snapshot", "job:backup-push"]);
   });
 
+  it("backup stops waiting after its limit, exit 1, while the backup goes on", async () => {
+    backup = stubRestic(join(dir, "stub")).config;
+    await boot();
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await runCli(["backup"], {
+      env: {
+        PANGOLIN_DATA_DIR: dataDir(),
+        PANGOLIN_ADMIN_SOCKET: socketPath(),
+        PANGOLIN_PUBLIC_URL: PUBLIC_URL,
+        PANGOLIN_BACKUP_REPOSITORY: backup.repository ?? "",
+        PANGOLIN_RESTIC_PASSWORD_FILE: backup.passwordFile,
+        PANGOLIN_RESTIC_BIN: backup.resticBin,
+      },
+      migrationsDir: packageMigrationsDir,
+      pollMs: 20,
+      backupWaitMs: 0,
+      io: { out: (text) => out.push(text), err: (text) => err.push(text) },
+    });
+    expect(code).toBe(EXIT_FAILED);
+    expect(err.join("\n")).toContain("the backup is still running; check `pangolin status`");
+  });
+
   it("backup reports a push that died, exit 1", async () => {
     backup = stubRestic(join(dir, "stub")).config;
     await boot();
@@ -344,7 +367,8 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
       if (push?.status === "pending" && push.attempts > 0) break;
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    // Its retries run out (as if an hour had passed).
+    // Let the CLI see it waiting to retry, then its retries run out (as if an hour had passed).
+    await new Promise((resolve) => setTimeout(resolve, 200));
     withDb((db) =>
       db
         .prepare(

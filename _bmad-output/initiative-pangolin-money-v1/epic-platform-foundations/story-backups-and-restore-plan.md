@@ -3,7 +3,7 @@ title: 'Backups and restore'
 type: 'feature'
 ticket: '10'
 created: '2026-09-27'
-status: 'in-review'
+status: 'built'
 baseline_revision: 'b90c532e2d672bff99b8d176600e0a8da52d2b3f'
 route: 'full'
 route_source: 'auto'
@@ -87,7 +87,7 @@ context:
 
 ## Implementation Notes
 
-- Staging is per snapshot: `/data/backup/staging/<snapshot-job-id>/` (`pangolin.sqlite` + `manifest.json`), written as `<id>.partial` and renamed when complete, so an overlapping nightly and manual backup never share a directory. A successful push removes its own directory and those of snapshots already pushed or whose push died; restic's cache is `/data/backup/cache` and its `TMPDIR` is `/data/backup/tmp` (the container's `/tmp` is a 64 MB tmpfs).
+- Staging is per snapshot: `/data/backup/staging/<snapshot-job-id>/` (`pangolin.sqlite` + `manifest.json`), written as `<id>.partial` and renamed when complete, so an overlapping nightly and manual backup never share a directory. Before staging, the snapshot job removes every `.partial` directory and every staged one except the newest still awaiting its push; a successful push removes its own directory, older ones, and those already pushed or whose push died (a push whose directory was pruned completes as superseded). restic gets `--time <takenAt>` (with `TZ=UTC`), and the last backup is ordered by `takenAt`. A restore records the restored snapshot as pushed, so status names it; restic's cache is `/data/backup/cache` and its `TMPDIR` is `/data/backup/tmp` (the container's `/tmp` is a 64 MB tmpfs).
 - `backup_snapshot.id` is the snapshot job's ID, which makes the snapshot handler idempotent and lets `pangolin backup` follow one backup (`backup-status { jobId }`); the snapshot job enqueues the push in the same transaction that records the row.
 - The worker (`apps/server/src/backup/snapshot-worker.ts`, bundled as `dist/backup-worker.js`) calls `writeSnapshot` from `@pangolin/db/manifest`: `VACUUM INTO` on its own read-only connection, the copy switched to a rollback journal, the manifest built from the copy.
 - Manifest checksums hash typed values in primary-key order (every column, `COLLATE BINARY`, for a table without one), never rowid, which VACUUM may renumber.
@@ -99,6 +99,45 @@ context:
 ## Plan Change Log
 
 ## Review Triage Log
+
+### 2026-09-27 — Review pass
+- verdicts: 35 findings — high 0, medium 19, low 9, false 4, maybe-false 3
+- findings:
+  - `[maybe-false]` `defer` (blind-hunter) attachments read at push time, not with the snapshot — no attachments exist until epic 5; deferred to it.
+  - `[low]` `reject` (blind-hunter) attachments not verified on restore — already deferred to epic 5 (blob decryption, answer 2b).
+  - `[maybe-false]` `defer` (blind-hunter) no restic parent snapshot, attachments re-read nightly — negligible without attachments; deferred.
+  - `[medium]` `patch` (blind-hunter) status shows an older backup after a restore — restore now records the restored snapshot's row; tested.
+  - `[medium]` `patch` (blind-hunter) wrapper stops production before validating restore arguments — arguments checked first (exit 2, no docker calls); tested.
+  - `[medium]` `patch` (blind-hunter) no cleanup: restore copies and staged snapshots accumulate — staging pruned before each snapshot and after each push; pre-restore dirs stay by design and are named in the output.
+  - `[medium]` `patch` (blind-hunter) `pangolin backup` can wait for hours — stops waiting after 1 h with "still running"; tested.
+  - `[medium]` `defer` (blind-hunter) no stale-backup warning — moved to story 1.10b with the check and drill.
+  - `[low]` `reject` (blind-hunter) restore-cancelled pushes show as dead; odd message when backups turned off mid-run — dead with reason `restored` is AD-16/review P16's design; the message path needs backups switched off during a run.
+  - `[low]` `patch` (blind-hunter) rest-server docs show only no-auth — docs now recommend htpasswd and TLS or a trusted LAN. (Redaction with `/` in a password: `false`, a URL's userinfo must percent-encode `/`.)
+  - `[medium]` `patch` (blind-hunter) untested failure paths (swapIn rollback, wrapper) — swapIn rollback and wrapper tests added.
+  - `[low]` `patch` (blind-hunter) "02:30" hard-coded in status — built from `BACKUP_TIME`.
+  - `[medium]` `patch` (verification-gap) status-page backup line and `backupConfigured` wiring untested end to end — e2e asserts the API and page (configured, no backup yet) and the restored snapshot after restore.
+  - `[medium]` `patch` (verification-gap) no test aborts a real backup handler — hanging stub restic + short timeout: attempt fails as JobTimeout, restic killed.
+  - `[low]` `defer` (verification-gap) handlers' idempotent re-runs untested — filed as defer; worst case a duplicate snapshot.
+  - `[medium]` `patch` (verification-gap) swapIn's own rollback untested — `backup/restore.test.ts` added.
+  - `[false]` `reject` (intent-alignment) CI uses the bundle's values, not install.sh's bundle file — the approved acceptance criterion names the bundle's three values; install.sh's bundle format is tested separately.
+  - `[false]` `reject` (intent-alignment) unit tests use a stub restic — CI runs real restic 0.19 against a real rest-server.
+  - `[low]` `reject` (intent-alignment) the nightly schedule firing is not tested end to end — the schedule row is tested and the runner's firing is generic, tested in 1.4.
+  - `[low]` `reject` (intent-alignment) cancel count not asserted in CI — covered by unit tests with a non-zero count.
+  - `[medium]` `patch` (intent-alignment) web status component untested — grouped with the e2e patch above.
+  - `[low]` `reject` (intent-alignment) wrapper exercised with the root compose file in CI — the production mount is checked in install tests; same wrapper code path.
+  - `[false]` `reject` (intent-alignment) append-only depends on the operator's server — documented; the VM cannot enforce it.
+  - `[false]` `reject` (intent-alignment) CI triggers unchanged — answer 5a chose the existing CI.
+  - `[medium]` `patch` (edge-case) second restore in the same second deletes the first's saved files — stamps unique to the millisecond plus a random suffix; only dirs this call created are removed; tested.
+  - `[medium]` `patch` (edge-case) second-precision stamps collide — same fix.
+  - `[medium]` `patch` (edge-case) undo failure deletes the restore dir silently — nothing deleted; failure names the pre-restore dir.
+  - `[medium]` `patch` (edge-case) dead snapshot leaves `.partial` forever — pruned before the next snapshot; tested.
+  - `[medium]` `patch` (edge-case) failing pushes stage a full copy nightly — only the newest unpushed staged dir is kept; tested.
+  - `[low]` `reject` (edge-case) stray staging names over 64 chars — only the app writes there.
+  - `[medium]` `patch` (edge-case) an older retried push becomes restic's `latest` — `restic backup --time <takenAt>` (TZ=UTC); verified with real restic.
+  - `[medium]` `patch` (edge-case) last backup ordered by push time — ordered by `takenAt`, then ID; tested in three layers.
+  - `[medium]` `patch` (edge-case) `pangolin backup` polls forever — the 1 h limit above.
+  - `[medium]` `patch` (edge-case) Ctrl-C during restore leaves the stack stopped — INT/TERM trap restarts it; tested (exit 143).
+  - `[maybe-false]` `patch` (edge-case) existing `restore-<stamp>` deleted on EEXIST — covered by the created-by-this-call rule above.
 
 ## Verification
 

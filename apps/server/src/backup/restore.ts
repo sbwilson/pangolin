@@ -36,7 +36,8 @@ export class SnapshotNotFound extends Error {
 const STAGED = /\/backup\/staging\/[0-9A-Za-z]+$/;
 
 /**
- * Restores snapshot `ref` (an ID, or `latest`) into `dir`, which must not exist yet, and finds
+ * Restores snapshot `ref` (an ID, or `latest`) into `dir`, an empty directory the caller
+ * created, and finds
  * its staged database and attachments. Throws `SnapshotNotFound`, or an `Error` for a snapshot
  * that is not one of ours.
  */
@@ -52,7 +53,6 @@ export async function fetchSnapshot(
     throw new Error(`Snapshot ${snapshot.id.slice(0, 8)} is not a Pangolin backup`);
   }
   const attachments = snapshot.paths.find((path) => path.endsWith("/attachments"));
-  mkdirSync(dir, { mode: 0o700 });
   await restic.restore(snapshot.id, dir);
   const inDir = (path: string) => join(dir, path);
   return {
@@ -114,8 +114,9 @@ export function swapIn(dataDir: string, fetched: FetchedSnapshot, stamp: string)
       if (existsSync(to)) renameSync(to, from);
     }
   };
+  // Outside the try: when it already exists (EEXIST) it is not ours, and must not be removed.
+  mkdirSync(preRestoreDir, { mode: 0o700 });
   try {
-    mkdirSync(preRestoreDir, { mode: 0o700 });
     for (const suffix of ["", ...DB_SIDE_FILES]) {
       const live = join(dataDir, `${DB_FILE}${suffix}`);
       if (existsSync(live)) move(live, join(preRestoreDir, `${DB_FILE}${suffix}`));

@@ -29,6 +29,8 @@ export interface Manifest {
   readonly migrations: readonly string[];
   /** Every table, by name. */
   readonly tables: readonly TableManifest[];
+  /** When the snapshot was taken (`formatInstant` text), when the backup job recorded it. */
+  readonly takenAt?: string;
 }
 
 function quote(name: string): string {
@@ -135,7 +137,10 @@ export function parseManifest(text: string): Manifest {
   if (!isRecord(raw) || raw.format !== MANIFEST_FORMAT) {
     throw new Error(`the manifest is not format ${MANIFEST_FORMAT}`);
   }
-  const { schemaVersion, migrations, tables } = raw;
+  const { schemaVersion, migrations, tables, takenAt } = raw;
+  if (takenAt !== undefined && typeof takenAt !== "string") {
+    throw new Error("the manifest's snapshot time is malformed");
+  }
   if (!count(schemaVersion)) throw new Error("the manifest has no schema version");
   if (!Array.isArray(migrations) || !migrations.every((m) => typeof m === "string")) {
     throw new Error("the manifest has no migration list");
@@ -162,6 +167,7 @@ export function parseManifest(text: string): Manifest {
       rows: t.rows as number,
       sha256: t.sha256 as string,
     })),
+    ...(takenAt === undefined ? {} : { takenAt }),
   };
 }
 
@@ -281,10 +287,11 @@ export interface WrittenSnapshot {
 /**
  * Writes a consistent snapshot of the database at `dbFile` into `outDir` (replaced if it
  * exists): `pangolin.sqlite` by `VACUUM INTO` on a read-only connection of its own, switched to a
- * rollback journal so it opens read-only anywhere, and `manifest.json` built from that copy.
+ * rollback journal so it opens read-only anywhere, and `manifest.json` built from that copy
+ * (with `takenAt` when given).
  * Synchronous and slow on a large database: run it off the main thread.
  */
-export function writeSnapshot(dbFile: string, outDir: string): WrittenSnapshot {
+export function writeSnapshot(dbFile: string, outDir: string, takenAt?: string): WrittenSnapshot {
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true, mode: 0o700 });
   const target = join(outDir, SNAPSHOT_FILE);
@@ -301,6 +308,7 @@ export function writeSnapshot(dbFile: string, outDir: string): WrittenSnapshot {
   try {
     snapshot.pragma("journal_mode = DELETE");
     manifest = buildManifest(snapshot);
+    if (takenAt !== undefined) manifest = { ...manifest, takenAt };
   } finally {
     snapshot.close();
   }

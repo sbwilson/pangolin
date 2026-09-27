@@ -118,6 +118,12 @@ describe("writeSnapshot and verifySnapshot", () => {
     expect(text).toBe(serializeManifest(manifest));
     expect(parseManifest(text)).toEqual(manifest);
     expect(writeSnapshot(dbFile, outDir).manifestSha256).toBe(manifestSha256(text));
+    // With the time it was taken, which a restore records.
+    const timed = writeSnapshot(dbFile, outDir, "2026-09-27T02:30:00.000Z");
+    const timedText = readFileSync(join(outDir, MANIFEST_FILE), "utf8");
+    expect(parseManifest(timedText)).toEqual({ ...manifest, takenAt: "2026-09-27T02:30:00.000Z" });
+    expect(timed.manifestSha256).toBe(manifestSha256(timedText));
+    expect(verifySnapshot(join(outDir, SNAPSHOT_FILE), timed.manifest, migrations).ok).toBe(true);
     expect(verifySnapshot(file, manifest, migrations)).toEqual({
       ok: true,
       tables: manifest.tables.length,

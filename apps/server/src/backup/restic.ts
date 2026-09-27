@@ -41,8 +41,15 @@ export interface ResticSnapshot {
 export interface Restic {
   /** Initialises the repository when there is none yet (the append-only server allows it). */
   ensureRepository(signal?: JobSignal): Promise<void>;
-  /** Backs up `paths` (absolute) and returns the new snapshot's ID. */
-  backup(paths: readonly string[], signal?: JobSignal): Promise<string>;
+  /**
+   * Backs up `paths` (absolute) and returns the new snapshot's ID. `time` (an ISO instant, to
+   * the second) becomes the snapshot's time, so snapshots order by when the database was taken,
+   * whatever order their pushes finish in.
+   */
+  backup(
+    paths: readonly string[],
+    options?: { readonly time?: string; readonly signal?: JobSignal },
+  ): Promise<string>;
   /** The snapshot `ref` names (an ID or prefix), or the newest of ours for `latest`. */
   findSnapshot(ref: string, signal?: JobSignal): Promise<ResticSnapshot | undefined>;
   /** Restores the whole snapshot `id` under `target`, keeping its absolute paths. */
@@ -92,6 +99,8 @@ function resticEnv(options: ResticOptions): NodeJS.ProcessEnv {
     RESTIC_PASSWORD_FILE: options.passwordFile,
     RESTIC_CACHE_DIR: options.cacheDir,
     TMPDIR: tmpDirOf(options),
+    // restic reads and prints times in local time: make that UTC, as `--time` is given in UTC.
+    TZ: "UTC",
   };
 }
 
@@ -179,10 +188,15 @@ export function createRestic(options: ResticOptions): Restic {
       if (init.code !== 0) throw failed("init", init);
     },
 
-    backup: async (paths, signal) => {
+    backup: async (paths, { time, signal } = {}) => {
       let snapshotId: string | undefined;
+      // restic's --time format: `2006-01-02 15:04:05`, in TZ (UTC).
+      const at =
+        time === undefined
+          ? []
+          : ["--time", new Date(time).toISOString().slice(0, 19).replace("T", " ")];
       const ran = await run(
-        ["backup", "--json", "--host", RESTIC_HOST, "--tag", RESTIC_TAG, ...paths],
+        ["backup", "--json", "--host", RESTIC_HOST, "--tag", RESTIC_TAG, ...at, ...paths],
         (line) => {
           try {
             const message = JSON.parse(line) as { message_type?: unknown; snapshot_id?: unknown };

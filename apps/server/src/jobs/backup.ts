@@ -2,12 +2,15 @@
 // and its manifest to the staging directory, then records it, which enqueues `backup-push` (net),
 // which pushes it with restic and empties its staging directory. Both are idempotent per job.
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import {
   BACKUP_PUSH_JOB,
   BACKUP_SNAPSHOT_JOB,
+  backupsAwaitingPush,
   getBackupSnapshot,
   type JobRegistration,
   jobHandler,
+  lastBackup,
   recordBackupPush,
   recordBackupSnapshot,
 } from "@pangolin/app";
@@ -29,12 +32,21 @@ export interface BackupJobDeps {
   readonly snapshot?: (options: TakeSnapshotOptions) => Promise<SnapshotSummary>;
 }
 
-/** The snapshots staged now: one directory each, partial ones (still being written) left out. */
-function listStaged(paths: BackupPaths): string[] {
+/** The staging directory's subdirectories, by name. */
+function stagingEntries(paths: BackupPaths): string[] {
   if (!existsSync(paths.stagingRoot)) return [];
   return readdirSync(paths.stagingRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !entry.name.endsWith(PARTIAL_SUFFIX))
+    .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
+}
+
+/** The snapshots staged now: one directory each, partial ones (still being written) left out. */
+function listStaged(paths: BackupPaths): string[] {
+  return stagingEntries(paths).filter((name) => !name.endsWith(PARTIAL_SUFFIX));
+}
+
+function removeStaged(paths: BackupPaths, name: string): void {
+  rmSync(join(paths.stagingRoot, name), { recursive: true, force: true });
 }
 
 export function backupJobs(deps: BackupJobDeps): JobRegistration[] {
@@ -62,8 +74,19 @@ export function backupJobs(deps: BackupJobDeps): JobRegistration[] {
     const dir = stagingDir(paths, id);
     const partial = `${dir}${PARTIAL_SUFFIX}`;
     mkdirSync(paths.stagingRoot, { recursive: true, mode: 0o700 });
+    // Bound the staging area: at most one earlier snapshot waits for its push, beside this one.
+    // Partial snapshots are left by attempts that died or timed out; older staged ones are
+    // superseded by this one (a push that finds its directory gone completes as superseded).
+    const awaiting = backupsAwaitingPush(ctx, { ids: listStaged(paths) }).sort();
+    const keep = awaiting.at(-1);
+    for (const name of stagingEntries(paths)) if (name !== keep) removeStaged(paths, name);
     const takenAt = ctx.clock.now().toString({ fractionalSecondDigits: 3 });
-    const summary = await snapshot({ dbFile: paths.dbFile, outDir: partial, signal: ctx.signal });
+    const summary = await snapshot({
+      dbFile: paths.dbFile,
+      outDir: partial,
+      takenAt,
+      signal: ctx.signal,
+    });
     rmSync(dir, { recursive: true, force: true });
     renameSync(partial, dir);
     recordBackupSnapshot(ctx, { id, takenAt, ...summary });
@@ -75,19 +98,29 @@ export function backupJobs(deps: BackupJobDeps): JobRegistration[] {
     if (row === undefined) throw new Error(`No backup snapshot ${backupId}`);
     const dir = stagingDir(paths, backupId);
     if (row.pushedAt === null) {
-      if (!existsSync(dir)) throw new Error(`The staged snapshot ${backupId} is missing`);
+      if (!existsSync(dir)) {
+        // A newer snapshot was pushed, or is staged and pruned this one: nothing left to do.
+        const last = lastBackup(ctx);
+        if (last !== null && last.takenAt >= row.takenAt) return;
+        const newer = listStaged(paths).some((name) => name > backupId);
+        if (newer) return;
+        throw new Error(`The staged snapshot ${backupId} is missing`);
+      }
       const client = resticFor(repository);
       await client.ensureRepository(ctx.signal);
       // The database snapshot first, then the attachments (AD-21), in one restic snapshot.
       const targets = existsSync(paths.attachmentsDir) ? [dir, paths.attachmentsDir] : [dir];
-      const resticSnapshotId = await client.backup(targets, ctx.signal);
-      const { removable } = recordBackupPush(ctx, {
-        id: backupId,
-        resticSnapshotId,
-        staged: listStaged(paths),
+      const resticSnapshotId = await client.backup(targets, {
+        time: row.takenAt,
+        signal: ctx.signal,
       });
-      for (const done of removable)
-        rmSync(stagingDir(paths, done), { recursive: true, force: true });
+      const staged = listStaged(paths);
+      const { removable } = recordBackupPush(ctx, { id: backupId, resticSnapshotId, staged });
+      // Snapshot IDs are job IDs (ULIDs), so name order is the order they were taken: anything
+      // staged before this one is superseded by it.
+      for (const name of staged) {
+        if (removable.includes(name) || name < backupId) removeStaged(paths, name);
+      }
     } else {
       rmSync(dir, { recursive: true, force: true });
     }

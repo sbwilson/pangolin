@@ -161,6 +161,8 @@ jobs:
           E2E_BASE_URL: http://localhost:3000
           # The first-boot setup link lives in the container's data volume.
           E2E_SETUP_LINK_COMMAND: docker compose exec -T pangolin cat /data/setup-link.txt
+          # Backups are configured (and none taken yet): the status page's backup line is checked.
+          E2E_BACKUPS: "1"
       - name: Back up the end-to-end household (pangolin backup over the admin socket)
         run: |
           out=$(docker compose exec -T pangolin node dist/cli.js backup)
@@ -193,6 +195,8 @@ jobs:
           echo "$out" | grep -qx 'integrity_check: ok'
           echo "$out" | grep -Eq '^Manifest: all [0-9]+ tables match'
           echo "$out" | grep -Eq '^Swapped in snapshot [0-9a-f]{64}'
+          # The restored.spec checks the status page names this snapshot as the last backup.
+          echo "E2E_RESTORED_SNAPSHOT=$(echo "$out" | sed -En 's/^Swapped in snapshot ([0-9a-f]{64}).*/\1/p')" >> "$GITHUB_ENV"
           for _ in $(seq 1 60); do
             if curl -fsS http://localhost:3000/healthz; then echo; exit 0; fi
             sleep 1
@@ -237,6 +241,7 @@ jobs:
           echo "$out"
           echo "$out" | grep -qx 'integrity_check: ok'
           echo "$out" | grep -Eq '^Manifest: all [0-9]+ tables match'
+          echo "E2E_RESTORED_SNAPSHOT=$(echo "$out" | sed -En 's/^Swapped in snapshot ([0-9a-f]{64}).*/\1/p')" >> "$GITHUB_ENV"
           docker run -d --name pangolin-clean -p 3002:3000 "$@" pangolin:local
           for _ in $(seq 1 60); do
             if curl -fsS http://localhost:3002/healthz; then echo; exit 0; fi
