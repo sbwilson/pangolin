@@ -16,7 +16,7 @@ export interface HouseholdSettingsRow {
   readonly updatedAt: string;
 }
 
-/** `person`: one of us. `userId` links a login once story 1.5 adds them. */
+/** `person`: one of us. `userId` links their better-auth login (story 1.5). */
 export interface PersonRow {
   readonly id: Id<"Person">;
   readonly userId: string | null;
@@ -150,6 +150,69 @@ export interface HouseholdSettingsRepo {
 
 export interface PersonRepo {
   insert(row: PersonRow): void;
+  /** The active person linked to login `userId`, if any. */
+  findByUserId(userId: string): PersonRow | undefined;
+  /** Active (not deleted) people, oldest first. */
+  listActive(): PersonRow[];
+}
+
+/** `setup_link`: a one-time sign-up link. Only the token's hash is stored. */
+export interface SetupLinkRow {
+  readonly id: Id<"SetupLink">;
+  /** SHA-256 of the token, hex. */
+  readonly tokenHash: string;
+  /** `cli`, or `person:<id>` for a partner invite. */
+  readonly issuedBy: string;
+  /** UTC ISO-8601 timestamp. */
+  readonly createdAt: string;
+  /** UTC ISO-8601 timestamp, 24 h after `createdAt`. */
+  readonly expiresAt: string;
+  /** UTC ISO-8601 timestamp, or null while unused. */
+  readonly usedAt: string | null;
+}
+
+export interface SetupLinkRepo {
+  insert(row: SetupLinkRow): void;
+  findByTokenHash(tokenHash: string): SetupLinkRow | undefined;
+  /** Sets `usedAt` on an unused link. Returns false, changing nothing, when it was already used. */
+  markUsed(id: Id<"SetupLink">, usedAt: string): boolean;
+  /** True when some unused link expires after `now`. */
+  hasLive(now: string): boolean;
+  /** Unused links that expire after `now`, oldest first. */
+  listLive(now: string): SetupLinkRow[];
+  /** Ends an unused link at `at` (sets `expiresAt`). False when it was already used. */
+  expire(id: Id<"SetupLink">, at: string): boolean;
+}
+
+/** What a login has enrolled besides its password. */
+export interface UserEnrolment {
+  /** TOTP confirmed (`auth_user.two_factor_enabled`). */
+  readonly totp: boolean;
+  readonly passkeys: number;
+}
+
+/** better-auth's users (`auth_user`). better-auth writes them; `identity` only reads them. */
+export interface UserRepo {
+  count(): number;
+  /** Undefined when there is no such user. */
+  enrolment(userId: string): UserEnrolment | undefined;
+}
+
+/** One `login_attempt` row: a password or TOTP attempt for a lower-cased email. */
+export interface LoginAttemptRow {
+  readonly email: string;
+  /** UTC ISO-8601 timestamp. */
+  readonly at: string;
+  /** True when the attempt ended in a session. */
+  readonly ok: boolean;
+}
+
+export interface LoginAttemptRepo {
+  insert(row: LoginAttemptRow): void;
+  /** Attempts for `email` at or after `since`, oldest first. */
+  listSince(email: string, since: string): LoginAttemptRow[];
+  /** Deletes every attempt (any email) before `before`. */
+  deleteBefore(before: string): void;
 }
 
 export interface AuditRepo {
@@ -160,6 +223,9 @@ export interface AuditRepo {
 export interface TxRepos {
   readonly householdSettings: HouseholdSettingsRepo;
   readonly person: PersonRepo;
+  readonly users: UserRepo;
+  readonly setupLinks: SetupLinkRepo;
+  readonly loginAttempts: LoginAttemptRepo;
   readonly audit: AuditRepo;
   readonly jobs: JobRepo;
   readonly reviewItems: ReviewItemRepo;
@@ -168,6 +234,10 @@ export interface TxRepos {
 /** The read-only subset of `TxRepos`, for queries. */
 export interface ReadRepos {
   readonly householdSettings: Pick<HouseholdSettingsRepo, "get">;
+  readonly person: Pick<PersonRepo, "findByUserId" | "listActive">;
+  readonly users: UserRepo;
+  readonly setupLinks: Pick<SetupLinkRepo, "findByTokenHash" | "hasLive">;
+  readonly loginAttempts: Pick<LoginAttemptRepo, "listSince">;
   readonly jobs: Pick<JobRepo, "listDead">;
   readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
 }
@@ -175,7 +245,8 @@ export interface ReadRepos {
 export interface UnitOfWork {
   /**
    * Runs `fn` synchronously inside one write transaction (`BEGIN IMMEDIATE`). Commits when `fn`
-   * returns and rolls back when it throws. Use cases reach this only through `write`.
+   * returns and rolls back when it throws. Use cases reach this through `write`; only the
+   * unaudited `login_attempt` log (`identity/lockout.ts`) opens one directly.
    */
   transaction<T>(fn: (tx: TxRepos) => T): T;
   /** Runs `fn` synchronously inside one read transaction, for a consistent snapshot. */

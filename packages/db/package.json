@@ -15,6 +15,7 @@
   "dependencies": {
     "@pangolin/app": "workspace:*",
     "@pangolin/shared": "workspace:*",
+    "better-auth": "1.7.6",
     "better-sqlite3": "13.0.3",
     "drizzle-orm": "0.45.3"
   },

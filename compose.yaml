@@ -7,6 +7,12 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    environment:
+      # The URL the browser opens: writes must come from this origin, passkeys are bound to its
+      # host, and setup links point at it. Set it to the public https URL behind a proxy.
+      PANGOLIN_PUBLIC_URL: ${PANGOLIN_PUBLIC_URL:-http://localhost:3000}
+      # Password sign-ins and two-factor requests per client per minute.
+      PANGOLIN_AUTH_RATE_LIMIT: ${PANGOLIN_AUTH_RATE_LIMIT:-10}
     ports:
       - "3000:3000"
     volumes:

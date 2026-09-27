@@ -1,12 +1,17 @@
 import type { AuditRow, HouseholdSettingsRow, ReadRepos, TxRepos, UnitOfWork } from "@pangolin/app";
 import { eq } from "drizzle-orm";
 import { type BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
+import {
+  createLoginAttemptRepo,
+  createPersonRepo,
+  createSetupLinkRepo,
+  createUserRepo,
+} from "./identity-repos.ts";
 import { createJobRepo } from "./job-repo.ts";
 import type { Db } from "./open.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
 import { auditLog } from "./schema/audit-log.ts";
 import { householdSettings } from "./schema/household-settings.ts";
-import { person } from "./schema/person.ts";
 
 type Orm = BetterSQLite3Database;
 
@@ -61,12 +66,10 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
         if (result.changes !== 1) throw new Error("household_settings row is missing");
       },
     },
-    person: {
-      insert: (row) => {
-        guard(scope);
-        orm.insert(person).values(row).run();
-      },
-    },
+    person: createPersonRepo(orm, () => guard(scope)),
+    users: createUserRepo(orm, () => guard(scope)),
+    setupLinks: createSetupLinkRepo(orm, () => guard(scope)),
+    loginAttempts: createLoginAttemptRepo(orm, () => guard(scope)),
     audit: {
       append: (row: AuditRow) => {
         guard(scope);
@@ -109,6 +112,16 @@ export function createUnitOfWork(db: Db): UnitOfWork {
           const repos = txRepos(orm, scope);
           return {
             householdSettings: { get: repos.householdSettings.get },
+            person: {
+              findByUserId: repos.person.findByUserId,
+              listActive: repos.person.listActive,
+            },
+            users: repos.users,
+            setupLinks: {
+              findByTokenHash: repos.setupLinks.findByTokenHash,
+              hasLive: repos.setupLinks.hasLive,
+            },
+            loginAttempts: { listSince: repos.loginAttempts.listSince },
             jobs: { listDead: repos.jobs.listDead },
             reviewItems: { listOpenFor: repos.reviewItems.listOpenFor },
           };

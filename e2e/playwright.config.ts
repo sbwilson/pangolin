@@ -1,27 +1,36 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// Runs against an already running container (see compose.yaml); it starts no server itself.
+// Runs against an already running server on a fresh data directory (see compose.yaml); it
+// starts no server itself. The auth project registers the household first, from the server's
+// setup link; the other specs sign in as the person it saved.
 const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 // Local sandboxes point this at a preinstalled Chromium; CI uses `playwright install`.
 const executablePath = process.env.PW_CHROMIUM_PATH;
 
+const chrome = {
+  ...devices["Desktop Chrome"],
+  ...(executablePath === undefined ? {} : { launchOptions: { executablePath } }),
+};
+
 export default defineConfig({
   testDir: ".",
-  testMatch: "**/*.spec.ts",
   forbidOnly: process.env.CI !== undefined,
-  retries: process.env.CI !== undefined ? 1 : 0,
+  // A retry would meet an already-used setup link, so none: the flow runs once per server.
+  retries: 0,
+  workers: 1,
   reporter: process.env.CI !== undefined ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL,
     trace: "retain-on-failure",
   },
   projects: [
+    { name: "auth", testMatch: "auth.spec.ts", use: chrome },
     {
       name: "chromium",
-      use: {
-        ...devices["Desktop Chrome"],
-        ...(executablePath === undefined ? {} : { launchOptions: { executablePath } }),
-      },
+      testMatch: "**/*.spec.ts",
+      testIgnore: "auth.spec.ts",
+      dependencies: ["auth"],
+      use: chrome,
     },
   ],
 });

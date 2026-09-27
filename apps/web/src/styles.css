@@ -1,0 +1,27 @@
+/* Loaded as a stylesheet from our own origin: the CSP allows no inline styles or style= attributes. */
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+label {
+  display: block;
+  margin: 0.75rem 0;
+}
+
+label input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+button {
+  margin: 0.5rem 0.5rem 0.5rem 0;
+}

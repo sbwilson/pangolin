@@ -8,11 +8,18 @@ import type {
   HouseholdSettingsRow,
   JobRepo,
   JobRow,
+  LoginAttemptRepo,
+  LoginAttemptRow,
+  PersonRepo,
   PersonRow,
   ReviewItemRepo,
   ReviewItemRow,
+  SetupLinkRepo,
+  SetupLinkRow,
   TxRepos,
   UnitOfWork,
+  UserEnrolment,
+  UserRepo,
 } from "../ports/unit-of-work.ts";
 import type { Viewer } from "../viewer.ts";
 
@@ -22,6 +29,12 @@ export interface MemoryState {
   audit: AuditRow[];
   jobs: JobRow[];
   reviewItems: ReviewItemRow[];
+  /** IDs of better-auth users; tests add them to stand in for better-auth's inserts. */
+  users: string[];
+  /** Enrolment per user ID; a user without an entry has enrolled nothing. */
+  enrolments: Record<string, UserEnrolment>;
+  setupLinks: SetupLinkRow[];
+  loginAttempts: LoginAttemptRow[];
 }
 
 export interface MemoryUnitOfWork extends UnitOfWork {
@@ -133,6 +146,107 @@ function jobRepo(working: MemoryState, check: () => void): JobRepo {
   };
 }
 
+function personRepo(working: MemoryState, check: () => void): PersonRepo {
+  const active = () => working.people.filter((p) => p.deletedAt === null);
+  return {
+    insert: (row) => {
+      check();
+      if (working.people.some((p) => p.id === row.id)) {
+        throw new Error("UNIQUE constraint failed: person.id");
+      }
+      if (row.userId !== null && working.people.some((p) => p.userId === row.userId)) {
+        throw new Error("UNIQUE constraint failed: person.user_id");
+      }
+      working.people.push(row);
+    },
+    findByUserId: (userId) => {
+      check();
+      return active().find((p) => p.userId === userId);
+    },
+    listActive: () => {
+      check();
+      return [...active()].sort((a, b) =>
+        `${a.createdAt}|${a.id}` < `${b.createdAt}|${b.id}` ? -1 : 1,
+      );
+    },
+  };
+}
+
+function setupLinkRepo(working: MemoryState, check: () => void): SetupLinkRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.setupLinks.some((l) => l.id === row.id || l.tokenHash === row.tokenHash)) {
+        throw new Error("UNIQUE constraint failed: setup_link");
+      }
+      working.setupLinks.push(row);
+    },
+    findByTokenHash: (tokenHash) => {
+      check();
+      return working.setupLinks.find((l) => l.tokenHash === tokenHash);
+    },
+    markUsed: (id, usedAt) => {
+      check();
+      const index = working.setupLinks.findIndex((l) => l.id === id && l.usedAt === null);
+      const row = working.setupLinks[index];
+      if (row === undefined) return false;
+      working.setupLinks[index] = { ...row, usedAt };
+      return true;
+    },
+    hasLive: (now) => {
+      check();
+      return working.setupLinks.some((l) => l.usedAt === null && l.expiresAt > now);
+    },
+    listLive: (now) => {
+      check();
+      return working.setupLinks
+        .filter((l) => l.usedAt === null && l.expiresAt > now)
+        .sort((a, b) => (`${a.createdAt}|${a.id}` < `${b.createdAt}|${b.id}` ? -1 : 1));
+    },
+    expire: (id, at) => {
+      check();
+      const index = working.setupLinks.findIndex((l) => l.id === id && l.usedAt === null);
+      const row = working.setupLinks[index];
+      if (row === undefined) return false;
+      working.setupLinks[index] = { ...row, expiresAt: at };
+      return true;
+    },
+  };
+}
+
+function userRepo(working: MemoryState, check: () => void): UserRepo {
+  return {
+    count: () => {
+      check();
+      return working.users.length;
+    },
+    enrolment: (userId) => {
+      check();
+      if (!working.users.includes(userId)) return undefined;
+      return working.enrolments[userId] ?? { totp: false, passkeys: 0 };
+    },
+  };
+}
+
+function loginAttemptRepo(working: MemoryState, check: () => void): LoginAttemptRepo {
+  return {
+    insert: (row) => {
+      check();
+      working.loginAttempts.push(row);
+    },
+    listSince: (email, since) => {
+      check();
+      return working.loginAttempts
+        .filter((a) => a.email === email && a.at >= since)
+        .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+    },
+    deleteBefore: (before) => {
+      check();
+      working.loginAttempts = working.loginAttempts.filter((a) => a.at >= before);
+    },
+  };
+}
+
 function visible(viewer: Viewer, row: ReviewItemRow): boolean {
   if (viewer.kind === "system") return true;
   return row.accountId === null && (row.personId === null || row.personId === viewer.personId);
@@ -171,7 +285,17 @@ export function memoryUnitOfWork(
   settings: HouseholdSettingsRow = DEFAULT_SETTINGS,
 ): MemoryUnitOfWork {
   const uow: MemoryUnitOfWork = {
-    state: { settings, people: [], audit: [], jobs: [], reviewItems: [] },
+    state: {
+      settings,
+      people: [],
+      audit: [],
+      jobs: [],
+      reviewItems: [],
+      users: [],
+      enrolments: {},
+      setupLinks: [],
+      loginAttempts: [],
+    },
     failAudit: false,
     transaction<T>(fn: (tx: TxRepos) => T): T {
       const working: MemoryState = {
@@ -180,6 +304,10 @@ export function memoryUnitOfWork(
         audit: [...uow.state.audit],
         jobs: [...uow.state.jobs],
         reviewItems: [...uow.state.reviewItems],
+        users: [...uow.state.users],
+        enrolments: uow.state.enrolments,
+        setupLinks: [...uow.state.setupLinks],
+        loginAttempts: [...uow.state.loginAttempts],
       };
       let active = true;
       const check = () => {
@@ -196,15 +324,10 @@ export function memoryUnitOfWork(
             working.settings = row;
           },
         },
-        person: {
-          insert: (row) => {
-            check();
-            if (working.people.some((p) => p.id === row.id)) {
-              throw new Error("UNIQUE constraint failed: person.id");
-            }
-            working.people.push(row);
-          },
-        },
+        person: personRepo(working, check),
+        users: userRepo(working, check),
+        setupLinks: setupLinkRepo(working, check),
+        loginAttempts: loginAttemptRepo(working, check),
         audit: {
           append: (row) => {
             check();
@@ -222,6 +345,9 @@ export function memoryUnitOfWork(
         uow.state.audit = working.audit;
         uow.state.jobs = working.jobs;
         uow.state.reviewItems = working.reviewItems;
+        uow.state.users = working.users;
+        uow.state.setupLinks = working.setupLinks;
+        uow.state.loginAttempts = working.loginAttempts;
         return result;
       } finally {
         active = false;
@@ -229,8 +355,14 @@ export function memoryUnitOfWork(
     },
     read(fn) {
       const check = () => {};
+      const person = personRepo(uow.state, check);
+      const links = setupLinkRepo(uow.state, check);
       return fn({
         householdSettings: { get: () => uow.state.settings },
+        person: { findByUserId: person.findByUserId, listActive: person.listActive },
+        users: userRepo(uow.state, check),
+        setupLinks: { findByTokenHash: links.findByTokenHash, hasLive: links.hasLive },
+        loginAttempts: { listSince: loginAttemptRepo(uow.state, check).listSince },
         jobs: { listDead: jobRepo(uow.state, check).listDead },
         reviewItems: { listOpenFor: reviewItemRepo(uow.state, check).listOpenFor },
       });

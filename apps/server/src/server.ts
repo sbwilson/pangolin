@@ -18,9 +18,13 @@ import {
   migrate,
   openDatabase,
 } from "@pangolin/db";
+import { writeFirstSetupLink } from "./admin/index.ts";
+import { createAuth } from "./auth/auth.ts";
+import { loadOrCreateAuthSecret, nodeTokens } from "./auth/secret.ts";
 import type { Config } from "./config.ts";
 import { openDemoDatabase } from "./demo.ts";
 import { createApp } from "./http/app.ts";
+import type { Authn } from "./http/session.ts";
 import { createRunner, jobKinds, type Runner, schedules } from "./jobs/index.ts";
 
 export interface StartOptions {
@@ -46,6 +50,11 @@ export interface RunningServer {
   readonly clock: Clock;
   /** The job runner; undefined in demo mode, which runs no jobs. */
   readonly runner: Runner | undefined;
+  /**
+   * The setup-link file written at this boot (first boot, or the previous link expired unused),
+   * for the caller to log. Never its contents.
+   */
+  readonly setupLinkFile: string | undefined;
   /** Stops the job runner (waiting for running handlers), then the HTTP server and database. */
   close(): Promise<void>;
 }
@@ -84,14 +93,45 @@ function openDemo(options: StartOptions): Opened {
  * seed fails.
  */
 export async function startServer(options: StartOptions): Promise<RunningServer> {
-  const demo = options.config.demo;
+  const { config } = options;
+  const demo = config.demo;
   const { db, uow, clock, schemaVersion } = demo ? openDemo(options) : openLive(options);
 
-  const app = createApp({
-    systemHealth: createSystemHealthRepo(db),
-    uow,
-    ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
-  });
+  let app: ReturnType<typeof createApp>;
+  let setupLinkFile: string | undefined;
+  try {
+    let authn: Authn;
+    if (demo) {
+      // Demo mode: no sign-in; every request is the first seeded person, and writes still fail.
+      authn = { kind: "demo" };
+    } else {
+      const identity = { uow, clock, newId, tokens: nodeTokens };
+      const secret = loadOrCreateAuthSecret(config.auth.secretFile);
+      authn = {
+        kind: "live",
+        gateway: createAuth({ ...identity, db, config: config.auth, secret }),
+      };
+      setupLinkFile = writeFirstSetupLink({
+        ...identity,
+        dataDir: config.dataDir,
+        publicUrl: config.auth.publicUrl,
+      });
+    }
+    app = createApp({
+      systemHealth: createSystemHealthRepo(db),
+      uow,
+      clock,
+      newId,
+      tokens: nodeTokens,
+      publicUrl: config.auth.publicUrl,
+      authn,
+      trustedProxies: config.trustedProxies,
+      ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
+    });
+  } catch (error) {
+    db.close();
+    throw error;
+  }
 
   const server = serve({ fetch: app.fetch, port: options.config.port });
   try {
@@ -138,6 +178,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     port: address.port,
     schemaVersion,
     demo,
+    setupLinkFile,
     uow,
     clock,
     runner,

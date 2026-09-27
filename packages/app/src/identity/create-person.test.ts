@@ -58,6 +58,12 @@ describe("identity.createPerson", () => {
     expect(JSON.parse(audit?.after ?? "")).toEqual(row);
   });
 
+  it("links the person to a login when given a userId", () => {
+    const { ctx, uow } = context();
+    createPerson(ctx, { displayName: "Alex", colour: "#2563EB", userId: "user-1" });
+    expect(uow.state.people[0]?.userId).toBe("user-1");
+  });
+
   it("audits a person viewer by their id", () => {
     const { ctx, uow } = context(personViewer(personId, now));
     createPerson(ctx, { displayName: "Sam", colour: "#abcdef" });
@@ -81,7 +87,8 @@ describe("identity.createPerson", () => {
     [{ displayName: "Alex", colour: "#12345" }, ["colour"]],
     [{ displayName: "Alex", colour: "#1234567" }, ["colour"]],
     [{ displayName: "Alex", colour: "#00000g" }, ["colour"]],
-    [{ displayName: "Alex", colour: "#000000", userId: "u1" }, []],
+    [{ displayName: "Alex", colour: "#000000", userId: "" }, ["userId"]],
+    [{ displayName: "Alex", colour: "#000000", role: "admin" }, []],
   ])("rejects %j as Validation, writing nothing", (input, path) => {
     const { ctx, uow } = context();
     let error: unknown;

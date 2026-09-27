@@ -16,6 +16,49 @@ export {
   createPerson,
   createPersonInput,
 } from "./identity/create-person.ts";
+export {
+  type RecordCredentialChangeInput,
+  recordCredentialChange,
+} from "./identity/credentials.ts";
+export {
+  type AssertLoginAllowedInput,
+  assertLoginAllowed,
+  DEFAULT_LOCKOUT,
+  type LockoutContext,
+  type LockoutPolicy,
+  lockedUntil,
+  type RecordLoginAttemptInput,
+  recordLoginAttempt,
+} from "./identity/lockout.ts";
+export {
+  demoViewer,
+  type EnrolmentStep,
+  enrolmentNeeds,
+  firstPerson,
+  type Me,
+  me,
+  personForUser,
+  sessionViewer,
+} from "./identity/me.ts";
+export { REAUTH_WINDOW_MS, requireRecentAuth } from "./identity/reauth.ts";
+export {
+  type EnsureFirstSetupLinkInput,
+  ensureFirstSetupLink,
+  type FirstSetupLink,
+  type IssuedSetupLink,
+  type IssueSetupLinkInput,
+  issueSetupLink,
+  MAX_USERS,
+  SETUP_LINK_TTL_MS,
+  type SetupLinkContext,
+} from "./identity/setup-links.ts";
+export {
+  type CheckSignUpInput,
+  type CompleteSignUpInput,
+  checkSignUp,
+  completeSignUp,
+  type IdentityContext,
+} from "./identity/sign-up.ts";
 export { createIdGenerator, type IdGenerator, type IdSources, newId } from "./ids.ts";
 export { type EnqueueOptions, enqueueJob } from "./jobs/enqueue.ts";
 export {
@@ -47,6 +90,7 @@ export {
 } from "./jobs/registry.ts";
 export type { Clock } from "./ports/clock.ts";
 export type { SystemHealthPort } from "./ports/system-health.ts";
+export type { TokenPort } from "./ports/tokens.ts";
 export type {
   AuditRepo,
   AuditRow,
@@ -57,13 +101,19 @@ export type {
   JobRepo,
   JobRow,
   JobStatus,
+  LoginAttemptRepo,
+  LoginAttemptRow,
   PersonRepo,
   PersonRow,
   ReadRepos,
   ReviewItemRepo,
   ReviewItemRow,
+  SetupLinkRepo,
+  SetupLinkRow,
   TxRepos,
   UnitOfWork,
+  UserEnrolment,
+  UserRepo,
 } from "./ports/unit-of-work.ts";
 export {
   type HealthContext,

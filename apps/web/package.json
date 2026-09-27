@@ -10,8 +10,10 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@better-auth/passkey": "1.7.6",
     "@pangolin/shared": "workspace:*",
     "@tanstack/react-query": "5.104.0",
+    "better-auth": "1.7.6",
     "hono": "4.13.9",
     "react": "19.3.0",
     "react-dom": "19.3.0"

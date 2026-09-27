@@ -1,3 +1,4 @@
+export { createAuthAdapter } from "./auth-adapter.ts";
 export {
   defaultInvariants,
   type Invariant,

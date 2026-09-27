@@ -27,6 +27,12 @@ try {
     schemaVersion: server.schemaVersion,
     demo: server.demo,
   });
+  if (server.setupLinkFile !== undefined) {
+    // The path only: the link inside is a one-time sign-up token.
+    log("info", "setup link written; open it to create the first login", {
+      file: server.setupLinkFile,
+    });
+  }
 
   const shutdown = (signal: string): void => {
     log("info", "shutting down", { signal });

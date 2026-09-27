@@ -62,6 +62,10 @@ jobs:
           only-fixed: true
       - name: Start the stack
         run: docker compose up -d
+        env:
+          PANGOLIN_PUBLIC_URL: http://localhost:3000
+          # The e2e suite signs in more often a minute than the default limit (10) allows.
+          PANGOLIN_AUTH_RATE_LIMIT: "100"
       - name: Wait for health
         run: |
           for _ in $(seq 1 60); do
@@ -104,6 +108,10 @@ jobs:
         run: pnpm --filter @pangolin/e2e exec playwright install --with-deps chromium
       - name: End-to-end tests (Playwright against the container)
         run: pnpm e2e
+        env:
+          E2E_BASE_URL: http://localhost:3000
+          # The first-boot setup link lives in the container's data volume.
+          E2E_SETUP_LINK_COMMAND: docker compose exec -T pangolin cat /data/setup-link.txt
       - name: Container logs
         if: failure()
         run: docker compose logs

@@ -2,9 +2,11 @@ import {
   chmodSync,
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,7 +27,7 @@ import { openDatabase, packageMigrationsDir, schemaVersion } from "@pangolin/db"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { generateSeedFile } from "../scripts/demo-seed.ts";
-import { DEFAULT_JOBS_CONFIG, type JobsConfig, loadConfig } from "./config.ts";
+import { DEFAULT_JOBS_CONFIG, defaultAuthConfig, type JobsConfig, loadConfig } from "./config.ts";
 import { type RunningServer, type StartOptions, startServer } from "./server.ts";
 
 let dir: string;
@@ -46,7 +48,14 @@ async function boot(
   jobsConfig: JobsConfig = DEFAULT_JOBS_CONFIG,
 ) {
   return startServer({
-    config: { dataDir: dataDir(), port: 0, demo: false, jobs: jobsConfig },
+    config: {
+      dataDir: dataDir(),
+      port: 0,
+      demo: false,
+      jobs: jobsConfig,
+      auth: defaultAuthConfig(dataDir()),
+      trustedProxies: [],
+    },
     migrationsDir,
     ...(jobs === undefined ? {} : { jobs }),
   });
@@ -63,7 +72,7 @@ describe("startServer", () => {
     try {
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 3, writable: true },
+        body: { status: "ok", schemaVersion: 4, writable: true },
       });
     } finally {
       await server.close();
@@ -76,7 +85,7 @@ describe("startServer", () => {
     try {
       expect((await getHealth(server.port)).body).toEqual({
         status: "ok",
-        schemaVersion: 3,
+        schemaVersion: 4,
         writable: true,
       });
     } finally {
@@ -97,7 +106,7 @@ describe("startServer", () => {
       try {
         expect(await getHealth(server.port)).toEqual({
           status: 503,
-          body: { status: "unhealthy", schemaVersion: 3, writable: false },
+          body: { status: "unhealthy", schemaVersion: 4, writable: false },
         });
       } finally {
         await server.close();
@@ -119,8 +128,130 @@ describe("startServer", () => {
 
     await expect(boot(migrationsDir)).rejects.toThrow(/Migration 0099_broken failed/);
     const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
-    expect(schemaVersion(db)).toBe(3);
+    expect(schemaVersion(db)).toBe(4);
     db.close();
+  });
+});
+
+describe("startServer first boot", () => {
+  it("writes the setup link to a 0600 file, and the auth secret to another", async () => {
+    const server = await boot();
+    try {
+      const file = join(dataDir(), "setup-link.txt");
+      expect(server.setupLinkFile).toBe(file);
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+      const url = readFileSync(file, "utf8").trim();
+      expect(url).toMatch(/^http:\/\/localhost:3000\/setup\?token=[\w-]{43}$/);
+      const secretFile = join(dataDir(), "auth-secret");
+      expect(statSync(secretFile).mode & 0o777).toBe(0o600);
+      expect(readFileSync(secretFile, "utf8").trim()).toHaveLength(43);
+      // Only the hash is in the database.
+      const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
+      try {
+        const token = new URL(url).searchParams.get("token") ?? "";
+        const dump = JSON.stringify(db.prepare("SELECT * FROM setup_link").all());
+        expect(dump).not.toContain(token);
+        expect(dump).not.toContain(readFileSync(secretFile, "utf8").trim());
+      } finally {
+        db.close();
+      }
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("keeps the live link and the secret across a restart", async () => {
+    await (await boot()).close();
+    const link = readFileSync(join(dataDir(), "setup-link.txt"), "utf8");
+    const secret = readFileSync(join(dataDir(), "auth-secret"), "utf8");
+    const server = await boot();
+    try {
+      expect(server.setupLinkFile).toBeUndefined();
+      expect(readFileSync(join(dataDir(), "setup-link.txt"), "utf8")).toBe(link);
+      expect(readFileSync(join(dataDir(), "auth-secret"), "utf8")).toBe(secret);
+    } finally {
+      await server.close();
+    }
+  });
+
+  const linkFile = () => join(dataDir(), "setup-link.txt");
+  const tokenIn = (file: string) =>
+    new URL(readFileSync(file, "utf8").trim()).searchParams.get("token") ?? "";
+
+  it("deletes the setup-link file once anyone has a login", async () => {
+    await (await boot()).close();
+    const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
+    db.prepare(
+      `INSERT INTO auth_user (id, name, email, email_verified, created_at, updated_at)
+       VALUES ('u', 'A', 'a@example.com', 0, 'x', 'x')`,
+    ).run();
+    db.close();
+    const server = await boot();
+    try {
+      expect(server.setupLinkFile).toBeUndefined();
+      expect(existsSync(linkFile())).toBe(false);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("revokes the live link and issues a new one when its file is missing", async () => {
+    await (await boot()).close();
+    const oldToken = tokenIn(linkFile());
+    rmSync(linkFile());
+    const server = await boot();
+    try {
+      expect(server.setupLinkFile).toBe(linkFile());
+      expect(tokenIn(linkFile())).not.toBe(oldToken);
+      const res = await fetch(`http://127.0.0.1:${server.port}/api/identity/sign-up`, {
+        method: "POST",
+        headers: { Origin: "http://localhost:3000", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: oldToken,
+          email: "a@example.com",
+          password: "a long enough password",
+          displayName: "A",
+          colour: "#000000",
+        }),
+      });
+      expect(res.status).toBe(400);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("replaces an older, looser file with a new 0600 one", async () => {
+    await (await boot()).close();
+    const oldToken = tokenIn(linkFile());
+    chmodSync(linkFile(), 0o644);
+    const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
+    db.prepare("UPDATE setup_link SET expires_at = '2000-01-01T00:00:00.000Z'").run();
+    db.close();
+    const server = await boot();
+    try {
+      expect(server.setupLinkFile).toBe(linkFile());
+      expect(statSync(linkFile()).mode & 0o777).toBe(0o600);
+      expect(tokenIn(linkFile())).not.toBe(oldToken);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("refuses to boot on an auth secret that is too short", async () => {
+    mkdirSync(dataDir(), { recursive: true });
+    writeFileSync(join(dataDir(), "auth-secret"), "short");
+    await expect(boot()).rejects.toThrow(/shorter than 32/);
+  });
+
+  it("serves the health check without a session and refuses the jobs list", async () => {
+    const server = await boot();
+    try {
+      expect((await getHealth(server.port)).status).toBe(200);
+      const res = await fetch(`http://127.0.0.1:${server.port}/api/system/jobs`);
+      expect(res.status).toBe(401);
+    } finally {
+      await server.close();
+    }
   });
 });
 
@@ -144,9 +275,9 @@ describe("startServer job runner", () => {
     const server = await boot(packageMigrationsDir, jobs);
     try {
       expect(server.runner).toBeDefined();
+      // The dead-jobs list needs a session now (story 1.5).
       const res = await fetch(`http://127.0.0.1:${server.port}/api/system/jobs`);
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ dead: [] });
+      expect(res.status).toBe(401);
     } finally {
       await server.close();
     }
@@ -278,6 +409,8 @@ describe("startServer in demo mode", () => {
         port: 0,
         demo: true,
         jobs: DEFAULT_JOBS_CONFIG,
+        auth: defaultAuthConfig(dataDir()),
+        trustedProxies: [],
         ...(file === null ? {} : { seedFile: file }),
       },
       migrationsDir: packageMigrationsDir,
@@ -302,7 +435,7 @@ describe("startServer in demo mode", () => {
       );
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 3, writable: true },
+        body: { status: "ok", schemaVersion: 4, writable: true },
       });
       const settings = server.uow.read((repos) => repos.householdSettings.get());
       expect(settings.timezone).toBe(expectations["people-and-household.timezone"]);
@@ -327,6 +460,26 @@ describe("startServer in demo mode", () => {
       expect(error).toBeInstanceOf(AppError);
       expect(error).toMatchObject({ code: "Conflict", message: "Demo mode is read-only" });
     });
+  });
+
+  it("signs every request in as the first seeded person, and still refuses writes", async () => {
+    await withDemo(await bootDemo(), async (server) => {
+      const base = `http://127.0.0.1:${server.port}`;
+      const me = await fetch(`${base}/api/identity/me`);
+      expect(me.status).toBe(200);
+      const names = expectations["people-and-household.peopleNames"] as string[];
+      expect(await me.json()).toMatchObject({ displayName: names[0], demo: true });
+      expect((await fetch(`${base}/api/system/jobs`)).status).toBe(200);
+      const write = await fetch(`${base}/api/identity/setup-links`, {
+        method: "POST",
+        headers: { Origin: "http://localhost:3000" },
+      });
+      expect(write.status).toBe(409);
+      expect(await write.json()).toEqual({
+        error: { code: "Conflict", message: "Demo mode is read-only" },
+      });
+    });
+    expect(existsSync(dataDir())).toBe(false);
   });
 
   it("falls back to the default seed file", async () => {
@@ -356,13 +509,77 @@ describe("startServer in demo mode", () => {
 });
 
 describe("loadConfig", () => {
-  it("defaults to /data, port 3000 and no demo", () => {
+  it("defaults to /data, port 3000, no demo, and the auth defaults", () => {
     expect(loadConfig({})).toEqual({
       dataDir: "/data",
       port: 3000,
       demo: false,
       jobs: { concurrency: { llm: 1, net: 2, local: 1 }, leaseMs: 60_000 },
+      auth: {
+        publicUrl: "http://localhost:3000",
+        secretFile: "/data/auth-secret",
+        lockout: { maxFailures: 5, windowMs: 900_000, lockMs: 900_000 },
+        sessionIdleMs: 1_800_000,
+        rateLimitPerMinute: 10,
+      },
+      trustedProxies: [],
     });
+    expect(loadConfig({}).auth).toEqual(defaultAuthConfig("/data"));
+  });
+
+  it("reads the auth settings", () => {
+    expect(
+      loadConfig({
+        PANGOLIN_DATA_DIR: "/srv/p",
+        PANGOLIN_PUBLIC_URL: "https://money.example.com/",
+        PANGOLIN_LOGIN_MAX_FAILURES: "3",
+        PANGOLIN_LOGIN_WINDOW_MINUTES: "10",
+        PANGOLIN_LOGIN_LOCKOUT_MINUTES: "60",
+        PANGOLIN_SESSION_IDLE_MINUTES: "20",
+        PANGOLIN_AUTH_RATE_LIMIT: "100",
+      }).auth,
+    ).toEqual({
+      publicUrl: "https://money.example.com",
+      secretFile: "/srv/p/auth-secret",
+      lockout: { maxFailures: 3, windowMs: 600_000, lockMs: 3_600_000 },
+      sessionIdleMs: 1_200_000,
+      rateLimitPerMinute: 100,
+    });
+    expect(loadConfig({ PANGOLIN_AUTH_SECRET_FILE: "/run/secret" }).auth.secretFile).toBe(
+      "/run/secret",
+    );
+  });
+
+  it("reads the trusted proxies", () => {
+    expect(loadConfig({ PANGOLIN_TRUSTED_PROXIES: " 10.0.0.2, fd00::1 " }).trustedProxies).toEqual([
+      "10.0.0.2",
+      "fd00::1",
+    ]);
+    expect(() => loadConfig({ PANGOLIN_TRUSTED_PROXIES: "proxy.lan" })).toThrow();
+  });
+
+  it("rejects a public URL passkeys and Secure cookies cannot work with", () => {
+    for (const url of [
+      "https://192.168.1.10",
+      "http://127.0.0.1:3000",
+      "https://[::1]:3000",
+      "http://money.example.com",
+      "http://pangolin.lan:3000",
+    ]) {
+      expect(() => loadConfig({ PANGOLIN_PUBLIC_URL: url }), url).toThrow(
+        /PANGOLIN_PUBLIC_URL must/,
+      );
+    }
+    expect(loadConfig({ PANGOLIN_PUBLIC_URL: "http://localhost:8080" }).auth.publicUrl).toBe(
+      "http://localhost:8080",
+    );
+  });
+
+  it("rejects a public URL that is not an http(s) origin", () => {
+    for (const url of ["ftp://x.example", "not a url", "https://x.example/app", "http://x?y=1"]) {
+      expect(() => loadConfig({ PANGOLIN_PUBLIC_URL: url })).toThrow();
+    }
+    expect(() => loadConfig({ PANGOLIN_SESSION_IDLE_MINUTES: "0" })).toThrow();
   });
 
   it("reads PANGOLIN_DATA_DIR and PORT", () => {

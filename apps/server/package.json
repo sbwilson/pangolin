@@ -16,12 +16,14 @@
     "better-sqlite3": "13.0.3"
   },
   "devDependencies": {
+    "@better-auth/passkey": "1.7.6",
     "@hono/node-server": "2.1.1",
     "@pangolin/app": "workspace:*",
     "@pangolin/connectors": "workspace:*",
     "@pangolin/db": "workspace:*",
     "@pangolin/importers": "workspace:*",
     "@pangolin/llm": "workspace:*",
+    "better-auth": "1.7.6",
     "esbuild": "0.28.2",
     "hono": "4.13.9",
     "zod": "4.6.5"
