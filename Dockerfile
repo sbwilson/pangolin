@@ -25,6 +25,10 @@ RUN --mount=type=secret,id=ca,required=false \
  && pnpm install --frozen-lockfile --filter "@pangolin/server..." --filter "@pangolin/web..." --filter "@pangolin/seed..."
 
 COPY . .
+# The install above is filtered to what the image needs, so pnpm's check before running a script
+# would install every other workspace project (the e2e suite, Playwright) first: from the network,
+# which the VM's firewall blocks and the image does not need. Nothing below installs.
+ENV pnpm_config_verify_deps_before_run=false
 RUN pnpm build
 
 # Production node_modules for the bundle: only its runtime dependency (better-sqlite3).
