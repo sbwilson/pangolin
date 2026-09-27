@@ -17,3 +17,4 @@ _bmad-output
 .githooks
 **/test-results
 **/playwright-report
+deploy/*.test.ts

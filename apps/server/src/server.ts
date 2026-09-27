@@ -65,16 +65,25 @@ interface Opened {
   readonly uow: UnitOfWork;
   readonly clock: Clock;
   readonly schemaVersion: number;
+  /** The number of migrations this build ships, which `/healthz` expects applied. */
+  readonly expectedSchemaVersion: number;
 }
 
 function openLive(options: StartOptions): Opened {
   mkdirSync(options.config.dataDir, { recursive: true });
   const db = openDatabase(join(options.config.dataDir, "pangolin.sqlite"));
   try {
-    const { schemaVersion } = migrate(db, loadMigrations(options.migrationsDir));
+    const migrations = loadMigrations(options.migrationsDir);
+    const { schemaVersion } = migrate(db, migrations);
     const uow = createUnitOfWork(db);
     const timezone = uow.read((repos) => repos.householdSettings.get().timezone);
-    return { db, uow, clock: systemClock(timezone), schemaVersion };
+    return {
+      db,
+      uow,
+      clock: systemClock(timezone),
+      schemaVersion,
+      expectedSchemaVersion: migrations.length,
+    };
   } catch (error) {
     db.close();
     throw error;
@@ -84,7 +93,8 @@ function openLive(options: StartOptions): Opened {
 function openDemo(options: StartOptions): Opened {
   const seedFile = options.config.seedFile ?? options.defaultSeedFile;
   if (seedFile === undefined) throw new Error("Demo mode needs PANGOLIN_SEED_FILE");
-  return openDemoDatabase({ migrationsDir: options.migrationsDir, seedFile });
+  const opened = openDemoDatabase({ migrationsDir: options.migrationsDir, seedFile });
+  return { ...opened, expectedSchemaVersion: opened.schemaVersion };
 }
 
 /**
@@ -96,7 +106,11 @@ function openDemo(options: StartOptions): Opened {
 export async function startServer(options: StartOptions): Promise<RunningServer> {
   const { config } = options;
   const demo = config.demo;
-  const { db, uow, clock, schemaVersion } = demo ? openDemo(options) : openLive(options);
+  const { db, uow, clock, schemaVersion, expectedSchemaVersion } = demo
+    ? openDemo(options)
+    : openLive(options);
+  // Created after the HTTP server is listening; `/healthz` reads it per request.
+  let runner: Runner | undefined;
 
   let app: ReturnType<typeof createApp>;
   let setupLinkFile: string | undefined;
@@ -132,6 +146,10 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       authn,
       trustedProxies: config.trustedProxies,
       recoveryRateLimitPerMinute: config.auth.rateLimitPerMinute,
+      healthz: {
+        expectedSchemaVersion,
+        runner: demo ? "skip" : () => runner?.liveness(),
+      },
       ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
     });
   } catch (error) {
@@ -160,7 +178,6 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     });
 
   // Demo mode is read-only and runs no jobs.
-  let runner: Runner | undefined;
   if (!demo) {
     try {
       runner = createRunner({

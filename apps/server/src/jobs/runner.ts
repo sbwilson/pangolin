@@ -15,6 +15,7 @@ import {
   type JobLane,
   type JobRegistration,
   type JobRow,
+  type RunnerLiveness,
   renewJobLease,
   type Schedule,
   type SystemViewer,
@@ -54,6 +55,13 @@ export interface RunnerOptions {
 
 export interface Runner {
   readonly owner: string;
+  /** How often `start()` calls `tick()`, in real milliseconds. */
+  readonly pollMs: number;
+  /**
+   * For `/healthz`: whether it is started and not stopped, and when it last started or ticked
+   * (a tick counts once its claims succeed), by the injected clock.
+   */
+  liveness(): RunnerLiveness;
   /**
    * Ensures the schedules' next rows, warns once for each lane with concurrency 0 (disabled),
    * then calls `tick()` every `pollMs`.
@@ -136,6 +144,7 @@ export function createRunner(options: RunnerOptions): Runner {
   const running = new Map<string, Run>();
   let timer: ReturnType<typeof setInterval> | undefined;
   let stopped = false;
+  let lastTickAt: number | undefined;
 
   function contextFor(kind: string): RunContext {
     // Kinds from this build are validated as `job:<kind>` actors; an unknown row may not be.
@@ -296,6 +305,7 @@ export function createRunner(options: RunnerOptions): Runner {
       });
       return;
     }
+    lastTickAt = clock.now().epochMilliseconds;
     await Promise.all(started.map((run) => run.done));
   }
 
@@ -305,6 +315,8 @@ export function createRunner(options: RunnerOptions): Runner {
 
   return {
     owner,
+    pollMs,
+    liveness: () => ({ running: timer !== undefined && !stopped, lastTickAt, pollMs }),
     tick,
     idle,
     ensureSchedules: () => ensureSchedules(runnerCtx, options.schedules),
@@ -312,6 +324,7 @@ export function createRunner(options: RunnerOptions): Runner {
       if (stopped) throw new Error("A stopped runner cannot start again; create a new one");
       if (timer !== undefined) return;
       ensureSchedules(runnerCtx, options.schedules);
+      lastTickAt = clock.now().epochMilliseconds;
       for (const lane of JOB_LANES) {
         if (concurrency[lane] === 0) {
           log("warn", "job lane disabled: concurrency is 0, so its jobs never run", { lane });

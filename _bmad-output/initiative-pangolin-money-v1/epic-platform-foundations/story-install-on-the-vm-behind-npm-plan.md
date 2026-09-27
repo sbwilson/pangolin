@@ -3,12 +3,13 @@ title: 'Install on the VM behind NPM'
 type: 'feature'
 ticket: '8'
 created: '2026-09-27'
-status: 'draft'
+status: 'built'
+baseline_revision: '6198edca77ca3f20bbfbb40657f36e16f6603fc4'
 route: 'full'
 route_source: 'auto'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'thorough'
+review_source: 'auto'
+lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/specs/spec-pangolin-money/deployment-and-ops.md'
@@ -111,16 +112,16 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `apps/server/src/http/app.ts`, `jobs/runner.ts`, `server.ts` + tests -- `/healthz` with per-check failure names; the runner's `lastTickAt` -- health for install and upgrade
-- [ ] `Dockerfile` -- `ARG`/`ENV PANGOLIN_VERSION`, `HEALTHCHECK` on `/healthz` -- release parity
-- [ ] `deploy/compose.yaml` -- image from `${PANGOLIN_IMAGE}`, `env_file: .env`, `read_only`, `init`, `/tmp` and `/run` tmpfs, the data bind mount, the secrets mount (read-only), port bound to `0.0.0.0:3000` (the firewall restricts it), `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, health check, restart policy -- the production stack
-- [ ] `deploy/allowlist.conf.default` -- the default allowlist with comments -- egress config artefact
-- [ ] `deploy/install.sh` -- the full install flow above, split into functions -- the one-command install
-- [ ] `deploy/firewall/{render.sh,pangolin-allowlist.service,pangolin-allowlist.timer}` -- render the nftables ruleset (host + `DOCKER-USER`) from `allowlist.conf` and the prompts; resolve hostnames into nft sets; a systemd timer refreshes the sets every 15 min; also render the Proxmox rules text -- inbound and outbound enforcement
-- [ ] `vitest.config.ts`, `tsconfig.json` (root) -- add `deploy` to the Vitest `include` glob and the root typecheck `include`, so `deploy/*.test.ts` runs and is typechecked -- otherwise the install tests never run
-- [ ] `deploy/install.test.ts` (Vitest, spawns `sh`) -- `--non-interactive --root <tmp> --no-docker` writes the expected files and modes; a re-run keeps secrets and edits; the firewall output from a fixture allowlist; the failure modes in the matrix -- automated coverage without a VM
-- [ ] `docs/install.md`, `README.md` -- the VM prerequisites (LUKS plus Clevis/Tang steps), the install, NPM settings, what the bundle is -- the operator guide
-- [ ] `.github/workflows/ci.yml` -- shellcheck `deploy/*.sh`; the container job waits on `/healthz`; `docker compose -f deploy/compose.yaml config` validates -- CI
+- [x] `apps/server/src/http/app.ts`, `jobs/runner.ts`, `server.ts` + tests -- `/healthz` with per-check failure names; the runner's `lastTickAt` -- health for install and upgrade
+- [x] `Dockerfile` -- `ARG`/`ENV PANGOLIN_VERSION`, `HEALTHCHECK` on `/healthz` -- release parity
+- [x] `deploy/compose.yaml` -- image from `${PANGOLIN_IMAGE}`, `env_file: .env`, `read_only`, `init`, `/tmp` and `/run` tmpfs, the data bind mount, the secrets mount (read-only), port bound to `0.0.0.0:3000` (the firewall restricts it), `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, health check, restart policy -- the production stack
+- [x] `deploy/allowlist.conf.default` -- the default allowlist with comments -- egress config artefact
+- [x] `deploy/install.sh` -- the full install flow above, split into functions -- the one-command install
+- [x] `deploy/firewall/{render.sh,pangolin-allowlist.service,pangolin-allowlist.timer}` -- render the nftables ruleset (host + `DOCKER-USER`) from `allowlist.conf` and the prompts; resolve hostnames into nft sets; a systemd timer refreshes the sets every 15 min; also render the Proxmox rules text -- inbound and outbound enforcement
+- [x] `vitest.config.ts`, `tsconfig.json` (root) -- add `deploy` to the Vitest `include` glob and the root typecheck `include`, so `deploy/*.test.ts` runs and is typechecked -- otherwise the install tests never run
+- [x] `deploy/install.test.ts` (Vitest, spawns `sh`) -- `--non-interactive --root <tmp> --no-docker` writes the expected files and modes; a re-run keeps secrets and edits; the firewall output from a fixture allowlist; the failure modes in the matrix -- automated coverage without a VM
+- [x] `docs/install.md`, `README.md` -- the VM prerequisites (LUKS plus Clevis/Tang steps), the install, NPM settings, what the bundle is -- the operator guide
+- [x] `.github/workflows/ci.yml` -- shellcheck `deploy/*.sh`; the container job waits on `/healthz`; `docker compose -f deploy/compose.yaml config` validates -- CI
 
 **Acceptance Criteria:**
 - Given a fresh Debian 13 VM with its data disk LUKS-unlocked by Clevis and Tang, when `install.sh` runs once with answers, then it ends printing NPM settings and a setup link, and that link opens the setup page through NPM over https.
@@ -130,9 +131,81 @@ context:
 
 ## Implementation Notes
 
+- **`/healthz`:** the checks live in a new `app` use case, `system.readiness` (`packages/app/src/system/readiness.ts`), on the existing `SystemHealthPort`: `migrations` (applied count equals the build's migration count), `database` (the write probe; a throwing probe counts as failing) and `jobs`. The runner exposes `liveness()` (`running`, `lastTickAt`, `pollMs`); `lastTickAt` is set by `start()` and by every tick whose claims succeed, read by the injected clock like the rest of the runner. `server.ts` passes a getter, so `/healthz` reports `jobs` until the runner has started and after it stops; demo mode passes `"skip"`. The route is registered before the `/api/*` Origin and session middleware and the SPA fallback.
+- **Container firewall (deviation in mechanism, same effect):** containers are filtered by a native nftables `forward` base chain in the `inet pangolin` table (priority `filter - 10`), not by rules inside `DOCKER-USER`. An iptables-nft `DOCKER-USER` rule cannot reference nft sets, so resolved hostnames would have to be rewritten as per-IP iptables rules every 15 minutes. The native chain sees exactly the forwarded packets `DOCKER-USER` sees, a drop in it stands regardless of Docker's own accepts, and it survives Docker restarts and Docker's nftables backend. Published ports are restricted there too (`ct status dnat`), because DNAT'd traffic never reaches `input`.
+- **Allowlist syntax:** `host` allows every port on its addresses; `host:port` allows that port over TCP and UDP; IPv4/IPv6 addresses and CIDRs are accepted (`[v6]:port`). `pangolin-allowlist.service` re-renders and reloads the whole table atomically (`delete table` + definition in one `nft -f`); the timer runs it every 15 minutes. Debian's `nftables.service` is left alone (its `flush ruleset` would clear Docker's rules), and install.sh warns if it is enabled.
+- **Secrets ownership:** `secrets/` and its three files are owned by uid 1000 (the image's `node` user) so the non-root container can read `auth-secret` through the read-only `/secrets` mount; root can still read them. `ghcr-token` stays root's.
+- **A lone `install.sh`:** the release uploads only `install.sh`, so the image now carries `deploy/` at `/app/deploy`; install.sh uses the files next to itself when present, else the `--build` clone, else copies them out of the pulled image.
+- **Testing flags:** `--root DIR` writes every file under DIR and never modifies the host (no packages, nft, systemd or Docker), so it needs no root; `--no-docker` skips Docker on a real host. Staged runs write a `--no-resolve` preview of the ruleset and Proxmox rules. For the unhealthy-start row, `PANGOLIN_HEALTH_TIMEOUT` (default 90) shortens the wait, and `PANGOLIN_INSTALL_STUB_DOCKER=1` lets a `--root` run start the stack and wait for it against a stub `docker` on `PATH`; without `--root` that variable is ignored.
+- **Review fixes (round 1):**
+  - Boot: `pangolin-firewall.service` (`DefaultDependencies=no`, before `network-pre.target` and `docker.service`, WantedBy `sysinit.target`) runs `render.sh boot`, which loads the saved `firewall/pangolin.nft` or, failing that, a fail-closed ruleset (`render.sh fallback`: SSH from the admin network, NPM to the app, DNS, host NTP). `render.sh apply` saves the ruleset atomically; the allowlist service/timer only re-renders.
+  - Data disk: `--tang-url` (prompted, optional) is stored as `PANGOLIN_TANG_URL` and allowlisted (re-added if missing); when the data root is a mount point, a `docker.service.d/pangolin-data.conf` drop-in sets `RequiresMountsFor`. Tests answer the mount check with `PANGOLIN_INSTALL_STUB_MOUNTPOINT`, honoured only under `--root`.
+  - Settings are settled from `.env` plus flags before the host checks; an explicit `--image`, `--build` or `--data-root` replaces its `.env` value with a notice. A local image ref (no `/`) is never pulled; it must exist (`docker image inspect`). `PANGOLIN_INSTALL_STUB_DOCKER` now also covers the image step.
+  - Only `secrets/auth-secret` is mounted (as a file) and owned by uid 1000; `app-key`, `restic-password` and `ghcr-token` stay root's.
+  - NTP: the pool names are gone from the allowlist; the host's `output` chain allows `udp dport 123` anywhere (containers do not).
+  - render.sh skips an empty port, octets over 255 and malformed IPv6 (strict validators shared with install.sh); DHCPv6 allowed. `--root` resolving to `/` or empty is refused. `/healthz` reuses its answer for 1 s (by the injected clock).
+- **Extra flags** beyond the prompts: `--dns`, `--data-root`, `--http-port`, `--ssh-port`, `--ghcr-user`, `--ghcr-token-file`, `--repo`.
+- **Verified locally:** lint, typecheck and the full Vitest suite (641 tests, including `deploy/install.test.ts`); shellcheck clean at every severity; the ruleset loads in a scratch network namespace (`unshare -n nft -f`, twice); `docker compose config` on the generated `.env` (also with the SELinux `rw,Z`/`ro,Z` modes); and the production compose file booted a locally built image: healthy, uid 1000, read-only root, no capabilities, `/run` tmpfs, auth secret read from `/secrets`, setup link written, `/healthz` 503 `["database"]` on a read-only database. A full `docker build` could not finish in the sandbox (pnpm hung on network), and the real VM install, NPM, Clevis/Tang and the firewall's live behaviour remain the human-in-the-loop checks.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+### 2026-09-27 — Review pass
+- verdicts: 52 findings — high 6, medium 19, low 23, false 3, maybe-false 1
+- findings:
+  - `[medium]` `[patch]` VG: the image's `/app/deploy` is never checked — added a CI container-job step; it runs clean locally against the rebuilt image.
+  - `[medium]` `[patch]` VG: the generated ruleset is never parsed by `nft` — CI runs `nft -c` on the saved and fallback rulesets; both pass locally, and the saved one loads twice in a netns.
+  - `[low]` `[patch]` VG: a failed claim leaving `lastTickAt` stale is untested — added a runner test.
+  - `[medium]` `[patch]` VG: GHCR token storage is untested — test: CRLF stripped, 0600, root-owned, never printed or stored elsewhere.
+  - `[medium]` `[patch]` VG: only the unhealthy `wait_healthy` path is tested — added the healthy path via the Docker stub, asserting `compose up -d`.
+  - `[low]` `[patch]` VG other: the ruleset test depends on the host's `/etc/hosts` — uses IP literals now.
+  - `[low]` `[reject]` Intent: the prompts are untested (every test is non-interactive) — each prompt maps to the same flag code; covered by the manual interactive run and the VM check.
+  - `[false]` `[reject]` Intent: Ubuntu and Rocky are barely tested — by design: marked unproven in the plan's constraints.
+  - `[false]` `[reject]` Intent: `--root` skips host changes, so packages, firewall load and Docker are untested — by design (Design Notes); the VM run is this ticket's human-in-the-loop step; Docker steps are now stub-tested and nft loads are checked.
+  - `[low]` `[reject]` Intent: the production compose file is never booted in CI — validated with `docker compose config` in CI and booted locally from a staged install.
+  - `[false]` `[reject]` Intent: the setup link through NPM over https is not proven — the plan's first acceptance criterion needs the VM (human-in-the-loop); it can't be automated here.
+  - `[high]` `[patch]` Blind: the firewall is absent at boot and after a failed render, so Docker restarts the app with port 3000 open and egress unrestricted — added the early `pangolin-firewall.service` that loads the saved ruleset before the network and Docker, with a fail-closed fallback; verified in a netns.
+  - `[high]` `[patch]` Blind: with Tang not allowlisted and a `nofail` mount, a failed unlock lets the app start on an empty unencrypted data root — `--tang-url` is allowlisted; a docker `RequiresMountsFor` drop-in when the data root is a mount point; docs explain; tested.
+  - `[medium]` `[patch]` Blind: the container can read `app-key` and `restic-password`, which it doesn't use — compose mounts only `auth-secret`; the others stay root-owned 0600; verified by booting.
+  - `[medium]` `[patch]` Blind: `--build`/`--image` are ignored on a re-run, and a local image is pulled and dies silently — an explicit `--image`/`--build` replaces the `.env` value with a notice; local refs are inspected, never pulled; tested.
+  - `[medium]` `[patch]` Blind: `--data-root` is checked and prepared while `.env`'s old value is what's mounted — settled from `.env` and flags before the checks; an explicit `--data-root` replaces it; tested.
+  - `[medium]` `[patch]` Blind: render.sh accepts `host:` (empty port → every port), octets > 255 and malformed IPv6, which then break `nft -f` — strict shared validators; invalid or blank-port entries are skipped with a warning; tested.
+  - `[medium]` `[patch]` Blind: NTP pool names rotate addresses, so time sync (and TOTP) silently breaks — host-only `udp dport 123` to any address; pool names removed; documented.
+  - `[low]` `[patch]` Blind: an IPv6 NPM host is accepted but can't work — an IPv6 `--npm-host` is now rejected with a clear message.
+  - `[medium]` `[patch]` Blind: unauthenticated `/healthz` runs a write probe on every request — the readiness result is cached for 1 s; tested.
+  - `[medium]` `[patch]` Blind: CI never parses the ruleset — same patch as the VG `nft` row.
+  - `[low]` `[patch]` Blind: risky paths untested (claim failure, GHCR token, and more) — the claim-failure and token tests were added; SSH-lockout and backup-URL variants stay low.
+  - `[low]` `[reject]` Blind: operator edits to `compose.yaml` and the units are overwritten — by design: settings live in `.env`; override support can come if a need appears.
+  - `[low]` `[patch]` Blind: `docker login` also stores the token in `/root/.docker/config.json` — documented.
+  - `[low]` `[patch]` Edge: Ctrl-C during the token prompt leaves terminal echo off — `ask_secret` restores echo in its own trap.
+  - `[medium]` `[patch]` Edge: a bad NPM host or resolver value is stored and breaks `nft -f` — same patch as the Blind validator row.
+  - `[low]` `[reject]` Edge: a flag cannot fix an invalid stored `.env` value — invalid stored values now fail validation loudly; the operator edits `.env` (documented).
+  - `[medium]` `[patch]` Edge: `--build`/`--image` are ignored on a re-run, and a local image is pulled and dies silently (`--build` on a re-run) — same patch as the Blind image row.
+  - `[medium]` `[patch]` Edge: `--build`/`--image` are ignored on a re-run, and a local image is pulled and dies silently (a local image pulled on a re-run) — same patch as the Blind image row.
+  - `[low]` `[reject]` Edge: `--repo` changed on a re-run is ignored by an existing clone — a rare developer path; delete `/opt/pangolin/src` to re-clone.
+  - `[low]` `[patch]` Edge: `PANGOLIN_TRUSTED_PROXIES` drifts from an edited NPM host — now warns when they differ.
+  - `[medium]` `[patch]` Edge: `--data-root` is checked and prepared while `.env`'s old value is what's mounted — same patch as the Blind data-root row.
+  - `[medium]` `[patch]` Edge: `--root /` turns a staging run into a real install — a root of `/` or empty is refused; tested.
+  - `[low]` `[reject]` Edge: an SSH client and admin network in different families skip the lockout warning — the plan's Debian path is IPv4; the warning is advisory.
+  - `[low]` `[patch]` Edge: a zone-scoped IPv6 resolver makes `detect_dns` die — link-local and zone-scoped resolvers are skipped.
+  - `[low]` `[reject]` Edge: os-release without `VERSION_CODENAME` writes a bad docker.list — Debian 12/13 and Ubuntu 24.04 always set it; apt fails loudly.
+  - `[low]` `[patch]` Edge: install.sh `--help` prints a stray `set -eu` — reads a marked range now.
+  - `[low]` `[patch]` Edge: render.sh `--help` ends mid-sentence — reads a marked range now.
+  - `[medium]` `[patch]` Edge: an empty port allows every port — same patch as the Blind validator row.
+  - `[medium]` `[patch]` Edge: octets > 255 reach the ruleset — same patch as the Blind validator row.
+  - `[maybe-false]` `[reject]` Edge: overlapping prefix+port intervals may make `nft` reject the set — `auto-merge`/interval handling needs a real overlapping allowlist to settle; if true it is low, since the default allowlist has no overlaps and a load failure keeps the old ruleset.
+  - `[low]` `[patch]` Edge: render.sh keeps running after INT/TERM — `trap 'exit 130'` added.
+  - `[low]` `[patch]` Edge: DHCPv6 is dropped — in 547→546 and out 547 allowed.
+  - `[high]` `[patch]` Edge: the firewall is absent at boot and after a failed render, so Docker restarts the app with port 3000 open and egress unrestricted — same patch as the Blind boot row.
+  - `[high]` `[patch]` Edge: with Tang not allowlisted and a `nofail` mount, a failed unlock lets the app start on an empty unencrypted data root (the boot race with Clevis) — same patch as the Blind disk row: the early firewall loads the saved rules, which include Tang.
+  - `[medium]` `[patch]` Edge: NTP pool names rotate addresses, so time sync (and TOTP) silently breaks — same patch as the Blind NTP row.
+  - `[high]` `[patch]` Edge: with Tang not allowlisted and a `nofail` mount, a failed unlock lets the app start on an empty unencrypted data root (the docs' `nofail` mount) — same patch as the Blind disk row.
+  - `[low]` `[reject]` Edge: a trailing comment on the backup line gives a false missing warning — cosmetic; only a warning.
+  - `[low]` `[reject]` Edge: backup userinfo containing `/` allowlists the wrong host — an unusual credential form; the operator can edit the allowlist.
+  - `[low]` `[reject]` Edge: "An account already exists" is inferred from the sqlite file — an advisory message; the server's own setup-link logic is authoritative.
+  - `[low]` `[reject]` Edge (claim): nothing is written to DOCKER-USER, as the plan decision says — a native nft forward chain at priority filter − 10 filters the same packets before Docker's chains, so the decision's effect holds; flagged to the human at the checkpoint for explicit confirmation.
+  - `[high]` `[patch]` Edge (claim): the app port is reachable during boot or after a failed render — same patch as the Blind boot row.
 
 ## Design Notes
 

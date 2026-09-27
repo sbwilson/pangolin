@@ -37,7 +37,21 @@ jobs:
       - name: Migrations match the schema
         run: pnpm --filter @pangolin/db db:generate && git diff --exit-code -- packages/db/migrations
       - name: Shell scripts
-        run: shellcheck -S warning .githooks/pre-commit .githooks/commit-msg scripts/install-git-hooks.sh
+        run: shellcheck -S warning .githooks/pre-commit .githooks/commit-msg scripts/install-git-hooks.sh deploy/*.sh deploy/firewall/*.sh
+      - name: Production compose file is valid
+        run: |
+          stage="$RUNNER_TEMP/pangolin-stage"
+          mkdir -p "$stage/etc"
+          printf 'ID=debian\nVERSION_ID="13"\nVERSION_CODENAME=trixie\n' > "$stage/etc/os-release"
+          sh deploy/install.sh --non-interactive --no-docker --root "$stage" \
+            --hostname money.example.com --npm-host 192.168.1.10 \
+            --admin-network 192.168.1.0/24 --dns 192.168.1.1 --backup-server ""
+          docker compose -f "$stage/opt/pangolin/compose.yaml" --env-file "$stage/opt/pangolin/.env" config --quiet
+          # The staged ruleset (and the fail-closed fallback) must load: checked, never applied.
+          sudo apt-get install -y -q nftables
+          sudo nft -c -f "$stage/opt/pangolin/firewall/pangolin.nft"
+          sh deploy/firewall/render.sh --home "$stage/opt/pangolin" fallback > "$RUNNER_TEMP/fallback.nft"
+          sudo nft -c -f "$RUNNER_TEMP/fallback.nft"
 
   container:
     name: Container and end-to-end
@@ -69,7 +83,7 @@ jobs:
       - name: Wait for health
         run: |
           for _ in $(seq 1 60); do
-            if curl -fsS http://localhost:3000/api/system/health; then echo; exit 0; fi
+            if curl -fsS http://localhost:3000/healthz; then echo; exit 0; fi
             sleep 1
           done
           echo "The container never became healthy" >&2
@@ -84,6 +98,10 @@ jobs:
           done
           echo "Docker health status is still $status" >&2
           exit 1
+      - name: The image carries the deploy files a lone install.sh uses
+        run: |
+          docker run --rm --entrypoint sh pangolin:local -c \
+            'test -f /app/deploy/compose.yaml && test -f /app/deploy/allowlist.conf.default && test -x /app/deploy/firewall/render.sh'
       - name: The server runs as a non-root user
         run: |
           uid=$(docker compose exec -T pangolin sh -c 'stat -c %u /proc/$(pidof -s node)')
@@ -93,7 +111,7 @@ jobs:
         run: |
           id=$(docker run -d -e PANGOLIN_DEMO=true -p 3001:3000 --read-only --tmpfs /tmp pangolin:local)
           for _ in $(seq 1 60); do
-            if curl -fsS http://localhost:3001/api/system/health; then
+            if curl -fsS http://localhost:3001/healthz; then
               echo
               docker rm -f "$id" > /dev/null
               exit 0

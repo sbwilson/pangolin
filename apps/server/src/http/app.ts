@@ -19,6 +19,9 @@ import {
   issueSetupLink,
   listNotices,
   me,
+  type ReadinessOutput,
+  type RunnerLiveness,
+  readiness,
   reEnrolmentUrl,
   regenerateRecoveryCodes,
   revokeMyReEnrolmentLinks,
@@ -68,6 +71,21 @@ export interface AppDeps extends ApiDeps {
    * `PANGOLIN_AUTH_RATE_LIMIT` as password sign-in (default 10).
    */
   readonly recoveryRateLimitPerMinute?: number;
+  /** What `/healthz` checks beyond the database. */
+  readonly healthz: HealthzDeps;
+}
+
+/** How long one `/healthz` answer is reused, by the injected clock. */
+export const HEALTHZ_CACHE_MS = 1000;
+
+export interface HealthzDeps {
+  /** The number of migrations this build ships; the database must have applied them all. */
+  readonly expectedSchemaVersion: number;
+  /**
+   * The job runner's liveness, read per request (undefined until it has started), or `"skip"`
+   * in demo mode, which runs no jobs.
+   */
+  readonly runner: (() => RunnerLiveness | undefined) | "skip";
 }
 
 const signUpBody = z
@@ -336,6 +354,27 @@ export function createApp(deps: AppDeps): Hono<SessionEnv> {
   const app = new Hono<SessionEnv>();
   app.onError(createErrorHandler(deps.logInternalError));
   app.use("*", cspOnHtml);
+  // Outside /api, so the Origin check and session never apply: NPM, Docker and upgrades probe
+  // it anonymously. It reveals only the names of the failing checks.
+  // The probe writes to SQLite, so a flood of anonymous requests costs one probe per second.
+  let cachedReadiness: { readonly at: number; readonly result: ReadinessOutput } | undefined;
+  app.get("/healthz", (c) => {
+    c.header("Cache-Control", "no-store");
+    const now = deps.clock.now().epochMilliseconds;
+    if (cachedReadiness === undefined || now - cachedReadiness.at >= HEALTHZ_CACHE_MS) {
+      const { runner } = deps.healthz;
+      const result = readiness(
+        { systemHealth: deps.systemHealth, clock: deps.clock },
+        {
+          expectedSchemaVersion: deps.healthz.expectedSchemaVersion,
+          runner: runner === "skip" ? "skip" : (runner() ?? null),
+        },
+      );
+      cachedReadiness = { at: now, result };
+    }
+    const { result } = cachedReadiness;
+    return c.json(result, result.ok ? 200 : 503);
+  });
   app.use("/api/*", originCheck(deps.publicUrl));
   app.use("/api/*", sessionMiddleware(deps));
   // Our public sign-in routes get the same per-client limit as better-auth's sign-in, one

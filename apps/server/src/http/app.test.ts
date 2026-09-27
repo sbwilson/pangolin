@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createIdGenerator, fixedClockAt, type UnitOfWork } from "@pangolin/app";
+import { createIdGenerator, fixedClockAt, systemClock, type UnitOfWork } from "@pangolin/app";
 import {
   createSystemHealthRepo,
   createUnitOfWork,
@@ -64,8 +64,17 @@ function deps(db: Db, authn: Authn = { kind: "live", gateway: fakeGateway() }): 
     codes: recoveryCodeHasher("test-secret"),
     publicUrl: ORIGIN,
     authn,
+    healthz: { expectedSchemaVersion: MIGRATIONS, runner: () => ticking },
   };
 }
+
+const MIGRATIONS = loadMigrations(packageMigrationsDir).length;
+/** A runner that ticked just now, by the fixed clock `deps` uses. */
+const ticking = {
+  running: true,
+  lastTickAt: fixedClockAt("2026-09-27").now().epochMilliseconds,
+  pollMs: 1000,
+};
 
 /**
  * Links `user-a` to a person, with TOTP and a passkey enrolled, so the fake session resolves to
@@ -120,6 +129,89 @@ describe("GET /api/system/health", () => {
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ status: "unhealthy", schemaVersion: 5, writable: false });
+  });
+});
+
+describe("GET /healthz", () => {
+  it("returns 200 ok with no session, Origin or detail", async () => {
+    const res = await createApp({ ...deps(openDb()), webRoot }).request("/healthz", {
+      headers: { Origin: "https://evil.example" },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("returns 503 naming a read-only database", async () => {
+    const res = await createApp(deps(openDb(true))).request("/healthz");
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ ok: false, failing: ["database"] });
+  });
+
+  it("returns 503 naming a stopped, stale or absent runner", async () => {
+    const db = openDb();
+    for (const runner of [
+      () => ({ ...ticking, running: false }),
+      () => ({ ...ticking, lastTickAt: ticking.lastTickAt - 3001 }),
+      () => undefined,
+    ]) {
+      const app = createApp({
+        ...deps(db),
+        healthz: { expectedSchemaVersion: MIGRATIONS, runner },
+      });
+      const res = await app.request("/healthz");
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({ ok: false, failing: ["jobs"] });
+    }
+  });
+
+  it("returns 503 naming unapplied migrations", async () => {
+    const app = createApp({
+      ...deps(openDb()),
+      healthz: { expectedSchemaVersion: MIGRATIONS + 1, runner: () => ticking },
+    });
+    const res = await app.request("/healthz");
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ ok: false, failing: ["migrations"] });
+  });
+
+  it("probes the database at most once a second", async () => {
+    const db = openDb();
+    const real = createSystemHealthRepo(db);
+    let probes = 0;
+    const systemHealth = {
+      schemaVersion: () => real.schemaVersion(),
+      probeWrite: () => {
+        probes++;
+        return real.probeWrite();
+      },
+    };
+    let now = fixedClockAt("2026-09-27").now();
+    const clock = systemClock("UTC", () => now);
+    const app = createApp({
+      ...deps(db),
+      systemHealth,
+      clock,
+      healthz: {
+        expectedSchemaVersion: MIGRATIONS,
+        runner: () => ({ ...ticking, lastTickAt: now.epochMilliseconds }),
+      },
+    });
+    expect((await app.request("/healthz")).status).toBe(200);
+    now = now.add({ milliseconds: 999 });
+    expect((await app.request("/healthz")).status).toBe(200);
+    expect(probes).toBe(1);
+    now = now.add({ milliseconds: 1 });
+    await app.request("/healthz");
+    expect(probes).toBe(2);
+  });
+
+  it("skips the runner check in demo mode", async () => {
+    const app = createApp({
+      ...deps(openDb(), { kind: "demo" }),
+      healthz: { expectedSchemaVersion: MIGRATIONS, runner: "skip" },
+    });
+    expect((await app.request("/healthz")).status).toBe(200);
   });
 });
 

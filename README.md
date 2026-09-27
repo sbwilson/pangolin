@@ -3,6 +3,18 @@
 A self-hosted web app for a two-person household's finances. The spec lives in
 `_bmad-output/specs/spec-pangolin-money/SPEC.md`.
 
+## Installing on a server
+
+`deploy/install.sh` installs the production stack on a Debian VM behind an existing Nginx
+Proxy Manager in one command: Docker, generated secrets and a recovery bundle, `.env`, an
+outbound allowlist with an nftables firewall, and the one-time setup link. Encrypt the data
+disk first (LUKS with Clevis + Tang). The full guide, including the disk encryption commands
+and the NPM settings, is [docs/install.md](docs/install.md).
+
+```sh
+sudo sh deploy/install.sh        # asks its questions; --help lists the flags
+```
+
 ## Running locally
 
 Once it's up, open:
@@ -10,6 +22,9 @@ Once it's up, open:
 - http://localhost:3000 — the app, which should show "Healthy" and "Schema version 5" on the
   sign-in page
 - http://localhost:3000/api/system/health — the raw health JSON
+- http://localhost:3000/healthz — the readiness probe Docker, NPM and upgrades use: 200
+  `{"ok":true}` when every migration is applied, the database is writable and the job runner is
+  ticking (demo mode skips the runner), otherwise 503 with the failing checks' names
 
 Everything else needs a sign-in; see [First login](#first-login) below.
 

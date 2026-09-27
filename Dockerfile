@@ -32,7 +32,10 @@ RUN pnpm --filter @pangolin/server deploy --prod --legacy /out
 
 # ---- runtime: one Node process serving the PWA and /api/* ----
 FROM node:26-trixie-slim AS runtime
+# The release workflow passes the tag (e.g. v1.2.3); local builds report "dev".
+ARG PANGOLIN_VERSION=dev
 ENV NODE_ENV=production \
+    PANGOLIN_VERSION=${PANGOLIN_VERSION} \
     PANGOLIN_DATA_DIR=/data \
     PORT=3000
 WORKDIR /app
@@ -41,13 +44,16 @@ WORKDIR /app
 COPY --from=build /out/package.json ./package.json
 COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /src/apps/server/dist ./dist
+# The production compose file, allowlist and firewall, for an install.sh downloaded on its own.
+COPY --from=build /src/deploy ./deploy
 
 RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME ["/data"]
 EXPOSE 3000
 
+# /healthz: migrations applied, database writable, job runner ticking (demo mode skips the runner).
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:' + process.env.PORT + '/api/system/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:' + process.env.PORT + '/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 
 CMD ["node", "dist/main.js"]

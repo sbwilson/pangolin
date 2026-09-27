@@ -1,0 +1,46 @@
+# Pangolin Money outbound allowlist: the only hosts this VM and its containers may reach.
+#
+# One entry per line: host[:port]. `#` starts a comment.
+#   host        every port on the host's addresses
+#   host:port   that TCP and UDP port only
+# An IPv4 or IPv6 address, or a CIDR range, may stand in for a host name ([v6]:port for a
+# port on an IPv6 address).
+#
+# Host names are resolved to addresses every 15 minutes (pangolin-allowlist.timer). DNS itself
+# is allowed only to the resolvers in /opt/pangolin/.env (PANGOLIN_DNS_SERVERS). Add your Tang
+# server (install.sh --tang-url does it) or the encrypted data disk cannot unlock at boot.
+#
+# After an edit, apply it and print the matching Proxmox rules:
+#   systemctl start pangolin-allowlist.service
+#   /opt/pangolin/firewall/render.sh proxmox
+
+# Debian packages and security updates
+deb.debian.org:80
+deb.debian.org:443
+security.debian.org:80
+security.debian.org:443
+
+# Docker Engine packages
+download.docker.com:443
+
+# Container images: GHCR and its blob storage
+ghcr.io:443
+pkg-containers.githubusercontent.com:443
+
+# Time: not listed here. The host (not its containers) may send NTP (UDP 123) to any server,
+# because pool names such as 2.debian.pool.ntp.org rotate addresses faster than this list is
+# re-resolved, and a drifting clock breaks authenticator codes.
+
+# Prices: Yahoo Finance, including its cookie/crumb handshake
+query1.finance.yahoo.com:443
+query2.finance.yahoo.com:443
+fc.yahoo.com:443
+
+# The LLM endpoint is added in epic 5.
+
+# install.sh --build only: building the image on this VM also needs these.
+# github.com:443
+# registry.npmjs.org:443
+# registry-1.docker.io:443
+# auth.docker.io:443
+# production.cloudflare.docker.com:443

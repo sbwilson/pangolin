@@ -1,0 +1,14 @@
+[Unit]
+Description=Pangolin Money firewall: re-resolve the allowlist, reload and save the ruleset
+Documentation=file:///opt/pangolin/allowlist.conf
+Wants=network-online.target
+After=network-online.target nss-lookup.target pangolin-firewall.service
+# Only re-renders: pangolin-firewall.service loads the saved ruleset early at boot. Docker's
+# own rules live in other tables; this only replaces the `inet pangolin` table.
+
+[Service]
+Type=oneshot
+ExecStart=/opt/pangolin/firewall/render.sh apply
+
+[Install]
+WantedBy=multi-user.target

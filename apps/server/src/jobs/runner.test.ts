@@ -347,6 +347,44 @@ describe("runner", () => {
     expect(jobs()[0]).toMatchObject({ status: "dead", attempts: 2 });
   });
 
+  it("reports its liveness: running once started, and when it last started or ticked", async () => {
+    const r = runner([], { pollMs: 3_600_000 });
+    expect(r.liveness()).toEqual({ running: false, lastTickAt: undefined, pollMs: 3_600_000 });
+    r.start();
+    expect(r.liveness()).toEqual({
+      running: true,
+      lastTickAt: start.epochMilliseconds,
+      pollMs: 3_600_000,
+    });
+    advance(5000);
+    await r.tick();
+    expect(r.liveness().lastTickAt).toBe(start.epochMilliseconds + 5000);
+    await r.stop();
+    expect(r.liveness().running).toBe(false);
+  });
+
+  it("leaves lastTickAt unchanged when a tick's claim throws", async () => {
+    let broken = false;
+    const flaky: UnitOfWork = {
+      transaction: (fn) => {
+        if (broken) throw new Error("SQLITE_IOERR");
+        return uow.transaction(fn);
+      },
+      read: (fn) => uow.read(fn),
+    };
+    const r = runner([], { uow: flaky, pollMs: 3_600_000 });
+    r.start();
+    const started = r.liveness().lastTickAt;
+    expect(started).toBe(start.epochMilliseconds);
+    advance(5000);
+    broken = true;
+    await r.tick();
+    expect(r.liveness().lastTickAt).toBe(started);
+    expect(logs.map((l) => l.msg)).toContain("could not claim jobs");
+    broken = false;
+    await r.stop();
+  });
+
   it("warns once for each lane disabled with concurrency 0 when it starts", async () => {
     const r = runner([], { concurrency: { llm: 0, local: 0 }, pollMs: 3_600_000 });
     r.start();

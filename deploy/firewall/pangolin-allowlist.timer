@@ -1,0 +1,11 @@
+[Unit]
+Description=Re-resolve the Pangolin Money allowlist every 15 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=15min
+AccuracySec=30s
+Unit=pangolin-allowlist.service
+
+[Install]
+WantedBy=timers.target

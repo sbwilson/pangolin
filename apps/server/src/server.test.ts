@@ -66,6 +66,11 @@ async function getHealth(port: number) {
   return { status: res.status, body: await res.json() };
 }
 
+async function getHealthz(port: number) {
+  const res = await fetch(`http://127.0.0.1:${port}/healthz`);
+  return { status: res.status, body: await res.json() };
+}
+
 describe("startServer", () => {
   it("migrates a fresh data dir and serves health", async () => {
     const server = await boot();
@@ -241,6 +246,22 @@ describe("startServer first boot", () => {
     mkdirSync(dataDir(), { recursive: true });
     writeFileSync(join(dataDir(), "auth-secret"), "short");
     await expect(boot()).rejects.toThrow(/shorter than 32/);
+  });
+
+  it("serves /healthz ok once the runner has started, and 503 jobs once it stops", async () => {
+    const server = await boot();
+    try {
+      expect(await getHealthz(server.port)).toEqual({ status: 200, body: { ok: true } });
+      await server.runner?.stop();
+      // /healthz reuses its answer for a second.
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      expect(await getHealthz(server.port)).toEqual({
+        status: 503,
+        body: { ok: false, failing: ["jobs"] },
+      });
+    } finally {
+      await server.close();
+    }
   });
 
   it("serves the health check without a session and refuses the jobs list", async () => {
@@ -437,6 +458,8 @@ describe("startServer in demo mode", () => {
         status: 200,
         body: { status: "ok", schemaVersion: 5, writable: true },
       });
+      // Demo mode runs no jobs, so /healthz skips the runner check.
+      expect(await getHealthz(server.port)).toEqual({ status: 200, body: { ok: true } });
       const settings = server.uow.read((repos) => repos.householdSettings.get());
       expect(settings.timezone).toBe(expectations["people-and-household.timezone"]);
     });

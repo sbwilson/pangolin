@@ -57,7 +57,8 @@ export function createHarness(
 ): Harness {
   const dir = mkdtempSync(join(tmpdir(), "pangolin-auth-"));
   const db = openDatabase(join(dir, "pangolin.sqlite"));
-  migrate(db, loadMigrations(packageMigrationsDir));
+  const migrations = loadMigrations(packageMigrationsDir);
+  migrate(db, migrations);
   const uow = createUnitOfWork(db);
   const real = systemClock("UTC");
   let offsetMinutes = 0;
@@ -93,6 +94,7 @@ export function createHarness(
     authn: { kind: "live", gateway },
     trustedProxies,
     recoveryRateLimitPerMinute: config.rateLimitPerMinute,
+    healthz: { expectedSchemaVersion: migrations.length, runner: "skip" },
   });
   return {
     origin,

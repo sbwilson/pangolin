@@ -1,0 +1,18 @@
+[Unit]
+Description=Pangolin Money firewall: load the saved nftables ruleset early at boot
+Documentation=file:///opt/pangolin/firewall/pangolin.nft
+# Before the network and Docker come up, so the app never runs unfiltered. The saved ruleset
+# holds the last resolved addresses and needs no DNS; without it, a fail-closed ruleset loads.
+DefaultDependencies=no
+Wants=network-pre.target
+Before=network-pre.target docker.service shutdown.target
+Conflicts=shutdown.target
+RequiresMountsFor=/opt/pangolin
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/pangolin/firewall/render.sh boot
+
+[Install]
+WantedBy=sysinit.target
