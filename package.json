@@ -8,6 +8,7 @@
     "node": ">=22.18.0"
   },
   "scripts": {
+    "prepare": "[ ! -f scripts/install-git-hooks.sh ] || sh scripts/install-git-hooks.sh",
     "lint": "biome check . && node scripts/check-boundaries.ts",
     "format": "biome check --write .",
     "typecheck": "pnpm -r typecheck && tsc -p tsconfig.json",
