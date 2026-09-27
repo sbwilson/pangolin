@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "req_mock"
+  },
+  "body": "{\"id\": \"chatcmpl-mock-malformed-json\", \"object\": \"chat.completion\", \"created\": 1784073600, \"model\": \"mock-malformed-json\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": \"{\\\"suggestions\\\": [{\\\"index\\\": 0, \\\"payee_name\\\": \\\"Woolworths\\\", \\\"category_id\\\": \", \"refusal\": null}, \"logprobs\": null, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 412, \"completion_tokens\": 38, \"total_tokens\": 450}, \"system_fingerprint\": \"fp_mock\"}"
+}

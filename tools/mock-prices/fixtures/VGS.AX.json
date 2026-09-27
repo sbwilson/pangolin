@@ -1,0 +1,60 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json;charset=utf-8"
+  },
+  "json": {
+    "chart": {
+      "result": [
+        {
+          "meta": {
+            "currency": "AUD",
+            "symbol": "VGS.AX",
+            "exchangeName": "ASX",
+            "fullExchangeName": "ASX",
+            "instrumentType": "ETF",
+            "firstTradeDate": 1210550400,
+            "regularMarketTime": 1784008800,
+            "hasPrePostMarketData": false,
+            "gmtoffset": 36000,
+            "timezone": "AEST",
+            "exchangeTimezoneName": "Australia/Sydney",
+            "regularMarketPrice": 149.62,
+            "fiftyTwoWeekHigh": 149.77,
+            "fiftyTwoWeekLow": 148.0,
+            "regularMarketDayHigh": 149.77,
+            "regularMarketDayLow": 149.37,
+            "regularMarketVolume": 201300,
+            "longName": "Vanguard MSCI Index International Shares ETF",
+            "shortName": "Vanguard MSCI Index International Shares ETF",
+            "chartPreviousClose": 148.68,
+            "priceHint": 2,
+            "dataGranularity": "1d",
+            "range": "5d",
+            "validRanges": ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"]
+          },
+          "timestamp": [
+            1783296000, 1783382400, 1783468800, 1783555200, 1783641600, 1783900800, 1783987200
+          ],
+          "indicators": {
+            "quote": [
+              {
+                "open": [148.68, 148.76, 148.13, 148.54, 149.42, 149.25, 149.5],
+                "high": [148.91, 148.91, 148.69, 149.57, 149.57, 149.65, 149.77],
+                "low": [148.55, 148.0, 148.0, 148.41, 149.12, 149.12, 149.37],
+                "close": [148.76, 148.13, 148.54, 149.42, 149.25, 149.5, 149.62],
+                "volume": [198400, 176300, 214800, 189200, 231500, 167900, 201300]
+              }
+            ],
+            "adjclose": [
+              {
+                "adjclose": [148.76, 148.13, 148.54, 149.42, 149.25, 149.5, 149.62]
+              }
+            ]
+          }
+        }
+      ],
+      "error": null
+    }
+  }
+}

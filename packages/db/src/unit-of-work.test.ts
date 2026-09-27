@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   AppError,
   createIdGenerator,
+  createPerson,
   fixedClock,
   getHouseholdSettings,
   type IdGenerator,
@@ -196,6 +197,39 @@ describe("updateHouseholdSettings on SQLite", () => {
     expect(() => updateHouseholdSettings(context(), { timezone: "Not/A_Zone" })).toThrow(AppError);
     expect(settingsRows()).toEqual(before);
     expect(auditRows()).toEqual([]);
+  });
+});
+
+describe("createPerson on SQLite", () => {
+  it("inserts the person row and its audit row in one transaction", () => {
+    const id = createPerson(context(), { displayName: "Alex", colour: "#2563EB" });
+    expect(db.prepare("SELECT * FROM person").all()).toEqual([
+      {
+        id,
+        user_id: null,
+        display_name: "Alex",
+        colour: "#2563EB",
+        created_at: "2026-09-27T01:02:03.000Z",
+        updated_at: "2026-09-27T01:02:03.000Z",
+        deleted_at: null,
+      },
+    ]);
+    expect(auditRows()).toEqual([
+      expect.objectContaining({ entity: "person", entity_id: id, action: "create", before: null }),
+    ]);
+  });
+
+  it("writes no person when the audit append throws", () => {
+    const ctx = context(failingAudit(createUnitOfWork(db)));
+    expect(() => createPerson(ctx, { displayName: "Alex", colour: "#2563EB" })).toThrow(
+      "audit append failed",
+    );
+    expect(db.prepare("SELECT count(*) FROM person").pluck().get()).toBe(0);
+  });
+
+  it("refuses the person repository after the transaction ended", () => {
+    const tx = createUnitOfWork(db).transaction((repos) => repos);
+    expect(() => tx.person.insert({} as never)).toThrow(/outside its transaction/);
   });
 });
 

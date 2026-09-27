@@ -1,0 +1,61 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json;charset=utf-8"
+  },
+  "delayMs": 3600000,
+  "json": {
+    "chart": {
+      "result": [
+        {
+          "meta": {
+            "currency": "AUD",
+            "symbol": "MOCK-TIMEOUT.AX",
+            "exchangeName": "ASX",
+            "fullExchangeName": "ASX",
+            "instrumentType": "ETF",
+            "firstTradeDate": 1210550400,
+            "regularMarketTime": 1784008800,
+            "hasPrePostMarketData": false,
+            "gmtoffset": 36000,
+            "timezone": "AEST",
+            "exchangeTimezoneName": "Australia/Sydney",
+            "regularMarketPrice": 104.53,
+            "fiftyTwoWeekHigh": 105.13,
+            "fiftyTwoWeekLow": 103.91,
+            "regularMarketDayHigh": 105.13,
+            "regularMarketDayLow": 104.4,
+            "regularMarketVolume": 420100,
+            "longName": "Mock Timeout ETF",
+            "shortName": "Mock Timeout ETF",
+            "chartPreviousClose": 104.04,
+            "priceHint": 2,
+            "dataGranularity": "1d",
+            "range": "5d",
+            "validRanges": ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"]
+          },
+          "timestamp": [
+            1783296000, 1783382400, 1783468800, 1783555200, 1783641600, 1783900800, 1783987200
+          ],
+          "indicators": {
+            "quote": [
+              {
+                "open": [104.04, 104.12, 104.49, 104.28, 104.82, 104.7, 104.98],
+                "high": [104.27, 104.64, 104.64, 104.97, 104.97, 105.13, 105.13],
+                "low": [103.91, 103.99, 104.15, 104.15, 104.57, 104.57, 104.4],
+                "close": [104.12, 104.49, 104.28, 104.82, 104.7, 104.98, 104.53],
+                "volume": [412300, 398100, 455900, 371200, 502400, 389700, 420100]
+              }
+            ],
+            "adjclose": [
+              {
+                "adjclose": [104.12, 104.49, 104.28, 104.82, 104.7, 104.98, 104.53]
+              }
+            ]
+          }
+        }
+      ],
+      "error": null
+    }
+  }
+}

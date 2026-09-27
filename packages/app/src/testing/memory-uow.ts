@@ -1,9 +1,16 @@
 // Test support only (not exported from the package): an in-memory `UnitOfWork` with rollback,
 // so `app` tests can check transaction behaviour without importing an adapter.
-import type { AuditRow, HouseholdSettingsRow, TxRepos, UnitOfWork } from "../ports/unit-of-work.ts";
+import type {
+  AuditRow,
+  HouseholdSettingsRow,
+  PersonRow,
+  TxRepos,
+  UnitOfWork,
+} from "../ports/unit-of-work.ts";
 
 export interface MemoryState {
   settings: HouseholdSettingsRow;
+  people: PersonRow[];
   audit: AuditRow[];
 }
 
@@ -25,10 +32,14 @@ export function memoryUnitOfWork(
   settings: HouseholdSettingsRow = DEFAULT_SETTINGS,
 ): MemoryUnitOfWork {
   const uow: MemoryUnitOfWork = {
-    state: { settings, audit: [] },
+    state: { settings, people: [], audit: [] },
     failAudit: false,
     transaction<T>(fn: (tx: TxRepos) => T): T {
-      const working: MemoryState = { settings: uow.state.settings, audit: [...uow.state.audit] };
+      const working: MemoryState = {
+        settings: uow.state.settings,
+        people: [...uow.state.people],
+        audit: [...uow.state.audit],
+      };
       let active = true;
       const check = () => {
         if (!active) throw new Error("Repository used outside its transaction");
@@ -44,6 +55,15 @@ export function memoryUnitOfWork(
             working.settings = row;
           },
         },
+        person: {
+          insert: (row) => {
+            check();
+            if (working.people.some((p) => p.id === row.id)) {
+              throw new Error("UNIQUE constraint failed: person.id");
+            }
+            working.people.push(row);
+          },
+        },
         audit: {
           append: (row) => {
             check();
@@ -55,6 +75,7 @@ export function memoryUnitOfWork(
       try {
         const result = fn(tx);
         uow.state.settings = working.settings;
+        uow.state.people = working.people;
         uow.state.audit = working.audit;
         return result;
       } finally {

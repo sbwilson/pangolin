@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "request-id": "req_mock"
+  },
+  "body": "{\"id\": \"msg_mock_ok\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"mock-ok\", \"content\": [{\"type\": \"tool_use\", \"id\": \"toolu_mock\", \"name\": \"categorise\", \"input\": {\"suggestions\": [{\"index\": 0, \"payee_name\": \"Woolworths\", \"website_domain\": \"woolworths.com.au\", \"category_id\": \"groceries\", \"confidence\": 0.92}]}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 412, \"output_tokens\": 38}}"
+}

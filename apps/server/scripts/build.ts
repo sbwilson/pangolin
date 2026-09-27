@@ -1,10 +1,12 @@
 // Bundles the server to dist/main.js (better-sqlite3 stays external: it is a native addon),
-// then copies the committed migrations and the built PWA next to it.
+// then copies the committed migrations and the built PWA next to it, and generates the demo
+// seed (dist/demo-seed.json) by running the seed CLI.
 import { cpSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { packageMigrationsDir } from "@pangolin/db";
 import { build } from "esbuild";
+import { generateSeedFile } from "./demo-seed.ts";
 
 const serverDir = fileURLToPath(new URL("..", import.meta.url));
 const dist = join(serverDir, "dist");
@@ -35,4 +37,5 @@ await build({
 
 cpSync(packageMigrationsDir, join(dist, "migrations"), { recursive: true });
 cpSync(webDist, join(dist, "public"), { recursive: true });
-console.log(`Copied migrations and PWA into ${dist}`);
+generateSeedFile(join(dist, "demo-seed.json"));
+console.log(`Copied migrations and PWA, and wrote demo-seed.json, into ${dist}`);

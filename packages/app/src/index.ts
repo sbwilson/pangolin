@@ -1,6 +1,6 @@
 // The package root. `systemViewer` is deliberately absent: it is exported only from
 // `@pangolin/app/system-viewer`, which lint bans outside `apps/server/src/{jobs,admin}` (AD-6).
-export { fixedClock, systemClock } from "./clock.ts";
+export { fixedClock, fixedClockAt, systemClock } from "./clock.ts";
 export type { UseCaseContext } from "./context.ts";
 export {
   AppError,
@@ -11,6 +11,11 @@ export {
   parseInput,
   validationError,
 } from "./errors.ts";
+export {
+  type CreatePersonInput,
+  createPerson,
+  createPersonInput,
+} from "./identity/create-person.ts";
 export { createIdGenerator, type IdGenerator, type IdSources, newId } from "./ids.ts";
 export type { Clock } from "./ports/clock.ts";
 export type { SystemHealthPort } from "./ports/system-health.ts";
@@ -19,6 +24,8 @@ export type {
   AuditRow,
   HouseholdSettingsRepo,
   HouseholdSettingsRow,
+  PersonRepo,
+  PersonRow,
   ReadRepos,
   TxRepos,
   UnitOfWork,

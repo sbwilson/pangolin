@@ -1,0 +1,9 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "req_mock"
+  },
+  "delayMs": 3600000,
+  "body": "{\"id\": \"chatcmpl-mock-timeout\", \"object\": \"chat.completion\", \"created\": 1784073600, \"model\": \"mock-timeout\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": \"{\\\"suggestions\\\": [{\\\"index\\\": 0, \\\"payee_name\\\": \\\"Woolworths\\\", \\\"website_domain\\\": \\\"woolworths.com.au\\\", \\\"category_id\\\": \\\"groceries\\\", \\\"confidence\\\": 0.92}]}\", \"refusal\": null}, \"logprobs\": null, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 412, \"completion_tokens\": 38, \"total_tokens\": 450}, \"system_fingerprint\": \"fp_mock\"}"
+}

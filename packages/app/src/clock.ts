@@ -1,4 +1,4 @@
-import { type PlainDate, Temporal } from "@pangolin/shared/temporal";
+import { type PlainDate, parseDate, Temporal } from "@pangolin/shared/temporal";
 import type { Clock } from "./ports/clock.ts";
 
 /**
@@ -26,4 +26,12 @@ export function systemClock(
 export function fixedClock(date: PlainDate, instant?: Temporal.Instant): Clock {
   const at = instant ?? date.toZonedDateTime("UTC").toInstant();
   return { today: () => date, now: () => at };
+}
+
+/**
+ * `fixedClock` at midnight UTC on a `YYYY-MM-DD` string, for callers that may not import
+ * `@pangolin/shared/temporal` (e.g. the server's demo mode). Throws `RangeError` for a bad date.
+ */
+export function fixedClockAt(isoDate: string): Clock {
+  return fixedClock(parseDate(isoDate));
 }

@@ -1,5 +1,6 @@
 // Entry point of the bundled server (dist/main.js). The build places the committed
-// migrations and the built PWA next to the bundle: dist/migrations and dist/public.
+// migrations, the built PWA and the demo seed next to the bundle: dist/migrations,
+// dist/public and dist/demo-seed.json.
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.ts";
@@ -19,8 +20,13 @@ try {
     config,
     migrationsDir: join(here, "migrations"),
     webRoot: join(here, "public"),
+    defaultSeedFile: join(here, "demo-seed.json"),
   });
-  log("info", "listening", { port: server.port, schemaVersion: server.schemaVersion });
+  log("info", "listening", {
+    port: server.port,
+    schemaVersion: server.schemaVersion,
+    demo: server.demo,
+  });
 
   const shutdown = (signal: string): void => {
     log("info", "shutting down", { signal });

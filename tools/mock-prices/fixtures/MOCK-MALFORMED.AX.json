@@ -1,0 +1,7 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json;charset=utf-8"
+  },
+  "body": "{\"chart\":{\"result\":[{\"meta\":{\"currency\":\"AUD\",\"symbol\":\"MOCK-MALFORMED.AX\",\"regularMarketPrice\":"
+}

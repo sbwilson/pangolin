@@ -1,0 +1,12 @@
+{
+  "status": 429,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "req_mock",
+    "retry-after": "2",
+    "x-ratelimit-limit-requests": "60",
+    "x-ratelimit-remaining-requests": "0",
+    "x-ratelimit-reset-requests": "2s"
+  },
+  "body": "{\"error\": {\"message\": \"Rate limit reached for requests. Please try again in 2s.\", \"type\": \"requests\", \"param\": null, \"code\": \"rate_limit_exceeded\"}}"
+}

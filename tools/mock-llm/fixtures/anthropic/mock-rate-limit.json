@@ -1,0 +1,12 @@
+{
+  "status": 429,
+  "headers": {
+    "content-type": "application/json",
+    "request-id": "req_mock",
+    "retry-after": "2",
+    "anthropic-ratelimit-requests-limit": "50",
+    "anthropic-ratelimit-requests-remaining": "0",
+    "anthropic-ratelimit-requests-reset": "2026-07-15T00:00:02Z"
+  },
+  "body": "{\"type\": \"error\", \"error\": {\"type\": \"rate_limit_error\", \"message\": \"Number of requests has exceeded your rate limit. Please try again later.\"}}"
+}

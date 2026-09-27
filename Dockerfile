@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-# ---- build: install, lint-free build of the PWA and the server bundle ----
+# ---- build: install, lint-free build of the PWA, the server bundle and the demo seed ----
 FROM node:26-trixie-slim AS build
 WORKDIR /src
 
@@ -15,13 +15,14 @@ COPY packages/domain/package.json packages/domain/
 COPY packages/importers/package.json packages/importers/
 COPY packages/llm/package.json packages/llm/
 COPY packages/shared/package.json packages/shared/
+COPY tools/seed/package.json tools/seed/
 
 # Node 26 images no longer bundle Corepack; install the pnpm pinned in packageManager.
 # The optional `ca` secret lets the build run behind a TLS-intercepting proxy.
 RUN --mount=type=secret,id=ca,required=false \
     if [ -f /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca; fi \
  && npm install --global --no-fund --no-audit "$(node -p 'require("./package.json").packageManager')" \
- && pnpm install --frozen-lockfile --filter "@pangolin/server..." --filter "@pangolin/web..."
+ && pnpm install --frozen-lockfile --filter "@pangolin/server..." --filter "@pangolin/web..." --filter "@pangolin/seed..."
 
 COPY . .
 RUN pnpm build

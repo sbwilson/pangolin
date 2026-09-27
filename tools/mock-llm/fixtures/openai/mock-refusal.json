@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "req_mock"
+  },
+  "body": "{\"id\": \"chatcmpl-mock-refusal\", \"object\": \"chat.completion\", \"created\": 1784073600, \"model\": \"mock-refusal\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": null, \"refusal\": \"I'm sorry, I can't help with that request.\"}, \"logprobs\": null, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 412, \"completion_tokens\": 38, \"total_tokens\": 450}, \"system_fingerprint\": \"fp_mock\"}"
+}

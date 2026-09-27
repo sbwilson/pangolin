@@ -342,7 +342,11 @@ importers:
 
   tools/mock-prices: {}
 
-  tools/seed: {}
+  tools/seed:
+    dependencies:
+      '@pangolin/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
 
 packages:
 

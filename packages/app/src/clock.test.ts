@@ -1,6 +1,6 @@
 import { formatDate, parseDate, Temporal } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
-import { fixedClock, systemClock } from "./clock.ts";
+import { fixedClock, fixedClockAt, systemClock } from "./clock.ts";
 
 describe("fixedClock", () => {
   it("returns the given date and instant", () => {
@@ -13,6 +13,18 @@ describe("fixedClock", () => {
   it("defaults now() to midnight UTC on the date", () => {
     const clock = fixedClock(parseDate("2026-07-02"));
     expect(clock.now().toString()).toBe("2026-07-02T00:00:00Z");
+  });
+});
+
+describe("fixedClockAt", () => {
+  it("stops at midnight UTC on the given date", () => {
+    const clock = fixedClockAt("2026-07-15");
+    expect(formatDate(clock.today())).toBe("2026-07-15");
+    expect(clock.now().toString()).toBe("2026-07-15T00:00:00Z");
+  });
+
+  it("rejects a date that does not exist", () => {
+    expect(() => fixedClockAt("2026-02-30")).toThrow(RangeError);
   });
 });
 

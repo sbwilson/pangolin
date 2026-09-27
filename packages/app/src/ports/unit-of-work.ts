@@ -15,6 +15,21 @@ export interface HouseholdSettingsRow {
   readonly updatedAt: string;
 }
 
+/** `person`: one of us. `userId` links a login once story 1.5 adds them. */
+export interface PersonRow {
+  readonly id: Id<"Person">;
+  readonly userId: string | null;
+  readonly displayName: string;
+  /** `#RRGGBB`. */
+  readonly colour: string;
+  /** UTC ISO-8601 timestamp. */
+  readonly createdAt: string;
+  /** UTC ISO-8601 timestamp. */
+  readonly updatedAt: string;
+  /** UTC ISO-8601 timestamp, or null while the person is active. */
+  readonly deletedAt: string | null;
+}
+
 /** One `audit_log` row, fully stamped. Only the `write` helper builds these. */
 export interface AuditRow {
   readonly id: Id<"AuditLog">;
@@ -38,6 +53,10 @@ export interface HouseholdSettingsRepo {
   update(row: HouseholdSettingsRow): void;
 }
 
+export interface PersonRepo {
+  insert(row: PersonRow): void;
+}
+
 export interface AuditRepo {
   append(row: AuditRow): void;
 }
@@ -45,6 +64,7 @@ export interface AuditRepo {
 /** Repositories bound to one open transaction. They throw once that transaction has ended. */
 export interface TxRepos {
   readonly householdSettings: HouseholdSettingsRepo;
+  readonly person: PersonRepo;
   readonly audit: AuditRepo;
 }
 

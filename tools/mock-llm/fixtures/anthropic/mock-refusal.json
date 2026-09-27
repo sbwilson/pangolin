@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "request-id": "req_mock"
+  },
+  "body": "{\"id\": \"msg_mock_refusal\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"mock-refusal\", \"content\": [], \"stop_reason\": \"refusal\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 412, \"output_tokens\": 38}}"
+}

@@ -85,6 +85,21 @@ jobs:
           uid=$(docker compose exec -T pangolin sh -c 'stat -c %u /proc/$(pidof -s node)')
           echo "node runs as uid $uid"
           test "$uid" != 0
+      - name: The image boots in demo mode
+        run: |
+          id=$(docker run -d -e PANGOLIN_DEMO=true -p 3001:3000 --read-only --tmpfs /tmp pangolin:local)
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:3001/api/system/health; then
+              echo
+              docker rm -f "$id" > /dev/null
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "The demo container never became healthy" >&2
+          docker logs "$id" >&2
+          docker rm -f "$id" > /dev/null
+          exit 1
       - name: Install Chromium for Playwright
         run: pnpm --filter @pangolin/e2e exec playwright install --with-deps chromium
       - name: End-to-end tests (Playwright against the container)

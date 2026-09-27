@@ -15,6 +15,9 @@
     "test": "vitest run",
     "check:strict": "pnpm --filter @pangolin/db check:strict",
     "build": "pnpm --filter @pangolin/web build && pnpm --filter @pangolin/server build",
+    "seed": "node tools/seed/src/cli.ts",
+    "mock:llm": "node tools/mock-llm/src/cli.ts",
+    "mock:prices": "node tools/mock-prices/src/cli.ts",
     "e2e": "pnpm --filter @pangolin/e2e e2e"
   },
   "devDependencies": {

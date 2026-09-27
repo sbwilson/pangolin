@@ -1,0 +1,8 @@
+{
+  "status": 429,
+  "headers": {
+    "content-type": "text/plain;charset=utf-8",
+    "retry-after": "30"
+  },
+  "body": "Too Many Requests\r\n"
+}

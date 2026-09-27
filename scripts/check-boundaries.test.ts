@@ -141,6 +141,20 @@ describe("checkBoundaries", () => {
     ]);
   });
 
+  it("lets tools/seed import only shared, and the mock tools nothing", () => {
+    write("tools/seed/src/ok.ts", 'import { parseDate } from "@pangolin/shared/temporal";\n');
+    write("tools/seed/src/bad.ts", 'import { createPerson } from "@pangolin/app";\n');
+    write("tools/mock-llm/src/bad.ts", 'import { cents } from "@pangolin/shared";\n');
+    write("tools/mock-prices/src/bad.ts", 'import "@pangolin/seed";\n');
+    write("apps/server/src/bad.ts", 'import { runSeed } from "@pangolin/seed";\n');
+    expect(checkBoundaries(root).map((v) => v.message)).toEqual([
+      'apps/server may not import tools/seed ("@pangolin/seed")',
+      'tools/mock-llm may not import packages/shared ("@pangolin/shared")',
+      'tools/mock-prices may not import tools/seed ("@pangolin/seed")',
+      'tools/seed may not import packages/app ("@pangolin/app")',
+    ]);
+  });
+
   it("rejects a package missing from the map", () => {
     pkg("packages/extra");
     expect(checkBoundaries(root).map((v) => v.rule)).toEqual(["boundaries/unknown-package"]);

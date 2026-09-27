@@ -4,6 +4,7 @@ import { type BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3"
 import type { Db } from "./open.ts";
 import { auditLog } from "./schema/audit-log.ts";
 import { householdSettings } from "./schema/household-settings.ts";
+import { person } from "./schema/person.ts";
 
 type Orm = BetterSQLite3Database;
 
@@ -56,6 +57,12 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
           .where(eq(householdSettings.id, SETTINGS_ID))
           .run();
         if (result.changes !== 1) throw new Error("household_settings row is missing");
+      },
+    },
+    person: {
+      insert: (row) => {
+        guard(scope);
+        orm.insert(person).values(row).run();
       },
     },
     audit: {
