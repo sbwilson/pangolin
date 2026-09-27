@@ -1,0 +1,13 @@
+{
+  "name": "@pangolin/mock-llm",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Replays recorded LLM responses",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

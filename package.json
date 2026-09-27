@@ -1,0 +1,25 @@
+{
+  "name": "pangolin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "lint": "biome check . && node scripts/check-boundaries.ts",
+    "format": "biome check --write .",
+    "typecheck": "pnpm -r typecheck && tsc -p tsconfig.json",
+    "test": "vitest run",
+    "check:strict": "pnpm --filter @pangolin/db check:strict",
+    "build": "pnpm --filter @pangolin/web build && pnpm --filter @pangolin/server build",
+    "e2e": "pnpm --filter @pangolin/e2e e2e"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@types/node": "22.20.4",
+    "typescript": "7.0.2",
+    "vitest": "5.0.2"
+  }
+}

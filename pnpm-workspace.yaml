@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+  - tools/*
+  - e2e
+
+allowBuilds:
+  # Ships N-API prebuilds for linux/darwin/win (glibc and musl, x64 and arm64); no compile needed.
+  better-sqlite3: false
+  esbuild: true

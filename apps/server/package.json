@@ -1,0 +1,29 @@
+{
+  "name": "@pangolin/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Composition roots: http (Hono API and static PWA), jobs, admin",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "node scripts/build.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3"
+  },
+  "devDependencies": {
+    "@hono/node-server": "2.1.1",
+    "@pangolin/app": "workspace:*",
+    "@pangolin/connectors": "workspace:*",
+    "@pangolin/db": "workspace:*",
+    "@pangolin/importers": "workspace:*",
+    "@pangolin/llm": "workspace:*",
+    "esbuild": "0.28.2",
+    "hono": "4.13.9",
+    "zod": "4.6.5"
+  }
+}

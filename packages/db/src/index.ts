@@ -1,0 +1,15 @@
+export {
+  defaultInvariants,
+  type Invariant,
+  loadMigrations,
+  type MigrateOptions,
+  type MigrateResult,
+  type Migration,
+  MigrationError,
+  migrate,
+  packageMigrationsDir,
+  schemaVersion,
+} from "./migrate.ts";
+export { type Db, type OpenOptions, openDatabase } from "./open.ts";
+export { assertAllTablesStrict, findNonStrictTables } from "./strict-check.ts";
+export { createSystemHealthRepo } from "./system-health-repo.ts";

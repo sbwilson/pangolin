@@ -1,0 +1,17 @@
+# Local and CI stack for the tracer bullet. The production stack lives in deploy/ (story 1.8).
+services:
+  pangolin:
+    build: .
+    image: pangolin:local
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    ports:
+      - "3000:3000"
+    volumes:
+      - pangolin-data:/data
+    restart: unless-stopped
+
+volumes:
+  pangolin-data:

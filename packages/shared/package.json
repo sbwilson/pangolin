@@ -1,0 +1,15 @@
+{
+  "name": "@pangolin/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Core: branded types, Zod schemas, money, period and FY maths, temporal",
+  "exports": {
+    ".": "./src/index.ts",
+    "./period": "./src/period/index.ts",
+    "./temporal": "./src/temporal/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

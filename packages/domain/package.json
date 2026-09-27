@@ -1,0 +1,16 @@
+{
+  "name": "@pangolin/domain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Core: pure calculations, no I/O",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@pangolin/shared": "workspace:*"
+  }
+}

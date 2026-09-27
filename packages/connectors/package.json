@@ -1,0 +1,17 @@
+{
+  "name": "@pangolin/connectors",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Adapter: price and unit-price sources",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@pangolin/app": "workspace:*",
+    "@pangolin/shared": "workspace:*"
+  }
+}

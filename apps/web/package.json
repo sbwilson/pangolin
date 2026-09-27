@@ -1,0 +1,27 @@
+{
+  "name": "@pangolin/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "React PWA",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@pangolin/shared": "workspace:*",
+    "@tanstack/react-query": "5.104.0",
+    "hono": "4.13.9",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@pangolin/server": "workspace:*",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "vite": "8.3.1",
+    "vite-plugin-pwa": "1.3.0"
+  }
+}

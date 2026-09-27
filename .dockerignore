@@ -1,5 +1,6 @@
 **/node_modules
 **/dist
+**/dev-dist
 .git
 data
 backups
@@ -7,3 +8,12 @@ secrets
 *.sqlite*
 docs
 e2e
+_bmad
+_bmad-output
+.agents
+.claude
+.pi
+.github
+.githooks
+**/test-results
+**/playwright-report
