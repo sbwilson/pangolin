@@ -13,3 +13,4 @@ export {
 export { type Db, type OpenOptions, openDatabase } from "./open.ts";
 export { assertAllTablesStrict, findNonStrictTables } from "./strict-check.ts";
 export { createSystemHealthRepo } from "./system-health-repo.ts";
+export { createUnitOfWork } from "./unit-of-work.ts";

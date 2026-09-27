@@ -41,7 +41,7 @@ describe("startServer", () => {
     try {
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 1, writable: true },
+        body: { status: "ok", schemaVersion: 2, writable: true },
       });
     } finally {
       await server.close();
@@ -54,7 +54,7 @@ describe("startServer", () => {
     try {
       expect((await getHealth(server.port)).body).toEqual({
         status: "ok",
-        schemaVersion: 1,
+        schemaVersion: 2,
         writable: true,
       });
     } finally {
@@ -75,7 +75,7 @@ describe("startServer", () => {
       try {
         expect(await getHealth(server.port)).toEqual({
           status: 503,
-          body: { status: "unhealthy", schemaVersion: 1, writable: false },
+          body: { status: "unhealthy", schemaVersion: 2, writable: false },
         });
       } finally {
         await server.close();
@@ -91,13 +91,13 @@ describe("startServer", () => {
     const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
       entries: { idx: number; tag: string }[];
     };
-    journal.entries.push({ idx: 1, tag: "0001_broken" });
+    journal.entries.push({ idx: journal.entries.length, tag: "0099_broken" });
     writeFileSync(journalPath, JSON.stringify(journal));
-    writeFileSync(join(migrationsDir, "0001_broken.sql"), "CREATE TABLE broken (id INTEGER);");
+    writeFileSync(join(migrationsDir, "0099_broken.sql"), "CREATE TABLE broken (id INTEGER);");
 
-    await expect(boot(migrationsDir)).rejects.toThrow(/Migration 0001_broken failed/);
+    await expect(boot(migrationsDir)).rejects.toThrow(/Migration 0099_broken failed/);
     const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
-    expect(schemaVersion(db)).toBe(1);
+    expect(schemaVersion(db)).toBe(2);
     db.close();
   });
 });

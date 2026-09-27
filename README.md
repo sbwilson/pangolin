@@ -7,7 +7,7 @@ A self-hosted web app for a two-person household's finances. The spec lives in
 
 Once it's up, open:
 
-- http://localhost:3000 — the app, which should show "Healthy" and "Schema version 1"
+- http://localhost:3000 — the app, which should show "Healthy" and "Schema version 2"
 - http://localhost:3000/api/system/health — the raw health JSON
 
 ### Option A: Docker

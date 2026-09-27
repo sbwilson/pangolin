@@ -1,6 +1,6 @@
 import { Temporal as TemporalPolyfill } from "temporal-polyfill";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatDate, parseDate, plainDateSchema, Temporal } from "./index.ts";
+import { formatDate, formatInstant, parseDate, plainDateSchema, Temporal } from "./index.ts";
 
 describe("shared/temporal", () => {
   it("exposes a working Temporal", () => {
@@ -46,6 +46,24 @@ describe("shared/temporal", () => {
     expect(date.equals(Temporal.PlainDate.from("2026-07-02"))).toBe(true);
     expect(plainDateSchema.safeParse("2026-02-30").success).toBe(false);
     expect(plainDateSchema.safeParse(20260702).success).toBe(false);
+  });
+});
+
+describe("formatInstant", () => {
+  it.each([
+    ["2026-09-27T01:02:03Z", "2026-09-27T01:02:03.000Z"],
+    ["2026-09-27T01:02:03.5Z", "2026-09-27T01:02:03.500Z"],
+    ["2026-09-27T01:02:03.123456789Z", "2026-09-27T01:02:03.123Z"],
+    ["2026-09-27T11:02:03+10:00", "2026-09-27T01:02:03.000Z"],
+  ])("formats %s as %s", (input, expected) => {
+    expect(formatInstant(Temporal.Instant.from(input))).toBe(expected);
+  });
+
+  it("sorts as text in time order within a second", () => {
+    const texts = ["2026-09-27T01:02:03Z", "2026-09-27T01:02:03.5Z", "2026-09-27T01:02:04Z"].map(
+      (iso) => formatInstant(Temporal.Instant.from(iso)),
+    );
+    expect([...texts].sort()).toEqual(texts);
   });
 });
 

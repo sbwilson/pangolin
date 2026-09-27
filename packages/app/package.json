@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Application: use cases (the only write path) and port interfaces",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./system-viewer": "./src/system-viewer.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

@@ -43,7 +43,7 @@ describe("GET /api/system/health", () => {
     const app = createApp({ systemHealth: createSystemHealthRepo(openDb()) });
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 1, writable: true });
+    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 2, writable: true });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
@@ -51,7 +51,28 @@ describe("GET /api/system/health", () => {
     const app = createApp({ systemHealth: createSystemHealthRepo(openDb(true)) });
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ status: "unhealthy", schemaVersion: 1, writable: false });
+    expect(await res.json()).toEqual({ status: "unhealthy", schemaVersion: 2, writable: false });
+  });
+});
+
+describe("errors", () => {
+  it("answers a throwing route with 500 Internal, without its message", async () => {
+    const logged: unknown[] = [];
+    const app = createApp({
+      systemHealth: {
+        schemaVersion: () => {
+          throw new Error("SQLITE_CORRUPT: /data/pangolin.sqlite");
+        },
+        probeWrite: () => true,
+      },
+      logInternalError: (err) => logged.push(err),
+    });
+    const res = await app.request("/api/system/health");
+    expect(res.status).toBe(500);
+    const text = await res.text();
+    expect(JSON.parse(text)).toEqual({ error: { code: "Internal", message: "Internal error" } });
+    expect(text).not.toContain("SQLITE");
+    expect(logged).toHaveLength(1);
   });
 });
 

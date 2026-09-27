@@ -64,6 +64,15 @@ export function formatDate(date: PlainDate): string {
   return text;
 }
 
+/**
+ * Formats an instant as stored and sent: UTC ISO-8601 with exactly three fractional digits
+ * (`2026-09-27T01:02:03.000Z`), so timestamps sort correctly as text. Sub-millisecond
+ * precision is truncated.
+ */
+export function formatInstant(instant: Temporal.Instant): string {
+  return instant.toString({ fractionalSecondDigits: 3 });
+}
+
 /** Zod schema for a wire date: a `YYYY-MM-DD` string in, a `PlainDate` out. */
 export const plainDateSchema = z.string().transform((value, ctx): PlainDate => {
   try {

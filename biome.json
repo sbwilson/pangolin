@@ -44,6 +44,16 @@
               {
                 "group": ["ulid", "ulid/**"],
                 "message": "Mint IDs with newId from @pangolin/app (AD-5); only packages/app/src/ids.ts imports ulid."
+              },
+              {
+                "group": [
+                  "@pangolin/app/system-viewer",
+                  "@pangolin/app/system-viewer/**",
+                  "**/system-viewer",
+                  "**/system-viewer.ts",
+                  "**/system-viewer.js"
+                ],
+                "message": "SystemViewer sees everything; only apps/server/src/jobs/**, apps/server/src/admin/** and tests may build one (AD-6)."
               }
             ]
           }
@@ -52,6 +62,30 @@
     }
   },
   "overrides": [
+    {
+      "includes": ["**/*.test.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["temporal-polyfill", "temporal-polyfill/**"],
+                    "message": "Import Temporal and PlainDate from @pangolin/shared/temporal (AD-14)."
+                  },
+                  {
+                    "group": ["ulid", "ulid/**"],
+                    "message": "Mint IDs with newId from @pangolin/app (AD-5); only packages/app/src/ids.ts imports ulid."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     {
       "includes": ["packages/shared/src/temporal/**"],
       "linter": {
@@ -64,6 +98,16 @@
                   {
                     "group": ["ulid", "ulid/**"],
                     "message": "Mint IDs with newId from @pangolin/app (AD-5); only packages/app/src/ids.ts imports ulid."
+                  },
+                  {
+                    "group": [
+                      "@pangolin/app/system-viewer",
+                      "@pangolin/app/system-viewer/**",
+                      "**/system-viewer",
+                      "**/system-viewer.ts",
+                      "**/system-viewer.js"
+                    ],
+                    "message": "SystemViewer sees everything; only apps/server/src/jobs/**, apps/server/src/admin/** and tests may build one (AD-6)."
                   }
                 ]
               }
@@ -84,6 +128,40 @@
                   {
                     "group": ["temporal-polyfill", "temporal-polyfill/**"],
                     "message": "Import Temporal and PlainDate from @pangolin/shared/temporal (AD-14)."
+                  },
+                  {
+                    "group": [
+                      "@pangolin/app/system-viewer",
+                      "@pangolin/app/system-viewer/**",
+                      "**/system-viewer",
+                      "**/system-viewer.ts",
+                      "**/system-viewer.js"
+                    ],
+                    "message": "SystemViewer sees everything; only apps/server/src/jobs/**, apps/server/src/admin/** and tests may build one (AD-6)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/server/src/jobs/**", "apps/server/src/admin/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["temporal-polyfill", "temporal-polyfill/**"],
+                    "message": "Import Temporal and PlainDate from @pangolin/shared/temporal (AD-14)."
+                  },
+                  {
+                    "group": ["ulid", "ulid/**"],
+                    "message": "Mint IDs with newId from @pangolin/app (AD-5); only packages/app/src/ids.ts imports ulid."
                   }
                 ]
               }
