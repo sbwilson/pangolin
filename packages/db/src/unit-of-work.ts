@@ -121,6 +121,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
             person: {
               findByUserId: repos.person.findByUserId,
               listActive: repos.person.listActive,
+              listLogins: repos.person.listLogins,
             },
             users: repos.users,
             setupLinks: {
@@ -133,7 +134,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               findByTokenHash: repos.reEnrolmentLinks.findByTokenHash,
               findById: repos.reEnrolmentLinks.findById,
             },
-            jobs: { listDead: repos.jobs.listDead },
+            jobs: { listDead: repos.jobs.listDead, countByStatus: repos.jobs.countByStatus },
             reviewItems: { listOpenFor: repos.reviewItems.listOpenFor },
           };
         },

@@ -13,6 +13,7 @@ import {
   firstPerson,
   fixedClock,
   type IdentityContext,
+  listLogins,
   personForUser,
   recordLoginAttempt,
   type TokenPort,
@@ -179,6 +180,25 @@ describe("setup links and sign-up on SQLite", () => {
     expect(firstPerson(ctx())).toBe(first);
     db.prepare("UPDATE person SET deleted_at = 'x' WHERE id = ?").run(first);
     expect(firstPerson(ctx())).not.toBe(first);
+  });
+
+  it("lists the active people with a login and their email, through identity.listLogins", () => {
+    const system = { ...ctx(), viewer: systemViewer("cli:test") };
+    const one = createPerson(system, { displayName: "One", colour: "#000000" });
+    now = now.add({ seconds: 1 });
+    createPerson(system, { displayName: "Two", colour: "#000000" });
+    now = now.add({ seconds: 1 });
+    const three = createPerson(system, { displayName: "Three", colour: "#000000" });
+    insertUser("user-1", "one@example.com");
+    insertUser("user-3", "three@example.com");
+    db.prepare("UPDATE person SET user_id = ? WHERE id = ?").run("user-1", one);
+    db.prepare("UPDATE person SET user_id = ? WHERE id = ?").run("user-3", three);
+    expect(listLogins(system)).toEqual([
+      { personId: one, displayName: "One", email: "one@example.com" },
+      { personId: three, displayName: "Three", email: "three@example.com" },
+    ]);
+    db.prepare("UPDATE person SET deleted_at = 'x' WHERE id = ?").run(one);
+    expect(listLogins(system).map((row) => row.personId)).toEqual([three]);
   });
 });
 

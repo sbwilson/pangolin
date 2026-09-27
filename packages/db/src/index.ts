@@ -1,4 +1,5 @@
 export { createAuthAdapter } from "./auth-adapter.ts";
+export { type ExclusiveLock, tryExclusiveLock } from "./exclusive-lock.ts";
 export {
   defaultInvariants,
   type Invariant,

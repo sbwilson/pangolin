@@ -294,6 +294,72 @@ describe("install.sh, fresh install", () => {
   });
 });
 
+describe("the pangolin command", () => {
+  const WRAPPER = join(here, "pangolin");
+
+  it("is installed to /usr/local/bin (0755) under --root, and the summary names it", () => {
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    expect(mode("usr/local/bin/pangolin")).toBe(0o755);
+    expect(read("usr/local/bin/pangolin")).toBe(readFileSync(WRAPPER, "utf8"));
+    expect(result.stdout).toContain("Installed the pangolin command to /usr/local/bin/pangolin");
+    expect(result.stdout).toMatch(/sudo pangolin status/);
+    expect(result.stdout).toMatch(/sudo pangolin reset-user <email>/);
+  });
+
+  /** Runs the wrapper against a stub `docker` that logs its arguments; `running` sets `ps`. */
+  function wrapper(args: readonly string[], running: boolean): Run {
+    const home = at("opt/pangolin");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, "compose.yaml"), "services: {}\n");
+    writeFileSync(join(home, ".env"), "", { mode: 0o600 });
+    const bin = at("bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      join(bin, "docker"),
+      [
+        "#!/bin/sh",
+        `echo "$*" >> "${at("docker.log")}"`,
+        'case "$*" in',
+        `  *" ps "*) [ "${running ? 1 : 0}" = 1 ] && echo stub-container-id ;;`,
+        "esac",
+        "exit 0",
+        "",
+      ].join("\n"),
+    );
+    chmodSync(join(bin, "docker"), 0o755);
+    return run("sh", [WRAPPER, ...args], {
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      PANGOLIN_HOME: home,
+    });
+  }
+
+  it("runs the CLI in the running container over the admin socket", () => {
+    const result = wrapper(["status"], true);
+    expect(result.status, result.stderr).toBe(0);
+    const home = at("opt/pangolin");
+    expect(dockerLog().trim().split("\n")).toEqual([
+      `compose --project-directory ${home} -f ${home}/compose.yaml ps -q --status running pangolin`,
+      `compose --project-directory ${home} -f ${home}/compose.yaml exec -T pangolin node dist/cli.js status`,
+    ]);
+  });
+
+  it("runs the CLI in a one-off container when the stack is stopped", () => {
+    const result = wrapper(["reset-user", "alex@example.com"], false);
+    expect(result.status, result.stderr).toBe(0);
+    expect(dockerLog()).toContain(
+      "run --rm --no-deps -T pangolin node dist/cli.js reset-user alex@example.com",
+    );
+    expect(dockerLog()).not.toContain(" exec ");
+  });
+
+  it("stops clearly when Pangolin Money is not installed", () => {
+    const result = run("sh", [WRAPPER, "status"], { PANGOLIN_HOME: at("nowhere") });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/is Pangolin Money installed/);
+  });
+});
+
 describe("install.sh, re-run", () => {
   it("keeps the secrets and the operator's .env edits, and only adds missing keys", () => {
     expect(install().status).toBe(0);

@@ -9,6 +9,9 @@ const minutes = (fallback: number) =>
     .max(24 * 60)
     .default(fallback);
 
+/** Where the admin socket listens unless `PANGOLIN_ADMIN_SOCKET` says otherwise. */
+export const DEFAULT_ADMIN_SOCKET = "/run/pangolin/admin.sock";
+
 /** Every environment variable the server reads, parsed once at startup. */
 const envSchema = z.object({
   PANGOLIN_DATA_DIR: z.string().min(1).default("/data"),
@@ -52,6 +55,17 @@ const envSchema = z.object({
         .filter((ip) => ip !== ""),
     )
     .pipe(z.array(z.union([z.ipv4(), z.ipv6()]))),
+  /**
+   * The admin socket `pangolin` reaches the running server on (AD-16), on a tmpfs, never the data
+   * volume. Empty disables it.
+   */
+  PANGOLIN_ADMIN_SOCKET: z
+    .string()
+    .default(DEFAULT_ADMIN_SOCKET)
+    .transform((value) => (value.trim() === "" ? null : value))
+    .pipe(z.string().startsWith("/", { message: "Expected an absolute path" }).nullable()),
+  /** The release, set by the image build (`dev` for local builds). */
+  PANGOLIN_VERSION: z.string().min(1).max(100).default("dev"),
 });
 
 export interface JobsConfig {
@@ -88,6 +102,10 @@ export interface Config {
   readonly auth: AuthConfig;
   /** Reverse-proxy IPs whose `X-Forwarded-For` is trusted. */
   readonly trustedProxies: readonly string[];
+  /** The admin socket's path; null when disabled. Demo mode never opens it. */
+  readonly adminSocket: string | null;
+  /** The release (`PANGOLIN_VERSION`); `dev` for local builds. */
+  readonly version: string;
 }
 
 /** The auth settings for `dataDir` with every default, for tests and callers without an env. */
@@ -152,5 +170,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       rateLimitPerMinute: parsed.PANGOLIN_AUTH_RATE_LIMIT,
     },
     trustedProxies: parsed.PANGOLIN_TRUSTED_PROXIES,
+    adminSocket: parsed.PANGOLIN_ADMIN_SOCKET,
+    version: parsed.PANGOLIN_VERSION,
   };
 }

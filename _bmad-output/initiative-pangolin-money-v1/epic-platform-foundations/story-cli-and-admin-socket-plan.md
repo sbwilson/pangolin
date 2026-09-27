@@ -3,13 +3,13 @@ title: 'CLI and admin socket'
 type: 'feature'
 ticket: '9'
 created: '2026-09-27'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: 'fe7da64d32363ec156d9d866ed1b3b3a41241f0a'
 route: 'full'
 route_source: 'auto'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'thorough'
+review_source: 'auto'
+lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
@@ -74,13 +74,13 @@ deferred: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `apps/server/src/admin/lock.ts` -- `acquireDataDirLock(dataDir)` → `{ release() }`, throws `DataDirLocked` -- one lock for server and CLI.
-- [ ] `apps/server/src/admin/socket.ts`, `commands.ts` -- listener with proof check, framing, caps; commands `status` and `reset-user` over `{ uow, clock, newId, tokens, publicUrl, systemHealth, expectedSchemaVersion, runner, version }` -- AD-16.
-- [ ] `packages/app` + `packages/db` -- `JobRepo.countByStatus`, `PersonRepo.listLogins`, `system.jobCounts` use case, with db and memory tests.
-- [ ] `apps/server/src/admin/client.ts`, `apps/server/src/cli.ts`, `scripts/build.ts` -- client (creates proof 0600 in the socket dir, sends, removes proof on any outcome), in-process stopped path, exit codes.
-- [ ] `apps/server/src/server.ts`, `config.ts` -- lock, socket lifecycle, config keys.
-- [ ] `compose.yaml`, `deploy/pangolin`, `deploy/install.sh`, docs, CI -- wrapper: `docker compose -f /opt/pangolin/compose.yaml exec -T pangolin node dist/cli.js "$@"` when the service runs, else `docker compose ... run --rm --no-deps -T pangolin node dist/cli.js "$@"`.
-- [ ] Tests (`apps/server/src/admin/*.test.ts`, `deploy/install.test.ts`) -- every matrix row; foreign uid via a child process spawned with `uid: 65534` against a test-relaxed socket mode (skip when not root); lock contention across two processes; wrapper staged by `--root`.
+- [x] `apps/server/src/admin/lock.ts` -- `acquireDataDirLock(dataDir)` → `{ release() }`, throws `DataDirLocked` -- one lock for server and CLI.
+- [x] `apps/server/src/admin/socket.ts`, `commands.ts` -- listener with proof check, framing, caps; commands `status` and `reset-user` over `{ uow, clock, newId, tokens, publicUrl, systemHealth, expectedSchemaVersion, runner, version }` -- AD-16.
+- [x] `packages/app` + `packages/db` -- `JobRepo.countByStatus`, `PersonRepo.listLogins`, `system.jobCounts` use case, with db and memory tests.
+- [x] `apps/server/src/admin/client.ts`, `apps/server/src/cli.ts`, `scripts/build.ts` -- client (creates proof 0600 in the socket dir, sends, removes proof on any outcome), in-process stopped path, exit codes.
+- [x] `apps/server/src/server.ts`, `config.ts` -- lock, socket lifecycle, config keys.
+- [x] `compose.yaml`, `deploy/pangolin`, `deploy/install.sh`, docs, CI -- wrapper: `docker compose -f /opt/pangolin/compose.yaml exec -T pangolin node dist/cli.js "$@"` when the service runs, else `docker compose ... run --rm --no-deps -T pangolin node dist/cli.js "$@"`.
+- [x] Tests (`apps/server/src/admin/*.test.ts`, `deploy/install.test.ts`) -- every matrix row; foreign uid via a child process spawned with `uid: 65534` against a test-relaxed socket mode (skip when not root); lock contention across two processes; wrapper staged by `--root`.
 
 **Acceptance Criteria:**
 - Given a running server, when `node dist/cli.js status` runs in the container, then it prints readiness and job state from the socket and exits 0.
@@ -89,6 +89,15 @@ deferred: []
 - Given a stopped server, when `reset-user <email>` runs, then it runs under the exclusive lock with the same result, and a server started meanwhile refuses to start until the CLI releases the lock.
 
 ## Implementation Notes
+
+- The raw SQLite part of the lock is `tryExclusiveLock(path)` in `packages/db/src/exclusive-lock.ts` (the db adapter owns better-sqlite3 and its types; `apps/server` has no `@types/better-sqlite3`). `admin/lock.ts` wraps it as `acquireDataDirLock` / `DataDirLocked` ("another process holds <dataDir>"). The lock object must stay referenced: a garbage-collected connection drops the lock.
+- AD-1 forbids admin commands from reading repositories, so the people list goes through a new `identity.listLogins` use case (system viewers only) over `PersonRepo.listLogins`; `status` uses `health`, `readiness`, `jobCounts` and `deadJobs`.
+- `reset-user` args are `{ person }` (email, case-insensitive, or person ID). No person → `Validation`, no match → `NotFound`; both carry `details.people` = `[{ displayName, email }]`. The socket logs command names and outcomes only; the URL never reaches the server log.
+- Socket error code `Forbidden` is local to the admin protocol (`AdminErrorCode`), not added to `ERROR_CODES`, so HTTP's code-to-status map is untouched.
+- Proof names must match `^proof-[A-Za-z0-9_-]{16,128}$` (a bare name, never a path, so a request cannot make the server delete a file elsewhere); the check also requires `nlink === 1` and uses `ctime` for the 30 s age. A directory named as a proof is refused and left in place (a first version crashed on it; covered by a test).
+- CLI exit codes: 0 ok/ready, 1 failed/not ready, 2 usage, 3 not running. `status` with the socket disabled exits 1. `reset-user` on a stopped stack refuses when there is no database, and when the schema is behind (or ahead of) the build.
+- `install.sh` installs the wrapper only when the support files carry `deploy/pangolin` (an older image extracted by a lone `install.sh` gets a warning instead of a failed install); CI also checks the image carries `/app/deploy/pangolin`.
+- Verified in containers (overlay of the new `dist/` onto the last local image; Docker Hub rate-limited the base-image pull, so a full `docker compose build` did not run here): `exec … node dist/cli.js status` exit 0; root in the container refused as `Forbidden`; a `run --rm` container while the stack runs gets "admin socket is unreachable"; a second server gets "another process holds /data"; stopped `status` exits 3; the host wrapper works against the staged production compose file.
 
 ## Plan Change Log
 

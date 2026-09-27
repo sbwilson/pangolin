@@ -1047,6 +1047,18 @@ write_files() {
 
   cp "$SUPPORT/firewall/render.sh" "$install_dir/firewall/render.sh"
   chmod 0755 "$install_dir/firewall/render.sh"
+
+  # The admin CLI on the host: `pangolin status`, `pangolin reset-user` (run in the container).
+  if [ -f "$SUPPORT/pangolin" ]; then
+    bin=$(path /usr/local/bin)
+    mkdir -p "$bin"
+    cp "$SUPPORT/pangolin" "$bin/pangolin.new"
+    chmod 0755 "$bin/pangolin.new"
+    mv "$bin/pangolin.new" "$bin/pangolin"
+    say "Installed the pangolin command to /usr/local/bin/pangolin"
+  else
+    warn "this release has no pangolin command (deploy/pangolin); install a newer release for 'pangolin status'"
+  fi
   units=$(path /etc/systemd/system)
   mkdir -p "$units"
   for unit in pangolin-firewall.service pangolin-allowlist.service pangolin-allowlist.timer; do
@@ -1207,6 +1219,11 @@ summary() {
   else
     say "  An account already exists, so there is no setup link: sign in at $PUBLIC_URL"
   fi
+
+  step "Administration"
+  printf '%s\n' "  sudo pangolin status                 is the server up and ready, and how are its jobs?" \
+    "  sudo pangolin reset-user <email>     both of you locked out: clears that person's sign-in" \
+    "                                       and prints a 24-hour link to set it up again"
 
   if [ "$WARNINGS" -gt 0 ]; then
     printf '\nFinished with %s warning(s); see the WARNING lines above.\n' "$WARNINGS"

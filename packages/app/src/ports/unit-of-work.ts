@@ -104,6 +104,8 @@ export interface JobRepo {
   markDead(id: Id<"Job">, owner: string, now: string, error: string): boolean;
   /** Dead jobs, newest failure first. */
   listDead(limit: number): DeadJobRow[];
+  /** How many jobs have each status; a status with none is 0. */
+  countByStatus(): Readonly<Record<JobStatus, number>>;
 }
 
 /** One `review_item` row (AD-17). Open while `resolvedAt` is null. */
@@ -154,6 +156,15 @@ export interface PersonRepo {
   findByUserId(userId: string): PersonRow | undefined;
   /** Active (not deleted) people, oldest first. */
   listActive(): PersonRow[];
+  /** Active people with a login, oldest first, with the login's email (from `auth_user`). */
+  listLogins(): LoginRow[];
+}
+
+/** An active person with a login, as the server console lists them. */
+export interface LoginRow {
+  readonly personId: Id<"Person">;
+  readonly displayName: string;
+  readonly email: string;
 }
 
 /** `setup_link`: a one-time sign-up link. Only the token's hash is stored. */
@@ -316,13 +327,13 @@ export interface TxRepos {
 /** The read-only subset of `TxRepos`, for queries. */
 export interface ReadRepos {
   readonly householdSettings: Pick<HouseholdSettingsRepo, "get">;
-  readonly person: Pick<PersonRepo, "findByUserId" | "listActive">;
+  readonly person: Pick<PersonRepo, "findByUserId" | "listActive" | "listLogins">;
   readonly users: UserRepo;
   readonly setupLinks: Pick<SetupLinkRepo, "findByTokenHash" | "hasLive">;
   readonly loginAttempts: Pick<LoginAttemptRepo, "listSince">;
   readonly recoveryCodes: Pick<RecoveryCodeRepo, "counts">;
   readonly reEnrolmentLinks: Pick<ReEnrolmentLinkRepo, "findByTokenHash" | "findById">;
-  readonly jobs: Pick<JobRepo, "listDead">;
+  readonly jobs: Pick<JobRepo, "listDead" | "countByStatus">;
   readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
 }
 

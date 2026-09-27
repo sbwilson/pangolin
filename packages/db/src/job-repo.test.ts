@@ -10,6 +10,7 @@ import {
   enqueueJob,
   failJob,
   type JobRow,
+  jobCounts,
   listReviewItems,
   renewJobLease,
   type UseCaseContext,
@@ -214,9 +215,32 @@ describe("job repository on SQLite", () => {
     expect(deadJobs(ctx)).toEqual([{ kind: "test-flaky", failedAt: "2026-09-27T00:00:03.000Z" }]);
   });
 
+  it("counts jobs by status, through system.jobCounts", () => {
+    const uow = createUnitOfWork(db);
+    expect(uow.read((repos) => repos.jobs.countByStatus())).toEqual({
+      pending: 0,
+      running: 0,
+      done: 0,
+      dead: 0,
+    });
+    enqueue(1);
+    enqueue(2);
+    enqueue(3);
+    completeJob(ctx, { job: claim("a"), owner: "a", schedules: [] });
+    claim("b");
+    expect(uow.read((repos) => repos.jobs.countByStatus())).toEqual({
+      pending: 1,
+      running: 1,
+      done: 1,
+      dead: 0,
+    });
+    expect(jobCounts(ctx)).toEqual({ pending: 1, running: 1, dead: 0 });
+  });
+
   it("refuses repository calls after the transaction ended", () => {
     const tx = createUnitOfWork(db).transaction((repos) => repos);
     expect(() => tx.jobs.listDead(1)).toThrow(/outside its transaction/);
+    expect(() => tx.jobs.countByStatus()).toThrow(/outside its transaction/);
     expect(() => tx.reviewItems.listOpenFor(ctx.viewer)).toThrow(/outside its transaction/);
   });
 });

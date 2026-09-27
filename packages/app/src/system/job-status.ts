@@ -25,3 +25,20 @@ export function deadJobs(ctx: JobStatusContext, input: DeadJobsInput = {}): Dead
     .read((repos) => repos.jobs.listDead(DEAD_JOBS_LIMIT))
     .map((row) => ({ kind: row.kind, failedAt: row.failedAt }));
 }
+
+/** How many jobs wait, run and have died: counts only, never a kind or payload (AD-9). */
+export interface JobCounts {
+  readonly pending: number;
+  readonly running: number;
+  readonly dead: number;
+}
+
+export const jobCountsInput = z.object({}).strict();
+export type JobCountsInput = z.input<typeof jobCountsInput>;
+
+/** `system.jobCounts`: the number of pending, running and dead jobs, for `pangolin status`. */
+export function jobCounts(ctx: JobStatusContext, input: JobCountsInput = {}): JobCounts {
+  parseInput(jobCountsInput, input);
+  const counts = ctx.uow.read((repos) => repos.jobs.countByStatus());
+  return { pending: counts.pending, running: counts.running, dead: counts.dead };
+}

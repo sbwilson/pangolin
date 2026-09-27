@@ -1,6 +1,6 @@
-import type { JobLane, JobRepo, JobRow } from "@pangolin/app";
+import type { JobLane, JobRepo, JobRow, JobStatus } from "@pangolin/app";
 import type { Id } from "@pangolin/shared";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { job } from "./schema/job.ts";
 
@@ -133,6 +133,18 @@ export function createJobRepo(orm: Orm, check: () => void): JobRepo {
         .all();
       // The job_finished CHECK guarantees a dead job has finished_at.
       return rows.map((row) => ({ kind: row.kind, failedAt: row.failedAt ?? "" }));
+    },
+
+    countByStatus: () => {
+      check();
+      const counts = { pending: 0, running: 0, done: 0, dead: 0 };
+      const rows = orm
+        .select({ status: job.status, n: count() })
+        .from(job)
+        .groupBy(job.status)
+        .all();
+      for (const row of rows) counts[row.status as JobStatus] = row.n;
+      return counts;
     },
   };
 }

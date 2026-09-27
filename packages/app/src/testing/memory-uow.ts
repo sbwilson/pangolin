@@ -36,6 +36,8 @@ export interface MemoryState {
   reviewItems: ReviewItemRow[];
   /** IDs of better-auth users; tests add them to stand in for better-auth's inserts. */
   users: string[];
+  /** Email per user ID, standing in for `auth_user.email`. */
+  emails: Record<string, string>;
   /** Enrolment per user ID; a user without an entry has enrolled nothing. */
   enrolments: Record<string, UserEnrolment>;
   setupLinks: SetupLinkRow[];
@@ -154,6 +156,12 @@ function jobRepo(working: MemoryState, check: () => void): JobRepo {
         .slice(0, limit)
         .map((job) => ({ kind: job.kind, failedAt: job.finishedAt ?? "" }));
     },
+    countByStatus: () => {
+      check();
+      const counts = { pending: 0, running: 0, done: 0, dead: 0 };
+      for (const job of working.jobs) counts[job.status]++;
+      return counts;
+    },
   };
 }
 
@@ -179,6 +187,22 @@ function personRepo(working: MemoryState, check: () => void): PersonRepo {
       return [...active()].sort((a, b) =>
         `${a.createdAt}|${a.id}` < `${b.createdAt}|${b.id}` ? -1 : 1,
       );
+    },
+    listLogins: () => {
+      check();
+      return [...active()]
+        .sort((a, b) => (`${a.createdAt}|${a.id}` < `${b.createdAt}|${b.id}` ? -1 : 1))
+        .flatMap((p) =>
+          p.userId !== null && working.users.includes(p.userId)
+            ? [
+                {
+                  personId: p.id,
+                  displayName: p.displayName,
+                  email: working.emails[p.userId] ?? "",
+                },
+              ]
+            : [],
+        );
     },
   };
 }
@@ -426,6 +450,7 @@ export function memoryUnitOfWork(
       jobs: [],
       reviewItems: [],
       users: [],
+      emails: {},
       enrolments: {},
       setupLinks: [],
       loginAttempts: [],
@@ -443,6 +468,7 @@ export function memoryUnitOfWork(
         jobs: [...uow.state.jobs],
         reviewItems: [...uow.state.reviewItems],
         users: [...uow.state.users],
+        emails: uow.state.emails,
         enrolments: uow.state.enrolments,
         setupLinks: [...uow.state.setupLinks],
         loginAttempts: [...uow.state.loginAttempts],
@@ -509,7 +535,11 @@ export function memoryUnitOfWork(
       const links = setupLinkRepo(uow.state, check);
       return fn({
         householdSettings: { get: () => uow.state.settings },
-        person: { findByUserId: person.findByUserId, listActive: person.listActive },
+        person: {
+          findByUserId: person.findByUserId,
+          listActive: person.listActive,
+          listLogins: person.listLogins,
+        },
         users: userRepo(uow.state, check),
         setupLinks: { findByTokenHash: links.findByTokenHash, hasLive: links.hasLive },
         loginAttempts: { listSince: loginAttemptRepo(uow.state, check).listSince },
@@ -518,7 +548,10 @@ export function memoryUnitOfWork(
           findByTokenHash: reEnrolmentLinkRepo(uow.state, check).findByTokenHash,
           findById: reEnrolmentLinkRepo(uow.state, check).findById,
         },
-        jobs: { listDead: jobRepo(uow.state, check).listDead },
+        jobs: {
+          listDead: jobRepo(uow.state, check).listDead,
+          countByStatus: jobRepo(uow.state, check).countByStatus,
+        },
         reviewItems: { listOpenFor: reviewItemRepo(uow.state, check).listOpenFor },
       });
     },

@@ -1,6 +1,7 @@
 import type {
   CredentialRepo,
   LoginAttemptRepo,
+  LoginRow,
   PersonRepo,
   PersonRow,
   RecoveryCodeRepo,
@@ -48,6 +49,16 @@ export function createPersonRepo(orm: Orm, check: () => void): PersonRepo {
         .where(active)
         .orderBy(asc(person.createdAt), asc(person.id))
         .all() as PersonRow[];
+    },
+    listLogins: () => {
+      check();
+      return orm
+        .select({ personId: person.id, displayName: person.displayName, email: authUser.email })
+        .from(person)
+        .innerJoin(authUser, eq(authUser.id, person.userId))
+        .where(active)
+        .orderBy(asc(person.createdAt), asc(person.id))
+        .all() as LoginRow[];
     },
   };
 }

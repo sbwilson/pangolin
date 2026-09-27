@@ -37,7 +37,7 @@ jobs:
       - name: Migrations match the schema
         run: pnpm --filter @pangolin/db db:generate && git diff --exit-code -- packages/db/migrations
       - name: Shell scripts
-        run: shellcheck -S warning .githooks/pre-commit .githooks/commit-msg scripts/install-git-hooks.sh deploy/*.sh deploy/firewall/*.sh
+        run: shellcheck -S warning .githooks/pre-commit .githooks/commit-msg scripts/install-git-hooks.sh deploy/pangolin deploy/*.sh deploy/firewall/*.sh
       - name: Production compose file is valid
         run: |
           stage="$RUNNER_TEMP/pangolin-stage"
@@ -103,10 +103,12 @@ jobs:
           done
           echo "Docker health status is still $status" >&2
           exit 1
+      - name: The admin CLI reaches the running server over its socket
+        run: docker compose exec -T pangolin node dist/cli.js status
       - name: The image carries the deploy files a lone install.sh uses
         run: |
           docker run --rm --entrypoint sh pangolin:local -c \
-            'test -f /app/deploy/compose.yaml && test -f /app/deploy/allowlist.conf.default && test -x /app/deploy/firewall/render.sh'
+            'test -f /app/deploy/compose.yaml && test -f /app/deploy/allowlist.conf.default && test -x /app/deploy/firewall/render.sh && test -x /app/deploy/pangolin'
       - name: The server runs as a non-root user
         run: |
           uid=$(docker compose exec -T pangolin sh -c 'stat -c %u /proc/$(pidof -s node)')

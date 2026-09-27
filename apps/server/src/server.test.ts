@@ -55,6 +55,8 @@ async function boot(
       jobs: jobsConfig,
       auth: defaultAuthConfig(dataDir()),
       trustedProxies: [],
+      adminSocket: null,
+      version: "test",
     },
     migrationsDir,
     ...(jobs === undefined ? {} : { jobs }),
@@ -432,6 +434,8 @@ describe("startServer in demo mode", () => {
         jobs: DEFAULT_JOBS_CONFIG,
         auth: defaultAuthConfig(dataDir()),
         trustedProxies: [],
+        adminSocket: null,
+        version: "test",
         ...(file === null ? {} : { seedFile: file }),
       },
       migrationsDir: packageMigrationsDir,
@@ -546,6 +550,8 @@ describe("loadConfig", () => {
         rateLimitPerMinute: 10,
       },
       trustedProxies: [],
+      adminSocket: "/run/pangolin/admin.sock",
+      version: "dev",
     });
     expect(loadConfig({}).auth).toEqual(defaultAuthConfig("/data"));
   });
@@ -639,5 +645,83 @@ describe("loadConfig", () => {
   it("rejects an invalid port", () => {
     expect(() => loadConfig({ PORT: "http" })).toThrow();
     expect(() => loadConfig({ PORT: "70000" })).toThrow();
+  });
+
+  it("reads the admin socket (empty disables it) and the version", () => {
+    expect(loadConfig({ PANGOLIN_ADMIN_SOCKET: "/tmp/p/admin.sock" }).adminSocket).toBe(
+      "/tmp/p/admin.sock",
+    );
+    expect(loadConfig({ PANGOLIN_ADMIN_SOCKET: "" }).adminSocket).toBeNull();
+    expect(() => loadConfig({ PANGOLIN_ADMIN_SOCKET: "admin.sock" })).toThrow();
+    expect(loadConfig({ PANGOLIN_VERSION: "v1.2.3" }).version).toBe("v1.2.3");
+  });
+});
+
+describe("startServer admin socket", () => {
+  async function bootWith(adminSocket: string | null, demo = false) {
+    const logged: [string, string, Record<string, unknown>][] = [];
+    const seedFile = join(dir, "seed.json");
+    if (demo) generateSeedFile(seedFile);
+    const server = await startServer({
+      config: {
+        dataDir: dataDir(),
+        port: 0,
+        demo,
+        jobs: DEFAULT_JOBS_CONFIG,
+        auth: defaultAuthConfig(dataDir()),
+        trustedProxies: [],
+        adminSocket,
+        version: "test",
+        ...(demo ? { seedFile } : {}),
+      },
+      migrationsDir: packageMigrationsDir,
+      log: (level, msg, fields) => logged.push([level, msg, fields]),
+    });
+    return { server, logged };
+  }
+
+  it("listens once the runner runs, and removes the socket on close", async () => {
+    const path = join(dir, "run", "admin.sock");
+    const { server } = await bootWith(path);
+    try {
+      expect(server.adminSocket).toBe(path);
+      expect(statSync(path).isSocket()).toBe(true);
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+    } finally {
+      await server.close();
+    }
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("keeps serving, with a warning, when the socket cannot be created", async () => {
+    const blocker = join(dir, "not-a-dir");
+    writeFileSync(blocker, "");
+    const path = join(blocker, "admin.sock");
+    const { server, logged } = await bootWith(path);
+    try {
+      expect(server.adminSocket).toBeUndefined();
+      expect((await getHealth(server.port)).status).toBe(200);
+      expect(logged).toEqual([
+        [
+          "warn",
+          "admin socket unavailable; pangolin commands cannot reach the server",
+          { path, error: expect.any(String) },
+        ],
+      ]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("opens no socket and takes no lock in demo mode", async () => {
+    const path = join(dir, "run", "admin.sock");
+    const { server } = await bootWith(path, true);
+    try {
+      expect(server.adminSocket).toBeUndefined();
+      expect(existsSync(join(dir, "run"))).toBe(false);
+      expect(existsSync(dataDir())).toBe(false);
+    } finally {
+      await server.close();
+    }
   });
 });

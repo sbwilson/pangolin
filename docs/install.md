@@ -167,11 +167,12 @@ What it does, in order:
 | `/etc/systemd/system/docker.service.d/pangolin-data.conf` | 0644 | Docker waits for the data disk (when the data root is a mount point) |
 | `/srv/pangolin/` | 0700 | The database and attachments (the container's `/data`) |
 | `/root/pangolin-recovery-bundle-<date>.txt` | 0600 | The recovery bundle (first install, or `--bundle`) |
+| `/usr/local/bin/pangolin` | 0755 | The admin command (see [Administration](#9-administration)) |
 
 The container runs as a non-root user with a read-only root filesystem, no capabilities and
 `no-new-privileges`. It sees the data root at `/data`, the auth secret read-only at
 `/secrets/auth-secret`, and
-has a `/run` tmpfs for the admin socket that arrives with the `pangolin` command.
+has a `/run` tmpfs for the admin socket the `pangolin` command talks to.
 
 ### Re-running
 
@@ -285,6 +286,38 @@ curl -m 5 http://<vm-ip>:3000/healthz            # times out
 If `nftables.service` is enabled, the installer warns: its `flush ruleset` on restart clears
 Docker's rules and Pangolin's until the next timer run.
 
+## 9. Administration
+
+`pangolin` runs the admin CLI inside the container. While the stack runs, it reaches the server
+over its admin socket (`/run/pangolin/admin.sock` on the container's `/run` tmpfs, mode 0600,
+never on the data disk), so the CLI never opens the database beside the server. It needs root
+(it reads `/opt/pangolin/.env`):
+
+```sh
+sudo pangolin status                       # version, schema, readiness, job counts, dead jobs
+sudo pangolin reset-user alex@example.com  # both of you locked out: reset one person
+sudo pangolin --help
+```
+
+- **`status`** prints the release, the schema version against the one the build expects,
+  readiness (`ok`, or the failing checks as `/healthz` names them) and how many jobs are
+  pending, running and dead, with each dead job's kind and time. It exits 0 when ready, 1 when
+  not, and 3 with "Pangolin is not running" when the server is down (it then opens nothing).
+- **`reset-user <email or person ID>`** is for when both of you are locked out (otherwise your
+  partner's link in the app does it). It clears the person's passkeys, authenticator, sessions,
+  recovery codes and password at once and prints a one-time link, valid 24 hours, to set them
+  up again; the person gets a notice in the app. The link appears only on your console: the
+  server never logs it. Every change is in the audit log as `cli:reset-user`. With no person,
+  or one that matches nobody, it lists the people who have a login (name and email) and exits 1.
+  With the stack stopped, it runs in a one-off container under an exclusive lock on the data
+  directory, so a server started meanwhile waits until it is done ("another process holds
+  /data"). It refuses a database the release has not migrated yet: start the server once first.
+
+Only the server's own user can use the socket: each request must name a one-time file its
+client just created in the socket's directory, which the server checks is its own. Set
+`PANGOLIN_ADMIN_SOCKET` in `.env` to move the socket (keep it on a tmpfs), or to an empty value
+to turn it off; `pangolin status` then cannot reach the server.
+
 ## Ubuntu 24.04 and Rocky Linux 9 (unproven)
 
 The same command works on both, with warnings that the path is not yet proven. Ubuntu uses
@@ -299,6 +332,12 @@ alongside the nftables table.
   /opt/pangolin/compose.yaml logs pangolin` shows more, and `curl -s localhost:3000/healthz` on
   the VM names the failing check (`migrations`, `database` or `jobs`).
 - **A setting is ignored on re-run:** `.env` wins over flags; edit it and re-run.
+- **"another process holds /data" in the log:** another server, or a `pangolin reset-user` on
+  the stopped stack, has the data directory; the server exits and Docker restarts it once the
+  other process is done. Two stacks must never share a data root.
+- **`pangolin status` says the server is not running while it is:** check the log for "admin
+  socket unavailable" (the server then keeps serving without the socket); `/healthz` still
+  answers.
 - **Locked out of SSH:** use the Proxmox console, then fix `PANGOLIN_ADMIN_NETWORK` in `.env`
   and run `systemctl start pangolin-allowlist.service`.
 - **The app does not start after a reboot:** check that the data disk unlocked

@@ -59,6 +59,22 @@ a claimed job is held before another runner may take it over (default 60000, at 
 Jobs that fail for good are listed, by kind and time only, at `/api/system/jobs` (signed in) and on the
 status page. Demo mode runs no jobs.
 
+The admin CLI talks to the running server over a Unix socket, `PANGOLIN_ADMIN_SOCKET`
+(default `/run/pangolin/admin.sock`; empty turns it off). Outside Docker, point it somewhere you
+can write, and give the CLI the same settings:
+
+```sh
+export PANGOLIN_DATA_DIR=./data PANGOLIN_ADMIN_SOCKET=/tmp/pangolin/admin.sock
+node apps/server/dist/main.js &
+node apps/server/dist/cli.js status                        # exit 0 when ready, 3 when not running
+node apps/server/dist/cli.js reset-user alex@example.com   # prints a 24-hour re-enrolment link
+```
+
+In the Docker stack: `docker compose exec -T pangolin node dist/cli.js status`. The server holds
+an exclusive lock on its data directory (`pangolin.lock`), so a second server, or the CLI's
+`reset-user` while the server runs without a reachable socket, refuses instead of writing beside
+it.
+
 If Corepack isn't available, install the same pnpm with `npm i -g pnpm@12.6.0`.
 
 ## First login
@@ -112,9 +128,11 @@ There is no email reset. There are two ways back in, plus one for the server con
   you set up a passkey, the authenticator and new codes again. Redeeming the link also clears
   any sign-in lockout on your email. Your partner could use the link themselves; that is an
   accepted risk, and the audit log and your notice record it.
-- **Both locked out:** `pangolin reset-user` on the server console arrives with the admin CLI
-  (story 1.9). It clears the person's sign-in at once, including their password, and prints
-  a new link of the same kind.
+- **Both locked out:** on the server, `sudo pangolin reset-user <email>` (see
+  [docs/install.md](docs/install.md#9-administration)). It clears the person's sign-in at once,
+  including their password, and prints a new link of the same kind on the console only; the
+  audit log records it as `cli:reset-user`. With no email, or one that matches nobody, it lists
+  the people who have a login. It works with the stack stopped too.
 
 `/api/identity/recover` and `/api/identity/re-enrol` each have the per-client limit of
 `PANGOLIN_AUTH_RATE_LIMIT` a minute, like password sign-in. Every step is in the audit log; codes,

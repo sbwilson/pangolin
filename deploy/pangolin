@@ -1,0 +1,34 @@
+#!/bin/sh
+# pangolin: the Pangolin Money admin CLI on the host, installed to /usr/local/bin by install.sh.
+# It runs the CLI inside the container: over the admin socket when the stack runs, otherwise in a
+# one-off container of the same image (where `reset-user` takes the data-directory lock itself,
+# and `status` reports that the server is not running).
+#
+# Usage: sudo pangolin status
+#        sudo pangolin reset-user <email|person-id>
+#        sudo pangolin --help
+set -eu
+
+# Where install.sh put compose.yaml and .env; overridable for tests.
+HOME_DIR=${PANGOLIN_HOME:-/opt/pangolin}
+
+die() {
+  printf 'pangolin: %s\n' "$*" >&2
+  exit 1
+}
+
+[ -f "$HOME_DIR/compose.yaml" ] || die "no $HOME_DIR/compose.yaml: is Pangolin Money installed (install.sh)?"
+# The settings are root's (0600); Docker Compose must read them.
+[ -r "$HOME_DIR/.env" ] || die "cannot read $HOME_DIR/.env: run as root, e.g. sudo pangolin $*"
+command -v docker >/dev/null 2>&1 || die "docker is not installed"
+
+compose() {
+  docker compose --project-directory "$HOME_DIR" -f "$HOME_DIR/compose.yaml" "$@"
+}
+
+if [ -n "$(compose ps -q --status running pangolin 2>/dev/null)" ]; then
+  exec docker compose --project-directory "$HOME_DIR" -f "$HOME_DIR/compose.yaml" \
+    exec -T pangolin node dist/cli.js "$@"
+fi
+exec docker compose --project-directory "$HOME_DIR" -f "$HOME_DIR/compose.yaml" \
+  run --rm --no-deps -T pangolin node dist/cli.js "$@"

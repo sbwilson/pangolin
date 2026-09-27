@@ -19,7 +19,16 @@ import {
   migrate,
   openDatabase,
 } from "@pangolin/db";
-import { writeFirstSetupLink } from "./admin/index.ts";
+import {
+  ADMIN_COMMANDS,
+  type AdminLog,
+  type AdminSocket,
+  acquireDataDirLock,
+  type DataDirLock,
+  listenAdminSocket,
+  runAdminCommand,
+  writeFirstSetupLink,
+} from "./admin/index.ts";
 import { createAuth } from "./auth/auth.ts";
 import { loadOrCreateAuthSecret, nodeTokens, recoveryCodeHasher } from "./auth/secret.ts";
 import type { Config } from "./config.ts";
@@ -39,6 +48,8 @@ export interface StartOptions {
     readonly kinds: readonly JobRegistration[];
     readonly schedules: readonly Schedule[];
   };
+  /** Structured log sink for what happens after startup (the admin socket). */
+  readonly log?: AdminLog;
 }
 
 export interface RunningServer {
@@ -56,7 +67,12 @@ export interface RunningServer {
    * for the caller to log. Never its contents.
    */
   readonly setupLinkFile: string | undefined;
-  /** Stops the job runner (waiting for running handlers), then the HTTP server and database. */
+  /** The admin socket's path while it listens; undefined in demo mode, disabled or failed. */
+  readonly adminSocket: string | undefined;
+  /**
+   * Closes the admin socket, stops the job runner (waiting for running handlers), then the HTTP
+   * server and database, and finally releases the data-directory lock.
+   */
   close(): Promise<void>;
 }
 
@@ -67,11 +83,21 @@ interface Opened {
   readonly schemaVersion: number;
   /** The number of migrations this build ships, which `/healthz` expects applied. */
   readonly expectedSchemaVersion: number;
+  /** The data-directory lock; none in demo mode, which never touches the data directory. */
+  readonly lock?: DataDirLock;
 }
 
 function openLive(options: StartOptions): Opened {
   mkdirSync(options.config.dataDir, { recursive: true });
-  const db = openDatabase(join(options.config.dataDir, "pangolin.sqlite"));
+  // One writer per data directory (AD-16): taken before the database is opened, held until close.
+  const lock = acquireDataDirLock(options.config.dataDir);
+  let db: Db;
+  try {
+    db = openDatabase(join(options.config.dataDir, "pangolin.sqlite"));
+  } catch (error) {
+    lock.release();
+    throw error;
+  }
   try {
     const migrations = loadMigrations(options.migrationsDir);
     const { schemaVersion } = migrate(db, migrations);
@@ -83,9 +109,11 @@ function openLive(options: StartOptions): Opened {
       clock: systemClock(timezone),
       schemaVersion,
       expectedSchemaVersion: migrations.length,
+      lock,
     };
   } catch (error) {
     db.close();
+    lock.release();
     throw error;
   }
 }
@@ -100,15 +128,24 @@ function openDemo(options: StartOptions): Opened {
 /**
  * Composition root for the http entry: open SQLite, migrate, then serve. With
  * `config.demo`, the database is in memory, loaded from the seed and read-only, and the data
- * directory is never touched. Throws (after closing the database) when a migration or the
- * seed fails.
+ * directory is never touched. Live, it first takes the data-directory lock (throwing
+ * `DataDirLocked` while another process holds it), and once the job runner runs it listens on the
+ * admin socket. Throws (after closing the database) when a migration or the seed fails.
  */
 export async function startServer(options: StartOptions): Promise<RunningServer> {
   const { config } = options;
   const demo = config.demo;
-  const { db, uow, clock, schemaVersion, expectedSchemaVersion } = demo
+  const { db, uow, clock, schemaVersion, expectedSchemaVersion, lock } = demo
     ? openDemo(options)
     : openLive(options);
+  const closeDb = () => {
+    try {
+      db.close();
+    } finally {
+      lock?.release();
+    }
+  };
+  const systemHealth = createSystemHealthRepo(db);
   // Created after the HTTP server is listening; `/healthz` reads it per request.
   let runner: Runner | undefined;
 
@@ -136,7 +173,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       });
     }
     app = createApp({
-      systemHealth: createSystemHealthRepo(db),
+      systemHealth,
       uow,
       clock,
       newId,
@@ -153,7 +190,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
     });
   } catch (error) {
-    db.close();
+    closeDb();
     throw error;
   }
 
@@ -164,14 +201,14 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       server.once("error", reject);
     });
   } catch (error) {
-    db.close();
+    closeDb();
     throw error;
   }
 
   const closeHttp = () =>
     new Promise<void>((resolve, reject) => {
       server.close((error) => {
-        db.close();
+        closeDb();
         if (error) reject(error);
         else resolve();
       });
@@ -196,16 +233,48 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     }
   }
 
+  // The admin socket (AD-16), once the runner is up. Demo mode opens none. A socket that cannot
+  // be created costs only the CLI: the server logs a warning and keeps serving.
+  let adminSocket: AdminSocket | undefined;
+  if (!demo && config.adminSocket !== null) {
+    const deps = {
+      uow,
+      clock,
+      newId,
+      tokens: nodeTokens,
+      publicUrl: config.auth.publicUrl,
+      systemHealth,
+      expectedSchemaVersion,
+      runner: () => runner?.liveness(),
+      version: config.version,
+    };
+    try {
+      adminSocket = await listenAdminSocket({
+        path: config.adminSocket,
+        handle: (command, args) => runAdminCommand(deps, command, args),
+        commands: ADMIN_COMMANDS,
+        ...(options.log === undefined ? {} : { log: options.log }),
+      });
+    } catch (error) {
+      options.log?.("warn", "admin socket unavailable; pangolin commands cannot reach the server", {
+        path: config.adminSocket,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   const address = server.address() as AddressInfo;
   return {
     port: address.port,
     schemaVersion,
     demo,
     setupLinkFile,
+    adminSocket: adminSocket?.path,
     uow,
     clock,
     runner,
     close: async () => {
+      await adminSocket?.close();
       await runner?.stop();
       await closeHttp();
     },

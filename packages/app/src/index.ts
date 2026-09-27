@@ -21,6 +21,12 @@ export {
   recordCredentialChange,
 } from "./identity/credentials.ts";
 export {
+  type ListLoginsInput,
+  type Login,
+  listLogins,
+  listLoginsInput,
+} from "./identity/list-logins.ts";
+export {
   type AssertLoginAllowedInput,
   assertLoginAllowed,
   DEFAULT_LOCKOUT,
@@ -153,6 +159,7 @@ export type {
   JobStatus,
   LoginAttemptRepo,
   LoginAttemptRow,
+  LoginRow,
   PersonRepo,
   PersonRow,
   ReadRepos,
@@ -192,7 +199,11 @@ export {
   type DeadJobsInput,
   deadJobs,
   deadJobsInput,
+  type JobCounts,
+  type JobCountsInput,
   type JobStatusContext,
+  jobCounts,
+  jobCountsInput,
 } from "./system/job-status.ts";
 export {
   READINESS_CHECKS,
