@@ -3,7 +3,7 @@ title: 'CLI and admin socket'
 type: 'feature'
 ticket: '9'
 created: '2026-09-27'
-status: 'built'
+status: done
 baseline_revision: 'fe7da64d32363ec156d9d866ed1b3b3a41241f0a'
 route: 'full'
 route_source: 'auto'
