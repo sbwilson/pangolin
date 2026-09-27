@@ -1,0 +1,71 @@
+# Data model
+
+One bank line becomes one transaction row with one or more splits. Categories, tax treatment, activity and person all live on the split, so every report is a sum over splits. Transfers between own accounts are two transactions linked by a transfer group. Investments and super use their own unit-based tables rather than cash rows.
+
+**Why not full double-entry?** Bank feeds are single-sided, and Actual and Monarch both use this shape. Double-entry's guarantee (every movement balances) is recovered where it matters by transfer links and reconciliation against statement balances. Investments get lot-level accounting, which is the one place double-entry rigour actually pays off.
+
+## Conventions
+
+- `STRICT` tables and `PRAGMA foreign_keys = ON`, so SQLite enforces column types.
+- IDs are ULIDs: sortable by creation time and safe to generate client-side.
+- Money is integer minor units of the household's base currency (AUD by default; decimal places come from ISO 4217, so JPY would have none). Every account stores its currency code; v1 requires it to match the base currency. Units are integer micro-units (units × 10⁶). Prices are decimal strings.
+- Dates are `YYYY-MM-DD` text; timestamps are UTC ISO-8601.
+- Every table has `created_at` and `updated_at`. User-facing records soft-delete with `deleted_at`.
+- Every write goes through the service layer, which also writes `audit_log`.
+
+## Tables
+
+| Area | Table | Holds | Key columns |
+| --- | --- | --- | --- |
+| People | `person` | Each of us, linked to a login | `user_id`, `display_name`, `colour`, `pay_anchor_date`, `pay_cadence` |
+| People | better-auth tables | Users, sessions, passkeys, TOTP secrets | managed by the library |
+| Accounts | `institution` | Bank, broker, super fund | `name`, `kind`, `website_url` |
+| Accounts | `account` | Any balance we track | `type` (transaction, savings, offset, credit_card, home_loan, brokerage, super, property, vehicle, other), `currency`, `is_private`, `opened_on`, `closed_on`, `is_savings` |
+| Accounts | `account_owner` | Who owns it and in what share | `account_id`, `person_id`, `share_bp` (basis points: 5000 = 50%) |
+| Accounts | `balance_snapshot` | Statement, API or manual balances | `account_id`, `as_of`, `balance_cents`, `source` |
+| Ledger | `transaction` | One bank line | `account_id`, `posted_on`, `amount_cents`, `description_raw`, `payee_id`, `status`, `external_id`, `fingerprint`, `import_id`, `performed_by`, `transfer_group_id`, `needs_review`, `is_hidden`, `name_hidden_by`, `name_hidden_until`, `notes` |
+| Ledger | `split` | Where the money went (≥ 1 per transaction; amounts sum to the parent) | `transaction_id`, `amount_cents`, `category_id`, `activity_id`, `beneficiary` (shared or a person), `property_id`, `tax_category_id`, `deductible_bp`, `memo` |
+| Ledger | `transfer_group` | Links both sides of an internal transfer | `id`, `matched_by` (rule, manual, auto) |
+| Classify | `category_group` | Report groups (Income, Housing, Food, a rental property) | `name`, `kind`, `sort` |
+| Classify | `category` | Leaf categories | `group_id`, `name`, `is_fixed_cost` |
+| Classify | `tag`, `split_tag` | Free-form labels | many-to-many |
+| Classify | `activity` | "Japan Trip 2026", "Conference" | `name`, `starts_on`, `ends_on`, `budget_cents` |
+| Classify | `payee` | Clean merchant identity | `name`, `website_url`, `logo_attachment_id`, `default_category_id` |
+| Classify | `payee_alias` | Raw-description patterns that map to a payee | `pattern`, `match_kind`, `payee_id` |
+| Classify | `rule` | Deterministic categorisation | `priority`, `conditions` (JSON), `actions` (JSON), `origin` (user, llm_suggested) |
+| Classify | `suggestion` | LLM proposals awaiting review | `split_id`, `field`, `value`, `confidence`, `model`, `status` |
+| Import | `import_profile` | Per-bank CSV mapping | `institution_id`, `columns` (JSON), `date_format`, `sign_convention` |
+| Import | `import_batch` | One uploaded file (CSV, OFX, QIF or PDF) | `account_id`, `source`, `file_sha256`, `row_count`, `new_count`, `dup_count`, `status` |
+| Import | `import_row` | Parsed rows awaiting review and commit, with the PDF page each came from | |
+| Planning | `budget` | A cap per category or group | `category_id` or `group_id`, `scope` (shared or person), `period` (fortnight, month), `anchor_date`, `amount_cents`, `rollover` |
+| Planning | `recurring_series` | Detected or confirmed bills | `payee_id`, `account_id`, `cadence`, `expected_cents`, `tolerance_bp`, `next_due_on`, `status` |
+| Planning | `goal` | Savings target | `name`, `target_cents`, `target_date`, `priority`, `completed_at` |
+| Planning | `goal_rule` | % of each period's savings | `goal_id`, `stage_id`, `share_bp`, `effective_from` |
+| Planning | `goal_allocation` | Virtual money assigned per period | `goal_id`, `period_start`, `allocated_cents` |
+| Planning | `allocation_stage` | `name`, `sort`, `exit_goal_id`, `fallback_threshold_bp`, `completed_share_policy` (rescale or buffer). The active stage is derived from goal balances, not stored. | |
+| Invest | `security` | ETF, share or cash | `code` (e.g. `VAS.AX`), `name`, `kind` |
+| Invest | `investment_event` | Buy, sell, distribution, reinvestment, cost-base adjustment | `account_id`, `security_id`, `trade_date`, `kind`, `units_micro`, `price`, `fees_cents`, `amount_cents` |
+| Invest | `lot` | Parcels for capital-gains calculations | `buy_event_id`, `units_remaining_micro`, `cost_base_cents` |
+| Invest | `price` | Daily closes | `security_id`, `date`, `close`, `source` |
+| Super | `super_option` | A fund's investment option | `institution_id`, `name`, `product` (accumulation, income) |
+| Super | `super_holding` | Units per option over time | `account_id`, `option_id`, `units_micro`, `as_of` |
+| Super | `unit_price` | Daily published price | `option_id`, `date`, `price` |
+| Super | `contribution` | Money into super | `account_id`, `date`, `kind` (SG, salary sacrifice, personal concessional, non-concessional), `amount_cents` |
+| Tax | `tax_category` | ATO deduction labels (D1–D10 and so on) | `code`, `label`, `default_deductible_bp` |
+| Tax | `attachment`, `transaction_attachment` | Receipts and statements, encrypted on disk | `sha256`, `mime`, `bytes`, `path` |
+| Property | `property` | `name`, `owner_person_id`, `loan_account_id`, `value_account_id`. Rental income and property costs link to it through `split.property_id`. | |
+| System | `job` | Scheduled and queued work | `kind`, `run_at`, `status`, `attempts`, `payload` |
+| System | `audit_log` | Who changed what | `user_id`, `entity`, `entity_id`, `action`, `before`, `after` |
+| Config | `household_settings` | `base_currency` (default AUD), `fy_start` (07-01), `timezone` (Australia/Sydney), `shared_attribution` (by contribution or 50/50) | |
+| LLM | `llm_provider` | `kind` (openai or anthropic), `base_url`, `model`, encrypted `api_key`, `is_local`, allowed purposes (categorise, PDF extraction) | |
+
+## Privacy enforcement
+
+Queries never touch `account` or `transaction` directly. They go through `visibleAccounts(viewer)` and `redact(viewer, rows)`. There are two kinds of privacy:
+
+- **Private accounts** are seen only by their owner. They're excluded from the other partner's views and from the shared household totals and net worth. The owner's own views include them.
+- **Hidden transactions** sit in shared or public accounts (e.g. a birthday present).
+  - Only the name is hidden from the other partner: payee, description and merchant logo. They see "Hidden until 12 Mar 2027" instead.
+  - Amount, date, category, tags and notes stay visible, so totals and reports stay correct.
+  - Hiding lasts at most 12 months (`name_hidden_until`), then lifts automatically.
+  - Hidden names are excluded from the partner's search results and exports.
