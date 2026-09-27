@@ -134,7 +134,7 @@ sudo sh deploy/install.sh --non-interactive \
 | `--data-root DIR` | The data directory on the encrypted disk (default `/srv/pangolin`); on a re-run it replaces `PANGOLIN_DATA_ROOT` in `.env` |
 | `--http-port PORT` | The VM port NPM forwards to (default 3000) |
 | `--image REF` | The image (default `ghcr.io/sbwilson/pangolin:latest`); on a re-run it replaces `PANGOLIN_IMAGE` in `.env`. A local image (no `/`, like `pangolin:local`) is never pulled: it must exist |
-| `--build [--ref REF] [--repo URL]` | Build `pangolin:local` on the VM from the repository instead (its default branch, or `--ref`), and set `PANGOLIN_IMAGE` to it (needs the build hosts in the allowlist on a re-run) |
+| `--build [--ref REF] [--repo URL]` | Build `pangolin:local` on the VM from the repository instead (its default branch, or `--ref`), and set `PANGOLIN_IMAGE` to it. It adds the build hosts (GitHub, npm, Docker Hub) to `allowlist.conf`, which also lets `git pull` work in the clone |
 | `--bundle` | Write the recovery bundle again |
 | `--no-docker`, `--root DIR` | For testing: skip Docker; write files under `DIR` and change nothing on the host |
 
@@ -248,6 +248,7 @@ tables are never touched):
 - **Time:** the VM itself (not its containers) may send NTP (UDP 123) to any server. NTP pool
   names rotate their addresses faster than the allowlist is re-resolved, so allowlisting them
   would let chrony's servers drop out, and a drifting clock breaks authenticator codes.
+- **Ping:** the VM itself (not its containers) may ping any address, to test the network.
 - **At boot:** `pangolin-firewall.service` loads the last applied ruleset
   (`/opt/pangolin/firewall/pangolin.nft`, with the addresses resolved last time) before the
   network and Docker start, so the app is never reachable unfiltered. If that file is missing

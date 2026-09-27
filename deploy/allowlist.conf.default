@@ -38,7 +38,8 @@ fc.yahoo.com:443
 
 # The LLM endpoint is added in epic 5.
 
-# install.sh --build only: building the image on this VM also needs these.
+# Building the image on this VM (install.sh --build) also needs these, and git in its clone:
+# install.sh --build adds them uncommented.
 # github.com:443
 # registry.npmjs.org:443
 # registry-1.docker.io:443

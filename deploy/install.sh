@@ -869,7 +869,36 @@ compose() {
   docker compose --project-directory "$INSTALL_DIR" -f "$INSTALL_DIR/compose.yaml" "$@"
 }
 
+# What building on this VM reaches: the repository (also for a later git pull in the clone),
+# Docker Hub for the base image, and npm for pnpm and the dependencies.
+BUILD_HOSTS="github.com:443 registry.npmjs.org:443 registry-1.docker.io:443 auth.docker.io:443 production.cloudflare.docker.com:443"
+
+# add_build_hosts FILE: appends the build hosts FILE lacks, under one comment. True when it added any.
+add_build_hosts() {
+  missing=
+  for host in $BUILD_HOSTS; do
+    grep -Fqx "$host" "$1" || missing="$missing $host"
+  done
+  [ -n "$missing" ] || return 1
+  printf '\n# install.sh --build: building the image on this VM, and git in its clone (added by install.sh)\n' >>"$1"
+  for host in $missing; do printf '%s\n' "$host" >>"$1"; done
+  say "Added the build hosts to allowlist.conf:$missing"
+}
+
+# On a re-run the firewall is already on: allowlist the build hosts, and apply the change,
+# before the build needs them. (A first install writes them with the rest of allowlist.conf.)
+allow_build_hosts() {
+  allowlist=$(path "$INSTALL_DIR/allowlist.conf")
+  [ -f "$allowlist" ] || return 0
+  add_build_hosts "$allowlist" || return 0
+  if ! staging && systemctl is-active --quiet pangolin-allowlist.timer 2>/dev/null; then
+    systemctl start pangolin-allowlist.service ||
+      die "the firewall did not reload with the build hosts: see 'journalctl -u pangolin-allowlist.service'"
+  fi
+}
+
 build_image() {
+  allow_build_hosts
   step "Building $IMAGE from $REPO at ${REF:-its default branch}"
   src=$(path "$INSTALL_DIR/src")
   # With no --ref, build the repository's default branch (HEAD) rather than assume its name.
@@ -1040,6 +1069,7 @@ write_files() {
         printf '%s\n' "" "# Tang server: unlocks the data disk" "$tang_entry"
       fi
     } >"$allowlist.new"
+    if [ "$BUILD" -eq 1 ]; then add_build_hosts "$allowlist.new" || true; fi
     chmod 0644 "$allowlist.new"
     mv "$allowlist.new" "$allowlist"
     say "Wrote allowlist.conf"

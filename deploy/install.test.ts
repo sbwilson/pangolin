@@ -553,6 +553,44 @@ describe("install.sh with Docker (a stub docker)", () => {
     expect(dockerLog()).toContain("PANGOLIN_VERSION=v1.2.0");
   });
 
+  const BUILD_HOSTS = [
+    "github.com:443",
+    "registry.npmjs.org:443",
+    "registry-1.docker.io:443",
+    "auth.docker.io:443",
+    "production.cloudflare.docker.com:443",
+  ];
+
+  it("allowlists the build hosts with --build, on a first install and on a re-run", () => {
+    expect(installWithDocker(["--build"]).status).toBe(0);
+    const entries = () => read("opt/pangolin/allowlist.conf").split("\n");
+    for (const host of BUILD_HOSTS)
+      expect(entries().filter((line) => line === host)).toHaveLength(1);
+
+    // An allowlist from an install without --build gains them before the build, only once.
+    writeFileSync(
+      at("opt/pangolin/allowlist.conf"),
+      entries()
+        .filter((line) => !BUILD_HOSTS.includes(line))
+        .join("\n"),
+    );
+    const rerun = installWithDocker(["--build"]);
+    expect(rerun.status, rerun.stderr).toBe(0);
+    expect(rerun.stdout).toMatch(/Added the build hosts to allowlist\.conf: github\.com:443/);
+    expect(rerun.stdout.indexOf("Added the build hosts")).toBeLessThan(
+      rerun.stdout.indexOf("Building pangolin:local"),
+    );
+    for (const host of BUILD_HOSTS)
+      expect(entries().filter((line) => line === host)).toHaveLength(1);
+    expect(installWithDocker(["--build"]).stdout).not.toContain("Added the build hosts");
+  });
+
+  it("leaves the build hosts out without --build", () => {
+    expect(installWithDocker([]).status).toBe(0);
+    const entries = read("opt/pangolin/allowlist.conf").split("\n");
+    for (const host of BUILD_HOSTS) expect(entries).not.toContain(host);
+  });
+
   it("offers to build when the pull is refused, and switches .env to the built image", () => {
     // Proxy mode, Tang server and GHCR token (empty: a public image) are asked first.
     const result = installInteractively("\n\n\nb\n", [], { STUB_PULL_DENIED: "1" });
@@ -728,6 +766,11 @@ describe("firewall/render.sh", () => {
     expect(ruleset).toContain("ct status dnat ip saddr 192.168.1.10 tcp dport 3000 accept");
     expect(ruleset).toContain('iifname "br-*" jump containers');
     expect(ruleset.match(/jump allowed/g)).toHaveLength(2);
+    // Ping from the host only: the rule sits in the output chain, not the containers' chain.
+    const output = ruleset.slice(ruleset.indexOf("chain output"), ruleset.indexOf("chain forward"));
+    expect(output).toContain("icmp type echo-request accept");
+    expect(output).toContain("icmpv6 type echo-request accept");
+    expect(ruleset.slice(ruleset.indexOf("chain containers"))).not.toContain("echo-request");
     expect(result.stderr).toMatch(/skipped, not a host name or address: not a host/);
   });
 
@@ -745,6 +788,7 @@ describe("firewall/render.sh", () => {
     expect(lines).toContain("OUT ACCEPT -dest 10.20.0.0/16 # 10.20.0.0/16");
     expect(lines).toContain("OUT ACCEPT -dest 10.1.2.3 -p tcp -dport 8000 # 10.1.2.3:8000");
     expect(lines).toContain("OUT ACCEPT -dest 2001:db8::1 -p tcp -dport 443 # [2001:db8::1]:443");
+    expect(lines).toContain("OUT ACCEPT -p icmp -icmp-type echo-request # ping from the VM");
   });
 
   it("skips an empty port, an octet over 255 and a malformed IPv6 address, with a warning", () => {

@@ -314,6 +314,9 @@ table inet pangolin {
     # Time, for the host only (not containers): NTP pool names rotate addresses faster than the
     # allowlist refresh, and a drifting clock breaks authenticator codes.
     udp dport 123 accept
+    # Ping from the host only (containers never reach this chain), to test the network.
+    icmp type echo-request accept
+    icmpv6 type echo-request accept
     oifname "docker0" accept
     oifname "br-*" accept
     jump allowed
@@ -376,6 +379,8 @@ EOF
     echo "OUT ACCEPT -dest $address -p tcp -dport 53 # DNS"
   done
   echo "OUT ACCEPT -p udp -dport 123 # NTP to any server (the pool's addresses rotate)"
+  echo "OUT ACCEPT -p icmp -icmp-type echo-request # ping from the VM"
+  echo "OUT ACCEPT -p ipv6-icmp -icmp-type echo-request # ping from the VM"
   sort -u "$WORK/pve" | while read -r address port entry; do
     if [ "$port" = any ]; then
       echo "OUT ACCEPT -dest $address # $entry"
