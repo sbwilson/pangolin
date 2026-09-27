@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+.git
+data
+backups
+secrets
+*.sqlite*
+docs
+e2e

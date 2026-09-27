@@ -1,0 +1,432 @@
+#!/bin/sh
+# Qubric git-hygiene guardrail — pre-commit
+#
+# Rejects junk/scratch files, unresolved merge-conflict markers, and oversized
+# blobs from entering a commit. This is a SECOND line of defence that complements
+# .gitignore: it catches force-added (`git add -f`) or otherwise-slipped files.
+#
+# Installed per-clone via scripts/install-git-hooks.sh (sets core.hooksPath=.githooks).
+# Bypass (discouraged): git commit --no-verify
+set -eu
+
+# core.quotePath=false: emit non-ASCII paths literally (not C-quoted/octal-escaped),
+# so a file like `scratch_ü.txt` still matches the denylist and `git cat-file -s`.
+staged=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACM)
+# Every staged path INCLUDING deletions/renames — the smoke-index check below needs
+# them, because deleting a test file changes the index just as much as editing one.
+staged_all=$(git -c core.quotePath=false diff --cached --name-only)
+fail=0
+
+if [ -n "$staged" ]; then
+  # --- Junk / scratch denylist (extend HERE) --------------------------------
+  # Basename globs + path-prefix patterns for files that must never be committed.
+  # NOTE: GEMINI.md is a legitimate tracked config file — intentionally NOT listed.
+  junk=$(printf '%s\n' "$staged" | while IFS= read -r p; do
+    b=${p##*/}
+    # Leading '(' on each pattern balances parens for the $(...) parser (POSIX).
+    case "$b" in
+      (*.orig|*.rej|.DS_Store|Thumbs.db|diff.txt|diff.patch|diff_output.txt|pipelineLog.txt|scratch_*|*.tmp|*.swp)
+        printf '  %s\n' "$p" ;;
+    esac
+    case "$p" in
+      (.build/*|*/.build/*|DerivedData/*|*/DerivedData/*)
+        printf '  %s\n' "$p" ;;
+    esac
+  done)
+  if [ -n "$junk" ]; then
+    echo "pre-commit: refusing to commit junk / build artifacts:" >&2
+    printf '%s\n' "$junk" >&2
+    echo "  -> unstage with: git restore --staged <path>   (or rename scratch files)" >&2
+    fail=1
+  fi
+
+  # --- Oversized blob gate (staged blob size, in bytes) ---------------------
+  # Override per-clone: git config hooks.maxFileSize <bytes>   (0 disables the gate)
+  maxsize=$(git config --int hooks.maxFileSize 2>/dev/null || true)
+  # Unset / non-numeric / negative -> 5 MB default (a negative value must not
+  # silently disable the gate; only an explicit 0 disables it).
+  if [ -z "${maxsize:-}" ] || ! [ "$maxsize" -ge 0 ] 2>/dev/null; then
+    maxsize=5242880
+  fi
+  if [ "$maxsize" -gt 0 ]; then
+    big=$(printf '%s\n' "$staged" | while IFS= read -r p; do
+      s=$(git cat-file -s ":$p" 2>/dev/null || echo 0)
+      if [ "$s" -gt "$maxsize" ]; then printf '  %s (%s bytes)\n' "$p" "$s"; fi
+    done)
+    if [ -n "$big" ]; then
+      echo "pre-commit: refusing files larger than ${maxsize} bytes:" >&2
+      printf '%s\n' "$big" >&2
+      echo "  -> raise/disable with: git config hooks.maxFileSize <bytes|0>" >&2
+      fail=1
+    fi
+  fi
+
+  # --- Unresolved merge-conflict markers in staged content ------------------
+  # Key on the unambiguous <<<<<<< / >>>>>>> markers only (7 '<' / '>'); the
+  # '=======' separator is intentionally NOT matched, to avoid false positives
+  # on Markdown setext headings.
+  if git diff --cached -U0 --no-color --diff-filter=ACM 2>/dev/null \
+       | grep -q -e '^+<<<<<<<' -e '^+>>>>>>>'; then
+    echo "pre-commit: unresolved merge-conflict markers in staged changes." >&2
+    echo "  -> resolve the conflict before committing." >&2
+    fail=1
+  fi
+fi
+
+# --- Paths Windows cannot represent ------------------------------------------
+# ⛔ ADDED 2026-09-12, AFTER THE WINDOWS LANE FAILED BEFORE IT RAN ANYTHING.
+# Five files committed in January carried an ISO timestamp with `:` in the name.
+# NTFS reserves `:` for alternate data streams, so those paths are not awkward on
+# Windows, they are UNREPRESENTABLE: the clone succeeded, the checkout had nowhere
+# to write them, and the lane reported `unable to checkout working tree` — a
+# filename problem wearing a toolchain problem's clothes. The fix commit is
+# d5df3bb7; this rule is why there is not a sixth.
+#
+# ⛔ THE FILTER IS `ACMR`, NOT THE `ACM` THE JUNK DENYLIST ABOVE USES, AND THE
+# DIFFERENCE IS LOAD-BEARING. Measured: `git mv ok.md bad:name.md` is invisible to
+# `--diff-filter=ACM` — a rename is `R`, so the rule would have waved through the
+# exact gesture most likely to create one. `ACMR` reports the DESTINATION of a
+# rename, and excludes `D`, so renaming or deleting a bad path AWAY is never
+# refused — a guard that blocked its own cleanup would be uninstalled the first
+# time someone needed it.
+#
+# Checked per path COMPONENT, because `a:b/c.md` and `a/b:c.md` are both fatal.
+win=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR \
+      | while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    printf '%s\n' "$p" | tr '/' '\n' | while IFS= read -r c; do
+      [ -n "$c" ] || continue
+      case "$c" in
+        # Reserved characters. `*` and `?` are globs here, hence the bracket form.
+        (*[\<\>:\"\|]*|*[*]*|*[?]*) printf '  %s  (reserved character)\n' "$p" ;;
+      esac
+      # A trailing dot or space is silently STRIPPED by Win32, so the checked-out
+      # name would differ from the committed one — a mismatch git then reports as
+      # a permanently dirty tree.
+      case "$c" in
+        (*.|*\ ) printf '  %s  (component ends in a dot or space)\n' "$p" ;;
+      esac
+      # Device names are reserved with OR without an extension, case-insensitively.
+      case "$(printf '%s' "${c%%.*}" | tr 'A-Z' 'a-z')" in
+        (con|prn|aux|nul|com[1-9]|lpt[1-9]) printf '  %s  (Windows device name)\n' "$p" ;;
+      esac
+    done
+  done)
+if [ -n "$win" ]; then
+  echo "pre-commit: refusing paths Windows cannot check out:" >&2
+  printf '%s\n' "$win" >&2
+  echo "  -> rename before committing; the Windows lane cannot create these at all," >&2
+  echo "     so it fails at checkout with 'invalid path' and never runs the build." >&2
+  fail=1
+fi
+
+# --- Smoke-test index freshness ---------------------------------------------
+# docs/bmad/implementation-artifacts/smoke-tests.md is GENERATED from the YAML
+# frontmatter of smoke-tests/*.md. Before the split a smoke's status lived in
+# three places and they drifted — a status line was pasted from a neighbouring
+# section and contradicted both the epic table and its own recording table. This
+# refuses the commit that would let the index and the tests disagree again.
+#
+# Scoped: runs ONLY when a smoke-test file is staged, so unrelated commits pay
+# nothing and cannot be blocked by drift they did not introduce.
+#
+# --staged, not the working tree: what must agree is what is about to be
+# committed, not what happens to be sitting on disk.
+if [ -n "${staged_all:-}" ] \
+   && printf '%s\n' "$staged_all" \
+      | grep -Eq '^docs/bmad/implementation-artifacts/smoke-tests(\.md$|/)'; then
+  gen=scripts/generate-smoke-index.py
+  if [ ! -f "$gen" ]; then
+    echo "pre-commit: $gen is missing, but smoke-test files are staged." >&2
+    echo "  -> the index cannot be verified; restore the script or use --no-verify." >&2
+    fail=1
+  elif ! command -v python3 >/dev/null 2>&1; then
+    echo "pre-commit: python3 not found, but smoke-test files are staged." >&2
+    echo "  -> the generated index cannot be verified. Install python3, or use --no-verify." >&2
+    fail=1
+  elif ! python3 "$gen" --check --staged >/dev/null 2>&1; then
+    echo "pre-commit: the staged smoke-test index is stale." >&2
+    python3 "$gen" --check --staged 2>&1 | sed 's/^/  /' >&2
+    echo "  -> regenerate it and stage the result:" >&2
+    echo "       python3 scripts/generate-smoke-index.py" >&2
+    echo "       git add docs/bmad/implementation-artifacts/smoke-tests.md" >&2
+    fail=1
+  fi
+fi
+
+# --- Requirements register: generated task list + citation coverage ----------
+# accepted-when.json is GENERATED from requirements-register.md by
+# scripts/samd/register_lint.py, and carries a do-not-hand-edit marker. Until
+# something reads it that marker was a request: a register edit with no re-run,
+# or a hand-edit of the generated file, was undetectable. `check` regenerates in
+# memory and compares.
+#
+# Scoped: runs ONLY when the register, its generated task list or the coverage
+# baseline is staged, so unrelated commits pay nothing and cannot be blocked by
+# drift they did not introduce.
+#
+# STAGED CONTENT, not the working tree, for the drift check: what must agree is
+# what is about to be committed. The three files are read out of the index with
+# `git show :<path>`, which is exactly what a commit would record. The coverage
+# harvest necessarily reads the WORKING TREE — reconstructing the whole source
+# tree from the index is not something a hook can afford — so a staged source
+# file whose citation differs from the file on disk is caught by CI, not here.
+#
+# SCOPE: the four register files AND the tools that produce them. An edit to
+# `register_lint.py` changing how a clause splits silently invalidates every
+# generated task without touching any of the files, so a rule triggered on
+# the data alone would not fire for the change most able to break it. The
+# fixtures are in scope for the same reason: they are what the checks are shown
+# red against, and a fixture quietly repaired is a check quietly disarmed.
+#
+# TRACE-MATRIX.md joins them (story 1.13). It is generated from the same two
+# files by scripts/samd/gen_trace_matrix.py and carries a do-not-hand-edit
+# banner, so it belongs to this block rather than to one of its own: an edit to
+# the register moves it, and an edit to the register lint moves it too.
+# ⚠️ Its citing-test column is harvested from the WORKING TREE, exactly as the
+# coverage gate's is and for the same reason, so adding a citation marker in a
+# source file makes it stale here and CI is the backstop that says so.
+REG_DIR=docs/bmad/planning-artifacts/prds/prd-Qubric-2026-08-25
+if [ -n "${staged_all:-}" ] \
+   && printf '%s\n' "$staged_all" \
+      | grep -Eq -e "^${REG_DIR}/(requirements-register\.md|accepted-when\.json|coverage-baseline\.json|TRACE-MATRIX\.md)$" \
+                 -e '^scripts/samd/(register_lint\.py|register_coverage\.py|gen_trace_matrix\.py|test-register-tools\.sh|fixtures/)'; then
+  lint=scripts/samd/register_lint.py
+  cov=scripts/samd/register_coverage.py
+  matrix=scripts/samd/gen_trace_matrix.py
+  if [ ! -f "$lint" ] || [ ! -f "$cov" ] || [ ! -f "$matrix" ]; then
+    echo "pre-commit: $lint / $cov / $matrix is missing, but register files are staged." >&2
+    echo "  -> the generated task list cannot be verified; restore the scripts or use --no-verify." >&2
+    fail=1
+  elif ! command -v python3 >/dev/null 2>&1; then
+    echo "pre-commit: python3 not found, but register files are staged." >&2
+    echo "  -> the generated task list cannot be verified. Install python3, or use --no-verify." >&2
+    fail=1
+  else
+    reg_tmp=$(mktemp -d)
+    reg_ok=1
+    for f in requirements-register.md accepted-when.json coverage-baseline.json TRACE-MATRIX.md; do
+      if ! git show ":${REG_DIR}/${f}" > "$reg_tmp/$f" 2>/dev/null; then
+        echo "pre-commit: ${REG_DIR}/${f} is not in the index." >&2
+        echo "  -> the register, its generated task list, the coverage baseline and the" >&2
+        echo "     trace matrix are checked together; stage all four, or use --no-verify." >&2
+        reg_ok=0
+        fail=1
+      fi
+    done
+    if [ "$reg_ok" -eq 1 ]; then
+      # --generated-from: the payload records where a CONSUMER finds the
+      # register, which is the repository path — not "$reg_tmp", where this
+      # check happens to have read the staged bytes from.
+      # BOTH checks run, each setting `fail` on its own. Chained with `elif`, a
+      # commit carrying both problems reported one, the author fixed it, and the
+      # next commit hit the other — two round trips for one edit. They are
+      # separate checks over separate files, exactly as the CI step spells out.
+      if ! python3 "$lint" check --register "$reg_tmp/requirements-register.md" \
+             --out "$reg_tmp/accepted-when.json" \
+             --generated-from "${REG_DIR}/requirements-register.md" >/dev/null 2>&1; then
+        echo "pre-commit: the staged acceptance task list is out of sync with the register." >&2
+        python3 "$lint" check --register "$reg_tmp/requirements-register.md" \
+          --out "$reg_tmp/accepted-when.json" \
+          --generated-from "${REG_DIR}/requirements-register.md" 2>&1 | sed 's/^/  /' >&2
+        fail=1
+      fi
+      if ! python3 "$cov" --tasks "$reg_tmp/accepted-when.json" \
+             --baseline "$reg_tmp/coverage-baseline.json" --summary >/dev/null 2>&1; then
+        echo "pre-commit: the register coverage gate is red." >&2
+        python3 "$cov" --tasks "$reg_tmp/accepted-when.json" \
+          --baseline "$reg_tmp/coverage-baseline.json" --summary 2>&1 | sed 's/^/  /' >&2
+        fail=1
+      fi
+      # The trace matrix, AW-NFR-18.c's artifact. ONE run, captured: running
+      # `check` twice — once for the status, once to print — lets the two
+      # disagree and prints a refusal with no finding under it.
+      if ! python3 "$matrix" check --register "$reg_tmp/requirements-register.md" \
+             --tasks "$reg_tmp/accepted-when.json" --out "$reg_tmp/TRACE-MATRIX.md" \
+             --generated-from "${REG_DIR}/requirements-register.md" \
+             > "$reg_tmp/matrix-report" 2>&1; then
+        echo "pre-commit: the staged trace matrix is out of sync with the register." >&2
+        sed 's/^/  /' "$reg_tmp/matrix-report" >&2
+        fail=1
+      fi
+    fi
+    rm -rf "$reg_tmp"
+  fi
+fi
+
+# --- The non-retrofit roster: generated markdown + its machine sidecar --------
+# NON-RETROFIT-ROSTER.md and non-retrofit-roster.json are GENERATED from
+# TEST-ARCHITECTURE.md, ARCHITECTURE-SPINE.md and NON-RETROFIT-ORDERING.md by
+# scripts/samd/gen_non_retrofit_roster.py, and the markdown carries a
+# do-not-hand-edit banner. Until something reads it that banner was a request: a
+# source edited with no re-run, or a hand-edit of either generated file, was
+# undetectable. `check` regenerates in memory and compares.
+#
+# A SEPARATE BLOCK from the register one above, deliberately. They share the
+# shape — scoped trigger, staged blobs, provenance pinned — and nothing else: an
+# edit to register_lint.py has no bearing on the roster, and an edit to the spine
+# has none on the acceptance task list. Merged, each check would run for the
+# other's reasons and every failure would need reading twice.
+#
+# STAGED CONTENT, not the working tree: what must agree is what is about to be
+# committed. All five files are read out of the index with `git show :<path>`,
+# which is exactly what a commit would record.
+#
+# SCOPE: the five data files AND the tools that produce them. An edit to
+# gen_non_retrofit_roster.py changing how a table parses silently invalidates the
+# whole roster without touching any of the five, so a rule triggered on the data
+# alone would not fire for the change most able to break it. The fixtures are in
+# scope for the same reason: they are what the checks are shown red against, and
+# a fixture quietly repaired is a check quietly disarmed.
+#
+# ...and that last sentence has to be TRUE, not merely written: `check` alone
+# opens no fixture, so a repaired fixture would trigger this block and pass it.
+# The self-test is what reads them, so when a fixture or the generator itself is
+# staged, the self-test runs too. It is skipped for a plain data edit, where it
+# would cost seconds and check nothing the staged-blob comparison does not.
+ARCH_DIR=docs/bmad/planning-artifacts/architecture/architecture-Qubric-rust-core-2026-08-25
+if [ -n "${staged_all:-}" ] \
+   && printf '%s\n' "$staged_all" \
+      | grep -Eq -e "^${ARCH_DIR}/(TEST-ARCHITECTURE\.md|ARCHITECTURE-SPINE\.md|NON-RETROFIT-ORDERING\.md|NON-RETROFIT-ROSTER\.md|non-retrofit-roster\.json)$" \
+                 -e '^scripts/samd/(gen_non_retrofit_roster\.py|test-gen-non-retrofit-roster\.sh|fixtures/non-retrofit/)'; then
+  gen=scripts/samd/gen_non_retrofit_roster.py
+  if [ ! -f "$gen" ]; then
+    echo "pre-commit: $gen is missing, but non-retrofit roster files are staged." >&2
+    echo "  -> the generated roster cannot be verified; restore the script or use --no-verify." >&2
+    fail=1
+  elif ! command -v python3 >/dev/null 2>&1; then
+    echo "pre-commit: python3 not found, but non-retrofit roster files are staged." >&2
+    echo "  -> the generated roster cannot be verified. Install python3, or use --no-verify." >&2
+    fail=1
+  else
+    nrr_tmp=$(mktemp -d)
+    nrr_ok=1
+    for f in TEST-ARCHITECTURE.md ARCHITECTURE-SPINE.md NON-RETROFIT-ORDERING.md \
+             NON-RETROFIT-ROSTER.md non-retrofit-roster.json; do
+      if ! git show ":${ARCH_DIR}/${f}" > "$nrr_tmp/$f" 2>/dev/null; then
+        echo "pre-commit: ${ARCH_DIR}/${f} is not in the index." >&2
+        echo "  -> the roster's three sources and its two generated outputs are checked" >&2
+        echo "     together; stage all five, or use --no-verify." >&2
+        # `fail`, not only `nrr_ok`. Setting the local flag alone printed the
+        # refusal and left `exit "$fail"` at 0 — so a staged DELETION of any of
+        # the five files printed "is not in the index" and committed clean.
+        nrr_ok=0
+        fail=1
+      fi
+    done
+    if [ "$nrr_ok" -eq 1 ]; then
+      # --generated-from: the payload records where a CONSUMER finds the sources,
+      # which is the repository path — not "$nrr_tmp", where this check happens
+      # to have read the staged bytes from. Without it every check against staged
+      # content would report a provenance drift that is not one.
+      # ONE run, captured. Running `check` twice — once to /dev/null for the
+      # status, once to print — lets the two disagree: a non-deterministic or
+      # state-dependent second run prints nothing underneath an "out of sync"
+      # headline, which is a refusal with no finding in it.
+      if ! python3 "$gen" check --run-dir "$nrr_tmp" --generated-from "$ARCH_DIR" \
+             --out "$nrr_tmp/NON-RETROFIT-ROSTER.md" \
+             --out-json "$nrr_tmp/non-retrofit-roster.json" > "$nrr_tmp/report" 2>&1; then
+        echo "pre-commit: the staged non-retrofit roster is out of sync with its sources." >&2
+        sed 's/^/  /' "$nrr_tmp/report" >&2
+        fail=1
+      fi
+      # The fixtures and the generator are in this block's trigger because "a
+      # fixture quietly repaired is a check quietly disarmed" — and only the
+      # self-test reads a fixture. Run it when one of those is staged, so the
+      # justification describes what the block does.
+      nrr_self_test=scripts/samd/test-gen-non-retrofit-roster.sh
+      if printf '%s\n' "$staged_all" \
+           | grep -Eq '^scripts/samd/(gen_non_retrofit_roster\.py|test-gen-non-retrofit-roster\.sh|fixtures/non-retrofit/)'; then
+        if [ ! -f "$nrr_self_test" ]; then
+          echo "pre-commit: $nrr_self_test is missing, but the generator or its fixtures are staged." >&2
+          echo "  -> the checks cannot be shown red; restore it or use --no-verify." >&2
+          fail=1
+        elif ! sh "$nrr_self_test" > "$nrr_tmp/selftest" 2>&1; then
+          echo "pre-commit: the non-retrofit roster self-test is red." >&2
+          grep -E '^(FAIL|       )' "$nrr_tmp/selftest" | sed 's/^/  /' >&2
+          echo "  -> a fixture or the generator changed and a check no longer fires." >&2
+          fail=1
+        fi
+      fi
+    fi
+    rm -rf "$nrr_tmp"
+  fi
+fi
+
+# --- Macro trust roster: RULE RETIRED 2026-09-08 -----------------------------
+# A rule fired on `scripts/ci-cd/{macros,macros-versions}.json`,
+# `macro_trust_lint.py` and the workspace `Package.resolved`, running
+# `macro_trust_lint.py check`. Its whole subject is archived: `Qubric.xcodeproj`
+# moved to `archive/` in b45de9de, and the lint, `trust_macros.sh`,
+# `save_macros.sh` and the self-test moved to `archive/scripts/ci-cd/` on
+# 2026-09-08 with the CI step that was its backstop.
+#
+# ⛔ REMOVED, NOT LEFT INERT. As written the rule would fire on the very commit
+# that archives the lint, find the script absent, and REFUSE the commit — and
+# thereafter it would be a guard whose `if` can never be true, i.e. a control
+# with no subject that reports green.
+#
+# The finding is NOT retired and is recorded in `archive/scripts/README.md` and
+# `DW-42`: a macro-approval fingerprint file goes stale on every dependency
+# bump, nothing detects it, and the failure reads like a code problem — which is
+# how commit 1f73c1b0 (2026-08-30) kept the app lanes red until 2026-09-01. When
+# an Xcode project returns, this rule and its CI sibling return with it.
+
+# --- REPO-TOOLING items are wrapped up by an epic-15 story --------------------
+# The eighteen action items owned by REPO-TOOLING are discharged by Epic S5-15's
+# four stories, each naming the ids it covers. A mapping asserted in prose is a
+# mapping nobody maintains, so it is checked as a bijection both ways. Fires on
+# the two documents that can move it, plus the checker and its self-test.
+if [ -n "${staged_all:-}" ] \
+   && printf '%s\n' "$staged_all" \
+      | grep -Eq '^(docs/bmad/implementation-artifacts/sprint-status\.yaml|docs/bmad/planning-artifacts/epics\.md|scripts/samd/(check_repo_tooling_coverage\.py|test-repo-tooling-coverage\.sh))$'; then
+  rtc=scripts/samd/check_repo_tooling_coverage.py
+  if [ ! -f "$rtc" ]; then
+    echo "pre-commit: $rtc is missing, but its inputs are staged." >&2
+    echo "  -> the REPO-TOOLING coverage cannot be verified; restore it or use --no-verify." >&2
+    fail=1
+  elif ! command -v python3 >/dev/null 2>&1; then
+    echo "pre-commit: python3 not found, but REPO-TOOLING coverage inputs are staged." >&2
+    echo "  -> the mapping cannot be verified. Install python3, or use --no-verify." >&2
+    fail=1
+  elif ! python3 "$rtc" >/dev/null 2>&1; then
+    echo "pre-commit: the REPO-TOOLING action items and Epic S5-15's stories disagree." >&2
+    python3 "$rtc" 2>&1 | sed 's/^/  /' >&2
+    fail=1
+  fi
+fi
+
+# --- The hazard matrix: generated from three sources -------------------------
+# HAZARD-MATRIX.md carries a do-not-hand-edit banner and, until retro action item
+# `repo-tooling-01`, nothing re-derived it. Fires on the matrix, two of its three
+# sources, and the generator.
+#
+# ⚠️ DELIBERATELY NOT ON `requirements-register.md`, which is the third source.
+# The register supplies only the VERIFICATION column, and firing here would tie
+# every register commit to the whole architecture directory being present and in
+# sync -- `scripts/test-git-hooks.sh` builds a scratch repo carrying the register
+# tooling and not the hazard tooling, and the rule refused a commit that suite
+# expects to pass. A register edit that moves a hazard citation is therefore
+# caught by the CI backstop rather than here, which is the division this hook
+# already works to: core.hooksPath is per-clone config `git clone` does not
+# carry, so CI is the authority and the hook is the early warning.
+if [ -n "${staged_all:-}" ] \
+   && printf '%s\n' "$staged_all" \
+      | grep -Eq '^(docs/hazard-log\.md|docs/bmad/planning-artifacts/architecture/[^/]+/(HAZARD-MATRIX|ARCHITECTURE-SPINE)\.md|scripts/samd/(gen_hazard_matrix\.py|test-gen-hazard-matrix\.sh))$'; then
+  hzm=scripts/samd/gen_hazard_matrix.py
+  if [ ! -f "$hzm" ]; then
+    echo "pre-commit: $hzm is missing, but the hazard matrix or a source is staged." >&2
+    echo "  -> the matrix cannot be verified; restore the script or use --no-verify." >&2
+    fail=1
+  elif ! command -v python3 >/dev/null 2>&1; then
+    echo "pre-commit: python3 not found, but hazard-matrix inputs are staged." >&2
+    echo "  -> the matrix cannot be verified. Install python3, or use --no-verify." >&2
+    fail=1
+  elif ! python3 "$hzm" check >/dev/null 2>&1; then
+    echo "pre-commit: the hazard matrix is out of sync with its sources." >&2
+    python3 "$hzm" check 2>&1 | sed 's/^/  /' >&2
+    fail=1
+  fi
+fi
+
+exit "$fail"

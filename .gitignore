@@ -1,0 +1,27 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Real data must never be committed. Samples live in samples/ and are generated.
+data/
+/var/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.ofx
+*.qif
+*.pdf
+*.csv
+!samples/**/*.ofx
+!samples/**/*.qif
+!samples/**/*.csv
+!samples/**/*.pdf
+secrets/
+backups/
+archive/

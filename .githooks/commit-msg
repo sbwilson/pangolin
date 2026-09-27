@@ -1,0 +1,103 @@
+#!/bin/sh
+# Qubric git-hygiene guardrail — commit-msg
+#
+# Enforces a Conventional Commits 1.0.0 subject, no trailing period, no emoji,
+# and no Co-authored-by trailers (per CLAUDE.md).
+# The commit message does not exist at pre-commit time, so subject grammar lives
+# here (junk/size/merge-marker checks live in pre-commit).
+#
+# Installed per-clone via scripts/install-git-hooks.sh.
+# Bypass (discouraged): git commit --no-verify
+set -eu
+
+msgfile=$1
+
+# Comment-free message body: `git stripspace --strip-comments` respects
+# core.commentChar and trims trailing whitespace + blank lines. All checks run
+# against this (not the raw file) so an emoji / "Co-authored-by:" inside a
+# comment line does not false-reject, and a trailing-whitespace subject is
+# trimmed before the trailing-period check.
+body=$(git stripspace --strip-comments < "$msgfile")
+subject=$(printf '%s\n' "$body" | head -n1)
+
+# Auto-generated / rebase-workflow forms pass straight through.
+case "$subject" in
+  "Merge "*|"Revert "*|"fixup! "*|"squash! "*|"amend! "*)
+    exit 0 ;;
+esac
+
+fail=0
+
+# --- Conventional Commits 1.0.0 subject grammar ------------------------------
+# <type>(<scope>)!: <description>   scope optional (lowercase); '!' optional.
+if ! printf '%s\n' "$subject" \
+     | grep -Eq '^(feat|fix|chore|docs|test|refactor|build|revert|perf|style|ci)(\([a-z0-9._-]+\))?(!)?: .+'; then
+  echo "commit-msg: subject is not a Conventional Commit: \"$subject\"" >&2
+  fail=1
+fi
+
+# --- No trailing period on the subject ---------------------------------------
+case "$subject" in
+  *.) echo "commit-msg: subject must not end with a period." >&2; fail=1 ;;
+esac
+
+# --- No Co-authored-by trailers (per CLAUDE.md) ------------------------------
+if printf '%s\n' "$body" | grep -iqE '^[[:space:]]*co-authored-by:'; then
+  echo "commit-msg: Co-authored-by trailers are not allowed." >&2
+  fail=1
+fi
+
+# --- No emoji (common ranges; em-dash / curly quotes deliberately allowed) ---
+# F0 9F = U+1F000+ emoji plane; E2 9A/9B = warning/prohibition symbols;
+# E2 9C/9D = dingbats (checkmarks/crosses); E2 9E = dingbat arrows; E2 AD =
+# stars; E2 98/99 = misc symbols. E2 80 (em-dash/quotes) is NOT matched.
+emoji_pat=$(printf '\360\237|\342\232|\342\233|\342\234|\342\235|\342\236|\342\255|\342\230|\342\231')
+if printf '%s\n' "$body" | LC_ALL=C grep -Eq "$emoji_pat"; then
+  echo "commit-msg: remove emoji from the commit message." >&2
+  fail=1
+fi
+
+# --- A commit editing a story spec names that story --------------------------
+# Retro action item 8. Epic 1 closed with 17 of 56 commits naming no story, so
+# per-story churn attribution is not recoverable from git — the same gap the
+# S4-8 retrospective raised at 5 of 44.
+#
+# ⛔ ONLY THE MECHANICALLY DERIVABLE HALF IS ENFORCED, and the limit is stated
+# rather than papered over. If a commit stages `spec-<epic>-<story>-*.md` it is
+# working on that story by construction, and that is checkable here. A commit
+# touching only code or CI is NOT attributable without a story-to-files map this
+# repository does not have; 6 of the 10 sampled unattributed commits were of
+# that kind. Naming the story there stays a convention (AGENTS.md), and a
+# convention is what AD-18 calls prose enforcement — recorded as a known limit,
+# not as a control.
+staged=$(git diff --cached --name-only 2>/dev/null || true)
+if [ -n "$staged" ]; then
+  for spec in $(printf '%s\n' "$staged" \
+      | grep -E '^docs/bmad/implementation-artifacts/spec-[0-9]+-[0-9]+-' || true); do
+    ids=$(printf '%s\n' "$spec" | sed -n 's|^.*/spec-\([0-9][0-9]*\)-\([0-9][0-9]*\)-.*$|\1.\2|p')
+    [ -n "$ids" ] || continue
+    # Word-bounded so story 1.1 is not satisfied by a message naming 1.13.
+    if ! printf '%s\n' "$body" | grep -Eq "(^|[^0-9.])$(printf '%s' "$ids" | sed 's/\./\\./')([^0-9]|$)"; then
+      echo "commit-msg: this commit edits $spec but the message never names story $ids." >&2
+      echo "  -> name it, e.g. \"(story $ids)\" in the subject or a line in the body." >&2
+      echo "     Epic 1 closed with 17 of 56 commits naming no story, which makes" >&2
+      echo "     per-story churn unrecoverable from git." >&2
+      fail=1
+    fi
+  done
+fi
+
+if [ "$fail" -ne 0 ]; then
+  cat >&2 <<'EOF'
+
+Required subject grammar:
+  <type>(<scope>)!: <description>
+  type is one of: feat fix chore docs test refactor build revert perf style ci
+  scope optional (lowercase); '!' optional (breaking); no trailing '.'
+Example:
+  chore(infra): add git-hygiene guardrail hooks
+Bypass (discouraged): git commit --no-verify
+EOF
+  exit 1
+fi
+exit 0
