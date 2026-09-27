@@ -2,7 +2,8 @@
 # Qubric git-hygiene guardrail — commit-msg
 #
 # Enforces a Conventional Commits 1.0.0 subject, no trailing period, no emoji,
-# and no Co-authored-by trailers (per CLAUDE.md).
+# no Co-authored-by trailers (per CLAUDE.md), and no Claude-Session trailers or
+# claude.ai session links.
 # The commit message does not exist at pre-commit time, so subject grammar lives
 # here (junk/size/merge-marker checks live in pre-commit).
 #
@@ -44,6 +45,15 @@ esac
 # --- No Co-authored-by trailers (per CLAUDE.md) ------------------------------
 if printf '%s\n' "$body" | grep -iqE '^[[:space:]]*co-authored-by:'; then
   echo "commit-msg: Co-authored-by trailers are not allowed." >&2
+  fail=1
+fi
+
+# --- No Claude Code session links ---------------------------------------------
+# Neither the Claude-Session trailer nor a claude.ai/code/session URL anywhere in
+# the message: session links are private and go stale, so they do not belong in
+# history.
+if printf '%s\n' "$body" | grep -iqE '^[[:space:]]*claude-session:|claude\.ai/code/session'; then
+  echo "commit-msg: Claude-Session trailers and claude.ai session links are not allowed." >&2
   fail=1
 fi
 
