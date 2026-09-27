@@ -1,0 +1,281 @@
+<title>How Pangolin Money Works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Literata:opsz,wght@7..72,400;7..72,600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --bg:#EEF0EF; --surface:#F8F9F8; --ink:#18211F; --muted:#56615E; --rule:#CBD2CF;
+  --public:#1D6A6F; --public-soft:#D5E7E6; --private:#6E4A86; --private-soft:#E7DDEE;
+  --hidden:#8A5A1F; --hidden-soft:#F1E3CF; --ok:#2F6B3A;
+  --display:"Familjen Grotesk","Helvetica Neue",Arial,sans-serif;
+  --body:"Literata",Georgia,"Times New Roman",serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#121816; --surface:#1A2220; --ink:#E4EAE7; --muted:#9AA7A3; --rule:#2E3A37;
+    --public:#6FC2C4; --public-soft:#1C3637; --private:#C4A2DC; --private-soft:#2E2438;
+    --hidden:#E0B06E; --hidden-soft:#3A2C18; --ok:#8CCB94;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#121816; --surface:#1A2220; --ink:#E4EAE7; --muted:#9AA7A3; --rule:#2E3A37;
+  --public:#6FC2C4; --public-soft:#1C3637; --private:#C4A2DC; --private-soft:#2E2438;
+  --hidden:#E0B06E; --hidden-soft:#3A2C18; --ok:#8CCB94;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.6;padding-inline:20px;padding-block:0 64px}
+.wrap{max-width:760px;margin:0 auto}
+header.hero{padding-block:56px 28px;border-bottom:1px solid var(--rule)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1,h2,h3{font-family:var(--display);line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(34px,6vw,52px);font-weight:700;margin-block:10px 16px}
+h2{font-size:28px;font-weight:600;margin-bottom:12px}
+h3{font-size:19px;font-weight:600;margin-bottom:6px}
+p{margin:0 0 14px;max-width:65ch}
+.lede{font-size:19px;color:var(--muted)}
+section{padding-block:40px 8px;border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+code,.num{font-family:var(--mono);font-size:.86em}
+.num{font-variant-numeric:tabular-nums}
+nav.toc{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:22px;font-family:var(--display);font-size:15px}
+nav.toc a{color:var(--public);text-decoration:none;border-bottom:1px solid transparent}
+nav.toc a:hover,nav.toc a:focus-visible{border-bottom-color:var(--public)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--public);outline-offset:2px}
+.figure{background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:18px;margin-block:18px;overflow-x:auto}
+.caption{font-size:14px;color:var(--muted);margin-top:8px}
+.points{display:grid;gap:12px;padding:0;margin:0 0 14px;list-style:none}
+.points li{padding-left:18px;position:relative;max-width:65ch}
+.points li::before{content:"";position:absolute;left:0;top:.72em;width:7px;height:7px;background:var(--public);border-radius:1px}
+/* who-sees-what */
+.viewer{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.viewer span{font-family:var(--display);font-size:15px;color:var(--muted);margin-right:4px}
+.viewer button{font-family:var(--display);font-size:15px;font-weight:600;padding:8px 14px;border-radius:999px;border:1px solid var(--rule);background:transparent;color:var(--ink);cursor:pointer}
+.viewer button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.demo{display:grid;grid-template-columns:1.3fr 1fr;gap:18px}
+@media (max-width:640px){.demo{grid-template-columns:1fr}}
+.acct{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 12px;border-radius:4px;border-left:4px solid var(--public);background:var(--public-soft);margin-bottom:8px}
+.acct.private{border-left-color:var(--private);background:var(--private-soft)}
+.acct.gone{opacity:.45;background:transparent;border-left-style:dashed}
+.acct .name{font-family:var(--display);font-weight:600}
+.acct .bal{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+.acct .tag{font-size:13px;color:var(--muted);grid-column:1/-1}
+.totals{display:grid;gap:10px;align-content:start}
+.total{padding:12px;border:1px solid var(--rule);border-radius:4px}
+.total .label{font-family:var(--display);font-size:14px;color:var(--muted)}
+.total .value{font-family:var(--mono);font-size:22px;font-variant-numeric:tabular-nums}
+.total .note{font-size:13px;color:var(--muted)}
+.txn{margin-top:14px;padding:12px;border-radius:4px;background:var(--hidden-soft);border-left:4px solid var(--hidden)}
+.txn .row{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-family:var(--mono);font-size:14px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:14px;color:var(--muted);margin-top:12px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-1px;margin-right:6px}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-family:var(--display);font-weight:600;font-size:14px;color:var(--muted)}
+.pill{display:inline-block;font-family:var(--mono);font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
+.k-expense{color:var(--hidden)} .k-transfer{color:var(--muted)} .k-investing{color:var(--public)} .k-income{color:var(--ok)}
+.steps{counter-reset:s;list-style:none;padding:0;margin:0;display:grid;gap:10px}
+.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:10px;max-width:68ch}
+.steps li::before{content:counter(s);font-family:var(--mono);font-size:13px;width:26px;height:26px;border-radius:50%;border:1px solid var(--rule);display:grid;place-items:center;color:var(--muted)}
+footer{padding-top:28px;font-size:14px;color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){.acct,.total .value{transition:opacity .25s ease,background-color .25s ease}}
+</style>
+
+<div class="wrap">
+<header class="hero">
+  <div class="eyebrow">Pangolin Money v1 · architecture walkthrough · 27 Sep 2026</div>
+  <h1>How Pangolin Money works</h1>
+  <p class="lede">A plain-language tour of the design for our household finance app. It covers where the data lives, who can see what, how money gets counted, and how we get it all back if the server dies.</p>
+  <nav class="toc" aria-label="Sections">
+    <a href="#shape">One box, one database</a>
+    <a href="#privacy">Who sees what</a>
+    <a href="#import">Getting data in</a>
+    <a href="#counting">How money is counted</a>
+    <a href="#goals">Savings and goals</a>
+    <a href="#outside">What leaves the server</a>
+    <a href="#recovery">If things go wrong</a>
+  </nav>
+</header>
+
+<section id="shape">
+  <h2>One box, one database</h2>
+  <p>Everything runs as one program on our own Debian VM, behind the proxy we already use. It keeps a single SQLite file, and nothing else ever writes to it. The phone and browser app is just a view onto that program.</p>
+  <div class="figure">
+<pre class="mermaid">
+flowchart LR
+  P[Phone or browser] --> X[Our reverse proxy]
+  X --> S
+  subgraph S[Pangolin, one program]
+    W[Web app and API] --> U[Use cases<br/>the only way to change data]
+    J[Background jobs] --> U
+    C[Admin commands] --> U
+    U --> D[(SQLite file)]
+  end
+  J --> L[Ollama on the GPU box]
+  J --> B[Backups on TrueNAS]
+</pre>
+    <div class="caption">Whatever makes a change (the app, a background job or an admin command), it goes through the same use cases. Each one also writes an audit entry.</div>
+  </div>
+  <ul class="points">
+    <li><strong>One path for every change.</strong> Importing a statement, editing a split, a job saving an LLM suggestion and a password reset all follow the same route. That route checks permissions and records who did what.</li>
+    <li><strong>The maths is kept separate.</strong> Budget pace, capital gains and goal allocation are plain calculations with no database or network in them. They can be tested against hand-worked figures.</li>
+    <li><strong>Slow things happen first.</strong> Talking to the LLM or fetching prices happens before any data is written, so a slow network never holds the database.</li>
+  </ul>
+</section>
+
+<section id="privacy">
+  <h2>Who sees what</h2>
+  <p>Each of us can mark an account <strong>private</strong>. Only its owner ever sees it, and to the other person it simply doesn't exist. Inside a shared account, either of us can <strong>hide a transaction's name</strong> for up to 12 months (a birthday present, say). The amount still counts in every total. Switch between us below to see the same example household from each side.</p>
+  <div class="figure" id="demo">
+    <div class="viewer" role="group" aria-label="View as">
+      <span>View as</span>
+      <button type="button" id="view-a" aria-pressed="true">Partner A</button>
+      <button type="button" id="view-b" aria-pressed="false">Partner B</button>
+    </div>
+    <div class="demo">
+      <div id="accounts" aria-live="polite"></div>
+      <div class="totals">
+        <div class="total"><div class="label">Household net worth</div><div class="value" id="t-house"></div><div class="note">Everything this person can see, including their own private accounts</div></div>
+        <div class="total"><div class="label">Shared savings pool</div><div class="value" id="t-pool"></div><div class="note">Identical for both of us, because private money never enters a shared figure</div></div>
+      </div>
+    </div>
+    <div class="txn" id="txn"></div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--public)"></i>Public (personal or joint)</span>
+      <span><i class="sw" style="background:var(--private)"></i>Private, owner only</span>
+      <span><i class="sw" style="background:var(--hidden)"></i>Hidden name</span>
+    </div>
+    <div class="caption">Example figures, not our real balances.</div>
+  </div>
+  <ul class="points">
+    <li><strong>Household totals are personal.</strong> Your net worth includes your private accounts, so the two of us can see different household numbers. That's intended.</li>
+    <li><strong>Shared figures never include private money.</strong> A split in a private account can't be marked "shared". Shared budgets, the shared savings pool and the "who contributed what" split are therefore the same for both of us, and leak nothing.</li>
+    <li><strong>Personal plans stay personal.</strong> Your own budgets, goals, pay details and tax pack are yours alone. Anything worked out from a private account is scoped to its owner.</li>
+    <li><strong>Hidden really means hidden.</strong> A hidden name is removed before searching, sorting, grouping, rule matching or exporting. It isn't just blanked on screen, so search results can't give it away.</li>
+    <li><strong>Payees and rules follow the same rule.</strong> A payee or rule created from a private transaction stays yours until you use it on a public account.</li>
+  </ul>
+</section>
+
+<section id="import">
+  <h2>Getting data in</h2>
+  <p>We don't hand bank logins to anyone. We export files from NetBank, ubank and the others, and Pangolin imports them. Re-importing the same file, or one that overlaps an earlier import, changes nothing.</p>
+  <ol class="steps">
+    <li><span><strong>Read the file.</strong> OFX, CSV, QIF or a PDF statement. PDFs are read by the local LLM, then plain code checks that the opening balance plus every line equals the closing balance, to the cent.</span></li>
+    <li><span><strong>Spot duplicates.</strong> The bank's own transaction ID when there is one, plus a fingerprint of date, amount and description. If the same account, date and amount turn up from two formats, we get asked rather than guessed.</span></li>
+    <li><span><strong>Categorise.</strong> Our rules first, then the payee's usual category, then an LLM suggestion. Our own edits always win, and a rule never overwrites something one of us chose.</span></li>
+    <li><span><strong>Match transfers.</strong> Money moving between our own accounts is linked, so it doesn't count as spending.</span></li>
+    <li><span><strong>Check the balance.</strong> Each statement balance must agree with the one before it plus everything in between. Any gap goes to the review inbox.</span></li>
+  </ol>
+  <p style="margin-top:14px">Everything that needs a human lands in one <strong>review inbox</strong>: odd duplicates, low-confidence guesses, a missed bill, a savings shortfall, a failed backup. Items clear themselves once the underlying problem is fixed.</p>
+</section>
+
+<section id="counting">
+  <h2>How money is counted</h2>
+  <p>Money is stored as whole cents, never as floating-point numbers. Every total is worked out fresh from the transactions when you look at it, so there are no running totals to drift. A few rules make sure every screen agrees:</p>
+  <div class="figure">
+    <table>
+      <thead><tr><th>When money…</th><th>It counts as</th></tr></thead>
+      <tbody>
+        <tr><td>moves between our own bank accounts, or pays off a credit card</td><td><span class="pill k-transfer">transfer</span> not spending</td></tr>
+        <tr><td>goes into the home loan</td><td><span class="pill k-expense">expense</span> as the spec decided</td></tr>
+        <tr><td>goes into the brokerage account or super</td><td><span class="pill k-investing">investing</span> not spending</td></tr>
+        <tr><td>comes in from anywhere else</td><td><span class="pill k-income">income</span></td></tr>
+        <tr><td>goes out anywhere else</td><td><span class="pill k-expense">expense</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul class="points">
+    <li><strong>Splitting cents always adds up.</strong> When a figure is divided (goal shares, a 60/40 contribution split, a partly deductible expense), the parts always sum exactly to the whole.</li>
+    <li><strong>Pay periods follow real paydays.</strong> Each of us picks either calendar fortnights or "whenever the pay actually lands". Budgets and goals in the same pool always agree on what "this fortnight" means. Financial years run July to June: FY2025 is 1 Jul 2024 to 30 Jun 2025.</li>
+    <li><strong>One balance per account.</strong> Cash accounts start from the latest statement balance. Shares are units times price, and super is units times that day's unit price. Every report uses the same figure.</li>
+  </ul>
+</section>
+
+<section id="goals">
+  <h2>Savings and goals</h2>
+  <p>Goals are virtual: there's no separate bank account per goal. At the end of each pay period, new savings in a pool are split across goals by the active stage's percentages. What's left stays in a buffer.</p>
+  <ul class="points">
+    <li><strong>Pools follow ownership.</strong> A savings account with two owners feeds the shared pool, and a single-owner account feeds that person's pool.</li>
+    <li><strong>Goals don't shrink when we overspend.</strong> A bad fortnight draws down the buffer only. If the buffer runs out, the goals page shows the shortfall in red.</li>
+    <li><strong>A goal only goes down when we say so.</strong> Only a withdrawal from its savings account that we link to the goal reduces it. Spending on the Japan trip card doesn't touch the goal until the money is actually moved.</li>
+    <li><strong>Closed periods stay closed.</strong> If an old transaction turns up later, the difference goes into this period's buffer as a logged adjustment. Past allocations never change.</li>
+  </ul>
+</section>
+
+<section id="outside">
+  <h2>What leaves the server</h2>
+  <p>By default, nothing about our money leaves the house. Only the background jobs can reach the network, and only these hosts, which the VM's firewall also enforces:</p>
+  <div class="figure">
+    <table>
+      <thead><tr><th>Destination</th><th>What it gets</th></tr></thead>
+      <tbody>
+        <tr><td>Ollama on our GPU box</td><td>Transactions to categorise and PDF statements to read. It's on our own network.</td></tr>
+        <tr><td>A cloud LLM, only if we turn one on</td><td>Description, amount, date and the category list. Never names, accounts, or anything from a private account. PDFs stay local unless we explicitly allow it.</td></tr>
+        <tr><td>Yahoo Finance, fund unit-price pages</td><td>A ticker or fund code, to fetch prices</td></tr>
+        <tr><td>Merchant websites, through a single proxy</td><td>One request per confirmed shop, for its logo, which is then stored locally. Your browser never contacts them.</td></tr>
+        <tr><td>TrueNAS, over WireGuard</td><td>Encrypted nightly backups, which the app can add to but never delete</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="recovery">
+  <h2>If things go wrong</h2>
+  <ul class="points">
+    <li><strong>Lost phone or passkey.</strong> Use one of your ten recovery codes, or have the other partner issue a 24-hour re-enrolment link. The partner issuing that link could in theory use it themselves. We accepted that trade-off, and it's written down.</li>
+    <li><strong>Server dies.</strong> At install you get a recovery bundle: the app key, login secret and backup password. Keep it offline, somewhere safe. CI proves on every release that a restore onto a clean machine works from that bundle alone, receipts and authenticator codes included.</li>
+    <li><strong>Bad upgrade.</strong> The upgrade takes a snapshot first. If the new version fails its health check, it rolls back to the old version and the snapshot automatically.</li>
+    <li><strong>What the design can't protect against.</strong> Whoever has admin access to the VM can read everything. Privacy between the two of us holds inside the app, not against the server's administrator.</li>
+  </ul>
+</section>
+
+<footer>
+  Source: <code>ARCHITECTURE-SPINE.md</code> (decisions AD-1 to AD-27) in <code>_bmad-output/planning-artifacts/architecture/</code>. The spec remains the contract for what each feature does.
+</footer>
+</div>
+
+<script>
+(function(){
+  // Example household. Balances in cents. owner: "A", "B" or "AB" (joint).
+  var accounts=[
+    {name:"Joint everyday",owner:"AB",priv:false,savings:false,bal:423150},
+    {name:"Joint savings",owner:"AB",priv:false,savings:true,bal:3812000},
+    {name:"Home loan",owner:"AB",priv:false,savings:false,bal:-51245000},
+    {name:"A's everyday",owner:"A",priv:false,savings:false,bal:118040},
+    {name:"A's rainy-day",owner:"A",priv:true,savings:true,bal:950000},
+    {name:"B's credit card",owner:"B",priv:false,savings:false,bal:-213575},
+    {name:"B's side account",owner:"B",priv:true,savings:false,bal:422500}
+  ];
+  var hidden={by:"B",until:"12 Mar 2027",payee:"Kinokuniya Sydney",desc:"Gift: art book",amount:-8995,account:"Joint everyday"};
+  var fmt=function(c){var s=c<0?"−":"";c=Math.abs(c);return s+"$"+Math.floor(c/100).toLocaleString("en-AU")+"."+String(c%100).padStart(2,"0");};
+  var ownerLabel=function(o){return o==="AB"?"Joint":(o==="A"?"Partner A":"Partner B");};
+  function render(v){
+    var list=document.getElementById("accounts"),house=0,pool=0,html="";
+    accounts.forEach(function(a){
+      var visible=!a.priv||a.owner===v;
+      if(visible) house+=a.bal;
+      if(!a.priv&&a.savings&&a.owner==="AB") pool+=a.bal;
+      if(visible){
+        html+='<div class="acct'+(a.priv?' private':'')+'"><span class="name">'+a.name+'</span><span class="bal">'+fmt(a.bal)+'</span><span class="tag">'+ownerLabel(a.owner)+(a.priv?' · private':'')+(a.savings?' · savings':'')+'</span></div>';
+      } else {
+        html+='<div class="acct private gone" aria-label="Not visible"><span class="name">Not shown</span><span class="bal"></span><span class="tag">The other partner’s private account doesn’t exist from this side</span></div>';
+      }
+    });
+    list.innerHTML=html;
+    document.getElementById("t-house").textContent=fmt(house);
+    document.getElementById("t-pool").textContent=fmt(pool);
+    var t=document.getElementById("txn"),isOwner=v===hidden.by;
+    t.innerHTML='<div class="row"><span>'+hidden.account+' · 14 Sep 2026</span><span>'+fmt(hidden.amount)+'</span></div>'+
+      '<div class="row"><span>'+(isOwner?hidden.payee+' · '+hidden.desc:'Hidden until '+hidden.until)+'</span><span>Gifts · shared</span></div>'+
+      '<div class="caption">'+(isOwner?'You hid this name. Your partner sees the amount, date and category, not the shop.':'The amount still counts in every total. The name comes back automatically on '+hidden.until+'.')+'</div>';
+    ["A","B"].forEach(function(p){var b=document.getElementById("view-"+p.toLowerCase());b.setAttribute("aria-pressed",String(p===v));});
+    try{localStorage.setItem("pangolin-view",v);}catch(e){}
+  }
+  var start="A";try{var s=localStorage.getItem("pangolin-view");if(s==="A"||s==="B")start=s;}catch(e){}
+  document.getElementById("view-a").addEventListener("click",function(){render("A");});
+  document.getElementById("view-b").addEventListener("click",function(){render("B");});
+  render(start);
+})();
+</script>

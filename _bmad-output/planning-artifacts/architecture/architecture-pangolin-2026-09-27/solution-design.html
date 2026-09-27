@@ -1,0 +1,437 @@
+<title>Pangolin Money Solution Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Literata:opsz,wght@7..72,400;7..72,600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --bg:#EEF0EF; --surface:#F8F9F8; --ink:#18211F; --muted:#56615E; --rule:#CBD2CF;
+  --public:#1D6A6F; --public-soft:#D5E7E6; --private:#6E4A86; --private-soft:#E7DDEE; --warn:#8A5A1F; --warn-soft:#F1E3CF;
+  --display:"Familjen Grotesk","Helvetica Neue",Arial,sans-serif;
+  --body:"Literata",Georgia,"Times New Roman",serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#121816; --surface:#1A2220; --ink:#E4EAE7; --muted:#9AA7A3; --rule:#2E3A37;
+    --public:#6FC2C4; --public-soft:#1C3637; --private:#C4A2DC; --private-soft:#2E2438; --warn:#E0B06E; --warn-soft:#3A2C18;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#121816; --surface:#1A2220; --ink:#E4EAE7; --muted:#9AA7A3; --rule:#2E3A37;
+  --public:#6FC2C4; --public-soft:#1C3637; --private:#C4A2DC; --private-soft:#2E2438; --warn:#E0B06E; --warn-soft:#3A2C18;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;padding-inline:20px;padding-block:0 64px}
+.layout{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:210px minmax(0,1fr);gap:40px}
+@media (max-width:860px){.layout{grid-template-columns:1fr}.side{display:none}}
+.side{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;padding-top:48px;font-family:var(--display);font-size:14px}
+.side ol{list-style:none;padding:0;margin:0;display:grid;gap:6px}
+.side a{color:var(--muted);text-decoration:none}
+.side a:hover,.side a:focus-visible{color:var(--public)}
+a:focus-visible{outline:2px solid var(--public);outline-offset:2px}
+main{min-width:0}
+header{padding-block:48px 24px;border-bottom:1px solid var(--rule)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1,h2,h3{font-family:var(--display);line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(30px,5vw,44px);font-weight:700;margin-block:10px 14px}
+h2{font-size:25px;font-weight:600;margin-bottom:12px}
+h3{font-size:18px;font-weight:600;margin-block:20px 6px}
+p{margin:0 0 12px;max-width:68ch}
+.meta{display:flex;flex-wrap:wrap;gap:6px 20px;font-size:14px;color:var(--muted)}
+.meta b{font-family:var(--display);font-weight:600;color:var(--ink)}
+section{padding-block:36px 6px;border-bottom:1px solid var(--rule)}
+code{font-family:var(--mono);font-size:.86em}
+.figure{background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:16px;margin-block:14px;overflow-x:auto}
+.caption{font-size:14px;color:var(--muted);margin-top:6px}
+.tablewrap{overflow-x:auto;margin-block:12px}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-family:var(--display);font-weight:600;font-size:13.5px;color:var(--muted);white-space:nowrap}
+td.id{font-family:var(--mono);font-size:13px;white-space:nowrap;color:var(--public)}
+ul{margin:0 0 12px;padding-left:20px;max-width:68ch}
+li{margin-bottom:4px}
+.note{padding:12px 14px;border-left:4px solid var(--warn);background:var(--warn-soft);border-radius:4px;max-width:72ch;margin-block:12px;font-size:15px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.card{border:1px solid var(--rule);border-radius:6px;padding:12px 14px;background:var(--surface)}
+.card h3{margin-top:0}
+.card ul{padding-left:18px;font-size:15px}
+</style>
+
+<div class="layout">
+<aside class="side" aria-label="Contents">
+  <ol>
+    <li><a href="#scope">Scope</a></li>
+    <li><a href="#context">1 · Context</a></li>
+    <li><a href="#containers">2 · Containers</a></li>
+    <li><a href="#components">3 · Components</a></li>
+    <li><a href="#deploy">Deployment</a></li>
+    <li><a href="#flows">Key flows</a></li>
+    <li><a href="#data">Data architecture</a></li>
+    <li><a href="#quality">Quality attributes</a></li>
+    <li><a href="#decisions">Decision index</a></li>
+    <li><a href="#risks">Risks and follow-ups</a></li>
+  </ol>
+</aside>
+<main>
+<header>
+  <div class="eyebrow">Solution design · C4 views</div>
+  <h1>Pangolin Money v1</h1>
+  <p>A self-hosted, two-person household finance app for everyday banking, investments, super and an Australian tax pack. It runs as one Node process over one SQLite file on our own VM.</p>
+  <div class="meta">
+    <span><b>Status</b> final, spine AD-1 to AD-27</span>
+    <span><b>Updated</b> 27 Sep 2026</span>
+    <span><b>Governing spine</b> <code>ARCHITECTURE-SPINE.md</code>, AD-1 to AD-27</span>
+    <span><b>Feature contract</b> <code>specs/spec-pangolin-money/SPEC.md</code></span>
+  </div>
+</header>
+
+<section id="scope">
+  <h2>Scope</h2>
+  <p>This document is the readable companion to the architecture spine. It shows the system at three C4 levels and walks through the flows where the decisions interact. The spine is binding: if this document and the spine disagree, the spine wins. For what each feature does, the spec and its companions are the contract.</p>
+  <p><strong>Paradigm:</strong> hexagonal (ports and adapters) with a functional core. Pure calculations live in <code>domain</code>. Use cases in <code>app</code> are the only write path. Database, file, price and LLM integrations are adapters, and <code>apps/server</code> wires it all together.</p>
+</section>
+
+<section id="context">
+  <h2>Level 1 · System context</h2>
+  <div class="figure">
+<pre class="mermaid">
+flowchart TB
+  A([Partner A]):::person
+  B([Partner B]):::person
+  PM[Pangolin Money<br/>household finance app on our VM]:::system
+  NB[Bank and broker portals<br/>NetBank, ubank, Up, CMC, funds]:::ext
+  LLM[LLM endpoint<br/>Ollama on LAN, optional cloud]:::ext
+  PR[Price sources<br/>Yahoo Finance, issuer NAV,<br/>QSuper and Aware unit prices]:::ext
+  BK[Backup target<br/>TrueNAS restic, append-only]:::ext
+  WEB[Payee websites<br/>logos only, through the egress proxy]:::ext
+  A -- uses PWA --> PM
+  B -- uses PWA --> PM
+  A -. exports files by hand .-> NB
+  B -. exports files by hand .-> NB
+  PM -- categorise, extract PDFs --> LLM
+  PM -- fetch prices --> PR
+  PM -- encrypted nightly backup --> BK
+  PM -- one favicon per confirmed payee --> WEB
+  classDef person fill:#D5E7E6,stroke:#1D6A6F,color:#18211F
+  classDef system fill:#1D6A6F,stroke:#1D6A6F,color:#FFFFFF
+  classDef ext fill:#F8F9F8,stroke:#56615E,color:#18211F
+</pre>
+    <div class="caption">No bank credentials or APIs. Statements arrive as files we export ourselves. Every outbound arrow comes from the background jobs, and only to allowlisted hosts.</div>
+  </div>
+</section>
+
+<section id="containers">
+  <h2>Level 2 · Containers</h2>
+  <div class="figure">
+<pre class="mermaid">
+flowchart LR
+  U([Partners]) --> RP[Reverse proxy<br/>Nginx Proxy Manager, or Caddy or Tailscale]
+  subgraph APPC[pangolin container · Node 26 · non-root · read-only root]
+    PWA[Static PWA<br/>React 19, TanStack, ECharts]
+    HTTP[HTTP entry<br/>Hono API, better-auth]
+    JOBS[Jobs entry<br/>outbox runner, lanes llm, net, local]
+    ADMIN[Admin entry<br/>Unix socket on /run]
+    CORE[app use cases + domain]
+    HTTP --> CORE
+    JOBS --> CORE
+    ADMIN --> CORE
+  end
+  RP --> PWA
+  RP --> HTTP
+  CORE --> DB[(SQLite WAL<br/>data volume, LUKS)]
+  CORE --> FS[(Encrypted attachments<br/>data volume)]
+  CLI[pangolin CLI on host] --> ADMIN
+  EGR[Egress proxy container]
+  JOBS --> EGR
+  JOBS --> EXT[LLM · prices · TrueNAS · SMTP]
+</pre>
+    <div class="caption">One application container is the only writer. The egress proxy is the only route for logo fetches. The CLI never opens the database itself (AD-16).</div>
+  </div>
+</section>
+
+<section id="components">
+  <h2>Level 3 · Components of the application container</h2>
+  <div class="figure">
+<pre class="mermaid">
+flowchart TB
+  subgraph Roots[apps/server · composition roots]
+    H[http/**<br/>routes, Zod, re-auth]
+    J[jobs/**<br/>SystemViewer]
+    AD[admin/**<br/>SystemViewer, fixed commands]
+  end
+  subgraph App[packages/app · use cases]
+    ID[identity]
+    AC[accounts<br/>balanceAsOf, poolOf, setPrivacy]
+    LE[ledger<br/>setSplitField, transfers]
+    CL[classify<br/>payees, rules, suggestions]
+    IM[imports]
+    PL[planning<br/>pay anchors, budgets, goals]
+    IN[invest]
+    SU[super]
+    PRP[property]
+    TX[tax]
+    SY[system<br/>jobs, review_item, audit, attachments]
+    RPT[reports, read-only<br/>insight, forecast, tax pack]
+    PORTS{{ports}}
+  end
+  subgraph Core[packages/domain + shared]
+    DOM[pure calculations<br/>dedupe, flowKind, allocation, lots, CGT, forecast]
+    SH[shared<br/>Cents, allocate, toCents, period, temporal]
+  end
+  subgraph Adapters
+    DBA[db<br/>repositories, visibleAccounts, visibleTxn]
+    IMP[importers<br/>OFX, QIF, CSV, PDF]
+    CON[connectors<br/>prices, unit prices, logos]
+    LL[llm<br/>OpenAI- and Anthropic-style]
+  end
+  H --> App
+  J --> App
+  AD --> App
+  App --> DOM
+  App --> SH
+  DOM --> SH
+  DBA -. implements .-> PORTS
+  IMP -. implements .-> PORTS
+  CON -. implements .-> PORTS
+  LL -. implements .-> PORTS
+</pre>
+    <div class="caption">Each module owns its tables (AD-10). Reports read across all of them but write nothing. Repository ports are synchronous; outbound ports are async and run before a write transaction opens (AD-2).</div>
+  </div>
+</section>
+
+<section id="deploy">
+  <h2>Deployment and environments</h2>
+  <div class="figure">
+<pre class="mermaid">
+flowchart LR
+  subgraph Home[Home network]
+    subgraph PVE[Proxmox host]
+      subgraph VM[Debian 13 VM · LUKS data disk via Clevis and Tang]
+        C1[pangolin container]
+        C2[egress proxy]
+        C3[Caddy, optional profile]
+      end
+    end
+    NPM[Nginx Proxy Manager]
+    TANG[Tang server]
+    NAS[TrueNAS · restic rest-server --append-only]
+    GPU[GPU box · Ollama]
+  end
+  GH[GitHub Actions] --> GHCR[GHCR · signed images]
+  VM -- pull, verify cosign --> GHCR
+  NPM --> C1
+  VM -. unlock at boot .-> TANG
+  C1 -- WireGuard --> NAS
+  C1 --> GPU
+</pre>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Environment</th><th>Runs</th><th>Data</th><th>Network</th></tr></thead>
+    <tbody>
+      <tr><td>Live</td><td>Signed release image on the VM</td><td>Our real data</td><td>Firewall allowlist generated from the app's allowlist config</td></tr>
+      <tr><td>Local dev</td><td>Vite dev server plus the server in watch mode</td><td>Deterministic seed household</td><td>Mock LLM and mock price servers</td></tr>
+      <tr><td>CI</td><td>The release image</td><td>Seed; previous release's DB for the migration test</td><td>Offline; restore test on a clean host using only the recovery bundle</td></tr>
+      <tr><td>Demo</td><td>Release image, read-only</td><td>Seed</td><td>Offline</td></tr>
+    </tbody>
+  </table></div>
+  <p><strong>Upgrade:</strong> pull and verify the signed image, snapshot the DB, migrate, health-check. If the check fails, roll back to the previous image and the snapshot; there are never down-migrations. <code>/healthz</code> means migrations applied, database writable and the job-runner lease held.</p>
+</section>
+
+<section id="flows">
+  <h2>Key flows</h2>
+
+  <h3>Importing a statement</h3>
+  <div class="figure">
+<pre class="mermaid">
+sequenceDiagram
+  actor P as Partner
+  participant H as http entry
+  participant IM as app/imports
+  participant PA as importers (parser)
+  participant D as domain
+  participant LE as app/ledger
+  participant SY as app/system
+  P->>H: upload OFX, CSV, QIF or PDF
+  H->>IM: stageImport(viewer, file)
+  IM->>PA: parse (async, before any transaction)
+  Note over IM,PA: PDF: enqueue pdf_extract job instead, llm lane, local provider only
+  IM->>IM: BEGIN · write import_batch and rows · audit · COMMIT
+  P->>H: review and commit batch
+  H->>IM: commitBatch(viewer, batchId)
+  IM->>D: dedupe (external_id, fingerprint, probable duplicate), flowKind, transfer candidates
+  IM->>LE: BEGIN · ledger.commitRows (sign already normalised)
+  LE->>LE: setSplitField(source: rule or payee)
+  LE->>SY: raiseReviewItem (probable duplicates, ambiguous transfers, snapshot-chain gaps)
+  LE->>SY: enqueue categorise jobs (outbox, same transaction)
+  LE-->>IM: COMMIT
+  H-->>P: batch status (polled by the UI)
+</pre>
+    <div class="caption">AD-1, AD-2, AD-8, AD-10, AD-12, AD-17, AD-19, AD-20.</div>
+  </div>
+
+  <h3>LLM categorisation job</h3>
+  <div class="figure">
+<pre class="mermaid">
+sequenceDiagram
+  participant J as jobs entry (SystemViewer)
+  participant CL as app/classify
+  participant LLM as llm adapter
+  participant LE as app/ledger
+  J->>J: claim job with lease (llm lane, concurrency 1)
+  J->>CL: buildCategoriseRequest(splitIds)
+  Note over CL: few-shots only from accounts visible to every viewer<br/>cloud: minimal fields, no private-account rows
+  CL->>LLM: request (async, no transaction open)
+  LLM-->>CL: schema-shaped suggestions
+  CL->>CL: BEGIN · write suggestion rows (source llm) · audit
+  CL->>LE: setSplitField(category, source llm) if above threshold and nothing higher set
+  CL->>CL: COMMIT · raise review items for low confidence
+</pre>
+    <div class="caption">At-least-once execution, so the handler is idempotent on its dedupe key. AD-2, AD-6, AD-8, AD-10.</div>
+  </div>
+
+  <h3>Reading with privacy applied</h3>
+  <div class="figure">
+<pre class="mermaid">
+sequenceDiagram
+  actor B as Partner B
+  participant H as http entry
+  participant R as report use case
+  participant DB as db repository
+  B->>H: GET spending by category
+  H->>R: spendingByCategory(viewer B, period)
+  R->>DB: query(viewer B)
+  Note over DB: visibleAccounts(B) and visibleTxn(B) in the SQL<br/>private accounts of A absent · hidden names nulled<br/>sums over flowKind = expense
+  DB-->>R: aggregated rows
+  R->>R: redact(viewer B, rows)
+  R-->>H: response
+</pre>
+    <div class="caption">Nothing is filtered in memory after summing. AD-3, AD-4, AD-22, AD-23.</div>
+  </div>
+
+  <h3>Period close for goals</h3>
+  <ul>
+    <li>A <code>local</code>-lane job runs per pool and <code>period_start</code>, idempotent on that pair (AD-8, AD-11).</li>
+    <li>It resolves the pool's <code>PayCalendar</code> and computes new savings in the pool's savings accounts (<code>poolOf</code>), excluding interest and linked withdrawals (AD-14, AD-24, AD-26).</li>
+    <li>It splits positive savings with <code>allocate()</code> by the active stage's shares, freezes the period's boundaries and records any stage change (AD-13).</li>
+    <li>It checks that goals plus buffer equal the pool's balance (<code>balanceAsOf</code>). A shortfall or mismatch raises a review item, scoped to the pool's person for a personal pool (AD-17, AD-19, AD-22).</li>
+    <li>Later backdated changes land as an audited adjustment in the current buffer (AD-11).</li>
+  </ul>
+
+  <h3>Restore</h3>
+  <ul>
+    <li>Stop the stack, take the exclusive lock on the data directory, restore into a fresh directory and verify it: <code>PRAGMA integrity_check</code>, then the manifest's counts, sums and balances.</li>
+    <li>Swap it in. Cancel every pending job with external effects and re-seed the recurring schedules before the server accepts work (AD-16).</li>
+  </ul>
+</section>
+
+<section id="data">
+  <h2>Data architecture</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>Ownership</h3>
+      <ul>
+        <li>Each table has one owning module; the others read it or call that module's use cases (AD-10).</li>
+        <li>Classifying fields on a split change only through <code>setSplitField</code>, with precedence user &gt; rule &gt; payee &gt; activity &gt; llm.</li>
+        <li>Split IDs are stable across edits.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Privacy scope</h3>
+      <ul>
+        <li>Anything tied to an account takes that account's scope (AD-3).</li>
+        <li>Rows belonging to a person are visible only to that person. A derived row takes the most restrictive scope of its inputs (AD-22).</li>
+        <li>Classification rows keep the scope they were created in until the owner uses them on a public account (AD-18).</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Derived vs stored</h3>
+      <ul>
+        <li>Balances, budgets, reports, forecasts and tax figures are computed when read.</li>
+        <li>The stored exceptions form a closed list: allocations, lots (rebuilt from events), recurring series, suggestions, review items, FTS indexes and closed-period boundaries (AD-11).</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Money and time</h3>
+      <ul>
+        <li>Integer cents, signed from the account's view (AD-12).</li>
+        <li>Rounding happens only in <code>toCents</code> (half-even) and <code>allocate</code> (largest remainder) (AD-13).</li>
+        <li>Dates come from an injected Clock, periods are half-open, and FYs are labelled by the year they end (AD-14).</li>
+      </ul>
+    </div>
+  </div>
+  <p style="margin-top:14px">The full table catalogue is in the spec's <code>data-model.md</code>. Tables the spine adds: <code>review_item</code>, <code>pay_anchor</code>, <code>goal_link</code>, <code>stage_event</code>, <code>forecast_assumption</code>, <code>fy_config</code>, <code>distribution_component</code>, and scope columns (<code>person_id</code>, and <code>account_id</code> on <code>audit_log</code>).</p>
+</section>
+
+<section id="quality">
+  <h2>Quality attributes</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Attribute</th><th>Mechanism</th><th>Verified by</th></tr></thead>
+    <tbody>
+      <tr><td>Privacy between partners</td><td>Viewer in SQL, hidden-name projection, one <code>redact()</code>, NotFound for private IDs, per-person scope</td><td>A test per scoped table; B's responses byte-identical when only A's private data changes</td></tr>
+      <tr><td>Data stays home</td><td>Outbound calls only from jobs; one allowlist for both code and firewall; egress proxy for logos; per-purpose LLM rules</td><td>Offline CI with mock servers; firewall generated at install</td></tr>
+      <tr><td>Correct totals</td><td>Integer cents, two rounding functions, one <code>flowKind</code>, one <code>balanceAsOf</code>, snapshot-chain check</td><td>Seed <code>expectations</code> for every hand-computed success criterion</td></tr>
+      <tr><td>Idempotent import</td><td>Dual unique keys, probable-duplicate review, frozen normaliser versions, file hash per account</td><td>Re-import and overlap tests on each committed sample</td></tr>
+      <tr><td>Recoverability</td><td>Append-only restic, recovery bundle, manifest verification, snapshot-and-rollback upgrades</td><td>CI restore onto a clean host on every release; monthly live drill</td></tr>
+      <tr><td>Web attack surface</td><td>Passkeys, nonce CSP, Origin checks, strict cookies, re-auth window per action</td><td>e2e fails on any CSP violation; auth test suite</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="decisions">
+  <h2>Decision index</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>ID</th><th>Decision</th></tr></thead>
+    <tbody>
+      <tr><td class="id">AD-1</td><td>One write path through <code>app</code> use cases, each writing its own audit rows</td></tr>
+      <tr><td class="id">AD-2</td><td>No <code>await</code> inside a write transaction</td></tr>
+      <tr><td class="id">AD-3</td><td>Visibility is a Viewer applied in SQL; one view per viewer</td></tr>
+      <tr><td class="id">AD-4</td><td>Hidden names removed in a SQL projection; <code>redact()</code> formats at the boundary</td></tr>
+      <tr><td class="id">AD-5</td><td>Private accounts return NotFound; IDs generated on the server only</td></tr>
+      <tr><td class="id">AD-6</td><td>SystemViewer unreachable from HTTP; LLM data rules per purpose; "local" derived from the address</td></tr>
+      <tr><td class="id">AD-7</td><td>Private splits are never shared</td></tr>
+      <tr><td class="id">AD-8</td><td>Jobs are an outbox of idempotent rows in lanes</td></tr>
+      <tr><td class="id">AD-9</td><td>The UI polls entity status, never jobs</td></tr>
+      <tr><td class="id">AD-10</td><td>One owning module per table; <code>setSplitField</code> precedence</td></tr>
+      <tr><td class="id">AD-11</td><td>Derived on read; a closed list of stored exceptions; closed periods immutable</td></tr>
+      <tr><td class="id">AD-12</td><td>One sign convention</td></tr>
+      <tr><td class="id">AD-13</td><td>Money is rounded only in <code>toCents</code> and <code>allocate</code></td></tr>
+      <tr><td class="id">AD-14</td><td>Clock, pay calendar, FY labels, one Temporal import</td></tr>
+      <tr><td class="id">AD-15</td><td>Seed modules are deterministic and go through the real pipeline</td></tr>
+      <tr><td class="id">AD-16</td><td>The CLI is never a second writer; restore is the one exception to AD-1</td></tr>
+      <tr><td class="id">AD-17</td><td>One stored review inbox with registered kinds</td></tr>
+      <tr><td class="id">AD-18</td><td>Classification rows inherit privacy from their origin</td></tr>
+      <tr><td class="id">AD-19</td><td>One balance definition per account type</td></tr>
+      <tr><td class="id">AD-20</td><td>Import dedupe keys and probable-duplicate review</td></tr>
+      <tr><td class="id">AD-21</td><td>Attachments are encrypted, HMAC-named and inherit visibility</td></tr>
+      <tr><td class="id">AD-22</td><td>Derived rows take the most restrictive scope of their inputs</td></tr>
+      <tr><td class="id">AD-23</td><td>One <code>flowKind</code> decides what counts as spending</td></tr>
+      <tr><td class="id">AD-24</td><td>Goals are drawn down only by linked withdrawals</td></tr>
+      <tr><td class="id">AD-25</td><td>One income model on <code>pay_anchor</code></td></tr>
+      <tr><td class="id">AD-26</td><td><code>poolOf</code> decides the savings pool</td></tr>
+      <tr><td class="id">AD-27</td><td>Trust boundary and recovery bundle</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="risks">
+  <h2>Risks and follow-ups</h2>
+  <div class="note"><strong>Accepted residual risks.</strong> The VM administrator can read everything. The partner who issues a partner-assisted reset link could redeem it themselves. A "Transfer from &lt;owner&gt;" label can reveal by elimination that a private account exists.</div>
+  <h3>Watch list</h3>
+  <ul>
+    <li>M1 import trust is the highest risk. The dedupe and snapshot-chain rules exist for it; give epic 3 disproportionate time.</li>
+    <li>Node 26 becomes LTS on 28 Oct 2026, before M0 ships.</li>
+    <li>Drizzle 1.0: move from 0.45 once 1.0 final ships.</li>
+    <li>The CSP depends on ECharts' rich-text tooltips and nonce'd style elements. The e2e CSP test guards against regressions.</li>
+  </ul>
+  <h3>Update before incepting the affected epics</h3>
+  <ul>
+    <li>Spec: remove the separate shared/household view; ULIDs are server-generated; record the reset residual risk.</li>
+    <li>Epic 3: drop CMC Invest (now in epic 9). Epic 6: owns pay-deposit detection, not the period helpers. Epic 4: Done-when #2.</li>
+    <li><code>tickets.toml</code>: epic 9 comes after epic 6; epic 7 no longer needs epic 6 for period helpers.</li>
+    <li>Allowlist: add the Yahoo Finance cookie/crumb handshake hosts.</li>
+  </ul>
+</section>
+</main>
+</div>
