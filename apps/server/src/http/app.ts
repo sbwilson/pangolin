@@ -5,15 +5,23 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import {
   AppError,
   type Clock,
+  type CodeHasher,
   checkSignUp,
   deadJobs,
+  dismissNotice,
   ERROR_CODES,
   type ErrorCode,
   enrolmentNeeds,
   health,
   type IdGenerator,
+  issueInitialRecoveryCodes,
+  issueReEnrolmentLink,
   issueSetupLink,
+  listNotices,
   me,
+  reEnrolmentUrl,
+  regenerateRecoveryCodes,
+  revokeMyReEnrolmentLinks,
   type SystemHealthPort,
   type TokenPort,
   type UnitOfWork,
@@ -24,10 +32,12 @@ import { z } from "zod";
 import { cspOnHtml, serveIndex } from "./csp.ts";
 import { createErrorHandler, errorResponse, type InternalErrorLogger } from "./errors.ts";
 import { originCheck } from "./origin.ts";
+import { rateLimit } from "./rate-limit.ts";
 import {
   type Authn,
   CLIENT_IP_HEADER,
   enrolmentIncomplete,
+  type IssuedSession,
   type SessionEnv,
   sessionMiddleware,
 } from "./session.ts";
@@ -38,6 +48,8 @@ export interface ApiDeps {
   readonly clock: Clock;
   readonly newId: IdGenerator;
   readonly tokens: TokenPort;
+  /** Hashes recovery codes under the key derived from the auth secret. */
+  readonly codes: CodeHasher;
   /** `PANGOLIN_PUBLIC_URL`'s origin: the only origin that may write, and the base of links. */
   readonly publicUrl: string;
   /** Live sign-in through better-auth, or demo mode's fixed viewer. */
@@ -51,6 +63,11 @@ export interface AppDeps extends ApiDeps {
   readonly logInternalError?: InternalErrorLogger;
   /** Reverse-proxy IPs whose `X-Forwarded-For` is trusted (`PANGOLIN_TRUSTED_PROXIES`). */
   readonly trustedProxies?: readonly string[];
+  /**
+   * Recovery-code sign-ins and link redemptions one client may make per minute: the same
+   * `PANGOLIN_AUTH_RATE_LIMIT` as password sign-in (default 10).
+   */
+  readonly recoveryRateLimitPerMinute?: number;
 }
 
 const signUpBody = z
@@ -62,6 +79,26 @@ const signUpBody = z
     colour: z.string().regex(/^#[0-9a-f]{6}$/i, { message: "Expected a #RRGGBB colour" }),
   })
   .strict();
+
+const recoverBody = z
+  .object({
+    email: z.string().trim().min(1).max(320),
+    password: z.string().min(1).max(256),
+    code: z.string().min(1).max(100),
+  })
+  .strict();
+
+const reEnrolBody = z
+  .object({
+    token: z.string().min(1).max(200),
+    newPassword: z
+      .string()
+      .min(12, { message: "Use at least 12 characters" })
+      .max(256, { message: "Use at most 256 characters" }),
+  })
+  .strict();
+
+const reEnrolmentLinkBody = z.object({ personId: z.string().min(1).max(100) }).strict();
 
 const STATUS_CODES: Readonly<Record<number, ErrorCode>> = {
   400: "Validation",
@@ -94,6 +131,26 @@ export function createApi(deps: ApiDeps) {
     newId: deps.newId,
     uow: deps.uow,
   });
+  const withTokens = (c: Context<SessionEnv>) => ({
+    ...ctx(c),
+    tokens: deps.tokens,
+    codes: deps.codes,
+  });
+  /** The answer to a redemption: signed in (with what must still be enrolled), or not. */
+  const redeemed = (c: Context, session: IssuedSession) => {
+    passCookies(c, session.setCookies);
+    if (!session.signedIn) return c.json({ signedIn: false as const }, 200);
+    return c.json({ signedIn: true as const, needs: enrolmentNeeds(deps, session.userId) }, 200);
+  };
+  /** The live sign-in gateway; demo mode is read-only. */
+  const liveGateway = () => {
+    const { authn } = deps;
+    if (authn.kind === "demo") throw new AppError("Conflict", "Demo mode is read-only");
+    return authn.gateway;
+  };
+  const passCookies = (c: Context, cookies: readonly string[]) => {
+    for (const cookie of cookies) c.header("Set-Cookie", cookie, { append: true });
+  };
   return new Hono<SessionEnv>()
     .get("/api/system/health", (c) => {
       c.header("Cache-Control", "no-store");
@@ -140,6 +197,48 @@ export function createApi(deps: ApiDeps) {
       for (const cookie of setCookies(response.headers))
         c.header("Set-Cookie", cookie, { append: true });
       return c.json({ personId }, 201);
+    })
+    .post("/api/identity/recovery-codes/initial", (c) => {
+      // Shown once, right after enrolment first completes: never cache the response.
+      c.header("Cache-Control", "no-store");
+      return c.json(issueInitialRecoveryCodes(withTokens(c), {}), 201);
+    })
+    .post("/api/identity/recovery-codes", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json(regenerateRecoveryCodes(withTokens(c), {}), 201);
+    })
+    .post("/api/identity/recover", async (c) => {
+      c.header("Cache-Control", "no-store");
+      const gateway = liveGateway();
+      const body = recoverBody.parse(await c.req.json().catch(() => undefined));
+      return redeemed(c, await gateway.recover(body, c.req.raw.headers));
+    })
+    .post("/api/identity/re-enrolment-links", async (c) => {
+      c.header("Cache-Control", "no-store");
+      const body = reEnrolmentLinkBody.parse(await c.req.json().catch(() => undefined));
+      const link = issueReEnrolmentLink(withTokens(c), body);
+      return c.json(
+        { url: reEnrolmentUrl(deps.publicUrl, link.token), expiresAt: link.expiresAt },
+        201,
+      );
+    })
+    .post("/api/identity/re-enrolment-links/revoke", (c) => {
+      // The affected person ends every unused link issued against them.
+      return c.json(revokeMyReEnrolmentLinks(ctx(c), {}), 200);
+    })
+    .post("/api/identity/re-enrol", async (c) => {
+      c.header("Cache-Control", "no-store");
+      const gateway = liveGateway();
+      const body = reEnrolBody.parse(await c.req.json().catch(() => undefined));
+      return redeemed(c, await gateway.reEnrol(body, c.req.raw.headers));
+    })
+    .get("/api/identity/notices", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ notices: listNotices(ctx(c), {}) }, 200);
+    })
+    .post("/api/identity/notices/:id/dismiss", (c) => {
+      dismissNotice(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
     });
 }
 
@@ -184,21 +283,29 @@ export function clientAddress(
  * better-auth's request with the client's address (see `clientAddress`) in `CLIENT_IP_HEADER`,
  * replacing any value the client sent.
  */
-function withClientIp(c: Context, trustedProxies: readonly string[]): Request {
-  const headers = new Headers(c.req.raw.headers);
-  headers.delete(CLIENT_IP_HEADER);
+/** The request's client address (`clientAddress`), or undefined without a socket. */
+function clientOf(c: Context, trustedProxies: readonly string[]): string | undefined {
   let socket: string | undefined;
   try {
     socket = getConnInfo(c).remote.address;
   } catch {
-    // No socket (an in-process test request): better-auth falls back to one shared bucket.
+    // No socket (an in-process test request): callers fall back to one shared bucket.
   }
-  const address = clientAddress(socket, c.req.header("X-Forwarded-For"), trustedProxies);
+  return clientAddress(socket, c.req.header("X-Forwarded-For"), trustedProxies);
+}
+
+function withClientIp(c: Context, trustedProxies: readonly string[]): Request {
+  const headers = new Headers(c.req.raw.headers);
+  headers.delete(CLIENT_IP_HEADER);
+  const address = clientOf(c, trustedProxies);
   if (address !== undefined) headers.set(CLIENT_IP_HEADER, address);
   return new Request(c.req.raw, { headers });
 }
 
-/** better-auth paths off in this story: recovery codes are story 1.6; OTP has no sender. */
+/**
+ * better-auth paths that stay off: its own sign-up (ours checks the setup link), its backup
+ * codes (our recovery codes, which also need the password, replace them) and OTP (no sender).
+ */
 const DISABLED_AUTH_PATHS = [
   "/api/auth/sign-up/*",
   "/api/auth/two-factor/verify-backup-code",
@@ -231,6 +338,15 @@ export function createApp(deps: AppDeps): Hono<SessionEnv> {
   app.use("*", cspOnHtml);
   app.use("/api/*", originCheck(deps.publicUrl));
   app.use("/api/*", sessionMiddleware(deps));
+  // Our public sign-in routes get the same per-client limit as better-auth's sign-in, one
+  // budget per route like its per-path rules.
+  for (const path of ["/api/identity/recover", "/api/identity/re-enrol"]) {
+    const limit = deps.recoveryRateLimitPerMinute ?? 10;
+    app.use(
+      path,
+      rateLimit(limit, (c) => clientOf(c, deps.trustedProxies ?? [])),
+    );
+  }
   const { authn } = deps;
   if (authn.kind === "live") {
     // Sign-up goes only through /api/identity/sign-up, which checks the setup link first.

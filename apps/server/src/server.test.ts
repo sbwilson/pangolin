@@ -72,7 +72,7 @@ describe("startServer", () => {
     try {
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 4, writable: true },
+        body: { status: "ok", schemaVersion: 5, writable: true },
       });
     } finally {
       await server.close();
@@ -85,7 +85,7 @@ describe("startServer", () => {
     try {
       expect((await getHealth(server.port)).body).toEqual({
         status: "ok",
-        schemaVersion: 4,
+        schemaVersion: 5,
         writable: true,
       });
     } finally {
@@ -106,7 +106,7 @@ describe("startServer", () => {
       try {
         expect(await getHealth(server.port)).toEqual({
           status: 503,
-          body: { status: "unhealthy", schemaVersion: 4, writable: false },
+          body: { status: "unhealthy", schemaVersion: 5, writable: false },
         });
       } finally {
         await server.close();
@@ -128,7 +128,7 @@ describe("startServer", () => {
 
     await expect(boot(migrationsDir)).rejects.toThrow(/Migration 0099_broken failed/);
     const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
-    expect(schemaVersion(db)).toBe(4);
+    expect(schemaVersion(db)).toBe(5);
     db.close();
   });
 });
@@ -435,7 +435,7 @@ describe("startServer in demo mode", () => {
       );
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 4, writable: true },
+        body: { status: "ok", schemaVersion: 5, writable: true },
       });
       const settings = server.uow.read((repos) => repos.householdSettings.get());
       expect(settings.timezone).toBe(expectations["people-and-household.timezone"]);

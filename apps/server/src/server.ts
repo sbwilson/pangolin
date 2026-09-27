@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -20,7 +21,7 @@ import {
 } from "@pangolin/db";
 import { writeFirstSetupLink } from "./admin/index.ts";
 import { createAuth } from "./auth/auth.ts";
-import { loadOrCreateAuthSecret, nodeTokens } from "./auth/secret.ts";
+import { loadOrCreateAuthSecret, nodeTokens, recoveryCodeHasher } from "./auth/secret.ts";
 import type { Config } from "./config.ts";
 import { openDemoDatabase } from "./demo.ts";
 import { createApp } from "./http/app.ts";
@@ -101,12 +102,15 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
   let setupLinkFile: string | undefined;
   try {
     let authn: Authn;
+    // Demo mode never writes, so its recovery-code key is a throwaway.
+    let codes = recoveryCodeHasher(randomBytes(32).toString("base64url"));
     if (demo) {
       // Demo mode: no sign-in; every request is the first seeded person, and writes still fail.
       authn = { kind: "demo" };
     } else {
       const identity = { uow, clock, newId, tokens: nodeTokens };
       const secret = loadOrCreateAuthSecret(config.auth.secretFile);
+      codes = recoveryCodeHasher(secret);
       authn = {
         kind: "live",
         gateway: createAuth({ ...identity, db, config: config.auth, secret }),
@@ -123,9 +127,11 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       clock,
       newId,
       tokens: nodeTokens,
+      codes,
       publicUrl: config.auth.publicUrl,
       authn,
       trustedProxies: config.trustedProxies,
+      recoveryRateLimitPerMinute: config.auth.rateLimitPerMinute,
       ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
     });
   } catch (error) {

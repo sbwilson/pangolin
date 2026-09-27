@@ -35,6 +35,32 @@ export interface SignUpRequest {
   readonly colour: string;
 }
 
+/** Recovery-code sign-in (story 1.6): all three are required, and checked together. */
+export interface RecoverRequest {
+  readonly email: string;
+  readonly password: string;
+  readonly code: string;
+}
+
+/** Redeeming a re-enrolment link (story 1.6) with the person's new password. */
+export interface ReEnrolRequest {
+  readonly token: string;
+  readonly newPassword: string;
+}
+
+/** A session issued outside better-auth's own sign-in routes. */
+export interface IssuedSession {
+  /** The login it belongs to. */
+  readonly userId: string;
+  /**
+   * False when the redemption committed but no session could be started: the person then
+   * signs in normally. `setCookies` is empty then.
+   */
+  readonly signedIn: boolean;
+  /** The session cookie, with the same strict attributes as every other sign-in. */
+  readonly setCookies: string[];
+}
+
 /**
  * The sign-in machinery the HTTP entry uses, implemented over better-auth in `auth/auth.ts`.
  * Kept as an interface so `http/` does not depend on better-auth's types.
@@ -55,6 +81,18 @@ export interface AuthGateway {
     input: SignUpRequest,
     headers: Headers,
   ): Promise<{ response: Response; personId: string | undefined }>;
+  /**
+   * Signs in with email, password and a recovery code: refused with `RateLimited` while the
+   * email is locked out, and with one `Unauthenticated` for any wrong part (each counted toward
+   * the lockout). On success the login's passkeys and sessions are gone and the new session can
+   * reach only passkey enrolment.
+   */
+  recover(input: RecoverRequest, headers: Headers): Promise<IssuedSession>;
+  /**
+   * Redeems a re-enrolment link: sets the new password, clears every credential and signs in
+   * to a session that must enrol a passkey and TOTP. `Validation` for a dead link.
+   */
+  reEnrol(input: ReEnrolRequest, headers: Headers): Promise<IssuedSession>;
 }
 
 /** Live sign-in through better-auth, or demo mode's fixed viewer. */
@@ -83,6 +121,8 @@ export function isPublicApiPath(path: string): boolean {
   return (
     path === "/api/system/health" ||
     path === "/api/identity/sign-up" ||
+    path === "/api/identity/recover" ||
+    path === "/api/identity/re-enrol" ||
     path === "/api/auth" ||
     path.startsWith("/api/auth/")
   );

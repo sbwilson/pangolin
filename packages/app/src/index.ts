@@ -40,7 +40,56 @@ export {
   personForUser,
   sessionViewer,
 } from "./identity/me.ts";
+export {
+  type DismissNoticeInput,
+  dismissNotice,
+  type ListNoticesInput,
+  listNotices,
+  type Notice,
+} from "./identity/notices.ts";
+export {
+  type CheckReEnrolmentLinkInput,
+  type ClearedCredentials,
+  checkReEnrolmentLink,
+  type IssuedReEnrolmentLink,
+  type IssueReEnrolmentLinkInput,
+  invalidReEnrolmentLink,
+  issueReEnrolmentLink,
+  PARTNER_RESET_REVIEW,
+  partnerResetDedupeKey,
+  RE_ENROLMENT_LINK_TTL_MS,
+  type RedeemedReEnrolmentLink,
+  type RedeemReEnrolmentLinkInput,
+  type ReEnrolmentContext,
+  redeemReEnrolmentLink,
+  reEnrolmentUrl,
+  revokeMyReEnrolmentLinks,
+} from "./identity/re-enrolment.ts";
 export { REAUTH_WINDOW_MS, requireRecentAuth } from "./identity/reauth.ts";
+export {
+  formatRecoveryCode,
+  type IssuedRecoveryCodes,
+  type IssueInitialRecoveryCodesInput,
+  issueInitialRecoveryCodes,
+  normaliseRecoveryCode,
+  RECOVERY_CODE_ALPHABET,
+  RECOVERY_CODE_COUNT,
+  RECOVERY_CODE_LENGTH,
+  RECOVERY_CODE_USED_REVIEW,
+  type RecoveryCodeContext,
+  type RedeemedRecoveryCode,
+  type RedeemRecoveryCodeInput,
+  type RegenerateRecoveryCodesInput,
+  recoveryRefused,
+  redeemRecoveryCode,
+  regenerateRecoveryCodes,
+} from "./identity/recovery-codes.ts";
+export {
+  RESET_USER_ACTOR,
+  type ResetUserInput,
+  type ResetUserResult,
+  resetUser,
+} from "./identity/reset-user.ts";
 export {
   type EnsureFirstSetupLinkInput,
   ensureFirstSetupLink,
@@ -90,10 +139,11 @@ export {
 } from "./jobs/registry.ts";
 export type { Clock } from "./ports/clock.ts";
 export type { SystemHealthPort } from "./ports/system-health.ts";
-export type { TokenPort } from "./ports/tokens.ts";
+export type { CodeHasher, TokenPort } from "./ports/tokens.ts";
 export type {
   AuditRepo,
   AuditRow,
+  CredentialRepo,
   DeadJobRow,
   HouseholdSettingsRepo,
   HouseholdSettingsRow,
@@ -106,6 +156,11 @@ export type {
   PersonRepo,
   PersonRow,
   ReadRepos,
+  RecoveryCodeCounts,
+  RecoveryCodeRepo,
+  RecoveryCodeRow,
+  ReEnrolmentLinkRepo,
+  ReEnrolmentLinkRow,
   ReviewItemRepo,
   ReviewItemRow,
   SetupLinkRepo,

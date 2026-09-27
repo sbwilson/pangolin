@@ -1,9 +1,13 @@
 import { type FormEvent, useState } from "react";
 import { authClient, authMessage } from "./auth-client.ts";
+import { RecoveryCodeLogin } from "./RecoveryViews.tsx";
 
-/** Passkey first; the fallback is email and password, then a TOTP code. */
+/**
+ * Passkey first; the fallback is email and password, then a TOTP code. A lost passkey can be
+ * replaced by signing in with email, password and a recovery code.
+ */
 export function LoginView({ onSignedIn }: { onSignedIn: () => void }) {
-  const [step, setStep] = useState<"choose" | "password" | "totp">("choose");
+  const [step, setStep] = useState<"choose" | "password" | "totp" | "recovery">("choose");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -62,7 +66,13 @@ export function LoginView({ onSignedIn }: { onSignedIn: () => void }) {
           <button type="button" onClick={() => setStep("password")} disabled={busy}>
             Use password instead
           </button>
+          <button type="button" onClick={() => setStep("recovery")} disabled={busy}>
+            Use a recovery code
+          </button>
         </>
+      ) : null}
+      {step === "recovery" ? (
+        <RecoveryCodeLogin onSignedIn={onSignedIn} onCancel={() => setStep("choose")} />
       ) : null}
       {step === "password" ? (
         <form onSubmit={withPassword}>

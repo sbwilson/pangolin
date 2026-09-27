@@ -57,6 +57,13 @@ export interface Me {
   readonly authAt: string;
   /** True while fewer than two people have a login, so a partner can still be invited. */
   readonly canInvite: boolean;
+  /**
+   * The signed-in person's recovery codes: whether a set was ever issued (false until enrolment
+   * first completes, and again after a partner-assisted reset) and how many are unused.
+   */
+  readonly recoveryCodes: { readonly issued: boolean; readonly remaining: number };
+  /** The other person with a login, whose access this person may reset; null while alone. */
+  readonly partner: { readonly personId: Id<"Person">; readonly displayName: string } | null;
 }
 
 export const meInput = z.object({}).strict();
@@ -67,16 +74,20 @@ export function me(ctx: UseCaseContext, input: z.input<typeof meInput>): Me {
   const viewer = ctx.viewer;
   if (viewer.kind !== "person") throw new AppError("Unauthenticated", "Sign in first");
   return ctx.uow.read((repos) => {
-    const person: PersonRow | undefined = repos.person
-      .listActive()
-      .find((row) => row.id === viewer.personId);
+    const people = repos.person.listActive();
+    const person: PersonRow | undefined = people.find((row) => row.id === viewer.personId);
     if (person === undefined) throw new AppError("Unauthenticated", "Sign in first");
+    const partner = people.find((row) => row.id !== person.id && row.userId !== null);
+    const codes = repos.recoveryCodes.counts(person.id);
     return {
       personId: person.id,
       displayName: person.displayName,
       colour: person.colour,
       authAt: formatInstant(viewer.authAt),
       canInvite: repos.users.count() < MAX_USERS,
+      recoveryCodes: { issued: codes.total > 0, remaining: codes.unused },
+      partner:
+        partner === undefined ? null : { personId: partner.id, displayName: partner.displayName },
     };
   });
 }

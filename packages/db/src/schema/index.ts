@@ -13,5 +13,7 @@ export { householdSettings } from "./household-settings.ts";
 export { job } from "./job.ts";
 export { loginAttempt } from "./login-attempt.ts";
 export { person } from "./person.ts";
+export { reEnrolmentLink } from "./re-enrolment-link.ts";
+export { recoveryCode } from "./recovery-code.ts";
 export { reviewItem } from "./review-item.ts";
 export { setupLink } from "./setup-link.ts";

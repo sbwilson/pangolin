@@ -1,17 +1,24 @@
 import type {
+  CredentialRepo,
   LoginAttemptRepo,
   PersonRepo,
   PersonRow,
+  RecoveryCodeRepo,
+  RecoveryCodeRow,
+  ReEnrolmentLinkRepo,
+  ReEnrolmentLinkRow,
   SetupLinkRepo,
   SetupLinkRow,
   UserRepo,
 } from "@pangolin/app";
 import type { Id } from "@pangolin/shared";
-import { and, asc, count, eq, gt, gte, isNull, lt } from "drizzle-orm";
+import { and, asc, count, eq, gt, gte, isNull, lt, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { authPasskey, authUser } from "./schema/auth.ts";
+import { authAccount, authPasskey, authSession, authTwoFactor, authUser } from "./schema/auth.ts";
 import { loginAttempt } from "./schema/login-attempt.ts";
 import { person } from "./schema/person.ts";
+import { reEnrolmentLink } from "./schema/re-enrolment-link.ts";
+import { recoveryCode } from "./schema/recovery-code.ts";
 import { setupLink } from "./schema/setup-link.ts";
 
 type Orm = BetterSQLite3Database;
@@ -139,6 +146,157 @@ export function createLoginAttemptRepo(orm: Orm, check: () => void): LoginAttemp
     deleteBefore: (before) => {
       check();
       orm.delete(loginAttempt).where(lt(loginAttempt.at, before)).run();
+    },
+  };
+}
+
+/** `recovery_code` (owned by `identity`). */
+export function createRecoveryCodeRepo(orm: Orm, check: () => void): RecoveryCodeRepo {
+  return {
+    insert: (row) => {
+      check();
+      orm.insert(recoveryCode).values(row).run();
+    },
+    findUnused: (personId, codeHash) => {
+      check();
+      const row = orm
+        .select()
+        .from(recoveryCode)
+        .where(
+          and(
+            eq(recoveryCode.personId, personId),
+            eq(recoveryCode.codeHash, codeHash),
+            isNull(recoveryCode.usedAt),
+          ),
+        )
+        .get();
+      return row as RecoveryCodeRow | undefined;
+    },
+    markUsed: (id: Id<"RecoveryCode">, usedAt) => {
+      check();
+      const result = orm
+        .update(recoveryCode)
+        .set({ usedAt })
+        .where(and(eq(recoveryCode.id, id), isNull(recoveryCode.usedAt)))
+        .run();
+      return result.changes === 1;
+    },
+    deleteUnused: (personId) => {
+      check();
+      return orm
+        .delete(recoveryCode)
+        .where(and(eq(recoveryCode.personId, personId), isNull(recoveryCode.usedAt)))
+        .run().changes;
+    },
+    deleteAll: (personId) => {
+      check();
+      return orm.delete(recoveryCode).where(eq(recoveryCode.personId, personId)).run().changes;
+    },
+    counts: (personId) => {
+      check();
+      const row = orm
+        .select({
+          total: count(),
+          unused: count(sql`CASE WHEN ${recoveryCode.usedAt} IS NULL THEN 1 END`),
+        })
+        .from(recoveryCode)
+        .where(eq(recoveryCode.personId, personId))
+        .get();
+      return { total: row?.total ?? 0, unused: row?.unused ?? 0 };
+    },
+  };
+}
+
+/** `re_enrolment_link` (owned by `identity`). */
+export function createReEnrolmentLinkRepo(orm: Orm, check: () => void): ReEnrolmentLinkRepo {
+  return {
+    insert: (row) => {
+      check();
+      orm.insert(reEnrolmentLink).values(row).run();
+    },
+    findByTokenHash: (tokenHash) => {
+      check();
+      const row = orm
+        .select()
+        .from(reEnrolmentLink)
+        .where(eq(reEnrolmentLink.tokenHash, tokenHash))
+        .get();
+      return row as ReEnrolmentLinkRow | undefined;
+    },
+    findById: (id) => {
+      check();
+      const row = orm.select().from(reEnrolmentLink).where(eq(reEnrolmentLink.id, id)).get();
+      return row as ReEnrolmentLinkRow | undefined;
+    },
+    markUsed: (id: Id<"ReEnrolmentLink">, usedAt) => {
+      check();
+      const result = orm
+        .update(reEnrolmentLink)
+        .set({ usedAt })
+        .where(and(eq(reEnrolmentLink.id, id), isNull(reEnrolmentLink.usedAt)))
+        .run();
+      return result.changes === 1;
+    },
+    listLive: (personId, now) => {
+      check();
+      return orm
+        .select()
+        .from(reEnrolmentLink)
+        .where(
+          and(
+            eq(reEnrolmentLink.personId, personId),
+            isNull(reEnrolmentLink.usedAt),
+            gt(reEnrolmentLink.expiresAt, now),
+          ),
+        )
+        .orderBy(asc(reEnrolmentLink.createdAt), asc(reEnrolmentLink.id))
+        .all() as ReEnrolmentLinkRow[];
+    },
+    expire: (id: Id<"ReEnrolmentLink">, at) => {
+      check();
+      const result = orm
+        .update(reEnrolmentLink)
+        .set({ expiresAt: at })
+        .where(and(eq(reEnrolmentLink.id, id), isNull(reEnrolmentLink.usedAt)))
+        .run();
+      return result.changes === 1;
+    },
+  };
+}
+
+/**
+ * better-auth's credential rows for one login (`auth_passkey`, `auth_two_factor`,
+ * `auth_user.two_factor_enabled`, `auth_session`, `auth_account.password`), cleared by account
+ * recovery inside an `identity` transaction.
+ */
+export function createCredentialRepo(orm: Orm, check: () => void): CredentialRepo {
+  return {
+    deletePasskeys: (userId) => {
+      check();
+      return orm.delete(authPasskey).where(eq(authPasskey.userId, userId)).run().changes;
+    },
+    disableTwoFactor: (userId) => {
+      check();
+      const secrets = orm.delete(authTwoFactor).where(eq(authTwoFactor.userId, userId)).run();
+      const flag = orm
+        .update(authUser)
+        .set({ twoFactorEnabled: false })
+        .where(and(eq(authUser.id, userId), eq(authUser.twoFactorEnabled, true)))
+        .run();
+      return secrets.changes > 0 || flag.changes > 0;
+    },
+    revokeSessions: (userId) => {
+      check();
+      return orm.delete(authSession).where(eq(authSession.userId, userId)).run().changes;
+    },
+    setPasswordHash: (userId, passwordHash, at) => {
+      check();
+      const result = orm
+        .update(authAccount)
+        .set({ password: passwordHash, updatedAt: new Date(at) })
+        .where(and(eq(authAccount.userId, userId), eq(authAccount.providerId, "credential")))
+        .run();
+      return result.changes > 0;
     },
   };
 }

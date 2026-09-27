@@ -60,9 +60,21 @@ describe("identity.me", () => {
       colour: "#2563eb",
       authAt: "2026-09-27T00:00:00.000Z",
       canInvite: true,
+      recoveryCodes: { issued: false, remaining: 0 },
+      partner: null,
     });
     uow.state.users.push("user-b");
     expect(me({ ...ctx, viewer }, {}).canInvite).toBe(false);
+    // A partner with a login shows up; codes are counted.
+    const sam = createPerson(ctx, { displayName: "Sam", colour: "#000000", userId: "user-b" });
+    uow.state.recoveryCodes.push(
+      { id: "c1" as never, personId: alex, codeHash: "h1", createdAt: "x", usedAt: "y" },
+      { id: "c2" as never, personId: alex, codeHash: "h2", createdAt: "x", usedAt: null },
+    );
+    expect(me({ ...ctx, viewer }, {})).toMatchObject({
+      recoveryCodes: { issued: true, remaining: 1 },
+      partner: { personId: sam, displayName: "Sam" },
+    });
   });
 
   it("is Unauthenticated for a system viewer", () => {

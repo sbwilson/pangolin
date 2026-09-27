@@ -43,17 +43,18 @@ describe("committed migrations", () => {
     expect(loadMigrations(packageMigrationsDir)[0]?.name).toBe("0000_baseline");
   });
 
-  it("migrates a fresh database to version 4, then re-applies nothing", () => {
+  it("migrates a fresh database to version 5, then re-applies nothing", () => {
     const migrations = loadMigrations(packageMigrationsDir);
     const names = [
       "0000_baseline",
       "0001_person_settings_audit",
       "0002_jobs_review_items",
       "0003_auth_setup_links",
+      "0004_recovery",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 4 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 4 });
-    expect(schemaVersion(db)).toBe(4);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 5 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 5 });
+    expect(schemaVersion(db)).toBe(5);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });

@@ -3,7 +3,13 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Clock, createIdGenerator, systemClock } from "@pangolin/app";
+import {
+  type Clock,
+  type CodeHasher,
+  createIdGenerator,
+  type IdentityContext,
+  systemClock,
+} from "@pangolin/app";
 import {
   createSystemHealthRepo,
   createUnitOfWork,
@@ -15,7 +21,7 @@ import {
 } from "@pangolin/db";
 import { writeFirstSetupLink } from "../admin/setup-link.ts";
 import { createAuth } from "../auth/auth.ts";
-import { nodeTokens } from "../auth/secret.ts";
+import { nodeTokens, recoveryCodeHasher } from "../auth/secret.ts";
 import { type AuthConfig, defaultAuthConfig } from "../config.ts";
 import { createApp } from "../http/app.ts";
 
@@ -32,6 +38,8 @@ export interface Harness {
   firstLink(): string;
   /** better-auth's log lines, message only. */
   readonly logged: string[];
+  /** What the use cases run with, including the recovery-code hasher. */
+  readonly identity: IdentityContext & { readonly codes: CodeHasher };
   /**
    * Gives the login with `email` a passkey row, as WebAuthn registration would (the harness has
    * no authenticator), completing its enrolment once TOTP is confirmed too.
@@ -64,25 +72,30 @@ export function createHarness(
   };
   const origin = config.publicUrl;
   const logged: string[] = [];
+  const secret = "test-secret-0123456789abcdefghijklmnopqrstuvwxyz";
+  const codes = recoveryCodeHasher(secret);
   const gateway = createAuth({
     ...deps,
     db,
     config,
-    secret: "test-secret-0123456789abcdefghijklmnopqrstuvwxyz",
+    secret,
     log: (_level, message) => logged.push(message),
   });
   const app = createApp({
     ...deps,
     systemHealth: createSystemHealthRepo(db),
+    codes,
     publicUrl: origin,
     authn: { kind: "live", gateway },
     trustedProxies,
+    recoveryRateLimitPerMinute: config.rateLimitPerMinute,
   });
   return {
     origin,
     db,
     app,
     logged,
+    identity: { ...deps, codes },
     addPasskey: (email) => {
       db.prepare(
         `INSERT INTO auth_passkey (id, user_id, public_key, credential_id, counter, device_type, backed_up)

@@ -1,9 +1,9 @@
 // Secrets for sign-in (story 1.5): the auth secret file, and the token port setup links use.
 // Neither the secret nor a token is ever logged or stored in the database.
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { TokenPort } from "@pangolin/app";
+import type { CodeHasher, TokenPort } from "@pangolin/app";
 
 /** better-auth signs cookies and encrypts TOTP secrets with this; it needs 32+ characters. */
 const MIN_SECRET_LENGTH = 32;
@@ -39,4 +39,15 @@ export function loadOrCreateAuthSecret(path: string): string {
 export const nodeTokens: TokenPort = {
   generate: () => randomBytes(32).toString("base64url"),
   hash: (token) => createHash("sha256").update(token, "utf8").digest("hex"),
+  randomBytes: (length) => new Uint8Array(randomBytes(length)),
 };
+
+/**
+ * Recovery codes hashed with HMAC-SHA256 under a key derived from the auth secret
+ * (`HMAC(authSecret, "recovery-codes")`). The key lives only in memory, so a copy of the
+ * database alone cannot be used to guess the codes offline.
+ */
+export function recoveryCodeHasher(authSecret: string): CodeHasher {
+  const key = createHmac("sha256", authSecret).update("recovery-codes").digest();
+  return { hash: (code) => createHmac("sha256", key).update(code, "utf8").digest("hex") };
+}

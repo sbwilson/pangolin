@@ -1,7 +1,13 @@
 // Story 1.5 end to end, on a freshly started server: the first setup link, registration with a
 // passkey and TOTP, both ways of signing in, the partner invite, closed registration, lockout,
 // and the request guards. The tests build on each other, so they run in order.
-import { type Account, readSetupLink, saveAccount, signInWithPassword } from "./helpers/account.ts";
+import {
+  type Account,
+  readSetupLink,
+  saveAccount,
+  saveRecoveryCodes,
+  signInWithPassword,
+} from "./helpers/account.ts";
 import { expect, test, watchCsp } from "./helpers/csp.ts";
 import { totp } from "./helpers/totp.ts";
 import { addVirtualAuthenticator } from "./helpers/webauthn.ts";
@@ -16,7 +22,8 @@ let alexAccount: Account;
 let partnerLink: string;
 
 /**
- * Fills the setup form, adds a passkey and confirms TOTP; returns the TOTP secret. With
+ * Fills the setup form, adds a passkey, confirms TOTP and saves the recovery codes; returns the
+ * TOTP secret and the codes. With
  * `reload`, reloads the page after the account step and again after the passkey, proving an
  * interrupted setup resumes where it stopped (asking for the password again for TOTP).
  */
@@ -25,7 +32,7 @@ async function register(
   link: string,
   who: typeof alex,
   reload = false,
-): Promise<string> {
+): Promise<{ secret: string; codes: string[] }> {
   await page.goto(link);
   await page.getByLabel("Email").fill(who.email);
   await page.getByLabel("Password (at least 12 characters)").fill(who.password);
@@ -52,8 +59,15 @@ async function register(
   expect(await page.getByLabel("Authenticator URI").inputValue()).toMatch(/^otpauth:\/\/totp\//);
   await page.getByLabel("Authenticator code").fill(totp(secret));
   await page.getByRole("button", { name: "Finish" }).click();
+  const codes = await saveRecoveryCodes(page);
+  expect(codes).toHaveLength(10);
+  for (const code of codes) expect(code).toMatch(/^[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}$/);
   await expect(page.getByText(`Signed in as ${who.name}`)).toBeVisible();
-  return secret;
+  // Shown once: a reload goes straight home.
+  await page.reload();
+  await expect(page.getByText(`Signed in as ${who.name}`)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show my recovery codes" })).toHaveCount(0);
+  return { secret, codes };
 }
 
 test("registers from the setup link with a passkey and TOTP (resuming after reloads), then signs in with the passkey", async ({
@@ -61,8 +75,13 @@ test("registers from the setup link with a passkey and TOTP (resuming after relo
   context,
 }) => {
   await addVirtualAuthenticator(page);
-  const secret = await register(page, readSetupLink(), alex, true);
-  alexAccount = { email: alex.email, password: alex.password, totpSecret: secret };
+  const { secret, codes } = await register(page, readSetupLink(), alex, true);
+  alexAccount = {
+    email: alex.email,
+    password: alex.password,
+    totpSecret: secret,
+    recoveryCodes: codes,
+  };
   saveAccount(alexAccount);
 
   const [session] = (await context.cookies()).filter((c) => c.name.endsWith("session_token"));

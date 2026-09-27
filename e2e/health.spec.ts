@@ -1,13 +1,13 @@
 import { expect, test } from "./helpers/csp.ts";
 
-test("the PWA shows the server as healthy at schema version 4", async ({ page, request }) => {
+test("the PWA shows the server as healthy at schema version 5", async ({ page, request }) => {
   const res = await request.get("/api/system/health");
   expect(res.status()).toBe(200);
-  expect(await res.json()).toEqual({ status: "ok", schemaVersion: 4, writable: true });
+  expect(await res.json()).toEqual({ status: "ok", schemaVersion: 5, writable: true });
 
   await page.goto("/");
   await expect(page.getByText("Healthy", { exact: true })).toBeVisible();
-  await expect(page.getByText("Schema version 4", { exact: true })).toBeVisible();
+  await expect(page.getByText("Schema version 5", { exact: true })).toBeVisible();
 });
 
 test("the CSP guard fails a test whose page violates the policy", async ({

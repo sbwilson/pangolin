@@ -2,8 +2,11 @@ import type { AuditRow, HouseholdSettingsRow, ReadRepos, TxRepos, UnitOfWork } f
 import { eq } from "drizzle-orm";
 import { type BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
 import {
+  createCredentialRepo,
   createLoginAttemptRepo,
   createPersonRepo,
+  createRecoveryCodeRepo,
+  createReEnrolmentLinkRepo,
   createSetupLinkRepo,
   createUserRepo,
 } from "./identity-repos.ts";
@@ -70,6 +73,9 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     users: createUserRepo(orm, () => guard(scope)),
     setupLinks: createSetupLinkRepo(orm, () => guard(scope)),
     loginAttempts: createLoginAttemptRepo(orm, () => guard(scope)),
+    recoveryCodes: createRecoveryCodeRepo(orm, () => guard(scope)),
+    reEnrolmentLinks: createReEnrolmentLinkRepo(orm, () => guard(scope)),
+    credentials: createCredentialRepo(orm, () => guard(scope)),
     audit: {
       append: (row: AuditRow) => {
         guard(scope);
@@ -122,6 +128,11 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               hasLive: repos.setupLinks.hasLive,
             },
             loginAttempts: { listSince: repos.loginAttempts.listSince },
+            recoveryCodes: { counts: repos.recoveryCodes.counts },
+            reEnrolmentLinks: {
+              findByTokenHash: repos.reEnrolmentLinks.findByTokenHash,
+              findById: repos.reEnrolmentLinks.findById,
+            },
             jobs: { listDead: repos.jobs.listDead },
             reviewItems: { listOpenFor: repos.reviewItems.listOpenFor },
           };

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,6 +34,7 @@ const tokens: TokenPort = {
     return () => `token-${++n}`;
   })(),
   hash: (token) => createHash("sha256").update(token).digest("hex"),
+  randomBytes: (length) => new Uint8Array(randomBytes(length)),
 };
 
 function ctx(): IdentityContext {

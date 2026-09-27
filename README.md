@@ -7,7 +7,7 @@ A self-hosted web app for a two-person household's finances. The spec lives in
 
 Once it's up, open:
 
-- http://localhost:3000 — the app, which should show "Healthy" and "Schema version 4" on the
+- http://localhost:3000 — the app, which should show "Healthy" and "Schema version 5" on the
   sign-in page
 - http://localhost:3000/api/system/health — the raw health JSON
 
@@ -62,7 +62,9 @@ Open the link and you'll:
 1. choose your email, a password (12 characters or more), a display name and a colour;
 2. add a passkey (your device's fingerprint, face or PIN);
 3. add Pangolin Money to an authenticator app (the page shows the `otpauth://` URI and the
-   secret key) and enter a code to confirm it.
+   secret key) and enter a code to confirm it;
+4. save your 10 recovery codes (see [Account recovery](#account-recovery)). They are shown
+   only this once.
 
 After that you sign in with the passkey, or with email, password and an authenticator code.
 Until both the passkey and the authenticator are set up, signing in shows only the remaining
@@ -72,6 +74,36 @@ for a new one. The file is removed once anyone has a login.
 To add your partner, choose **Invite partner** on the home page within 5 minutes of signing in
 (otherwise you'll be asked to sign in again) and send them the one-time link it shows.
 Registration closes once two people have a login.
+
+## Account recovery
+
+There is no email reset. There are two ways back in, plus one for the server console:
+
+- **Lost passkey: a recovery code.** On the sign-in page choose **Use a recovery code** and
+  enter your email, your password and one of your codes (`XXXXX-XXXXX`, any case). A code never
+  works without the password. Your passkeys are removed and every other session ends; you must
+  add a new passkey before anything else. Each code works once, and using one leaves you a
+  notice in the app, in case it wasn't you. Wrong details all get the same answer and count
+  toward the sign-in lockout, like wrong passwords. **Regenerate recovery codes** on the home
+  page (within 5 minutes of signing in) replaces all your unused codes; home warns you when
+  fewer than 3 are left. Codes are stored only as keyed hashes (HMAC with a key derived from
+  the auth secret), so the database alone does not reveal them.
+- **Lost everything: your partner's link.** Your partner signs in, chooses **Reset partner's
+  access** (within 5 minutes of signing in) and gives you the one-time link it shows
+  (`<PANGOLIN_PUBLIC_URL>/recover?token=…`). It works for 24 hours, and a newer link replaces
+  it. You get a notice in the app as soon as it is issued, which only you can see; if you
+  didn't ask for it, **Revoke the recovery link** there ends it. Opening the link, you choose
+  a new password; your passkeys, authenticator, sessions and recovery codes are cleared, and
+  you set up a passkey, the authenticator and new codes again. Redeeming the link also clears
+  any sign-in lockout on your email. Your partner could use the link themselves; that is an
+  accepted risk, and the audit log and your notice record it.
+- **Both locked out:** `pangolin reset-user` on the server console arrives with the admin CLI
+  (story 1.9). It clears the person's sign-in at once, including their password, and prints
+  a new link of the same kind.
+
+`/api/identity/recover` and `/api/identity/re-enrol` each have the per-client limit of
+`PANGOLIN_AUTH_RATE_LIMIT` a minute, like password sign-in. Every step is in the audit log; codes,
+links and passwords never are, nor in the server log.
 
 ### Sign-in settings
 

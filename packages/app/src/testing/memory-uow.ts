@@ -5,6 +5,7 @@
 import type { Id } from "@pangolin/shared";
 import type {
   AuditRow,
+  CredentialRepo,
   HouseholdSettingsRow,
   JobRepo,
   JobRow,
@@ -12,6 +13,10 @@ import type {
   LoginAttemptRow,
   PersonRepo,
   PersonRow,
+  RecoveryCodeRepo,
+  RecoveryCodeRow,
+  ReEnrolmentLinkRepo,
+  ReEnrolmentLinkRow,
   ReviewItemRepo,
   ReviewItemRow,
   SetupLinkRepo,
@@ -35,6 +40,12 @@ export interface MemoryState {
   enrolments: Record<string, UserEnrolment>;
   setupLinks: SetupLinkRow[];
   loginAttempts: LoginAttemptRow[];
+  recoveryCodes: RecoveryCodeRow[];
+  reEnrolmentLinks: ReEnrolmentLinkRow[];
+  /** Open sessions per user ID, standing in for `auth_session`. */
+  sessions: Record<string, number>;
+  /** Password hash per user ID, standing in for `auth_account.password`. */
+  passwords: Record<string, string>;
 }
 
 export interface MemoryUnitOfWork extends UnitOfWork {
@@ -247,6 +258,129 @@ function loginAttemptRepo(working: MemoryState, check: () => void): LoginAttempt
   };
 }
 
+function recoveryCodeRepo(working: MemoryState, check: () => void): RecoveryCodeRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.recoveryCodes.some((c) => c.id === row.id)) {
+        throw new Error("UNIQUE constraint failed: recovery_code.id");
+      }
+      working.recoveryCodes.push(row);
+    },
+    findUnused: (personId, codeHash) => {
+      check();
+      return working.recoveryCodes.find(
+        (c) => c.personId === personId && c.codeHash === codeHash && c.usedAt === null,
+      );
+    },
+    markUsed: (id, usedAt) => {
+      check();
+      const index = working.recoveryCodes.findIndex((c) => c.id === id && c.usedAt === null);
+      const row = working.recoveryCodes[index];
+      if (row === undefined) return false;
+      working.recoveryCodes[index] = { ...row, usedAt };
+      return true;
+    },
+    deleteUnused: (personId) => {
+      check();
+      const before = working.recoveryCodes.length;
+      working.recoveryCodes = working.recoveryCodes.filter(
+        (c) => !(c.personId === personId && c.usedAt === null),
+      );
+      return before - working.recoveryCodes.length;
+    },
+    deleteAll: (personId) => {
+      check();
+      const before = working.recoveryCodes.length;
+      working.recoveryCodes = working.recoveryCodes.filter((c) => c.personId !== personId);
+      return before - working.recoveryCodes.length;
+    },
+    counts: (personId) => {
+      check();
+      const mine = working.recoveryCodes.filter((c) => c.personId === personId);
+      return { total: mine.length, unused: mine.filter((c) => c.usedAt === null).length };
+    },
+  };
+}
+
+function reEnrolmentLinkRepo(working: MemoryState, check: () => void): ReEnrolmentLinkRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.reEnrolmentLinks.some((l) => l.id === row.id || l.tokenHash === row.tokenHash)) {
+        throw new Error("UNIQUE constraint failed: re_enrolment_link");
+      }
+      working.reEnrolmentLinks.push(row);
+    },
+    findByTokenHash: (tokenHash) => {
+      check();
+      return working.reEnrolmentLinks.find((l) => l.tokenHash === tokenHash);
+    },
+    findById: (id) => {
+      check();
+      return working.reEnrolmentLinks.find((l) => l.id === id);
+    },
+    markUsed: (id, usedAt) => {
+      check();
+      const index = working.reEnrolmentLinks.findIndex((l) => l.id === id && l.usedAt === null);
+      const row = working.reEnrolmentLinks[index];
+      if (row === undefined) return false;
+      working.reEnrolmentLinks[index] = { ...row, usedAt };
+      return true;
+    },
+    listLive: (personId, now) => {
+      check();
+      return working.reEnrolmentLinks
+        .filter((l) => l.personId === personId && l.usedAt === null && l.expiresAt > now)
+        .sort((a, b) => (`${a.createdAt}|${a.id}` < `${b.createdAt}|${b.id}` ? -1 : 1));
+    },
+    expire: (id, at) => {
+      check();
+      const index = working.reEnrolmentLinks.findIndex((l) => l.id === id && l.usedAt === null);
+      const row = working.reEnrolmentLinks[index];
+      if (row === undefined) return false;
+      working.reEnrolmentLinks[index] = { ...row, expiresAt: at };
+      return true;
+    },
+  };
+}
+
+function credentialRepo(working: MemoryState, check: () => void): CredentialRepo {
+  const enrolment = (userId: string) => working.enrolments[userId] ?? { totp: false, passkeys: 0 };
+  return {
+    deletePasskeys: (userId) => {
+      check();
+      const { passkeys } = enrolment(userId);
+      working.enrolments = {
+        ...working.enrolments,
+        [userId]: { ...enrolment(userId), passkeys: 0 },
+      };
+      return passkeys;
+    },
+    disableTwoFactor: (userId) => {
+      check();
+      const { totp } = enrolment(userId);
+      working.enrolments = {
+        ...working.enrolments,
+        [userId]: { ...enrolment(userId), totp: false },
+      };
+      return totp;
+    },
+    revokeSessions: (userId) => {
+      check();
+      const n = working.sessions[userId] ?? 0;
+      working.sessions = { ...working.sessions, [userId]: 0 };
+      return n;
+    },
+    setPasswordHash: (userId, passwordHash) => {
+      check();
+      if (!working.users.includes(userId)) return false;
+      working.passwords = { ...working.passwords, [userId]: passwordHash };
+      return true;
+    },
+  };
+}
+
 function visible(viewer: Viewer, row: ReviewItemRow): boolean {
   if (viewer.kind === "system") return true;
   return row.accountId === null && (row.personId === null || row.personId === viewer.personId);
@@ -295,6 +429,10 @@ export function memoryUnitOfWork(
       enrolments: {},
       setupLinks: [],
       loginAttempts: [],
+      recoveryCodes: [],
+      reEnrolmentLinks: [],
+      sessions: {},
+      passwords: {},
     },
     failAudit: false,
     transaction<T>(fn: (tx: TxRepos) => T): T {
@@ -308,6 +446,10 @@ export function memoryUnitOfWork(
         enrolments: uow.state.enrolments,
         setupLinks: [...uow.state.setupLinks],
         loginAttempts: [...uow.state.loginAttempts],
+        recoveryCodes: [...uow.state.recoveryCodes],
+        reEnrolmentLinks: [...uow.state.reEnrolmentLinks],
+        sessions: uow.state.sessions,
+        passwords: uow.state.passwords,
       };
       let active = true;
       const check = () => {
@@ -328,6 +470,9 @@ export function memoryUnitOfWork(
         users: userRepo(working, check),
         setupLinks: setupLinkRepo(working, check),
         loginAttempts: loginAttemptRepo(working, check),
+        recoveryCodes: recoveryCodeRepo(working, check),
+        reEnrolmentLinks: reEnrolmentLinkRepo(working, check),
+        credentials: credentialRepo(working, check),
         audit: {
           append: (row) => {
             check();
@@ -348,6 +493,11 @@ export function memoryUnitOfWork(
         uow.state.users = working.users;
         uow.state.setupLinks = working.setupLinks;
         uow.state.loginAttempts = working.loginAttempts;
+        uow.state.enrolments = working.enrolments;
+        uow.state.recoveryCodes = working.recoveryCodes;
+        uow.state.reEnrolmentLinks = working.reEnrolmentLinks;
+        uow.state.sessions = working.sessions;
+        uow.state.passwords = working.passwords;
         return result;
       } finally {
         active = false;
@@ -363,6 +513,11 @@ export function memoryUnitOfWork(
         users: userRepo(uow.state, check),
         setupLinks: { findByTokenHash: links.findByTokenHash, hasLive: links.hasLive },
         loginAttempts: { listSince: loginAttemptRepo(uow.state, check).listSince },
+        recoveryCodes: { counts: recoveryCodeRepo(uow.state, check).counts },
+        reEnrolmentLinks: {
+          findByTokenHash: reEnrolmentLinkRepo(uow.state, check).findByTokenHash,
+          findById: reEnrolmentLinkRepo(uow.state, check).findById,
+        },
         jobs: { listDead: jobRepo(uow.state, check).listDead },
         reviewItems: { listOpenFor: reviewItemRepo(uow.state, check).listOpenFor },
       });

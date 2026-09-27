@@ -10,6 +10,8 @@ import { twoFactor } from "better-auth/plugins";
 import type { AuthConfig } from "../config.ts";
 import { type AuthGateway, CLIENT_IP_HEADER, type SignUpRequest } from "../http/session.ts";
 import { authHooks, type SignUpPermit, signUpHooks } from "./hooks.ts";
+import { recoveryGateway, recoverySessions } from "./recovery.ts";
+import { recoveryCodeHasher } from "./secret.ts";
 
 export const APP_NAME = "Pangolin Money";
 
@@ -108,6 +110,7 @@ function buildAuth(deps: AuthDeps, permits: AsyncLocalStorage<SignUpPermit>) {
     plugins: [
       twoFactor({ issuer: APP_NAME }),
       passkey({ rpID, rpName: APP_NAME, origin: config.publicUrl }),
+      recoverySessions(),
     ],
   });
 }
@@ -138,6 +141,12 @@ export function createAuth(deps: AuthDeps): AuthGateway {
   };
 
   return {
+    ...recoveryGateway(
+      { ...deps, codes: recoveryCodeHasher(deps.secret) },
+      deps.config.lockout,
+      auth,
+      deps.log ?? defaultLog,
+    ),
     handler: (request) => auth.handler(request),
     getSession: async (headers) => {
       const result = await auth.api.getSession({ headers, returnHeaders: true });

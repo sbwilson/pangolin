@@ -5,7 +5,7 @@ import { execSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { totp } from "./totp.ts";
 
 export interface Account {
@@ -13,6 +13,8 @@ export interface Account {
   readonly password: string;
   /** The base32 TOTP secret shown during setup. */
   readonly totpSecret: string;
+  /** The recovery codes shown once when enrolment completed, `XXXXX-XXXXX`. */
+  readonly recoveryCodes: readonly string[];
 }
 
 const stateFile = join(dirname(fileURLToPath(import.meta.url)), "..", ".state", "account.json");
@@ -50,4 +52,20 @@ export async function signInWithPassword(page: Page, account: Account): Promise<
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Authenticator code").fill(totp(account.totpSecret));
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+}
+
+/**
+ * The last enrolment step: shows the recovery codes once, confirms they were saved and returns
+ * them. The signed-in home follows.
+ */
+export async function saveRecoveryCodes(page: Page): Promise<string[]> {
+  await page.getByRole("button", { name: "Show my recovery codes" }).click();
+  const list = page.getByRole("list", { name: "Recovery codes" });
+  await expect(list.getByRole("listitem")).toHaveCount(10);
+  const codes = (await list.getByRole("listitem").allTextContents()).map((code) => code.trim());
+  const continueButton = page.getByRole("button", { name: "Continue" });
+  await expect(continueButton).toBeDisabled();
+  await page.getByLabel("I have saved these codes").check();
+  await continueButton.click();
+  return codes;
 }

@@ -25,3 +25,23 @@ label input {
 button {
   margin: 0.5rem 0.5rem 0.5rem 0;
 }
+
+label.inline {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+label.inline input {
+  display: inline;
+  width: auto;
+}
+
+ol.codes {
+  font-family: ui-monospace, monospace;
+  columns: 2;
+}
+
+p.warning {
+  font-weight: bold;
+}

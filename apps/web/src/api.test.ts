@@ -1,5 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, fetchDeadJobs, fetchHealth, fetchMe, invitePartner } from "./api.ts";
+import {
+  ApiError,
+  dismissNotice,
+  fetchDeadJobs,
+  fetchHealth,
+  fetchMe,
+  fetchNotices,
+  invitePartner,
+  recoverWithCode,
+  reEnrol,
+  regenerateRecoveryCodes,
+} from "./api.ts";
 
 function stubFetch(status: number, body: unknown): void {
   vi.stubGlobal(
@@ -69,5 +80,48 @@ describe("invitePartner", () => {
     const error = await invitePartner().catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ status: 403, code: "ReauthRequired" });
+  });
+});
+
+describe("recovery", () => {
+  it("posts a recovery-code sign-in and surfaces the refusal", async () => {
+    stubFetch(401, { error: { code: "Unauthenticated", message: "Those details did not match." } });
+    const error = await recoverWithCode({ email: "a@example.com", password: "p", code: "c" }).catch(
+      (caught: unknown) => caught,
+    );
+    expect(error).toMatchObject({ status: 401, code: "Unauthenticated" });
+    const [path, init] = vi.mocked(fetch).mock.calls[0] ?? [];
+    expect(path).toBe("/api/identity/recover");
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      email: "a@example.com",
+      password: "p",
+      code: "c",
+    });
+  });
+
+  it("redeems a link and regenerates codes", async () => {
+    stubFetch(200, { signedIn: true, needs: ["passkey", "totp"] });
+    expect(await reEnrol({ token: "t", newPassword: "long enough pass" })).toEqual({
+      signedIn: true,
+    });
+    stubFetch(200, { signedIn: false });
+    expect(await reEnrol({ token: "t", newPassword: "long enough pass" })).toEqual({
+      signedIn: false,
+    });
+    stubFetch(201, { codes: ["AAAAA-BBBBB"] });
+    expect(await regenerateRecoveryCodes()).toEqual({ codes: ["AAAAA-BBBBB"] });
+  });
+
+  it("lists and dismisses notices", async () => {
+    const notices = [{ id: "n", kind: "identity.partner-reset", createdAt: "t", issuedBy: "Alex" }];
+    stubFetch(200, { notices });
+    expect(await fetchNotices()).toEqual(notices);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 204 })),
+    );
+    await expect(dismissNotice("n")).resolves.toBeUndefined();
+    stubFetch(404, { error: { code: "NotFound", message: "No such notice" } });
+    await expect(dismissNotice("n")).rejects.toMatchObject({ code: "NotFound" });
   });
 });

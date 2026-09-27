@@ -12,7 +12,7 @@ import {
   packageMigrationsDir,
 } from "@pangolin/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { nodeTokens } from "../auth/secret.ts";
+import { nodeTokens, recoveryCodeHasher } from "../auth/secret.ts";
 import { type AppDeps, createApp } from "./app.ts";
 import type { AuthGateway, Authn } from "./session.ts";
 
@@ -44,6 +44,12 @@ function fakeGateway(createdAt = new Date(), setCookies: string[] = []): AuthGat
     signUp: async () => {
       throw new Error("not used");
     },
+    recover: async () => {
+      throw new Error("not used");
+    },
+    reEnrol: async () => {
+      throw new Error("not used");
+    },
   };
 }
 
@@ -55,6 +61,7 @@ function deps(db: Db, authn: Authn = { kind: "live", gateway: fakeGateway() }): 
     clock: fixedClockAt("2026-09-27"),
     newId: createIdGenerator(),
     tokens: nodeTokens,
+    codes: recoveryCodeHasher("test-secret"),
     publicUrl: ORIGIN,
     authn,
   };
@@ -104,7 +111,7 @@ describe("GET /api/system/health", () => {
     const app = createApp(deps(openDb()));
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 4, writable: true });
+    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 5, writable: true });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
@@ -112,7 +119,7 @@ describe("GET /api/system/health", () => {
     const app = createApp(deps(openDb(true)));
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ status: "unhealthy", schemaVersion: 4, writable: false });
+    expect(await res.json()).toEqual({ status: "unhealthy", schemaVersion: 5, writable: false });
   });
 });
 
@@ -213,10 +220,29 @@ describe("GET /api/identity/me", () => {
       colour: "#2563eb",
       authAt: "2026-09-27T00:00:00.000Z",
       canInvite: true,
+      recoveryCodes: { issued: false, remaining: 0 },
+      partner: null,
       demo: false,
       enrolment: "complete",
       needs: [],
     });
+  });
+
+  it("refuses recovery in demo mode, which is read-only", async () => {
+    const db = openDb();
+    addPerson(db);
+    const app = createApp(deps(db, { kind: "demo" }));
+    for (const [path, body] of [
+      ["/api/identity/recover", { email: "a@example.com", password: "x", code: "y" }],
+      ["/api/identity/re-enrol", { token: "t", newPassword: "a long enough passphrase" }],
+    ] as const) {
+      const res = await app.request(path, {
+        method: "POST",
+        headers: { Origin: ORIGIN, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(res.status, path).toBe(409);
+    }
   });
 
   it("signs demo mode in as the first person, with no session", async () => {

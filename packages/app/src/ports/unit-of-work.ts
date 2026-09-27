@@ -198,6 +198,85 @@ export interface UserRepo {
   enrolment(userId: string): UserEnrolment | undefined;
 }
 
+/** `recovery_code`: one of a person's one-time recovery codes. Only the code's hash is stored. */
+export interface RecoveryCodeRow {
+  readonly id: Id<"RecoveryCode">;
+  readonly personId: Id<"Person">;
+  /** SHA-256 of the normalised code (10 characters, no hyphen), hex. */
+  readonly codeHash: string;
+  /** UTC ISO-8601 timestamp. */
+  readonly createdAt: string;
+  /** UTC ISO-8601 timestamp, or null while unused. */
+  readonly usedAt: string | null;
+}
+
+export interface RecoveryCodeCounts {
+  /** Every code the person has, used or not. Zero means none were ever issued (or all cleared). */
+  readonly total: number;
+  readonly unused: number;
+}
+
+export interface RecoveryCodeRepo {
+  insert(row: RecoveryCodeRow): void;
+  /** The person's unused code with `codeHash`, if any. */
+  findUnused(personId: Id<"Person">, codeHash: string): RecoveryCodeRow | undefined;
+  /** Sets `usedAt` on an unused code. False, changing nothing, when it was already used. */
+  markUsed(id: Id<"RecoveryCode">, usedAt: string): boolean;
+  /** Deletes the person's unused codes; returns how many. */
+  deleteUnused(personId: Id<"Person">): number;
+  /** Deletes every code the person has; returns how many. */
+  deleteAll(personId: Id<"Person">): number;
+  counts(personId: Id<"Person">): RecoveryCodeCounts;
+}
+
+/** `re_enrolment_link`: a partner-assisted (or CLI) re-enrolment link. Only the hash is stored. */
+export interface ReEnrolmentLinkRow {
+  readonly id: Id<"ReEnrolmentLink">;
+  /** The person whose access the link resets. */
+  readonly personId: Id<"Person">;
+  /** `person:<id>` (the partner) or `cli:reset-user`. */
+  readonly issuedBy: string;
+  /** SHA-256 of the token, hex. */
+  readonly tokenHash: string;
+  /** UTC ISO-8601 timestamp. */
+  readonly createdAt: string;
+  /** UTC ISO-8601 timestamp, 24 h after `createdAt` unless revoked earlier. */
+  readonly expiresAt: string;
+  /** UTC ISO-8601 timestamp, or null while unused. */
+  readonly usedAt: string | null;
+}
+
+export interface ReEnrolmentLinkRepo {
+  insert(row: ReEnrolmentLinkRow): void;
+  findByTokenHash(tokenHash: string): ReEnrolmentLinkRow | undefined;
+  findById(id: string): ReEnrolmentLinkRow | undefined;
+  /** Sets `usedAt` on an unused link. False, changing nothing, when it was already used. */
+  markUsed(id: Id<"ReEnrolmentLink">, usedAt: string): boolean;
+  /** The person's unused links that expire after `now`, oldest first. */
+  listLive(personId: Id<"Person">, now: string): ReEnrolmentLinkRow[];
+  /** Ends an unused link at `at` (sets `expiresAt`). False when it was already used. */
+  expire(id: Id<"ReEnrolmentLink">, at: string): boolean;
+}
+
+/**
+ * better-auth's credential rows for one login, cleared by account recovery (story 1.6). The
+ * `identity` use cases write them here, inside their own transaction, so the clearing and its
+ * audit commit together.
+ */
+export interface CredentialRepo {
+  /** Deletes every passkey of the login; returns how many. */
+  deletePasskeys(userId: string): number;
+  /** Deletes the login's TOTP secret and turns two-factor off. True when it was on or set up. */
+  disableTwoFactor(userId: string): boolean;
+  /** Deletes every session of the login; returns how many. */
+  revokeSessions(userId: string): number;
+  /**
+   * Replaces the password hash (better-auth's format) of the login's email-and-password account,
+   * stamping `updated_at` with `at`. False when the login has no such account.
+   */
+  setPasswordHash(userId: string, passwordHash: string, at: string): boolean;
+}
+
 /** One `login_attempt` row: a password or TOTP attempt for a lower-cased email. */
 export interface LoginAttemptRow {
   readonly email: string;
@@ -226,6 +305,9 @@ export interface TxRepos {
   readonly users: UserRepo;
   readonly setupLinks: SetupLinkRepo;
   readonly loginAttempts: LoginAttemptRepo;
+  readonly recoveryCodes: RecoveryCodeRepo;
+  readonly reEnrolmentLinks: ReEnrolmentLinkRepo;
+  readonly credentials: CredentialRepo;
   readonly audit: AuditRepo;
   readonly jobs: JobRepo;
   readonly reviewItems: ReviewItemRepo;
@@ -238,6 +320,8 @@ export interface ReadRepos {
   readonly users: UserRepo;
   readonly setupLinks: Pick<SetupLinkRepo, "findByTokenHash" | "hasLive">;
   readonly loginAttempts: Pick<LoginAttemptRepo, "listSince">;
+  readonly recoveryCodes: Pick<RecoveryCodeRepo, "counts">;
+  readonly reEnrolmentLinks: Pick<ReEnrolmentLinkRepo, "findByTokenHash" | "findById">;
   readonly jobs: Pick<JobRepo, "listDead">;
   readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
 }
