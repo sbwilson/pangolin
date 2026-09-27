@@ -19,70 +19,70 @@ context:
 
 ## Intent
 
-**Problem:** Nothing backs up the household's data. A lost VM, disk or bad upgrade loses everything, and the recovery bundle install.sh prints has never been proven to restore anything.
+**Problem:** Nothing backs up the household's data, and the recovery bundle has never been shown to restore anything.
 
-**Approach:** Nightly, a `local`-lane job writes a consistent `VACUUM INTO` snapshot plus a manifest (row count and checksum per table), and a `net`-lane job pushes it (and the attachments folder) to the append-only restic REST server. `pangolin backup` runs the same pair on demand; `pangolin restore <snapshot>` stops the stack, verifies the snapshot in a fresh directory, swaps it in under the data-directory lock and cancels pending external-effect jobs. A weekly `restic check` and a monthly restore drill report through `pangolin status` and a household review item on failure. CI backs up and restores the seeded database, and restores onto a clean host from the recovery bundle alone.
+**Approach:** Nightly at 02:30 (household time zone), a `local`-lane job writes a consistent `VACUUM INTO` snapshot and a manifest (row count and checksum per table), then a `net`-lane job pushes it with restic to the append-only REST server. `pangolin backup` runs the same on demand; `pangolin restore [snapshot|latest]` stops the stack, verifies the snapshot in a fresh directory, swaps it in under the data-directory lock and cancels pending external-effect jobs. `pangolin status` and the web status page show the last backup. CI backs up and restores on every push, including onto a clean host from the recovery bundle alone.
+
+**Decisions:** No WireGuard: the backup server must be reachable (LAN or a tunnel the operator runs); its allowlist entry covers it. Blob decryption waits for epic 5's attachment store. The weekly `restic check` and monthly drill are story 1.10b.
 
 ## Boundaries & Constraints
 
 **Always:**
-- Snapshot first, then attachments (AD-21); `VACUUM INTO` a staging file under `/data/backup/` (never `/tmp`), removed after the push.
-- The restic password and app key reach the container as read-only files (0400, uid 1000), never through `.env`; the key file is never inside the backup.
-- Restore refuses to swap unless `PRAGMA integrity_check` is `ok`, the manifest's counts and checksums match, the schema version is not newer than the build, and the key-check blob decrypts with the configured app key. The replaced files are kept in `/data/pre-restore-<timestamp>/`.
-- After a swap, before the server accepts work: pending and running jobs of kinds with `externalEffects` become `dead` with reason `restored`; schedules re-seed at start (AD-16).
-- Backup and drill failures raise one household-scoped review item each (deduped), resolved by the next success.
-- Everything runs as `systemViewer("job:<kind>")` or `("cli:<command>")`.
+- Snapshot, then push; the staging directory is `/data/backup/` (never `/tmp`), emptied after a successful push. `/data/attachments/` is pushed too when it exists.
+- The restic password reaches the container as a read-only file (0400, uid 1000), never through `.env`.
+- Restore swaps only when `PRAGMA integrity_check` is `ok`, every table's count and checksum match the manifest, and the schema version is not newer than the build; the replaced files move to `/data/pre-restore-<timestamp>/`.
+- After a swap, before the server starts: pending and running jobs of kinds with `externalEffects` become `dead` with reason `restored`; schedules re-seed at start (AD-16).
+- A backup job that dies raises the existing `job.dead` review item (`needsPersonWhenDead`).
+- Work runs as `systemViewer("job:<kind>")` or `("cli:<command>")`.
 
 **Never:**
-- No pruning, `forget` or retention from the VM: retention runs on the backup server.
-- No per-account balance sums in the manifest (epic 2 adds them).
-- No blocking the admin socket: `pangolin backup` enqueues jobs with fixed dedupe keys and the CLI polls their outcome.
+- No `forget`, `prune` or retention from the VM (the server applies retention).
+- No per-account balance sums in the manifest (epic 2).
+- No long work on the admin socket: `backup` enqueues jobs and the CLI polls.
+- No backup when `PANGOLIN_BACKUP_REPOSITORY` is empty: nothing is scheduled and status says so.
 
 ## I/O & Edge-Case Matrix
 
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |----------|--------------|---------------------------|----------------|
-| Nightly backup | schedule fires | snapshot + manifest pushed; `pangolin status` shows its time and snapshot ID | push fails → retries, then dead + review item |
-| Manual backup | `pangolin backup` while nightly runs | joins the running backup (same dedupe key); prints the snapshot ID | server down → exit 3 |
-| Restore | `pangolin restore latest` | stack stopped, verified, swapped, jobs cancelled, stack started; prints what changed | any check fails → nothing swapped, exit 1, reason named |
-| Restore, lock held | server still running | refuses, nothing touched | — |
-| No backup server | `PANGOLIN_BACKUP_REPOSITORY` empty | jobs not scheduled; status says "backups not configured" | — |
-| Drill | monthly | restores latest into a temp dir, runs the restore checks, deletes it | failure → review item |
+| Nightly | 02:30 | snapshot pushed; status shows time and snapshot ID | push fails → retries, then dead + review item |
+| Manual | `pangolin backup` | prints the snapshot ID when done | already running → joins it (dedupe key); server down → exit 3 |
+| Restore | `pangolin restore latest` | stack stopped, verified, swapped, jobs cancelled, stack started | a check fails → nothing swapped, exit 1, check named, stack restarted |
+| Restore, lock held | a server holds the data dir | refuses, touches nothing | — |
+| Not configured | empty repository | no schedule; status "backups not configured"; `backup` exits 1 saying so | — |
 | Append-only | `restic forget` from the VM | refused by the server | — |
 
 </frozen-after-approval>
 
 ## Code Map
 
-- `apps/server/src/jobs/index.ts` -- `jobKinds`/`schedules` are empty arrays; become a factory taking the household timezone and backup config. Kinds via `defineJobKind` (`packages/app/src/jobs/registry.ts`, `externalEffects` flag, lanes), handlers via `jobHandler`, `defineSchedule({ next })`.
-- `apps/server/src/jobs/runner.ts` -- no per-kind timeout or abort signal (deferred from 1.4 to this story); leases renew on the tick, so a long synchronous `VACUUM INTO` can lose its lease: add a per-kind timeout and run restic as a child process.
-- `packages/app/src/ports/unit-of-work.ts` `JobRepo` + `packages/db/src/job-repo.ts` + `packages/app/src/testing/memory-uow.ts` -- add `cancelExternal(kinds, reason)`; no `cancelled` status, use `dead`.
-- `packages/db/src/open.ts` (WAL), `migrate.ts` (`schemaVersion`, `loadMigrations`), `strict-check.ts` (table list via `pragma_table_list`) -- manifest and verification.
-- `apps/server/src/admin/{commands,socket,client,lock}.ts`, `apps/server/src/cli.ts` -- add `backup` (socket, async via jobs) and `restore` (stopped path, like `resetStopped`). Update tests asserting `backup` is unknown (`cli.test.ts:88`, `socket.test.ts:237,255`).
-- `deploy/pangolin` -- `restore` must `compose stop` first, run the one-off container, then `compose start`.
-- `apps/server/src/config.ts` -- add `PANGOLIN_BACKUP_REPOSITORY`, `PANGOLIN_RESTIC_PASSWORD_FILE`, `PANGOLIN_APP_KEY_FILE`.
-- `deploy/compose.yaml`, `deploy/install.sh` (`generate_secrets` :734, `write_bundle` :771) -- mount `restic-password` and `app-key` read-only for uid 1000; bundle stays `KEY=VALUE` lines.
-- `Dockerfile` -- runtime has no restic; add a pinned restic 0.19 binary, checksum-verified.
-- `apps/server/src/testing/{auth-harness,totp}.ts` -- TOTP login flow for the clean-host test; `createHarness` needs a variant over an existing database and secret.
-- `.github/workflows/ci.yml` container job -- add a `restic/rest-server --append-only` service and the restore tests after e2e (a real login with TOTP exists then).
-
-## Open Questions
-
-1. **WireGuard.** Nothing designs the tunnel. (a) Out of scope for now: the backup server must be reachable (LAN, or a tunnel you already run); the allowlist entry covers it. (b) install.sh sets up `wg-quick` on the host from a config file you supply (`--wireguard-config FILE`), and the firewall allows its endpoint. (c) A WireGuard sidecar container. *Recommend (a).*
-2. **The "sample blob".** No attachment store exists yet (epic 5). (a) Add a small app-key encryption helper (AES-256-GCM, key-version header) and a key-check blob written at first boot; restore and the drill decrypt it, proving the escrowed key. (b) Defer blob decryption to epic 5; the clean-host test proves only the restic password and TOTP. *Recommend (a).*
-3. **Schedule (household time zone).** Nightly backup 02:30, `restic check` Sundays 03:30, drill on the 1st at 04:00? Or your times.
-4. **Where results show.** (a) `pangolin status` and review items only. (b) Also a line on the web status page (the spec says the drill shows there). *Recommend (b).*
-5. **CI.** (a) Restore tests in the existing CI on every push. (b) A separate workflow on release tags only, as the spec's "every release" wording. *Recommend (a).*
-6. **Scope.** Estimated ~2,300 plan tokens. (a) Keep the full ticket. (b) Split: this story does backup, verified restore and the CI restore tests; the weekly check, monthly drill and status/web surfacing become story 1.10b. *Recommend (b)* — the core is already large and high-risk.
+- `apps/server/src/jobs/index.ts` -- empty `jobKinds`/`schedules`; becomes a factory over timezone and config. `defineJobKind`/`jobHandler`/`defineSchedule` in `packages/app/src/jobs/registry.ts`; `enqueueJob` in `enqueue.ts`; `ensureSchedules` re-seeds at `runner.start()`.
+- `apps/server/src/jobs/runner.ts` -- no per-kind timeout or abort (deferred from 1.4 to here); leases renew on the tick, so `VACUUM INTO` must run off the main thread (a worker with its own connection) and restic as a child process.
+- `JobRepo` in `packages/app/src/ports/unit-of-work.ts`, `packages/db/src/job-repo.ts`, `packages/app/src/testing/memory-uow.ts` -- add cancelling live jobs of given kinds as `dead`.
+- `packages/db/src/{open,migrate,strict-check}.ts` -- WAL, `schemaVersion`, table list.
+- `apps/server/src/admin/{commands,cli}` and `apps/server/src/cli.ts` -- add `backup` (socket) and `restore` (stopped path like `resetStopped`); `cli.test.ts:88` and `socket.test.ts:237,255` assert `backup` is unknown today.
+- `deploy/pangolin` -- `restore` needs stop → one-off run → start.
+- `apps/server/src/config.ts` -- backup repository and restic password file settings.
+- `deploy/compose.yaml`, `compose.yaml`, `deploy/install.sh` (`generate_secrets`, docs) -- mount `restic-password`.
+- `Dockerfile` runtime -- add restic 0.19 (pinned, SHA-256 from the release's checksums, per `TARGETARCH`).
+- `apps/web/src/App.tsx`, `apps/server/src/http/app.ts` `/api/system/*` -- last-backup line.
+- `e2e/helpers/account.ts` -- `loadAccount()` gives the e2e login's password and TOTP secret after the suite.
 
 ## Tasks & Acceptance
 
-**Execution:** (filled in after the questions are answered)
+**Execution:**
+- [ ] `packages/db` + migration -- a STRICT `backup_snapshot` table (restic ID, time, manifest summary); manifest builder (per table: count, SHA-256 of rows in key order) and verifier; job cancel method -- storage and checks.
+- [ ] `apps/server/src/backup/` -- snapshot (worker `VACUUM INTO` + manifest), push (restic child process, password file, cache under `/data/backup`), restore (restic restore to `/data/restore-<ts>`, verify, swap, cancel) -- the mechanism.
+- [ ] `apps/server/src/jobs/` -- kinds `backup-snapshot` (local) and `backup-push` (net, `externalEffects`, `needsPersonWhenDead`), nightly schedule, per-kind timeout.
+- [ ] `apps/server/src/admin/`, `cli.ts`, `deploy/pangolin` -- `backup`, `restore`, status fields.
+- [ ] `Dockerfile`, compose files, `install.sh`, `docs/install.md` -- restic, secret mount, docs.
+- [ ] Web status line and `/api/system` field.
+- [ ] Tests: unit tests of manifest, verify (corrupt db, count mismatch, newer schema), swap and cancel, with a stub restic; CI container job: rest-server `--append-only` container, backup, `restic forget` refused, restore into the running stack's volume, and a clean-host restore into a fresh volume using only the bundle's values, then a Playwright spec signing in with the saved account's password and TOTP.
 
 **Acceptance Criteria:**
-- Given the seeded database, when CI backs it up to rest-server and restores it, then `integrity_check` is `ok` and every table's count and checksum match the manifest.
-- Given a clean host with only the recovery bundle, when it restores the latest snapshot, then the key-check blob decrypts and a seeded person logs in with password and TOTP.
-- Given the VM, when `pangolin backup` runs, then a new snapshot appears in the repository and `restic forget` from the VM is refused.
+- Given the e2e household, when CI backs it up and restores it, then `integrity_check` is `ok` and every table matches the manifest.
+- Given a fresh volume and only the bundle's auth secret, restic password and repository, when it restores `latest` and starts, then the e2e person signs in with password and TOTP.
+- Given the VM, when `pangolin backup` runs, then a snapshot lands in the repository and `restic forget` from the VM is refused.
 
 ## Implementation Notes
 
@@ -93,5 +93,5 @@ context:
 ## Verification
 
 **Commands:**
-- `pnpm lint && pnpm typecheck && pnpm test` -- expected: pass, including new backup/restore tests
-- CI container job -- expected: backup, restore and clean-host restore steps pass against rest-server
+- `pnpm lint && pnpm typecheck && pnpm test` -- expected: pass, including the backup and restore tests
+- CI container job -- expected: backup, append-only, restore and clean-host restore steps pass
