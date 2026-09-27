@@ -149,6 +149,8 @@ context:
 
 ## Plan Change Log
 
+- 2026-09-27: the human confirmed the native `inet pangolin` forward chain (priority filter − 10) in place of the `DOCKER-USER` chain named in the firewall decision. Its effect is the same: container egress is limited to the allowlist, and published ports admit only the NPM host.
+
 ## Review Triage Log
 
 ### 2026-09-27 — Review pass
