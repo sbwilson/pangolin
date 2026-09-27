@@ -204,9 +204,31 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
 
 ## Stack
 
+Verified against the npm registry and nodejs.org on 2026-09-27.
+
 | Name | Version |
 | --- | --- |
-| _(pending web verification)_ | |
+| Node.js | 26 (LTS from 2026-10-28); `.nvmrc` and the image base follow |
+| TypeScript | `typescript` ~6.0 (compiler API for tooling); TypeScript 7.0 native checker for CI type-checks |
+| pnpm | 12 (`packageManager` field) |
+| Hono | 4.13 |
+| better-sqlite3 | 13 (N-API) |
+| Drizzle ORM / drizzle-kit | 1.0 release candidate (pinned exactly; move to 1.0 final when it ships) |
+| Zod | 4 |
+| better-auth | 1.7, plus `@better-auth/passkey` 1.7 (separate package); TOTP from the core two-factor plugin |
+| React | 19.3 |
+| Vite | 8 |
+| TanStack Query / Router / Table / Virtual | 5 / 1 / 9 / 3 |
+| Tailwind CSS / shadcn CLI | 4 / 4 |
+| Apache ECharts | 6 |
+| decimal.js | 10 |
+| Temporal | native in Node 26 on the server; `temporal-polyfill` 1.0 in the browser |
+| pdfjs-dist | 6 |
+| Vitest / Playwright | 5 / 1.63 |
+| Biome | 2 |
+| restic / rest-server | 0.19 / 0.14 (`--append-only`) |
+| Docker Compose / cosign | v5 / v3.1.3 or later |
+| Host OS | Debian 13 (primary), Ubuntu 24.04 LTS, Rocky Linux 9 |
 
 ## Structural Seed
 
