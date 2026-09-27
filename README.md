@@ -7,7 +7,7 @@ A self-hosted web app for a two-person household's finances. The spec lives in
 
 Once it's up, open:
 
-- http://localhost:3000 — the app, which should show "Healthy" and "Schema version 2"
+- http://localhost:3000 — the app, which should show "Healthy" and "Schema version 3"
 - http://localhost:3000/api/system/health — the raw health JSON
 
 ### Option A: Docker
@@ -33,6 +33,13 @@ PANGOLIN_DATA_DIR=./data node apps/server/dist/main.js
 
 The SQLite database is created in `./data`, which git ignores. Without
 `PANGOLIN_DATA_DIR` the server uses `/data`. Set `PORT` to use a port other than 3000.
+
+The server also runs background jobs. `PANGOLIN_JOB_CONCURRENCY_LLM`, `_NET` and `_LOCAL`
+set how many jobs each lane runs at once (defaults 1, 2 and 1). `0` disables a lane: its jobs
+are never run, and the server logs a warning at startup. `PANGOLIN_JOB_LEASE_MS` sets how long
+a claimed job is held before another runner may take it over (default 60000, at least 3000).
+Jobs that fail for good are listed, by kind and time only, at `/api/system/jobs` and on the
+status page. Demo mode runs no jobs.
 
 If Corepack isn't available, install the same pnpm with `npm i -g pnpm@12.6.0`.
 

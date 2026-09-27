@@ -15,6 +15,13 @@
       "when": 1790494669359,
       "tag": "0001_person_settings_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790496945806,
+      "tag": "0002_jobs_review_items",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,9 @@
 import type { AuditRow, HouseholdSettingsRow, ReadRepos, TxRepos, UnitOfWork } from "@pangolin/app";
 import { eq } from "drizzle-orm";
 import { type BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
+import { createJobRepo } from "./job-repo.ts";
 import type { Db } from "./open.ts";
+import { createReviewItemRepo } from "./review-item-repo.ts";
 import { auditLog } from "./schema/audit-log.ts";
 import { householdSettings } from "./schema/household-settings.ts";
 import { person } from "./schema/person.ts";
@@ -71,6 +73,8 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
         orm.insert(auditLog).values(row).run();
       },
     },
+    jobs: createJobRepo(orm, () => guard(scope)),
+    reviewItems: createReviewItemRepo(orm, () => guard(scope)),
   };
 }
 
@@ -101,9 +105,14 @@ export function createUnitOfWork(db: Db): UnitOfWork {
     read: (fn) =>
       run(
         "deferred",
-        (scope): ReadRepos => ({
-          householdSettings: { get: txRepos(orm, scope).householdSettings.get },
-        }),
+        (scope): ReadRepos => {
+          const repos = txRepos(orm, scope);
+          return {
+            householdSettings: { get: repos.householdSettings.get },
+            jobs: { listDead: repos.jobs.listDead },
+            reviewItems: { listOpenFor: repos.reviewItems.listOpenFor },
+          };
+        },
         fn,
       ),
   };

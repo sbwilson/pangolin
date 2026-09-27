@@ -1,10 +1,12 @@
 import { serveStatic } from "@hono/node-server/serve-static";
-import { AppError, health, type SystemHealthPort } from "@pangolin/app";
+import { AppError, deadJobs, health, type SystemHealthPort, type UnitOfWork } from "@pangolin/app";
 import { type Context, Hono } from "hono";
 import { createErrorHandler, errorResponse, type InternalErrorLogger } from "./errors.ts";
 
 export interface ApiDeps {
   readonly systemHealth: SystemHealthPort;
+  /** Only `read` is used by the API so far. */
+  readonly uow: Pick<UnitOfWork, "read">;
 }
 
 export interface AppDeps extends ApiDeps {
@@ -16,12 +18,18 @@ export interface AppDeps extends ApiDeps {
 
 /** The typed `/api/*` routes. `AppType` is derived from this for the Hono RPC client. */
 export function createApi(deps: ApiDeps) {
-  return new Hono().get("/api/system/health", (c) => {
-    c.header("Cache-Control", "no-store");
-    const result = health({ systemHealth: deps.systemHealth }, {});
-    if (result.writable) return c.json(result, 200);
-    return c.json(result, 503);
-  });
+  return new Hono()
+    .get("/api/system/health", (c) => {
+      c.header("Cache-Control", "no-store");
+      const result = health({ systemHealth: deps.systemHealth }, {});
+      if (result.writable) return c.json(result, 200);
+      return c.json(result, 503);
+    })
+    .get("/api/system/jobs", (c) => {
+      // Kind and failure time only: never payload, error text or IDs (AD-9).
+      c.header("Cache-Control", "no-store");
+      return c.json({ dead: deadJobs({ uow: deps.uow }, {}) }, 200);
+    });
 }
 
 export type AppType = ReturnType<typeof createApi>;

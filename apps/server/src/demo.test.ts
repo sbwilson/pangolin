@@ -56,7 +56,12 @@ describe("readOnlyUnitOfWork", () => {
         called = true;
         return undefined as never;
       },
-      read: (fn) => fn({ householdSettings: { get: () => ({}) as never } }),
+      read: (fn) =>
+        fn({
+          householdSettings: { get: () => ({}) as never },
+          jobs: { listDead: () => [] },
+          reviewItems: { listOpenFor: () => [] },
+        }),
     });
     expect(() => uow.transaction(() => 1)).toThrow(
       expect.objectContaining({ code: "Conflict", message: "Demo mode is read-only" }),

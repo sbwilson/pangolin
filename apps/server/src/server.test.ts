@@ -9,13 +9,24 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AppError, createIdGenerator, updateHouseholdSettings } from "@pangolin/app";
+import {
+  AppError,
+  createIdGenerator,
+  defineJobKind,
+  defineSchedule,
+  enqueueJob,
+  type JobKind,
+  jobHandler,
+  updateHouseholdSettings,
+  write,
+} from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import { openDatabase, packageMigrationsDir, schemaVersion } from "@pangolin/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { generateSeedFile } from "../scripts/demo-seed.ts";
-import { loadConfig } from "./config.ts";
-import { type RunningServer, startServer } from "./server.ts";
+import { DEFAULT_JOBS_CONFIG, type JobsConfig, loadConfig } from "./config.ts";
+import { type RunningServer, type StartOptions, startServer } from "./server.ts";
 
 let dir: string;
 
@@ -29,8 +40,16 @@ afterEach(() => {
 
 const dataDir = () => join(dir, "data");
 
-async function boot(migrationsDir = packageMigrationsDir) {
-  return startServer({ config: { dataDir: dataDir(), port: 0, demo: false }, migrationsDir });
+async function boot(
+  migrationsDir = packageMigrationsDir,
+  jobs?: StartOptions["jobs"],
+  jobsConfig: JobsConfig = DEFAULT_JOBS_CONFIG,
+) {
+  return startServer({
+    config: { dataDir: dataDir(), port: 0, demo: false, jobs: jobsConfig },
+    migrationsDir,
+    ...(jobs === undefined ? {} : { jobs }),
+  });
 }
 
 async function getHealth(port: number) {
@@ -44,7 +63,7 @@ describe("startServer", () => {
     try {
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 2, writable: true },
+        body: { status: "ok", schemaVersion: 3, writable: true },
       });
     } finally {
       await server.close();
@@ -57,7 +76,7 @@ describe("startServer", () => {
     try {
       expect((await getHealth(server.port)).body).toEqual({
         status: "ok",
-        schemaVersion: 2,
+        schemaVersion: 3,
         writable: true,
       });
     } finally {
@@ -78,7 +97,7 @@ describe("startServer", () => {
       try {
         expect(await getHealth(server.port)).toEqual({
           status: 503,
-          body: { status: "unhealthy", schemaVersion: 2, writable: false },
+          body: { status: "unhealthy", schemaVersion: 3, writable: false },
         });
       } finally {
         await server.close();
@@ -100,8 +119,138 @@ describe("startServer", () => {
 
     await expect(boot(migrationsDir)).rejects.toThrow(/Migration 0099_broken failed/);
     const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
-    expect(schemaVersion(db)).toBe(2);
+    expect(schemaVersion(db)).toBe(3);
     db.close();
+  });
+});
+
+describe("startServer job runner", () => {
+  const kind = defineJobKind({
+    kind: "test-noop",
+    schema: z.object({}).strict(),
+    lane: "local",
+    externalEffects: false,
+    needsPersonWhenDead: false,
+  });
+  const nightly = defineSchedule({
+    name: "nightly",
+    kind,
+    payload: {},
+    next: (after) => after.add({ hours: 24 }),
+  });
+  const jobs = { kinds: [jobHandler(kind, async () => {})], schedules: [nightly] };
+
+  it("starts the runner, which ensures the schedules, and serves the dead-jobs list", async () => {
+    const server = await boot(packageMigrationsDir, jobs);
+    try {
+      expect(server.runner).toBeDefined();
+      const res = await fetch(`http://127.0.0.1:${server.port}/api/system/jobs`);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ dead: [] });
+    } finally {
+      await server.close();
+    }
+    const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
+    try {
+      expect(db.prepare("SELECT dedupe_key, status FROM job").all()).toEqual([
+        { dedupe_key: "schedule:nightly", status: "pending" },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  const netKind = defineJobKind({
+    kind: "test-net",
+    schema: z.object({}).strict(),
+    lane: "net",
+    externalEffects: false,
+    needsPersonWhenDead: false,
+  });
+
+  /** A net-lane handler that waits until the test releases it. */
+  function gatedNet() {
+    let release: (() => void) | undefined;
+    let started = false;
+    const registration = jobHandler(netKind, async () => {
+      started = true;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    return { registration, started: () => started, release: () => release?.() };
+  }
+
+  function enqueueOn(server: RunningServer, jobKind: JobKind<Record<string, never>>): void {
+    const ctx = {
+      viewer: systemViewer("cli:test"),
+      clock: server.clock,
+      newId: createIdGenerator(),
+      uow: server.uow,
+    };
+    write(ctx, (tx) => enqueueJob(tx, ctx, jobKind, {}));
+  }
+
+  function jobRows(): Record<string, unknown>[] {
+    const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
+    try {
+      return db.prepare("SELECT * FROM job ORDER BY kind").all() as Record<string, unknown>[];
+    } finally {
+      db.close();
+    }
+  }
+
+  it("passes the jobs config to the runner: a lane at 0 never runs, and the lease length", async () => {
+    const gate = gatedNet();
+    const server = await boot(
+      packageMigrationsDir,
+      { kinds: [jobHandler(kind, async () => {}), gate.registration], schedules: [] },
+      { concurrency: { llm: 1, net: 1, local: 0 }, leaseMs: 7000 },
+    );
+    try {
+      enqueueOn(server, kind);
+      enqueueOn(server, netKind);
+      const ticked = server.runner?.tick();
+      expect(gate.started()).toBe(true);
+      const [netRow, localRow] = jobRows();
+      expect(localRow).toMatchObject({ kind: "test-noop", status: "pending", attempts: 0 });
+      expect(netRow).toMatchObject({ kind: "test-net", status: "running" });
+      const leaseMs =
+        Date.parse(String(netRow?.lease_expires_at)) - Date.parse(String(netRow?.updated_at));
+      expect(leaseMs).toBe(7000);
+      gate.release();
+      await ticked;
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("waits on close for a running handler, which then completes", async () => {
+    const gate = gatedNet();
+    const server = await boot(packageMigrationsDir, { kinds: [gate.registration], schedules: [] });
+    enqueueOn(server, netKind);
+    void server.runner?.tick();
+    expect(gate.started()).toBe(true);
+    let closed = false;
+    const closing = server.close().then(() => {
+      closed = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(closed).toBe(false);
+    gate.release();
+    await closing;
+    expect(jobRows()).toEqual([expect.objectContaining({ kind: "test-net", status: "done" })]);
+  });
+
+  it("keeps one pending row per schedule across restarts", async () => {
+    await (await boot(packageMigrationsDir, jobs)).close();
+    await (await boot(packageMigrationsDir, jobs)).close();
+    const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
+    try {
+      expect(db.prepare("SELECT count(*) FROM job").pluck().get()).toBe(1);
+    } finally {
+      db.close();
+    }
   });
 });
 
@@ -128,6 +277,7 @@ describe("startServer in demo mode", () => {
         dataDir: dataDir(),
         port: 0,
         demo: true,
+        jobs: DEFAULT_JOBS_CONFIG,
         ...(file === null ? {} : { seedFile: file }),
       },
       migrationsDir: packageMigrationsDir,
@@ -146,12 +296,13 @@ describe("startServer in demo mode", () => {
   it("serves health 200 with the seeded people, and never touches the data dir", async () => {
     await withDemo(await bootDemo(), async (server) => {
       expect(server.demo).toBe(true);
+      expect(server.runner).toBeUndefined();
       expect(server.clock.today().toString()).toBe(
         JSON.parse(readFileSync(seedFile, "utf8")).today,
       );
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 2, writable: true },
+        body: { status: "ok", schemaVersion: 3, writable: true },
       });
       const settings = server.uow.read((repos) => repos.householdSettings.get());
       expect(settings.timezone).toBe(expectations["people-and-household.timezone"]);
@@ -206,11 +357,16 @@ describe("startServer in demo mode", () => {
 
 describe("loadConfig", () => {
   it("defaults to /data, port 3000 and no demo", () => {
-    expect(loadConfig({})).toEqual({ dataDir: "/data", port: 3000, demo: false });
+    expect(loadConfig({})).toEqual({
+      dataDir: "/data",
+      port: 3000,
+      demo: false,
+      jobs: { concurrency: { llm: 1, net: 2, local: 1 }, leaseMs: 60_000 },
+    });
   });
 
   it("reads PANGOLIN_DATA_DIR and PORT", () => {
-    expect(loadConfig({ PANGOLIN_DATA_DIR: "/tmp/p", PORT: "8080" })).toEqual({
+    expect(loadConfig({ PANGOLIN_DATA_DIR: "/tmp/p", PORT: "8080" })).toMatchObject({
       dataDir: "/tmp/p",
       port: 8080,
       demo: false,
@@ -224,6 +380,20 @@ describe("loadConfig", () => {
     });
     expect(loadConfig({ PANGOLIN_DEMO: "false" }).demo).toBe(false);
     expect(() => loadConfig({ PANGOLIN_DEMO: "maybe" })).toThrow();
+  });
+
+  it("reads the job runner settings", () => {
+    expect(
+      loadConfig({
+        PANGOLIN_JOB_CONCURRENCY_LLM: "2",
+        PANGOLIN_JOB_CONCURRENCY_NET: "4",
+        PANGOLIN_JOB_CONCURRENCY_LOCAL: "0",
+        PANGOLIN_JOB_LEASE_MS: "30000",
+      }).jobs,
+    ).toEqual({ concurrency: { llm: 2, net: 4, local: 0 }, leaseMs: 30_000 });
+    expect(() => loadConfig({ PANGOLIN_JOB_CONCURRENCY_LLM: "-1" })).toThrow();
+    expect(() => loadConfig({ PANGOLIN_JOB_CONCURRENCY_NET: "1.5" })).toThrow();
+    expect(() => loadConfig({ PANGOLIN_JOB_LEASE_MS: "100" })).toThrow();
   });
 
   it("rejects an invalid port", () => {

@@ -2,7 +2,14 @@ import { mkdirSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { serve } from "@hono/node-server";
-import { type Clock, systemClock, type UnitOfWork } from "@pangolin/app";
+import {
+  type Clock,
+  type JobRegistration,
+  newId,
+  type Schedule,
+  systemClock,
+  type UnitOfWork,
+} from "@pangolin/app";
 import {
   createSystemHealthRepo,
   createUnitOfWork,
@@ -14,6 +21,7 @@ import {
 import type { Config } from "./config.ts";
 import { openDemoDatabase } from "./demo.ts";
 import { createApp } from "./http/app.ts";
+import { createRunner, jobKinds, type Runner, schedules } from "./jobs/index.ts";
 
 export interface StartOptions {
   readonly config: Config;
@@ -21,6 +29,11 @@ export interface StartOptions {
   readonly webRoot?: string;
   /** The seed file demo mode loads when `config.seedFile` is not set. */
   readonly defaultSeedFile?: string;
+  /** The job kinds and schedules to run; the production registry by default. */
+  readonly jobs?: {
+    readonly kinds: readonly JobRegistration[];
+    readonly schedules: readonly Schedule[];
+  };
 }
 
 export interface RunningServer {
@@ -31,6 +44,9 @@ export interface RunningServer {
   readonly uow: UnitOfWork;
   /** The clock use cases run on: the household time zone live, the seed's today in demo mode. */
   readonly clock: Clock;
+  /** The job runner; undefined in demo mode, which runs no jobs. */
+  readonly runner: Runner | undefined;
+  /** Stops the job runner (waiting for running handlers), then the HTTP server and database. */
   close(): Promise<void>;
 }
 
@@ -73,6 +89,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
 
   const app = createApp({
     systemHealth: createSystemHealthRepo(db),
+    uow,
     ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
   });
 
@@ -87,6 +104,35 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     throw error;
   }
 
+  const closeHttp = () =>
+    new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        db.close();
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+
+  // Demo mode is read-only and runs no jobs.
+  let runner: Runner | undefined;
+  if (!demo) {
+    try {
+      runner = createRunner({
+        uow,
+        clock,
+        newId,
+        kinds: options.jobs?.kinds ?? jobKinds,
+        schedules: options.jobs?.schedules ?? schedules,
+        concurrency: options.config.jobs.concurrency,
+        leaseMs: options.config.jobs.leaseMs,
+      });
+      runner.start();
+    } catch (error) {
+      await closeHttp();
+      throw error;
+    }
+  }
+
   const address = server.address() as AddressInfo;
   return {
     port: address.port,
@@ -94,13 +140,10 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     demo,
     uow,
     clock,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          db.close();
-          if (error) reject(error);
-          else resolve();
-        });
-      }),
+    runner,
+    close: async () => {
+      await runner?.stop();
+      await closeHttp();
+    },
   };
 }
