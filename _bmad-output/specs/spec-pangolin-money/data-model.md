@@ -7,7 +7,7 @@ One bank line becomes one transaction row with one or more splits. Categories, t
 ## Conventions
 
 - `STRICT` tables and `PRAGMA foreign_keys = ON`, so SQLite enforces column types.
-- IDs are ULIDs: sortable by creation time and safe to generate client-side.
+- IDs are ULIDs, sortable by creation time and generated on the server only.
 - Money is integer minor units of the household's base currency (AUD by default; decimal places come from ISO 4217, so JPY would have none). Every account stores its currency code; v1 requires it to match the base currency. Units are integer micro-units (units × 10⁶). Prices are decimal strings.
 - Dates are `YYYY-MM-DD` text; timestamps are UTC ISO-8601.
 - Every table has `created_at` and `updated_at`. User-facing records soft-delete with `deleted_at`.
@@ -63,7 +63,7 @@ One bank line becomes one transaction row with one or more splits. Categories, t
 
 Queries never touch `account` or `transaction` directly. They go through `visibleAccounts(viewer)` and `redact(viewer, rows)`. There are two kinds of privacy:
 
-- **Private accounts** are seen only by their owner. They're excluded from the other partner's views and from the shared household totals and net worth. The owner's own views include them.
+- **Private accounts** are seen only by their owner; to the other partner they don't exist. Each person has one view: household totals and net worth cover everything that person can see, including their own private accounts, so the two partners' household figures can differ. Shared figures (shared-beneficiary spending, the shared savings pool, contribution) never include private money and are identical for both.
 - **Hidden transactions** sit in shared or public accounts (e.g. a birthday present).
   - Only the name is hidden from the other partner: payee, description and merchant logo. They see "Hidden until 12 Mar 2027" instead.
   - Amount, date, category, tags and notes stay visible, so totals and reports stay correct.

@@ -38,7 +38,7 @@ An LLM suggestion is applied automatically only above a confidence threshold tun
 ## Merchants, logos and links
 
 - The LLM proposes a clean name and a likely website domain. Confirmed once per payee, and the domain becomes the payee's link.
-- The job runner fetches that site's icon once, stores it as an attachment, and serves it locally.
+- The job runner fetches that site's icon once, through an allowlisted egress proxy, stores it as an attachment, and serves it locally. Payees visible only through private data are never fetched.
   - The browser never loads logos from third parties, because a logo request from the browser would reveal what we buy.
   - Only the bare domain leaves the server, once.
 - Logo fetching can be switched off entirely.

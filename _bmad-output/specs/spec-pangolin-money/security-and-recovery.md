@@ -25,8 +25,11 @@ Pangolin will be public on our own domain behind Nginx Proxy Manager, so the log
 - **Recovery codes:** 10 one-time codes generated at enrolment and stored hashed. Using one forces enrolment of a new passkey.
 - **Partner-assisted:** the other partner, re-authenticated with their passkey, issues a one-time re-enrolment link.
   - It expires in 24 hours and is logged.
+  - Accepted residual risk: the issuing partner holds the link and could redeem it themselves.
   - The affected person is notified in the app (and by email if SMTP is configured).
   - It never reveals the other person's private accounts or hidden transaction names.
 - **Both of us locked out:** `pangolin reset-user` on the server console, which requires shell access to the VM.
+- **Server lost:** `install.sh` produces a recovery bundle (application key, auth secret, restic password) to store offline. CI restores onto a clean host from the bundle alone on every release.
+- **Trust boundary:** whoever administers the VM can read everything; privacy between partners holds inside the app.
 
 The database file itself is protected by disk encryption, not SQLCipher. SQLCipher would add a second key to manage and break standard SQLite tooling, for little gain on a single encrypted host. This can be revisited if the app ever moves to shared hosting.

@@ -11,6 +11,7 @@ companions:
   - deployment-and-ops.md
   - decisions.md
   - architecture-diagrams.md
+  - ../../planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md
 sources:
   - ../../../docs/architecture/Pangolin Money Architecture & Data Model.md
 ---
@@ -75,7 +76,7 @@ A couple wants to see where their money goes, what they can save, and how they'r
   - **success:** CI backs up and restores a synthetic database on every release; a monthly restore drill runs automatically on the server; `pangolin upgrade` rolls back automatically on a failed health check.
 - **CAP-17**
   - **intent:** Either partner can see historical cash flow (Sankey), P&L by group or category, spending over any period, and current net worth, all summed from the splits they can see.
-  - **success:** Against the seeded household, each report's totals match a hand-computed sum of splits for the chosen period, with private accounts excluded from the partner's and shared views.
+  - **success:** Against the seeded household, each report's totals match a hand-computed sum of splits for the chosen period; the other partner's private accounts are absent, and shared figures are identical for both partners.
 - **CAP-18**
   - **intent:** A partner can browse thousands of transactions with filters held in the URL, edit splits and tags, and work the review inbox.
   - **success:** An end-to-end test filters the seeded ledger via URL parameters, splits a transaction into two splits summing to the parent, tags it, and clears a review-inbox item.

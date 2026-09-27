@@ -4,7 +4,7 @@ Everything here is derived from splits on read. There are no stored running tota
 
 ## Budgets
 
-- A budget has a period (`fortnight` or `month`) and an `anchor_date`. Each person has their own payday anchor. Personal budgets follow it; shared budgets use a household anchor (default: whichever of our paydays comes first).
+- A budget has a period (`fortnight` or `month`) and an `anchor_date`. Each person has their own payday anchor. Personal budgets follow it; shared budgets use a household anchor, an explicit setting (suggested at setup: whichever of our paydays comes first).
 - Scope is either shared or one person. Shared budgets count splits marked shared, whoever paid. Personal budgets count that person's own splits.
 - **Spent** is the sum of that category's (or group's) splits in the current period.
 - **Pace** compares spent against a straight line across the period.
@@ -21,7 +21,7 @@ Everything here is derived from splits on read. There are no stored running tota
 
 - **Savings** = the combined balance of accounts flagged as savings (each person has their own, plus shared ones). Investments (brokerage, super) are tracked separately and never count as savings. A period's new savings = the change in that balance, excluding interest. Surplus (income − expenses) is still reported in cash flow, but doesn't drive goals.
 - At each period close, positive new savings are split by `goal_rule` shares (e.g. 20% house deposit, 30% holidays) into `goal_allocation` rows. Whatever isn't allocated stays as a buffer. A deficit period draws down only that buffer; goal balances never decrease because of overspending.
-- Goals are virtual: there's no account per goal. Shared goals draw on shared savings accounts; personal goals draw on that person's. A goal can be linked to an activity, so spending on "Japan Trip 2026" draws its balance down.
+- Goals are virtual: there's no account per goal. Shared goals draw on shared savings accounts; personal goals draw on that person's. A goal can be linked to an activity (e.g. "Japan Trip 2026"); the goal goes down only when money is withdrawn from its pool's savings account and linked to it, never directly from card spending.
 - Projected completion date = remaining target ÷ average allocation over the last 6 periods.
 
 ## Shared spending and who paid
@@ -57,6 +57,7 @@ Goal money sits in the savings-flagged accounts. Pangolin checks each period, an
 - **Over-committed:** when withdrawals exhaust the buffer, goals exceed the real balance. That's the case the buffer-only overspending option can hide, so it's always shown in red on the goals page and in the review inbox, with the shortfall.
 - **Mismatch:** any other gap (e.g. an account newly flagged, or history not yet imported) raises a warning and offers to put the difference into the buffer.
 - **Interest:** interest earned goes to the buffer by default.
+- **Closed periods:** a period's allocations never change once closed; a backdated import or edit that changes its savings becomes an audited adjustment to the current period's buffer.
 
 ## Forecasting
 

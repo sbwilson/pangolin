@@ -35,7 +35,7 @@ Investments and super are both modelled as units × price. Holdings on any date 
 - **Property view:** rent in, repayments and costs out, and net cash position per month and per financial year.
 - **Gearing:** loan balance ÷ latest valuation. Valuations are entered by hand as balance snapshots.
 - **Caveat:** repayments include principal, so the net cash position understates the property's real return. An interest-only view can be added later from the interest lines in the home loan export.
-- The property belongs to its owner's individual view and tax pack. It appears in shared views unless the owner makes the loan account private.
+- The property belongs to its owner's individual view and tax pack. The partner sees it unless the owner makes the loan account private.
 
 Member-portal logins are deliberately not automated: they need MFA, break often, and would mean storing credentials.
 

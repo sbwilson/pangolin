@@ -4,24 +4,24 @@ TypeScript end to end, strict mode, one repo. Every choice below is mainstream a
 
 | Layer | Choice | Why |
 | --- | --- | --- |
-| Language | TypeScript 5 (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) | Closest to Swift/Rust discipline available on the web |
-| Runtime | Node 22 LTS | Most stable; Bun optional later |
-| Package manager | pnpm workspaces | Cargo-workspace equivalent |
+| Language | TypeScript 7 (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) | Closest to Swift/Rust discipline available on the web |
+| Runtime | Node 26 LTS (from 2026-10-28) | Native Temporal and current LTS line; Bun optional later |
+| Package manager | pnpm 12 workspaces | Cargo-workspace equivalent |
 | HTTP server | Hono | Small and typed, with typed RPC clients for the frontend |
 | Database | SQLite via better-sqlite3, WAL mode | Synchronous, fast, single file |
-| Queries + migrations | Drizzle ORM + drizzle-kit | SQL-shaped, typed, generates migration SQL you commit |
+| Queries + migrations | Drizzle ORM 0.45 + drizzle-kit 0.31 (1.0 when final) | SQL-shaped, typed, generates migration SQL you commit |
 | Validation | Zod | Parse at every boundary (CSV rows, API bodies, LLM output) |
-| Auth | better-auth | Passkeys, TOTP (authenticator codes), sessions, rate limiting |
-| Frontend | React 19 + Vite | Largest ecosystem |
-| UI kit | shadcn/ui + Tailwind CSS | Copy-in components you own |
+| Auth | better-auth 1.7 + `@better-auth/passkey` | Passkeys, TOTP (authenticator codes), sessions, rate limiting |
+| Frontend | React 19 + Vite 8 | Largest ecosystem |
+| UI kit | shadcn/ui + Tailwind CSS 4 | Copy-in components you own |
 | Data fetching | TanStack Query | Caching, refetch, optimistic edits |
 | Routing | TanStack Router | Type-safe routes and search params (filters live in the URL) |
-| Tables | TanStack Table + virtualisation | Transaction list with thousands of rows |
-| Charts | Apache ECharts | Sankey, stacked area, treemap and calendar heatmaps built in |
+| Tables | TanStack Table 9 + virtualisation | Transaction list with thousands of rows |
+| Charts | Apache ECharts 6 | Sankey, stacked area, treemap and calendar heatmaps built in |
 | Money | Integer cents in a branded `Cents` type; `decimal.js` only for unit prices and FX | No floats anywhere near money |
-| Dates | Temporal polyfill (`@js-temporal/polyfill`) | Plain dates without timezone bugs; FY and fortnight maths |
-| Tests | Vitest (unit), Playwright (end to end) | Fast; Playwright drives a real browser in CI |
-| Lint/format | Biome | One tool, like rustfmt + clippy |
+| Dates | Temporal: native in Node 26, `temporal-polyfill` in the browser | Plain dates without timezone bugs; FY and fortnight maths |
+| Tests | Vitest 5 (unit), Playwright 1.63 (end to end) | Fast; Playwright drives a real browser in CI |
+| Lint/format | Biome 2 | One tool, like rustfmt + clippy |
 | LLM | Two provider adapters: OpenAI-compatible (Ollama, LM Studio, vLLM, OpenAI, OpenRouter) and Anthropic Messages API; optional API key; schema-constrained output | Local by default; cloud only by explicit opt-in |
 | Reverse proxy | Nginx Proxy Manager (existing); bundled Caddy as an optional Compose profile | NPM already handles Let's Encrypt; Caddy covers installs without a proxy |
 | Backups | restic (encrypted, deduplicated) + `VACUUM INTO` snapshots | Consistent snapshot, encrypted copy to TrueNAS in append-only mode |
@@ -38,14 +38,15 @@ One Node process serves the API and the built frontend, runs scheduled jobs, and
 
 ## Repo layout
 
-A pnpm workspace. `domain` depends on nothing but `shared`, so the core logic stays testable and portable, the same way you'd isolate a Rust core crate.
+A pnpm workspace. `domain` depends on nothing but `shared`; `app` depends on `domain` and `shared`, and adapters implement its ports (see the architecture spine), so the core logic stays testable and portable, the same way you'd isolate a Rust core crate.
 
 ```text
 pangolin/
 ├─ apps/
-│  ├─ server/          Hono API, auth, job runner, static hosting
+│  ├─ server/          composition roots: http (Hono API, auth, static), jobs (runner), admin (CLI socket)
 │  └─ web/             React + Vite PWA
 ├─ packages/
+│  ├─ app/             use cases (the only write path) and port interfaces
 │  ├─ shared/          Zod schemas, branded types (Cents, AccountId), money + date utils
 │  ├─ domain/          ledger, import, rules, transfers, budgets, recurring, goals, lots, tax
 │  ├─ db/              Drizzle schema, migrations, repositories, visibleAccounts(), redact()
