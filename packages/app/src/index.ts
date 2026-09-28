@@ -260,6 +260,7 @@ export {
   type ReviewItem,
   type ReviewKind,
   type ReviewScope,
+  UPGRADE_FAILED_REVIEW,
   raiseReviewItem,
   resolveReviewItem,
 } from "./system/review-items.ts";

@@ -454,3 +454,26 @@ alongside the nftables table.
 - **The app does not start after a reboot:** check that the data disk unlocked
   (`findmnt /srv/pangolin`). Docker waits for it; unlock it by hand with the LUKS passphrase
   if Tang was unreachable, then `systemctl start docker`.
+
+## 11. Upgrades and releases
+
+Upgrades to new releases are triggered manually on the server:
+
+```sh
+sudo pangolin upgrade v1.2.0
+```
+
+This verifies the signature of the `v1.2.0` image from GitHub using the public key in `/opt/pangolin/cosign.pub`, extracts its image digest, pulls it, and then orchestrates a safe upgrade:
+1. It stops the stack.
+2. It takes a pre-upgrade backup of your SQLite database inside the data volume.
+3. It writes the new image digest to `.env` and swaps the compose file.
+4. It brings up the stack and waits for it to become healthy.
+
+If the new image fails to become healthy (e.g. bad migrations), the script automatically rolls back to your previous container image, `.env` file, and database copy, leaving a `system.upgrade-failed` review item in the inbox.
+
+### Release process
+
+To cut a new release:
+1. Set GitHub repository secrets for `COSIGN_PRIVATE_KEY` and `COSIGN_PASSWORD`.
+2. Push a new Git tag matching `v*.*.*` (e.g. `git tag v1.2.0 && git push origin v1.2.0`).
+3. CI automatically builds the image for amd64/arm64, runs vulnerability scans, pushes it to GHCR by digest, and signs it. It attaches a signed SBOM.

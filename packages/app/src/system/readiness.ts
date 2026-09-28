@@ -3,7 +3,7 @@ import type { Clock } from "../ports/clock.ts";
 import type { SystemHealthPort } from "../ports/system-health.ts";
 
 /** The checks `/healthz` runs, by the names it reports when one fails. */
-export const READINESS_CHECKS = ["migrations", "database", "jobs"] as const;
+export const READINESS_CHECKS = ["migrations", "database", "jobs", "forced"] as const;
 export type ReadinessCheck = (typeof READINESS_CHECKS)[number];
 
 export interface ReadinessContext {
@@ -69,6 +69,8 @@ export function readiness(ctx: ReadinessContext, input: ReadinessInput): Readine
     failing.push("migrations");
   }
   if (!probe(() => ctx.systemHealth.probeWrite())) failing.push("database");
+  if (process.env.PANGOLIN_TEST_FORCE_UNHEALTHY) failing.push("forced");
+
   if (runner !== "skip") {
     const now = ctx.clock.now().epochMilliseconds;
     const fresh =

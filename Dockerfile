@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- build: install, lint-free build of the PWA, the server bundle and the demo seed ----
-FROM node:26-trixie-slim AS build
+FROM --platform=$BUILDPLATFORM node:26-trixie-slim AS build
 WORKDIR /src
 
 # Workspace manifests first, so the install layer is cached until they change.
@@ -61,8 +61,10 @@ RUN --mount=type=secret,id=ca,required=false \
 FROM node:26-trixie-slim AS runtime
 # The release workflow passes the tag (e.g. v1.2.3); local builds report "dev".
 ARG PANGOLIN_VERSION=dev
+ARG PANGOLIN_TEST_FORCE_UNHEALTHY
 ENV NODE_ENV=production \
     PANGOLIN_VERSION=${PANGOLIN_VERSION} \
+    PANGOLIN_TEST_FORCE_UNHEALTHY=${PANGOLIN_TEST_FORCE_UNHEALTHY} \
     PANGOLIN_DATA_DIR=/data \
     PORT=3000
 WORKDIR /app

@@ -4,17 +4,20 @@ on:
   push:
     tags: ["v*.*.*"]
 
-permissions:
-  contents: write
-  packages: write
-  id-token: write # keyless cosign signing
-  attestations: write
-
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   image:
+    needs: ci
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
+      - name: Lowercase repo
+        run: echo "REPO=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -22,35 +25,141 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
       - id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
           build-args: PANGOLIN_VERSION=${{ github.ref_name }}
-          provenance: mode=max
-          sbom: true
-      - uses: sigstore/cosign-installer@v3
-      - name: Sign the image (keyless, bound to this workflow)
-        run: cosign sign --yes "ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}"
+          provenance: false
+          sbom: false
       - uses: anchore/scan-action@v6
         with:
-          image: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+          image: ghcr.io/${{ env.REPO }}@${{ steps.build.outputs.digest }}
           fail-build: true
           severity-cutoff: critical
           only-fixed: true
+      - name: Tag the image
+        run: |
+          MAJOR_MINOR=$(echo "${{ github.ref_name }}" | grep -oE '^v[0-9]+\.[0-9]+')
+          docker buildx imagetools create \
+            -t ghcr.io/${{ env.REPO }}:${{ github.ref_name }} \
+            -t ghcr.io/${{ env.REPO }}:${MAJOR_MINOR} \
+            -t ghcr.io/${{ env.REPO }}:latest \
+            ghcr.io/${{ env.REPO }}@${{ steps.build.outputs.digest }}
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign the image
+        run: |
+          echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
+          cosign sign --key cosign.key --tlog-upload=false -y "ghcr.io/${{ env.REPO }}@${{ steps.build.outputs.digest }}"
+        env:
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+      - name: Attach SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ env.REPO }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+      - name: Attest SBOM
+        run: |
+          cosign attest --key cosign.key --type spdxjson --predicate sbom.spdx.json --tlog-upload=false -y "ghcr.io/${{ env.REPO }}@${{ steps.build.outputs.digest }}"
+        env:
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: deploy/install.sh
+          files: |
+            deploy/install.sh
+            deploy/cosign.pub
+
+
+  upgrade-test:
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lowercase repo
+        run: echo "REPO=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+      - name: Build image A (healthy base)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: localhost:5000/${{ env.REPO }}:v1.0.0
+          build-args: PANGOLIN_VERSION=v1.0.0
+      - name: Add extra migration for image B
+        run: |
+          echo "CREATE TABLE IF NOT EXISTS _upgrade_test_sentinel (id INTEGER PRIMARY KEY);" > packages/db/migrations/0999_test_sentinel.sql
+      - name: Build image B (healthy + extra migration)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: localhost:5000/${{ env.REPO }}:v2.0.0
+          build-args: PANGOLIN_VERSION=v2.0.0
+      - name: Remove extra migration (C is forced-unhealthy without it)
+        run: rm packages/db/migrations/0999_test_sentinel.sql
+      - name: Build image C (forced unhealthy — triggers rollback to B)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: localhost:5000/${{ env.REPO }}:v3.0.0
+          build-args: |
+            PANGOLIN_VERSION=v3.0.0
+            PANGOLIN_TEST_FORCE_UNHEALTHY=1
+      - uses: sigstore/cosign-installer@v3
+      - name: Generate throwaway cosign key pair and sign images
+        run: |
+          COSIGN_PASSWORD="" cosign generate-key-pair
+          COSIGN_PASSWORD="" cosign sign --key cosign.key --tlog-upload=false -y localhost:5000/${{ env.REPO }}:v1.0.0
+          COSIGN_PASSWORD="" cosign sign --key cosign.key --tlog-upload=false -y localhost:5000/${{ env.REPO }}:v2.0.0
+          COSIGN_PASSWORD="" cosign sign --key cosign.key --tlog-upload=false -y localhost:5000/${{ env.REPO }}:v3.0.0
+      - name: Start stack on image A
+        run: |
+          mkdir -p /opt/pangolin
+          cat > /opt/pangolin/compose.yaml << 'COMPOSE'
+          services:
+            pangolin:
+              image: localhost:5000/${{ env.REPO }}:v1.0.0
+              network_mode: host
+              volumes:
+                - pangolin-data:/data
+          volumes:
+            pangolin-data:
+          COMPOSE
+          printf 'PANGOLIN_IMAGE=localhost:5000/%s:v1.0.0\nPANGOLIN_DATA_DIR=/data\n' "$REPO" > /opt/pangolin/.env
+          cp cosign.pub /opt/pangolin/cosign.pub
+          docker compose -f /opt/pangolin/compose.yaml up -d
+          sleep 10
+      - name: Install wrapper script
+        run: |
+          docker run --rm -v /opt/pangolin:/staging localhost:5000/${{ env.REPO }}:v1.0.0 sh -c 'cp /app/deploy/pangolin /staging/'
+          install -m 755 /opt/pangolin/pangolin /usr/local/bin/pangolin
+      - name: Upgrade to B (must succeed — B is healthy with extra migration)
+        run: |
+          PANGOLIN_HOME=/opt/pangolin pangolin upgrade v2.0.0
+          docker compose -f /opt/pangolin/compose.yaml ps
+          # Verify sentinel table exists (B's schema applied)
+          docker run --rm -v pangolin-data:/data alpine sh -c \
+            'sqlite3 /data/pangolin.sqlite "SELECT count(*) FROM _upgrade_test_sentinel;"'
+      - name: Upgrade to C (must fail and roll back to B with B's schema)
+        run: |
+          set +e
+          PANGOLIN_HOME=/opt/pangolin pangolin upgrade v3.0.0
+          rc=$?
+          set -e
+          [ $rc -ne 0 ] || { echo "Upgrade to C should have failed!"; exit 1; }
+          # Verify rollback: marker exists in volume, sentinel table still present (B's schema)
+          docker run --rm -v pangolin-data:/data alpine sh -c 'test -f /data/upgrade-failed.json'
+          docker run --rm -v pangolin-data:/data alpine sh -c \
+            'sqlite3 /data/pangolin.sqlite "SELECT count(*) FROM _upgrade_test_sentinel;"'
+

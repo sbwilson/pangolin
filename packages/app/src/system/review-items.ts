@@ -44,6 +44,12 @@ export function defineReviewKind(spec: ReviewKind): ReviewKind {
 }
 
 /** A job that died and needs a person (AD-9). Household scope; entity `job:<id>`. */
+export const UPGRADE_FAILED_REVIEW = defineReviewKind({
+  kind: "system.upgrade-failed",
+  module: "system",
+  scope: "household",
+});
+
 export const JOB_DEAD_REVIEW = defineReviewKind({
   kind: "job.dead",
   module: "system",

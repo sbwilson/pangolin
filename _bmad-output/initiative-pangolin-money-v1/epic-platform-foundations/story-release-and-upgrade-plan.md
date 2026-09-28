@@ -3,12 +3,13 @@ title: 'Release and upgrade'
 type: 'feature'
 ticket: '11'
 created: '2026-09-27'
-status: 'ready-for-dev'
+status: 'built'
+baseline_revision: '3cbcae634064c8efbab777d8f56020b4a48d61a8'
 route: 'full'
 route_source: 'auto'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'thorough'
+review_source: 'auto'
+lenses_ran: ['blind-hunter', 'edge-case-hunter', 'verification-gap', 'intent-alignment']
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/specs/spec-pangolin-money/deployment-and-ops.md'
@@ -87,6 +88,26 @@ context:
 ## Plan Change Log
 
 ## Review Triage Log
+
+| # | Lens | Location | Claim | Verdict | Route | Evidence |
+|---|------|----------|-------|---------|-------|----------|
+| 1 | edge-case | `deploy/pangolin` rollback | `printf '{}' > "$HOME_DIR/upgrade-failed.json"` writes to host `/opt/pangolin`; server reads from `config.dataDir` = `/data` in container (the data volume) — different paths | **high** | patch | Verified: `server.ts:185` reads `join(config.dataDir, "upgrade-failed.json")`; script writes to `$HOME_DIR` which is the host dir, never mounted as `/data` inside the container |
+| 2 | verification-gap | `deploy/pangolin.test.ts` | Docker stub doesn't handle `inspect --format '{{ range .Mounts }}...'` → `DATA_VOL` empty → `die` on every test | **high** | patch | Verified: stub only handles named inspect formats, not the Mounts range template; every test would exit 1 before any upgrade logic runs |
+| 3 | blind-hunter | `deploy/pangolin` rollback | `cp -a /backup/pangolin.sqlite* /data/` doesn't delete WAL/SHM files created by the failed new version first — could corrupt restored database | **high** | patch | Verified: SQLite WAL files from a newer schema applied to the restored older `.sqlite` would replay forward, defeating rollback |
+| 4 | blind-hunter | `apps/server/src/server.ts:185-195` | If `write()` throws (e.g. DB lock), startup aborts with marker still on disk → permanent crash loop | **medium** | patch | Verified: no try/catch around the write+rmSync block; a throw bubbles out of `startServer` |
+| 5 | edge-case | `.github/workflows/release.yml` | CI test structure inverts the plan: plan requires A→B succeed (B healthy+migration) then B→C rollback (C forced-unhealthy); current test has B forced-unhealthy (A→B rollback) then A→C success | **medium** | patch | Verified against Tasks section: "upgrade A→B succeeds, B→C rolls back to B with B's schema" |
+| 6 | edge-case | `renovate.json:11-23` | Regex manager only captures the restic version string; checksums in `Dockerfile`/`install.sh` are not updated when version bumps | **medium** | patch | Plan decision: "one regex manager for the restic version with its checksums"; no checksum matchStrings present |
+| 7 | edge-case | `renovate.json:15-16` | `(?<currentValue>.*?)` non-greedy without terminator matches empty string | **medium** | patch | Verified: `.*?` matches empty; better pattern is `[^\s"]+` |
+| 8 | verification-gap | `apps/server/src/server.ts:185-195` | No test verifies startup reads and deletes the marker and raises `system.upgrade-failed` review item | **medium** | patch | Verified: grep for `UPGRADE_FAILED_REVIEW` finds no test files; behavior completely unverified |
+| 9 | verification-gap | `deploy/pangolin.test.ts` rollback test | Rollback test only checks stderr message; doesn't assert `.env`/`compose.yaml` contain pre-upgrade content | **medium** | patch | Verified: test at line ~553 only checks `stderr` contains rollback message |
+| 10 | blind-hunter | `deploy/pangolin` | Digest extracted with `grep -o 'sha256:[a-f0-9]\{64\}'` — cosign output may include other SHA-256 hashes (signature, attestation) before the image digest | **medium** | patch | Real risk; cosign JSON output embeds the image digest in a structured field, not always the first SHA-256 |
+| 11 | blind-hunter | `deploy/pangolin` rollback | If `compose stop` fails during rollback, `\|\| die` exits immediately, leaving new image in `.env`/`compose.yaml` with nothing restored | **medium** | patch | Verified: rollback path `compose stop ... \|\| die "could not stop stack during rollback"` exits before any restore |
+| 12 | blind-hunter | `deploy/pangolin` health loop | Loop doesn't detect `unhealthy` or `exited` states — waits full 60s even when container immediately dies | **low** | patch | Trivial fix: check for `unhealthy`/`exited` to break early |
+| 13 | verification-gap | `deploy/install.sh:1087` | `cosign.pub` copy not verified in `install.test.ts`; E2E test manually places the key | **low** | reject | Everyday use (fresh install) would hit this, but fix (update E2E to use `install.sh`) adds meaningful complexity beyond a direct correction |
+| 14 | blind-hunter | `deploy/pangolin` | Health check timeout hardcoded at 60s; long migrations cause false-positive rollback | **low** | defer | Pre-existing design choice; 60s is reasonable for v1; can be made configurable later |
+| 15 | blind-hunter | `packages/app/src/system/readiness.ts` | `PANGOLIN_TEST_FORCE_UNHEALTHY` test flag in production readiness code | **false** | reject | Plan decisions explicitly require this build arg: "release images never set" it |
+| 16 | blind-hunter | `packages/app/src/system/review-items.ts` | No UI resolver for `system.upgrade-failed` | **false** | reject | Plan says "turns into a household review item" — generic review inbox display is sufficient; custom resolver not required |
+| 17 | verification-gap | `apps/server/src/server.ts` | `existsSync`/`rmSync` imported directly, not injectable | **low** | reject | Cosmetic testability preference; no named caller will diverge from this |
 
 ## Verification
 

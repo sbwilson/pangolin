@@ -29,7 +29,116 @@ compose() {
   docker compose --project-directory "$HOME_DIR" -f "$HOME_DIR/compose.yaml" "$@"
 }
 
+
+if [ "${1:-}" = upgrade ]; then
+  if [ $# -ne 2 ]; then
+    printf 'pangolin: usage: pangolin upgrade <tag>\n' >&2
+    exit 2
+  fi
+  TAG=$2
+
+  id=$(compose ps -q --status running pangolin 2>/dev/null || true)
+  if [ -z "$id" ]; then
+    die "refusing to upgrade: stack is not running"
+  fi
+  status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id" 2>/dev/null || echo missing)
+  if [ "$status" != "healthy" ]; then
+    die "refusing to upgrade: stack is currently $status, not healthy"
+  fi
+
+  CURRENT_IMAGE=$(docker inspect --format '{{.Config.Image}}' "$id")
+  REPO=$(echo "$CURRENT_IMAGE" | cut -d: -f1 | cut -d@ -f1)
+  TARGET_IMAGE="${REPO}:${TAG}"
+
+  printf 'Verifying %s...\n' "$TARGET_IMAGE"
+  VERIFY_OUT=$(docker run --rm \
+    -v "$HOME_DIR/cosign.pub:/cosign.pub:ro" \
+    -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
+    ghcr.io/sigstore/cosign:v3.2.4 verify --key /cosign.pub --insecure-ignore-tlog=true \
+    --output json "$TARGET_IMAGE" 2>&1) || die "bad signature: $VERIFY_OUT"
+  # Extract the image digest from the structured JSON payload (first element .critical.image)
+  DIGEST=$(printf '%s' "$VERIFY_OUT" | grep -o '"docker-manifest-digest":"sha256:[a-f0-9]\{64\}"' | grep -o 'sha256:[a-f0-9]\{64\}' | head -n1)
+  [ -n "$DIGEST" ] || die "could not extract digest from cosign output"
+  
+  TARGET_REF="${REPO}@${DIGEST}"
+  if [ "$CURRENT_IMAGE" = "$TARGET_REF" ]; then
+    printf 'already on %s\n' "$TAG"
+    exit 0
+  fi
+
+  printf 'Pulling %s...\n' "$TARGET_REF"
+  docker pull -q "$TARGET_REF" >/dev/null || die "failed to pull $TARGET_REF"
+
+  mkdir -p "$HOME_DIR/staging"
+  docker run --rm -v "$HOME_DIR/staging:/staging" "$TARGET_REF" sh -c 'cp /app/deploy/compose.yaml /app/deploy/pangolin /staging/' || die "failed to extract files"
+
+  # Capture the data volume name before stopping (compose ps returns empty after stop)
+  DATA_VOL=$(docker inspect --format '{{ range .Mounts }}{{ if eq .Destination "/data" }}{{ .Name }}{{ end }}{{ end }}' "$id" 2>/dev/null || true)
+  [ -n "$DATA_VOL" ] || die "could not determine data volume name"
+
+  printf 'Stopping stack for upgrade...\n'
+  compose stop pangolin > /dev/null || die "could not stop stack"
+
+  STAMP=$(date +%Y%m%d%H%M%S)
+  BACKUP_DIR="$HOME_DIR/pre-upgrade-$STAMP"
+  mkdir -p "$BACKUP_DIR"
+  # Copy DB files from the volume into a host-side directory (stack is stopped)
+  docker run --rm -v "${DATA_VOL}":/data:ro -v "$BACKUP_DIR":/backup \
+    alpine sh -c 'cp -a /data/pangolin.sqlite* /backup/ 2>/dev/null || true'
+  # Prune: keep only the last two pre-upgrade backups
+  ls -1dt "$HOME_DIR"/pre-upgrade-* 2>/dev/null | tail -n +3 | xargs -r rm -rf
+
+  cp "$HOME_DIR/.env" "$HOME_DIR/.env.bak"
+  sed -i "s|^PANGOLIN_IMAGE=.*|PANGOLIN_IMAGE=$TARGET_REF|" "$HOME_DIR/.env"
+  cp "$HOME_DIR/compose.yaml" "$HOME_DIR/compose.yaml.bak"
+  cp "$HOME_DIR/staging/compose.yaml" "$HOME_DIR/compose.yaml"
+  cp /usr/local/bin/pangolin "$HOME_DIR/pangolin.bak"
+  cp "$HOME_DIR/staging/pangolin" /usr/local/bin/pangolin
+  chmod +x /usr/local/bin/pangolin
+
+  printf 'Starting upgraded stack...\n'
+  compose up -d pangolin >/dev/null || true
+
+  WAITED=0
+  UPGRADE_OK=0
+  while [ $WAITED -lt 60 ]; do
+    NEW_ID=$(compose ps -q pangolin 2>/dev/null || true)
+    if [ -n "$NEW_ID" ]; then
+      NEW_STATUS=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$NEW_ID" 2>/dev/null || echo missing)
+      if [ "$NEW_STATUS" = healthy ]; then
+        UPGRADE_OK=1
+        break
+      elif [ "$NEW_STATUS" = unhealthy ] || [ "$NEW_STATUS" = exited ] || [ "$NEW_STATUS" = dead ]; then
+        break  # no point waiting further
+      fi
+    fi
+    sleep 3
+    WAITED=$((WAITED + 3))
+  done
+
+  if [ $UPGRADE_OK -eq 1 ]; then
+    printf 'Upgrade to %s successful. Old image was %s.\n' "$TAG" "$CURRENT_IMAGE"
+    exit 0
+  else
+    printf 'Health check failed, rolling back...\n'
+    # Warn but proceed: if stop fails the container may already be dead; restore anyway.
+    compose stop pangolin > /dev/null 2>&1 || printf 'pangolin: warning: stop failed during rollback\n' >&2
+    # DATA_VOL was captured before the upgrade started; reuse it for restore
+    docker run --rm -v "${DATA_VOL}":/data -v "$BACKUP_DIR":/backup:ro \
+      alpine sh -c 'rm -f /data/pangolin.sqlite* && cp -a /backup/pangolin.sqlite* /data/' \
+      || die "could not restore DB copy"
+    mv "$HOME_DIR/.env.bak" "$HOME_DIR/.env"
+    mv "$HOME_DIR/compose.yaml.bak" "$HOME_DIR/compose.yaml"
+    mv "$HOME_DIR/pangolin.bak" /usr/local/bin/pangolin
+    # Write the marker into the data volume so the server sees it at next start
+    docker run --rm -v "${DATA_VOL}":/data alpine sh -c 'printf "{}" > /data/upgrade-failed.json'
+    compose up -d pangolin > /dev/null || die "could not start previous stack after rollback"
+    die "upgrade failed during health check. rolled back."
+  fi
+fi
+
 # restore: stop → one-off run (which verifies, swaps and cancels jobs under the lock) → start. The
+
 # stack comes back up even when a check fails, on the database it had.
 if [ "${1:-}" = restore ]; then
   # Check the arguments before stopping anything: at most `latest` or a hex snapshot ID.

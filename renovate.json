@@ -1,0 +1,37 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "baseBranches": ["develop"],
+  "schedule": ["before 5am on monday"],
+  "minimumReleaseAge": "7 days",
+  "packageRules": [
+    {
+      "matchPackageNames": ["typescript"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["Dockerfile", "deploy/install\\.sh"],
+      "matchStrings": [
+        "RESTIC_VERSION=(?<currentValue>[^\\s\"\\\\]+)",
+        "RESTIC_VERSION=\"(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "restic/restic",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["Dockerfile"],
+      "matchStrings": [
+        "RESTIC_SHA256_AMD64=(?<currentDigest>[a-f0-9]{64})\\s[\\s\\S]*?restic_(?<currentValue>[^_]+)_linux_amd64",
+        "RESTIC_SHA256_ARM64=(?<currentDigest>[a-f0-9]{64})\\s[\\s\\S]*?restic_(?<currentValue>[^_]+)_linux_arm64"
+      ],
+      "depNameTemplate": "restic/restic",
+      "datasourceTemplate": "github-releases",
+      "autoReplaceStringTemplate": "RESTIC_SHA256_{{{replace 'amd64' 'AMD64' (replace 'arm64' 'ARM64' arch)}}}={{newDigest}}"
+    }
+  ]
+}

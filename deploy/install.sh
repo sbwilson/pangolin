@@ -1084,6 +1084,7 @@ write_files() {
   step "Writing compose.yaml, the allowlist and the firewall"
   install_dir=$(path "$INSTALL_DIR")
   cp "$SUPPORT/compose.yaml" "$install_dir/compose.yaml.new"
+  cp "$SUPPORT/cosign.pub" "$install_dir/cosign.pub"
   chmod 0644 "$install_dir/compose.yaml.new"
   mv "$install_dir/compose.yaml.new" "$install_dir/compose.yaml"
 

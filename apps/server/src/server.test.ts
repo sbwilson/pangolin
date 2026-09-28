@@ -19,6 +19,7 @@ import {
   enqueueJob,
   type JobKind,
   jobHandler,
+  listReviewItems,
   updateHouseholdSettings,
   write,
 } from "@pangolin/app";
@@ -753,6 +754,50 @@ describe("startServer admin socket", () => {
       expect(server.adminSocket).toBeUndefined();
       expect(existsSync(join(dir, "run"))).toBe(false);
       expect(existsSync(dataDir())).toBe(false);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+describe("startServer upgrade-failed marker", () => {
+  it("raises system.upgrade-failed review item and deletes the marker on startup", async () => {
+    // Pre-create the data dir and write the marker file before the server starts
+    mkdirSync(dataDir(), { recursive: true });
+    const markerFile = join(dataDir(), "upgrade-failed.json");
+    writeFileSync(markerFile, "{}");
+
+    const server = await boot();
+    try {
+      // Marker must be deleted
+      expect(existsSync(markerFile)).toBe(false);
+
+      // A system.upgrade-failed review item must be present
+      const ctx = {
+        uow: server.uow,
+        clock: server.clock,
+        newId: createIdGenerator(),
+        viewer: systemViewer(),
+      };
+      const items = listReviewItems(ctx);
+      expect(items.some((i) => i.kind === "system.upgrade-failed")).toBe(true);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("starts cleanly when no upgrade-failed marker exists", async () => {
+    const server = await boot();
+    try {
+      expect(existsSync(join(dataDir(), "upgrade-failed.json"))).toBe(false);
+      const ctx = {
+        uow: server.uow,
+        clock: server.clock,
+        newId: createIdGenerator(),
+        viewer: systemViewer(),
+      };
+      const items = listReviewItems(ctx);
+      expect(items.some((i) => i.kind === "system.upgrade-failed")).toBe(false);
     } finally {
       await server.close();
     }
