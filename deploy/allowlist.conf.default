@@ -36,7 +36,16 @@ query1.finance.yahoo.com:443
 query2.finance.yahoo.com:443
 fc.yahoo.com:443
 
-# The LLM endpoint is added in epic 5.
+# Antigravity (Google AI coding assistant): Gemini API and Google Cloud AI infrastructure
+generativelanguage.googleapis.com:443
+aiplatform.googleapis.com:443
+oauth2.googleapis.com:443
+accounts.google.com:443
+daily-cloudcode-pa.googleapis.com:443
+
+# Claude Code (Anthropic): primary API and telemetry/feature-flag services
+api.anthropic.com:443
+statsig.anthropic.com:443
 
 # Building the image on this VM (install.sh --build) also needs these, and git in its clone:
 # install.sh --build adds them uncommented.
