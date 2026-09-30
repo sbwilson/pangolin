@@ -91,6 +91,7 @@ async function cli(argv: string[], migrationsDir = packageMigrationsDir) {
     },
     migrationsDir,
     pollMs: 20,
+    checkReachable: async () => {},
     io: { out: (text) => out.push(text), err: (text) => err.push(text) },
   });
   return { code, out: out.join("\n"), err: err.join("\n") };
@@ -290,6 +291,30 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
     expect(withDb((db) => db.prepare("SELECT COUNT(*) FROM job").pluck().get())).toBe(0);
   });
 
+  it("backup fails before enqueueing when the backup server is unreachable", async () => {
+    backup = stubRestic(join(dir, "stub")).config;
+    await boot();
+    const jobs = () => withDb((db) => db.prepare("SELECT COUNT(*) FROM job").pluck().get());
+    const before = jobs();
+    const err: string[] = [];
+    const code = await runCli(["backup"], {
+      env: {
+        PANGOLIN_DATA_DIR: dataDir(),
+        PANGOLIN_ADMIN_SOCKET: socketPath(),
+        PANGOLIN_BACKUP_REPOSITORY: "rest:https://restic.example.test/x",
+        PANGOLIN_RESTIC_PASSWORD_FILE: backup.passwordFile,
+      },
+      migrationsDir: packageMigrationsDir,
+      checkReachable: async () => {
+        throw new Error("Cannot reach the backup server restic.example.test:443 (no answer)");
+      },
+      io: { out: () => {}, err: (text) => err.push(text) },
+    });
+    expect(code).toBe(EXIT_FAILED);
+    expect(err.join("\n")).toContain("Cannot reach the backup server restic.example.test:443");
+    expect(jobs()).toBe(before);
+  });
+
   it("backup on a stopped server says it is not running, exit 3", async () => {
     backup = stubRestic(join(dir, "stub")).config;
     mkdirSync(dataDir());
@@ -344,6 +369,7 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
       },
       migrationsDir: packageMigrationsDir,
       pollMs: 20,
+      checkReachable: async () => {},
       backupWaitMs: 0,
       io: { out: (text) => out.push(text), err: (text) => err.push(text) },
     });

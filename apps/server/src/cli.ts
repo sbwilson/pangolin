@@ -33,6 +33,7 @@ import {
 } from "./admin/index.ts";
 import type { AdminResponse } from "./admin/socket.ts";
 import { nodeTokens } from "./auth/secret.ts";
+import { checkRepositoryReachable } from "./backup/reachable.ts";
 import type { Restic } from "./backup/restic.ts";
 import { type Config, loadConfig } from "./config.ts";
 
@@ -72,6 +73,8 @@ export interface CliOptions {
   readonly backupWaitMs?: number;
   /** Replaces restic for `restore`, for tests. */
   readonly restic?: Restic;
+  /** Replaces the backup server reachability check `backup` makes first, for tests. */
+  readonly checkReachable?: (repository: string) => Promise<void>;
 }
 
 function printError(io: CliIo, error: { code: string; message: string; details?: unknown }) {
@@ -270,9 +273,9 @@ function notAnswering(config: Config, io: CliIo): number {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function progressLine(progress: BackupProgress & { state: "running" }): string {
+function progressLine(progress: BackupProgress & { state: "running" }, seconds: number): string {
   const step = progress.step === "snapshot" ? "Taking the snapshot" : "Pushing it with restic";
-  return `${step}${progress.retrying ? " (an attempt failed; it will retry)" : ""} …`;
+  return `${step}${progress.retrying ? " (an attempt failed; it will retry)" : ""} … ${seconds}s`;
 }
 
 /**
@@ -290,6 +293,12 @@ async function backupCli(config: Config, options: CliOptions): Promise<number> {
     io.err("pangolin: the admin socket is disabled (PANGOLIN_ADMIN_SOCKET is empty)");
     return EXIT_FAILED;
   }
+  try {
+    await (options.checkReachable ?? checkRepositoryReachable)(config.backup.repository);
+  } catch (error) {
+    io.err(`pangolin: ${error instanceof Error ? error.message : String(error)}`);
+    return EXIT_FAILED;
+  }
   const started = await viaSocket(config, "backup", {});
   if (started === undefined) return notAnswering(config, io);
   if (!started.ok) {
@@ -299,6 +308,8 @@ async function backupCli(config: Config, options: CliOptions): Promise<number> {
   const { jobId } = started.result as BackupStarted;
   io.out(`Backup ${jobId} started`);
   let shown = "";
+  let shownAt = 0;
+  const startedAt = Date.now();
   const deadline = Date.now() + (options.backupWaitMs ?? 60 * 60_000);
   for (;;) {
     if (Date.now() > deadline) {
@@ -325,9 +336,14 @@ async function backupCli(config: Config, options: CliOptions): Promise<number> {
       );
       return EXIT_FAILED;
     }
-    const line = progressLine(progress);
-    if (line !== shown) io.out(line);
-    shown = line;
+    // The step and retry state as the change; the seconds tick every 5 s so it is seen working.
+    const seconds = Math.floor((Date.now() - startedAt) / 1000);
+    const stage = progressLine(progress, 0);
+    if (stage !== shown || seconds - shownAt >= 5) {
+      io.out(progressLine(progress, seconds));
+      shownAt = seconds;
+    }
+    shown = stage;
     await sleep(options.pollMs ?? 1000);
   }
 }

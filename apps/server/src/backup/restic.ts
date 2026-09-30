@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { JobSignal } from "@pangolin/app";
+import { checkRepositoryReachable } from "./reachable.ts";
 
 /** Every snapshot this server pushes carries this host name and tag. */
 export const RESTIC_HOST = "pangolin";
@@ -181,6 +182,7 @@ export function createRestic(options: ResticOptions): Restic {
 
   return {
     ensureRepository: async (signal) => {
+      await checkRepositoryReachable(options.repository);
       const probe = await run(["cat", "config"], undefined, signal);
       if (probe.code === 0) return;
       if (probe.code !== EXIT_NO_REPOSITORY) throw failed("cat config", probe);
