@@ -168,6 +168,15 @@ describe("pangolin upgrade", () => {
     expect(envContent).toContain(`PANGOLIN_IMAGE=ghcr.io/sbwilson/pangolin@${STUB_DIGEST}`);
   });
 
+  it("upgrades a locally built image (pangolin:local) from the release repository", () => {
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1", STUB_IMAGE: "pangolin:local" });
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.logs).toContain("pull -q ghcr.io/sbwilson/pangolin:v2.0");
+    expect(readFileSync(join(homeDir, ".env"), "utf8")).toContain(
+      `PANGOLIN_IMAGE=ghcr.io/sbwilson/pangolin@${STUB_DIGEST}`,
+    );
+  });
+
   it("refuses if bad signature", () => {
     const res = runUpgrade("v2.0", { STUB_RUNNING: "1", STUB_BAD_SIG: "1" });
     expect(res.status).toBe(1);

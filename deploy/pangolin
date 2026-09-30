@@ -50,6 +50,12 @@ if [ "${1:-}" = upgrade ]; then
   # The repository without its tag or digest; a registry port (localhost:5000/x:v1) is not a tag.
   REPO=${CURRENT_IMAGE%%@*}
   case "${REPO##*/}" in *:*) REPO=${REPO%:*} ;; esac
+  # A locally built image (install.sh --build: pangolin:local) has no registry to pull from:
+  # upgrade from the release repository instead (PANGOLIN_UPGRADE_REPOSITORY overrides it).
+  case "$REPO" in
+    */*) ;;
+    *) REPO=${PANGOLIN_UPGRADE_REPOSITORY:-ghcr.io/sbwilson/pangolin} ;;
+  esac
   TARGET_IMAGE="${REPO}:${TAG}"
 
   # Resolve the tag to a digest first, then verify and run exactly that digest.
