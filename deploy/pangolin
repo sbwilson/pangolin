@@ -89,6 +89,21 @@ if [ "${1:-}" = upgrade ]; then
   DATA_VOL=$(docker inspect --format '{{ range .Mounts }}{{ if eq .Destination "/data" }}{{ .Source }}{{ end }}{{ end }}' "$id" 2>/dev/null || true)
   [ -n "$DATA_VOL" ] || die "could not determine the data directory"
 
+  # Whatever goes wrong from here on, the previous stack must come back up: restore the files
+  # the upgrade replaced (if it got that far) and start it again. Cleared once the rollback
+  # below takes over, and on success.
+  STOPPED=1
+  restart_previous() {
+    rc=$?
+    if [ "$STOPPED" = 1 ] && [ "$rc" -ne 0 ]; then
+      printf 'pangolin: upgrade interrupted; restarting the previous stack\n' >&2
+      [ -f "$HOME_DIR/.env.bak" ] && mv "$HOME_DIR/.env.bak" "$HOME_DIR/.env"
+      [ -f "$HOME_DIR/compose.yaml.bak" ] && mv "$HOME_DIR/compose.yaml.bak" "$HOME_DIR/compose.yaml"
+      [ -f "$HOME_DIR/pangolin.bak" ] && mv "$HOME_DIR/pangolin.bak" /usr/local/bin/pangolin
+      compose up -d pangolin >/dev/null 2>&1 || true
+    fi
+  }
+  trap restart_previous EXIT
   printf 'Stopping stack for upgrade...\n'
   compose stop pangolin > /dev/null || die "could not stop stack"
 
@@ -97,7 +112,7 @@ if [ "${1:-}" = upgrade ]; then
   mkdir -p "$BACKUP_DIR"
   # Copy DB files from the volume into a host-side directory (stack is stopped)
   docker run --rm -v "${DATA_VOL}":/data:ro -v "$BACKUP_DIR":/backup \
-    alpine sh -c 'cp -a /data/pangolin.sqlite* /backup/ 2>/dev/null || true'
+    --user 0 --entrypoint sh "$CURRENT_IMAGE" -c 'cp -a /data/pangolin.sqlite* /backup/ 2>/dev/null || true'
   # Prune: keep only the last two pre-upgrade backups
   ls -1dt "$HOME_DIR"/pre-upgrade-* 2>/dev/null | tail -n +3 | xargs -r rm -rf
 
@@ -130,21 +145,23 @@ if [ "${1:-}" = upgrade ]; then
   done
 
   if [ $UPGRADE_OK -eq 1 ]; then
+    STOPPED=0
     printf 'Upgrade to %s successful. Old image was %s.\n' "$TAG" "$CURRENT_IMAGE"
     exit 0
   else
     printf 'Health check failed, rolling back...\n'
+    STOPPED=0  # the rollback below restores and restarts on its own
     # Warn but proceed: if stop fails the container may already be dead; restore anyway.
     compose stop pangolin > /dev/null 2>&1 || printf 'pangolin: warning: stop failed during rollback\n' >&2
     # DATA_VOL was captured before the upgrade started; reuse it for restore
     docker run --rm -v "${DATA_VOL}":/data -v "$BACKUP_DIR":/backup:ro \
-      alpine sh -c 'rm -f /data/pangolin.sqlite* && cp -a /backup/pangolin.sqlite* /data/' \
+      --user 0 --entrypoint sh "$CURRENT_IMAGE" -c 'rm -f /data/pangolin.sqlite* && cp -a /backup/pangolin.sqlite* /data/' \
       || die "could not restore DB copy"
     mv "$HOME_DIR/.env.bak" "$HOME_DIR/.env"
     mv "$HOME_DIR/compose.yaml.bak" "$HOME_DIR/compose.yaml"
     mv "$HOME_DIR/pangolin.bak" /usr/local/bin/pangolin
     # Write the marker into the data volume so the server sees it at next start
-    docker run --rm -v "${DATA_VOL}":/data alpine sh -c 'printf "{}" > /data/upgrade-failed.json'
+    docker run --rm -v "${DATA_VOL}":/data --user 0 --entrypoint sh "$CURRENT_IMAGE" -c 'printf "{}" > /data/upgrade-failed.json'
     compose up -d pangolin > /dev/null || die "could not start previous stack after rollback"
     die "upgrade failed during health check. rolled back."
   fi

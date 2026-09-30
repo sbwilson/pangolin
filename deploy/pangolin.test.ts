@@ -91,8 +91,10 @@ function buildDockerStub(extraCases: string[] = []): string {
     // compose up
     '  "compose "*up*pangolin*)',
     "    ;;",
-    // DB backup/restore (alpine sh -c with sqlite glob)
-    "  *alpine*sh*-c*sqlite*|*alpine*sh*-c*cp*backup*|*alpine*sh*-c*rm*sqlite*|*alpine*sh*-c*upgrade-failed*)",
+    // DB backup/restore (one-off sh -c in the running image)
+    "  *entrypoint*sh*-c*sqlite*|*entrypoint*sh*-c*cp*backup*|*entrypoint*sh*-c*rm*sqlite*|*entrypoint*sh*-c*upgrade-failed*)",
+    '    [ "$STUB_BACKUP_FAIL" = 1 ] && [ ! -f "${HOME_DIR}/.env.bak" ] && exit 1',
+    '    [ "$STUB_BACKUP_FAIL" = 1 ] && case "$*" in *"cp -a /data"*) exit 1 ;; esac',
     "    ;;",
     // Extract files from new image into staging
     `  *"${ORIGINAL_IMAGE.replace(/\//g, "\\/")}*sh*-c*cp*/app/deploy"*|*"ghcr.io"*"sh -c 'cp /app/deploy"*)`,
@@ -175,6 +177,16 @@ describe("pangolin upgrade", () => {
     expect(readFileSync(join(homeDir, ".env"), "utf8")).toContain(
       `PANGOLIN_IMAGE=ghcr.io/sbwilson/pangolin@${STUB_DIGEST}`,
     );
+  });
+
+  it("restarts the previous stack when the upgrade dies after stopping it", () => {
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1", STUB_BACKUP_FAIL: "1" });
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain("restarting the previous stack");
+    expect(readFileSync(join(homeDir, ".env"), "utf8")).toBe(ORIGINAL_ENV);
+    // stop, then up again
+    expect(res.logs.lastIndexOf("compose")).toBeGreaterThan(res.logs.indexOf("stop"));
+    expect(res.logs).toMatch(/stop[\s\S]*up -d/);
   });
 
   it("refuses if bad signature", () => {
