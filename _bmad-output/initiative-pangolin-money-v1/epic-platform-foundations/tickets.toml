@@ -153,13 +153,25 @@ hitl = false
 risk = "low"
 
 [[entry]]
+id = 14
+type = "story"
+title = "Backup monitoring"
+description = "Adds the weekly restic check (Sundays 03:30, household time zone), the monthly restore drill (1st of the month 04:00, into a temporary directory, running 1.10's restore checks) and a warning when the last good backup is older than about 48 hours, each shown in pangolin status and on the web status page, with the check raising a review item on failure and the stale warning also reflected in readiness. Split from Backups and restore (1.10), whose description names the check and drill but whose build left them out."
+verify = "Tests show a failed restic check raises one review item and shows in pangolin status and the status page, the drill restores a seeded backup into a temporary directory and reports pass or fail on the status page, and a last good backup older than 48 hours raises the stale warning in status, the status page and readiness while a fresh one does not."
+covers = ["CAP-16"]
+after = [10]
+hitl = false
+risk = "medium"
+references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Backups and restore", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-16, AD-19", "deferred — _bmad-output/implementation-artifacts/deferred-work.md, the story 1.10b entries"]
+
+[[entry]]
 id = 13
 type = "story"
 title = "M0 gate rehearsal"
 description = "Runs the epic's Done when on the real VM: fresh install to passkey login in one command, upgrade with automatic rollback, a restore drill, the recovery flows and the firewall checks."
 verify = "Each Done when item of epic-platform-foundations is demonstrated on the home server and recorded, with CI green on the release tag."
 covers = ["CAP-15", "CAP-16"]
-after = [12]
+after = [12, 14]
 hitl = true
 risk = "medium"
 done_checkpoint = true
