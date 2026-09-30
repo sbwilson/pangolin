@@ -457,11 +457,24 @@ describe("install.sh, re-run", () => {
     expect(result.stdout).toContain("Nothing to add");
   });
 
-  it("keeps an edited allowlist", () => {
+  it("keeps an edited allowlist, adding only the backup server it lacks", () => {
     expect(install().status).toBe(0);
     writeFileSync(at("opt/pangolin/allowlist.conf"), "example.org:443\n");
     expect(install().status).toBe(0);
-    expect(read("opt/pangolin/allowlist.conf")).toBe("example.org:443\n");
+    const allowlist = read("opt/pangolin/allowlist.conf");
+    expect(allowlist.startsWith("example.org:443\n")).toBe(true);
+    expect(allowlist).not.toContain("deb.debian.org");
+  });
+
+  it("replaces PANGOLIN_BACKUP_REPOSITORY for --backup-server and allowlists its host", () => {
+    expect(install("--backup-server", "rest:https://old.example.com/p").status).toBe(0);
+    const result = install("--backup-server", "rest:https://restic.example.net/pangolin");
+    expect(result.status, result.stderr).toBe(0);
+    const env = read("opt/pangolin/.env");
+    expect(env).toContain("PANGOLIN_BACKUP_REPOSITORY=rest:https://restic.example.net/pangolin\n");
+    expect(env.match(/^PANGOLIN_BACKUP_REPOSITORY=/gm)).toHaveLength(1);
+    expect(result.stdout).toMatch(/Replacing PANGOLIN_BACKUP_REPOSITORY in \.env/);
+    expect(read("opt/pangolin/allowlist.conf")).toContain("restic.example.net:443\n");
   });
 
   it("replaces PANGOLIN_IMAGE when --image is given, and says so", () => {

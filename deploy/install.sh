@@ -545,7 +545,12 @@ settle_all() {
   settle SSH_PORT PANGOLIN_SSH_PORT
   settle HTTP_PORT PANGOLIN_HTTP_PORT
   settle DNS_SERVERS PANGOLIN_DNS_SERVERS
-  settle BACKUP PANGOLIN_BACKUP_REPOSITORY
+  # A backup server asked for (--backup-server, or typed at the prompt) replaces the one in .env.
+  if [ -n "$BACKUP" ]; then
+    settle BACKUP PANGOLIN_BACKUP_REPOSITORY replace
+  else
+    settle BACKUP PANGOLIN_BACKUP_REPOSITORY
+  fi
   settle TANG_URL PANGOLIN_TANG_URL
   settle DATA_ROOT PANGOLIN_DATA_ROOT replace
   settle IMAGE PANGOLIN_IMAGE replace
@@ -830,7 +835,7 @@ write_env() {
       umask 077
       printf '%s\n' "# Pangolin Money settings, read by compose.yaml and the container." \
         "# install.sh only adds missing keys (and replaces PANGOLIN_IMAGE / PANGOLIN_DATA_ROOT when" \
-        "# --image, --build or --data-root asks it to): your edits are kept. Secrets live in secrets/." >"$env"
+        "# --image, --build, --data-root or --backup-server asks it to): your edits are kept. Secrets live in secrets/." >"$env"
     )
   fi
   chmod 0600 "$env"
@@ -838,6 +843,7 @@ write_env() {
     case "$key" in
       PANGOLIN_IMAGE) env_replace "$key" "$IMAGE" ;;
       PANGOLIN_DATA_ROOT) env_replace "$key" "$DATA_ROOT" ;;
+      PANGOLIN_BACKUP_REPOSITORY) env_replace "$key" "$BACKUP" ;;
     esac
     say "Replaced $key in .env"
   done
@@ -1094,7 +1100,8 @@ write_files() {
     say "Kept the existing allowlist.conf"
     entry=$(url_entry "$BACKUP")
     if [ -n "$entry" ] && ! grep -Fqx "$entry" "$allowlist"; then
-      warn "the backup server $entry is not in allowlist.conf; add it so backups can reach it"
+      allowlist_add "$allowlist" "Backup server (restic REST)" "$entry" || true
+      apply_allowlist_now
     fi
     # Without Tang the data disk does not unlock at boot, so its entry is added back.
     if [ -n "$tang_entry" ] && ! grep -Fqx "$tang_entry" "$allowlist"; then
