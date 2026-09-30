@@ -67,7 +67,7 @@ if [ "${1:-}" = upgrade ]; then
   VERIFY_OUT=$(docker run --rm --network host \
     -v "$HOME_DIR/cosign.pub:/cosign.pub:ro" \
     ${DOCKER_CONFIG_MOUNT:+-v $DOCKER_CONFIG_MOUNT} \
-    ghcr.io/sigstore/cosign:v3.2.4 verify --key /cosign.pub --insecure-ignore-tlog=true \
+    ghcr.io/sigstore/cosign/cosign:v3.1.3 verify --key /cosign.pub --insecure-ignore-tlog=true \
     "$TARGET_REF" 2>&1) || die "bad signature: $VERIFY_OUT"
 
   if [ "$CURRENT_IMAGE" = "$TARGET_REF" ]; then
