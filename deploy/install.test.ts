@@ -685,7 +685,18 @@ describe("install.sh with Docker (a stub docker)", () => {
   it("leaves the build hosts out without --build", () => {
     expect(installWithDocker([]).status).toBe(0);
     const entries = read("opt/pangolin/allowlist.conf").split("\n");
-    for (const host of BUILD_HOSTS) expect(entries).not.toContain(host);
+    // The GitHub hosts gh needs are in the default list; the rest are build-only.
+    const GH_HOSTS = [
+      "github.com:443",
+      "release-assets.githubusercontent.com:443",
+      "objects.githubusercontent.com:443",
+    ];
+    for (const host of BUILD_HOSTS.filter((h) => !GH_HOSTS.includes(h))) {
+      expect(entries).not.toContain(host);
+    }
+    for (const host of ["api.github.com:443", "uploads.github.com:443", ...GH_HOSTS]) {
+      expect(entries).toContain(host);
+    }
   });
 
   it("offers to build when the pull is refused, and switches .env to the built image", () => {

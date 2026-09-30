@@ -47,6 +47,14 @@ daily-cloudcode-pa.googleapis.com:443
 api.anthropic.com:443
 statsig.anthropic.com:443
 
+# GitHub CLI (gh): its API and uploads, github.com for login (device flow) and git, and the
+# release downloads it redirects to
+api.github.com:443
+uploads.github.com:443
+github.com:443
+release-assets.githubusercontent.com:443
+objects.githubusercontent.com:443
+
 # Building the image on this VM (install.sh --build) also needs these, and git in its clone:
 # install.sh --build adds them uncommented.
 # github.com:443
