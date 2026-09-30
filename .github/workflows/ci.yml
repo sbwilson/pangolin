@@ -154,8 +154,18 @@ jobs:
           docker logs "$id" >&2
           docker rm -f "$id" > /dev/null
           exit 1
-      - name: Install Chromium for Playwright
-        run: pnpm --filter @pangolin/e2e exec playwright install --with-deps chromium
+      # The runner image ships Google Chrome, which Playwright can drive: no browser download and
+      # no apt packages (installing Chromium with --with-deps took over six minutes). Falls back
+      # to installing it if a future image drops Chrome.
+      - name: Find Chrome for Playwright
+        run: |
+          chrome=$(command -v google-chrome || command -v google-chrome-stable || true)
+          if [ -n "$chrome" ]; then
+            echo "PW_CHROMIUM_PATH=$chrome" >> "$GITHUB_ENV"
+            "$chrome" --version
+          else
+            pnpm --filter @pangolin/e2e exec playwright install --with-deps chromium
+          fi
       - name: End-to-end tests (Playwright against the container)
         run: pnpm e2e
         env:
