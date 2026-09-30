@@ -6,6 +6,7 @@
 # one-off container under that lock, and starts the stack again whatever the outcome.
 #
 # Usage: sudo pangolin status
+#        sudo pangolin upgrade <tag>   (PANGOLIN_UPGRADE_TIMEOUT=<seconds> waits longer than 60s for healthy; polled every 3s, so the wait rounds up to a multiple of 3)
 #        sudo pangolin backup
 #        sudo pangolin restore [snapshot|latest]
 #        sudo pangolin reset-user <email|person-id>
@@ -36,6 +37,15 @@ if [ "${1:-}" = upgrade ]; then
     exit 2
   fi
   TAG=$2
+
+  # How long to wait for the new stack to turn healthy before rolling back: seconds, a positive
+  # integer (default 60). Checked before anything is stopped.
+  UPGRADE_TIMEOUT=${PANGOLIN_UPGRADE_TIMEOUT:-60}
+  case "$UPGRADE_TIMEOUT" in
+    '' | *[!0-9]* | 0 | 0[0-9]*)
+      die "PANGOLIN_UPGRADE_TIMEOUT must be a positive whole number of seconds, not '$UPGRADE_TIMEOUT'"
+      ;;
+  esac
 
   id=$(compose ps -q --status running pangolin 2>/dev/null || true)
   if [ -z "$id" ]; then
@@ -129,7 +139,7 @@ if [ "${1:-}" = upgrade ]; then
 
   WAITED=0
   UPGRADE_OK=0
-  while [ $WAITED -lt 60 ]; do
+  while [ $WAITED -lt "$UPGRADE_TIMEOUT" ]; do
     NEW_ID=$(compose ps -q pangolin 2>/dev/null || true)
     if [ -n "$NEW_ID" ]; then
       NEW_STATUS=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$NEW_ID" 2>/dev/null || echo missing)

@@ -169,6 +169,10 @@
           }
         }
       }
+    },
+    {
+      "includes": ["packages/domain/src/**", "packages/shared/src/**", "!**/*.test.ts"],
+      "plugins": ["./tools/lint/no-system-clock.grit"]
     }
   ],
   "assist": {

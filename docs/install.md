@@ -469,7 +469,9 @@ This verifies the signature of the `v1.2.0` image from GitHub using the public k
 3. It writes the new image digest to `.env` and swaps the compose file.
 4. It brings up the stack and waits for it to become healthy.
 
-If the new image fails to become healthy (e.g. bad migrations), the script automatically rolls back to your previous container image, `.env` file, and database copy, leaving a `system.upgrade-failed` review item in the inbox.
+The wait is 60 seconds by default. A release with a long migration can need more: set `PANGOLIN_UPGRADE_TIMEOUT` to a positive whole number of seconds, for example `sudo PANGOLIN_UPGRADE_TIMEOUT=180 pangolin upgrade v1.2.0`. The health check is polled every 3 seconds, so the wait rounds up to a multiple of 3. A value that is not a positive whole number is refused before anything is stopped.
+
+If the new image fails to become healthy within that time (e.g. bad migrations), the script automatically rolls back to your previous container image, `.env` file, and database copy, leaving a `system.upgrade-failed` review item in the inbox.
 
 ### Release process
 

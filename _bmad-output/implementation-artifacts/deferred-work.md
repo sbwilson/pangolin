@@ -23,3 +23,41 @@
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-release-and-upgrade-plan.md`
   summary: Make the upgrade health-check timeout configurable (currently hardcoded at 60s)
   evidence: Long database migrations can exceed 60s causing a false-positive rollback; 60s is reasonable for v1 but should become a configurable option (e.g. PANGOLIN_UPGRADE_TIMEOUT env var or --timeout flag)
+
+## 1.12 sweep (2026-10-01)
+
+Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-refactor-sweep-plan.md`. Each epic 1 finding is listed with its disposition.
+
+- disposition: fixed
+  summary: Upgrade health-check timeout configurable (`PANGOLIN_UPGRADE_TIMEOUT`, seconds, default 60, validated before anything is stopped).
+  evidence: `deploy/pangolin`, tests in `deploy/pangolin.test.ts`, documented in `docs/install.md`. Closes the story-release-and-upgrade entry above.
+- disposition: fixed
+  summary: System-clock reads in `packages/domain` and `packages/shared` are a lint error (AD-14).
+  evidence: `biome.json` override with `tools/lint/no-system-clock.grit` (`Date.now()`, `new Date(...)`, `Temporal.Now.*`; test files excluded). No existing violations.
+- disposition: fixed
+  summary: Passkey sign-in resets the password-failure count (4 wrong, passkey, 1 wrong is 401, not 429).
+  evidence: `apps/server/src/auth/auth.test.ts`, "passkey sign-in and the lockout".
+- disposition: fixed
+  summary: Backup handlers' idempotent re-runs (a snapshot already recorded, a push already pushed) are tested; no duplicate rows or stale checksum.
+  evidence: `apps/server/src/jobs/backup.test.ts`. Closes the story-1.10 verification-gap entry above.
+- disposition: fixed
+  summary: The spine's Invariants diagram draws `tools/seed` to `shared`.
+  evidence: `ARCHITECTURE-SPINE.md`; the stale comment in `scripts/check-boundaries.ts` is updated.
+- disposition: closed (already resolved)
+  summary: Job handler timeout and abort.
+  evidence: `runner.ts` `timeoutMs` and `ctx.signal`, tested at `runner.test.ts:440`.
+- disposition: closed (already resolved)
+  summary: Runner liveness in readiness (the lease intent).
+  evidence: `/healthz` checks runner liveness in `packages/app/src/system/readiness.ts`.
+- disposition: still deferred
+  summary: Demo recovery-codes step and dead-jobs list render are untested.
+  evidence: There is no web component-test harness; pick up with the first web-UI epic.
+- disposition: still deferred
+  summary: Fixed restic staging path (so restic finds a parent snapshot).
+  evidence: Already recorded above; negligible until attachments exist in epic 5.
+- disposition: still deferred
+  summary: Retention of finished jobs.
+  evidence: A feature, not a fix; raise in a retention story.
+- disposition: still deferred
+  summary: Weekly `restic check`, monthly restore drill, stale-backup warning, attachment snapshotting and sample decrypt.
+  evidence: Already recorded above for story 1.10b and epic 5.

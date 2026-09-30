@@ -1,0 +1,10 @@
+language js
+
+or {
+  `Date.now()`,
+  `new Date()`,
+  `new Date($_)`,
+  `Temporal.Now.$_`
+} as $clock where {
+  register_diagnostic(span=$clock, message="Do not read the system clock in packages/domain or packages/shared; inject a Clock from the caller (AD-14).", severity="error")
+}

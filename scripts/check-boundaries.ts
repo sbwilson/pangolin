@@ -39,8 +39,8 @@ export const ALLOWED: Readonly<Record<string, Rule>> = {
   // The mock servers replay fixture files and may import no workspace package.
   "tools/mock-llm": { allow: [] },
   "tools/mock-prices": { allow: [] },
-  // tools/seed → shared (story 1.4, AD-15). The spine's Invariants diagram does not draw this
-  // arrow yet; add it there. The seed is data: the server applies it without importing it.
+  // tools/seed → shared (story 1.4, AD-15), drawn in the spine's Invariants diagram. The seed is
+  // data: the server applies it without importing it.
   "tools/seed": { allow: ["packages/shared"] },
   // End-to-end tests drive the running container over HTTP; they import no workspace package.
   e2e: { allow: [] },

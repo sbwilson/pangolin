@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const biome = join(repoRoot, "node_modules", ".bin", "biome");
+const CLOCK_PLUGIN = join(repoRoot, "tools", "lint", "no-system-clock.grit");
 
 // Line 1 imports temporal-polyfill, line 2 imports ulid, line 3 imports the SystemViewer factory by
 // package specifier, line 4 imports it by relative path.
@@ -71,6 +72,8 @@ let dir: string;
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "biome-restrictions-"));
   copyFileSync(join(repoRoot, "biome.json"), join(dir, "biome.json"));
+  mkdirSync(join(dir, "tools", "lint"), { recursive: true });
+  copyFileSync(CLOCK_PLUGIN, join(dir, "tools", "lint", "no-system-clock.grit"));
   for (const path of Object.keys(CASES)) {
     mkdirSync(join(dir, dirname(path)), { recursive: true });
     writeFileSync(join(dir, path), PROBE);
@@ -103,5 +106,58 @@ afterAll(() => {
 describe("biome noRestrictedImports", () => {
   it.each(Object.entries(CASES))("%s bans exactly %j", (path, expected) => {
     expect([...(banned.get(path) ?? [])].sort()).toEqual([...expected].sort());
+  });
+});
+
+// AD-14: no system-clock reads in the pure packages, which take a Clock from their caller.
+describe("biome system-clock ban", () => {
+  const CLOCK_PROBE = [
+    "export const a = Date.now();",
+    "export const b = new Date();",
+    "export const c = new Date(0);",
+    "export const d = Temporal.Now.instant();",
+    "",
+  ].join("\n");
+  const PATHS: Record<string, number> = {
+    "packages/domain/src/clock.ts": 4,
+    "packages/shared/src/period/clock.ts": 4,
+    "packages/domain/src/clock.test.ts": 0,
+    "packages/app/src/clock.ts": 0,
+    "apps/server/src/clock.ts": 0,
+  };
+  let hits: Map<string, string[]>;
+
+  beforeAll(() => {
+    const root = mkdtempSync(join(tmpdir(), "biome-clock-"));
+    try {
+      copyFileSync(join(repoRoot, "biome.json"), join(root, "biome.json"));
+      mkdirSync(join(root, "tools", "lint"), { recursive: true });
+      copyFileSync(CLOCK_PLUGIN, join(root, "tools", "lint", "no-system-clock.grit"));
+      for (const path of Object.keys(PATHS)) {
+        mkdirSync(join(root, dirname(path)), { recursive: true });
+        writeFileSync(join(root, path), CLOCK_PROBE);
+      }
+      const result = spawnSync(
+        biome,
+        ["lint", "--vcs-enabled=false", "--reporter=json", ...Object.keys(PATHS)],
+        { cwd: root, encoding: "utf8" },
+      );
+      const json = result.stdout.slice(result.stdout.indexOf("{"));
+      const { diagnostics } = JSON.parse(json) as {
+        diagnostics: (Diagnostic & { message: string })[];
+      };
+      hits = new Map(Object.keys(PATHS).map((path) => [path, []]));
+      for (const d of diagnostics) {
+        if (d.message.includes("AD-14")) {
+          hits.get(d.location.path.replaceAll("\\", "/"))?.push(d.message);
+        }
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each(Object.entries(PATHS))("%s has %i clock reads flagged, citing AD-14", (path, count) => {
+    expect(hits.get(path)).toHaveLength(count);
   });
 });

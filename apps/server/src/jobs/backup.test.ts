@@ -242,6 +242,49 @@ describe("the backup jobs", () => {
     });
   });
 
+  /** Puts a finished job back as pending, as a run that died just before marking it done. */
+  const rerun = (kind: string) =>
+    db
+      .prepare(
+        `UPDATE job SET status = 'pending', finished_at = NULL, lease_owner = NULL,
+           lease_expires_at = NULL, run_at = ? WHERE kind = ?`,
+      )
+      .run(now.toString({ fractionalSecondDigits: 3 }), kind);
+  const snapshotRows = () =>
+    db.prepare("SELECT * FROM backup_snapshot ORDER BY id").all() as { manifest_sha256: string }[];
+
+  it("re-running the snapshot after it was recorded changes nothing", async () => {
+    const r = runner();
+    const jobId = requestBackup(cli());
+    await r.tick(); // snapshot
+    const before = snapshotRows();
+    expect(before).toHaveLength(1);
+    rerun("backup-snapshot");
+    await r.tick(); // the snapshot again (a no-op), and the push
+    expect(snapshotRows()).toHaveLength(1);
+    expect(snapshotRows()[0]?.manifest_sha256).toBe(before[0]?.manifest_sha256);
+    expect(staging()).toEqual([]); // the no-op snapshot staged nothing new and the push emptied staging
+    expect(backupProgress({ uow }, { jobId })).toMatchObject({ state: "done" });
+    expect(db.prepare("SELECT count(*) FROM job WHERE kind = 'backup-push'").pluck().get()).toBe(1);
+  });
+
+  it("re-running the push after it was recorded pushes nothing twice", async () => {
+    const r = runner();
+    const jobId = requestBackup(cli());
+    await r.tick();
+    await r.tick();
+    const pushed = snapshotRows();
+    const { snapshotId } = backupProgress({ uow }, { jobId }) as { snapshotId: string };
+    rerun("backup-push");
+    await r.tick();
+    expect(snapshotRows()).toEqual(pushed);
+    expect(readdirSync(join(stub.repoDir, "snapshots"))).toEqual([snapshotId]);
+    expect(staging()).toEqual([]);
+    expect(db.prepare("SELECT status FROM job WHERE kind = 'backup-push'").pluck().get()).toBe(
+      "done",
+    );
+  });
+
   it("pushes with the snapshot's time, so restic orders snapshots by when they were taken", async () => {
     const r = runner();
     const jobId = requestBackup(cli());

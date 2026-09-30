@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Browser, createHarness, type Harness } from "../testing/auth-harness.ts";
 import { secretOf, totp } from "../testing/totp.ts";
 import { cookieSettings } from "./auth.ts";
+import { authHooks } from "./hooks.ts";
 
 // One household, built up test by test: the order matters.
 let h: Harness;
@@ -407,6 +408,40 @@ describe("idle timeout", () => {
       expect((await b.request("/api/identity/me")).status).toBe(200);
       await new Promise((resolve) => setTimeout(resolve, 2500));
       expect((await b.request("/api/identity/me")).status).toBe(401);
+    } finally {
+      hh.close();
+    }
+  });
+});
+
+describe("passkey sign-in and the lockout", () => {
+  it("resets the password-failure count: 4 wrong, a passkey sign-in, 1 wrong is 401, not 429", async () => {
+    const hh = createHarness();
+    try {
+      await enrolled(hh);
+      const wrong = async () =>
+        (
+          await new Browser(hh.app).request("/api/auth/sign-in/email", {
+            body: { email: alex.email, password: "wrong password!!" },
+          })
+        ).status;
+      for (let i = 0; i < 4; i++) expect(await wrong()).toBe(401);
+      // better-auth's passkey verification needs a real authenticator, which the harness lacks:
+      // run our after-hook as it runs once that verification has created the session.
+      const hooks = authHooks(hh.identity, {
+        maxFailures: 5,
+        windowMs: 15 * 60_000,
+        lockMs: 15 * 60_000,
+      });
+      await (hooks.after as unknown as (input: unknown) => Promise<unknown>)({
+        path: "/passkey/verify-authentication",
+        context: { newSession: { user: { email: alex.email } } },
+        headers: new Headers(),
+      });
+      expect(await wrong()).toBe(401);
+      // The count restarted at the passkey sign-in: four more wrong passwords, then the lock.
+      for (let i = 0; i < 4; i++) expect(await wrong()).toBe(401);
+      expect(await wrong()).toBe(429);
     } finally {
       hh.close();
     }

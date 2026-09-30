@@ -47,6 +47,7 @@ flowchart TD
   app --> shared
   domain --> shared
   db & importers & connectors & llm --> shared
+  seed[tools/seed] --> shared
 ```
 
 Arrows point from a package to what it may import. Anything not drawn is forbidden. The rule is enforced by a lint rule on import paths.

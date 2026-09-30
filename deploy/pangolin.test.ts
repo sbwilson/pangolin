@@ -189,6 +189,38 @@ describe("pangolin upgrade", () => {
     expect(res.logs).toMatch(/stop[\s\S]*up -d/);
   });
 
+  it("waits 60 seconds for health by default, and PANGOLIN_UPGRADE_TIMEOUT changes that", () => {
+    const script = readFileSync(PANGOLIN, "utf8");
+    // The wait loop reads the setting; nothing else hardcodes the 60.
+    expect(script).toContain('while [ $WAITED -lt "$UPGRADE_TIMEOUT" ]');
+    expect(script).toMatch(/\$\{PANGOLIN_UPGRADE_TIMEOUT:-60\}/);
+    // A stack that never reports healthy: rolls back after the configured wait (3s steps).
+    const slow = runUpgrade("v2.0", {
+      STUB_RUNNING: "1",
+      STUB_HEALTH_AFTER: "starting",
+      PANGOLIN_UPGRADE_TIMEOUT: "3",
+    });
+    expect(slow.status).toBe(1);
+    expect(slow.stderr).toContain("rolled back");
+    expect(slow.logs.match(/^.*inspect.*$/gm)?.length).toBeGreaterThan(0);
+  });
+
+  it.each(["abc", "0", "-5", "1.5", "", "010", "5s"])(
+    "refuses PANGOLIN_UPGRADE_TIMEOUT=%j before stopping anything",
+    (value) => {
+      const res = runUpgrade("v2.0", { STUB_RUNNING: "1", PANGOLIN_UPGRADE_TIMEOUT: value });
+      // An empty value falls back to the default: it is not an error.
+      if (value === "") {
+        expect(res.status).toBe(0);
+        return;
+      }
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("PANGOLIN_UPGRADE_TIMEOUT must be a positive whole number");
+      expect(res.logs).not.toMatch(/stop/);
+      expect(readFileSync(join(homeDir, ".env"), "utf8")).toBe(ORIGINAL_ENV);
+    },
+  );
+
   it("refuses if bad signature", () => {
     const res = runUpgrade("v2.0", { STUB_RUNNING: "1", STUB_BAD_SIG: "1" });
     expect(res.status).toBe(1);
