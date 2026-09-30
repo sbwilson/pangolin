@@ -36,3 +36,4 @@ export {
   PROOF_MAX_AGE_MS,
   PROOF_NAME,
 } from "./socket.ts";
+export { raiseUpgradeFailedIfMarked, type UpgradeMarkerDeps } from "./upgrade-marker.ts";

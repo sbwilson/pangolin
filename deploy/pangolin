@@ -51,9 +51,13 @@ if [ "${1:-}" = upgrade ]; then
   TARGET_IMAGE="${REPO}:${TAG}"
 
   printf 'Verifying %s...\n' "$TARGET_IMAGE"
-  VERIFY_OUT=$(docker run --rm \
+  DOCKER_CONFIG_MOUNT=
+  [ -f "$HOME/.docker/config.json" ] && DOCKER_CONFIG_MOUNT="$HOME/.docker/config.json:/root/.docker/config.json:ro"
+  # --network host: a registry on localhost (the CI upgrade test) must be reachable from cosign.
+  # shellcheck disable=SC2086
+  VERIFY_OUT=$(docker run --rm --network host \
     -v "$HOME_DIR/cosign.pub:/cosign.pub:ro" \
-    -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
+    ${DOCKER_CONFIG_MOUNT:+-v $DOCKER_CONFIG_MOUNT} \
     ghcr.io/sigstore/cosign:v3.2.4 verify --key /cosign.pub --insecure-ignore-tlog=true \
     --output json "$TARGET_IMAGE" 2>&1) || die "bad signature: $VERIFY_OUT"
   # Extract the image digest from the structured JSON payload (first element .critical.image)
@@ -73,8 +77,9 @@ if [ "${1:-}" = upgrade ]; then
   docker run --rm -v "$HOME_DIR/staging:/staging" "$TARGET_REF" sh -c 'cp /app/deploy/compose.yaml /app/deploy/pangolin /staging/' || die "failed to extract files"
 
   # Capture the data volume name before stopping (compose ps returns empty after stop)
-  DATA_VOL=$(docker inspect --format '{{ range .Mounts }}{{ if eq .Destination "/data" }}{{ .Name }}{{ end }}{{ end }}' "$id" 2>/dev/null || true)
-  [ -n "$DATA_VOL" ] || die "could not determine data volume name"
+  # .Source is the host path for a bind mount (production) and for a named volume alike.
+  DATA_VOL=$(docker inspect --format '{{ range .Mounts }}{{ if eq .Destination "/data" }}{{ .Source }}{{ end }}{{ end }}' "$id" 2>/dev/null || true)
+  [ -n "$DATA_VOL" ] || die "could not determine the data directory"
 
   printf 'Stopping stack for upgrade...\n'
   compose stop pangolin > /dev/null || die "could not stop stack"

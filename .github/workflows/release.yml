@@ -123,43 +123,43 @@ jobs:
           COSIGN_PASSWORD="" cosign sign --key cosign.key --tlog-upload=false -y localhost:5000/${{ env.REPO }}:v1.0.0
           COSIGN_PASSWORD="" cosign sign --key cosign.key --tlog-upload=false -y localhost:5000/${{ env.REPO }}:v2.0.0
           COSIGN_PASSWORD="" cosign sign --key cosign.key --tlog-upload=false -y localhost:5000/${{ env.REPO }}:v3.0.0
-      - name: Start stack on image A
+      - name: Start stack on image A (the production compose file, as install.sh lays it out)
         run: |
-          mkdir -p /opt/pangolin
-          cat > /opt/pangolin/compose.yaml << 'COMPOSE'
-          services:
-            pangolin:
-              image: localhost:5000/${{ env.REPO }}:v1.0.0
-              network_mode: host
-              volumes:
-                - pangolin-data:/data
-          volumes:
-            pangolin-data:
-          COMPOSE
-          printf 'PANGOLIN_IMAGE=localhost:5000/%s:v1.0.0\nPANGOLIN_DATA_DIR=/data\n' "$REPO" > /opt/pangolin/.env
+          sudo mkdir -p /opt/pangolin/secrets /srv/pangolin
+          sudo chmod 777 /opt/pangolin /opt/pangolin/secrets /srv/pangolin
+          docker run --rm localhost:5000/${REPO}:v1.0.0 cat /app/deploy/compose.yaml > /opt/pangolin/compose.yaml
+          openssl rand -base64 32 > /opt/pangolin/secrets/auth-secret
+          openssl rand -base64 32 > /opt/pangolin/secrets/restic-password
+          chmod 644 /opt/pangolin/secrets/*
+          printf 'PANGOLIN_IMAGE=localhost:5000/%s:v1.0.0\nPANGOLIN_PUBLIC_URL=http://localhost:3000\n' "$REPO" > /opt/pangolin/.env
+          sudo chmod 600 /opt/pangolin/.env
           cp cosign.pub /opt/pangolin/cosign.pub
-          docker compose -f /opt/pangolin/compose.yaml up -d
-          sleep 10
+          sudo docker compose --project-directory /opt/pangolin -f /opt/pangolin/compose.yaml up -d
+          for i in $(seq 1 30); do
+            [ "$(sudo docker inspect --format '{{.State.Health.Status}}' pangolin-pangolin-1)" = healthy ] && exit 0
+            sleep 3
+          done
+          sudo docker compose --project-directory /opt/pangolin logs pangolin
+          exit 1
       - name: Install wrapper script
         run: |
-          docker run --rm -v /opt/pangolin:/staging localhost:5000/${{ env.REPO }}:v1.0.0 sh -c 'cp /app/deploy/pangolin /staging/'
-          install -m 755 /opt/pangolin/pangolin /usr/local/bin/pangolin
+          docker run --rm localhost:5000/${REPO}:v1.0.0 cat /app/deploy/pangolin > /tmp/pangolin
+          sudo install -m 755 /tmp/pangolin /usr/local/bin/pangolin
       - name: Upgrade to B (must succeed — B is healthy with extra migration)
         run: |
-          PANGOLIN_HOME=/opt/pangolin pangolin upgrade v2.0.0
-          docker compose -f /opt/pangolin/compose.yaml ps
-          # Verify sentinel table exists (B's schema applied)
-          docker run --rm -v pangolin-data:/data alpine sh -c \
-            'sqlite3 /data/pangolin.sqlite "SELECT count(*) FROM _upgrade_test_sentinel;"'
+          sudo PANGOLIN_HOME=/opt/pangolin pangolin upgrade v2.0.0
+          sudo docker compose --project-directory /opt/pangolin ps
+          # B's schema applied: the sentinel table exists
+          sqlite3 /srv/pangolin/pangolin.sqlite "SELECT count(*) FROM _upgrade_test_sentinel;"
       - name: Upgrade to C (must fail and roll back to B with B's schema)
         run: |
           set +e
-          PANGOLIN_HOME=/opt/pangolin pangolin upgrade v3.0.0
+          sudo PANGOLIN_HOME=/opt/pangolin pangolin upgrade v3.0.0
           rc=$?
           set -e
           [ $rc -ne 0 ] || { echo "Upgrade to C should have failed!"; exit 1; }
-          # Verify rollback: marker exists in volume, sentinel table still present (B's schema)
-          docker run --rm -v pangolin-data:/data alpine sh -c 'test -f /data/upgrade-failed.json'
-          docker run --rm -v pangolin-data:/data alpine sh -c \
-            'sqlite3 /data/pangolin.sqlite "SELECT count(*) FROM _upgrade_test_sentinel;"'
-
+          # Rolled back to B: the failure marker was written and B's schema is still there
+          # (the marker is consumed by the next start, which raised the review item)
+          sqlite3 /srv/pangolin/pangolin.sqlite "SELECT count(*) FROM _upgrade_test_sentinel;"
+          sudo grep -q '@sha256' /opt/pangolin/.env
+          sudo docker compose --project-directory /opt/pangolin ps

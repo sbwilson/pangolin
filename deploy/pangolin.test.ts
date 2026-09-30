@@ -1,13 +1,12 @@
-
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
-  existsSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -78,7 +77,7 @@ function buildDockerStub(extraCases: string[] = []): string {
     "    ;;",
     // cosign verify — output JSON with docker-manifest-digest
     "  *cosign*verify*)",
-    `    [ "\$STUB_BAD_SIG" = 1 ] && { echo "bad signature" >&2; exit 1; }`,
+    `    [ "$STUB_BAD_SIG" = 1 ] && { echo "bad signature" >&2; exit 1; }`,
     `    printf '[{"critical":{"image":{"docker-manifest-digest":"${STUB_DIGEST}"}}}]\\n'`,
     "    ;;",
     // compose stop

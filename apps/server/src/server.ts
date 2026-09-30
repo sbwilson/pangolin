@@ -2,9 +2,6 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { rmSync, existsSync } from "node:fs";
-import { systemViewer } from "@pangolin/app/system-viewer";
-import { raiseReviewItem, UPGRADE_FAILED_REVIEW, write } from "@pangolin/app";
 import { serve } from "@hono/node-server";
 import {
   type Clock,
@@ -29,6 +26,7 @@ import {
   acquireDataDirLock,
   type DataDirLock,
   listenAdminSocket,
+  raiseUpgradeFailedIfMarked,
   runAdminCommand,
   writeFirstSetupLink,
 } from "./admin/index.ts";
@@ -181,26 +179,10 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
         publicUrl: config.auth.publicUrl,
       });
     }
-    
-  const markerFile = join(config.dataDir, "upgrade-failed.json");
-  if (!demo && existsSync(markerFile)) {
-    try {
-      const ctx = { uow, clock, newId, viewer: systemViewer() };
-      write(ctx, (tx, audit) => {
-        raiseReviewItem(tx, audit, ctx, {
-          kind: UPGRADE_FAILED_REVIEW,
-          entityRef: "system",
-          dedupeKey: "upgrade-failed",
-        });
-      });
-    } catch {
-      // Raising the review item failed (e.g. DB lock); log and continue — do not crash loop.
-    } finally {
-      rmSync(markerFile, { force: true });
-    }
-  }
 
-  app = createApp({
+    if (!demo) raiseUpgradeFailedIfMarked({ uow, clock, newId, dataDir: config.dataDir });
+
+    app = createApp({
       systemHealth,
       uow,
       clock,

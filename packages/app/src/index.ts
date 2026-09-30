@@ -260,9 +260,9 @@ export {
   type ReviewItem,
   type ReviewKind,
   type ReviewScope,
-  UPGRADE_FAILED_REVIEW,
   raiseReviewItem,
   resolveReviewItem,
+  UPGRADE_FAILED_REVIEW,
 } from "./system/review-items.ts";
 export {
   actorOf,
