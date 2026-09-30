@@ -3,7 +3,7 @@ title: 'Backup monitoring'
 type: 'feature'
 ticket: '14'
 created: '2026-10-01'
-status: 'built'
+status: done
 baseline_revision: 'a38fae70094d079cfb3bb3ed8773a9a36a1133c7'
 route: 'full'
 route_source: 'auto'
