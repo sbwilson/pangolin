@@ -47,10 +47,19 @@ if [ "${1:-}" = upgrade ]; then
   fi
 
   CURRENT_IMAGE=$(docker inspect --format '{{.Config.Image}}' "$id")
-  REPO=$(echo "$CURRENT_IMAGE" | cut -d: -f1 | cut -d@ -f1)
+  # The repository without its tag or digest; a registry port (localhost:5000/x:v1) is not a tag.
+  REPO=${CURRENT_IMAGE%%@*}
+  case "${REPO##*/}" in *:*) REPO=${REPO%:*} ;; esac
   TARGET_IMAGE="${REPO}:${TAG}"
 
-  printf 'Verifying %s...\n' "$TARGET_IMAGE"
+  # Resolve the tag to a digest first, then verify and run exactly that digest.
+  printf 'Pulling %s...\n' "$TARGET_IMAGE"
+  docker pull -q "$TARGET_IMAGE" >/dev/null || die "failed to pull $TARGET_IMAGE"
+  DIGEST=$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$TARGET_IMAGE" | grep "^${REPO}@" | head -n1 | cut -d@ -f2)
+  [ -n "$DIGEST" ] || die "could not resolve a digest for $TARGET_IMAGE"
+  TARGET_REF="${REPO}@${DIGEST}"
+
+  printf 'Verifying %s...\n' "$TARGET_REF"
   DOCKER_CONFIG_MOUNT=
   [ -f "$HOME/.docker/config.json" ] && DOCKER_CONFIG_MOUNT="$HOME/.docker/config.json:/root/.docker/config.json:ro"
   # --network host: a registry on localhost (the CI upgrade test) must be reachable from cosign.
@@ -59,22 +68,15 @@ if [ "${1:-}" = upgrade ]; then
     -v "$HOME_DIR/cosign.pub:/cosign.pub:ro" \
     ${DOCKER_CONFIG_MOUNT:+-v $DOCKER_CONFIG_MOUNT} \
     ghcr.io/sigstore/cosign:v3.2.4 verify --key /cosign.pub --insecure-ignore-tlog=true \
-    --output json "$TARGET_IMAGE" 2>&1) || die "bad signature: $VERIFY_OUT"
-  # Extract the image digest from the structured JSON payload (first element .critical.image)
-  DIGEST=$(printf '%s' "$VERIFY_OUT" | grep -o '"docker-manifest-digest":"sha256:[a-f0-9]\{64\}"' | grep -o 'sha256:[a-f0-9]\{64\}' | head -n1)
-  [ -n "$DIGEST" ] || die "could not extract digest from cosign output"
-  
-  TARGET_REF="${REPO}@${DIGEST}"
+    "$TARGET_REF" 2>&1) || die "bad signature: $VERIFY_OUT"
+
   if [ "$CURRENT_IMAGE" = "$TARGET_REF" ]; then
     printf 'already on %s\n' "$TAG"
     exit 0
   fi
 
-  printf 'Pulling %s...\n' "$TARGET_REF"
-  docker pull -q "$TARGET_REF" >/dev/null || die "failed to pull $TARGET_REF"
-
   mkdir -p "$HOME_DIR/staging"
-  docker run --rm -v "$HOME_DIR/staging:/staging" "$TARGET_REF" sh -c 'cp /app/deploy/compose.yaml /app/deploy/pangolin /staging/' || die "failed to extract files"
+  docker run --rm --user 0 -v "$HOME_DIR/staging:/staging" "$TARGET_REF" sh -c 'cp /app/deploy/compose.yaml /app/deploy/pangolin /staging/' || die "failed to extract files"
 
   # Capture the data volume name before stopping (compose ps returns empty after stop)
   # .Source is the host path for a bind mount (production) and for a named volume alike.

@@ -71,6 +71,10 @@ function buildDockerStub(extraCases: string[] = []): string {
     '  "inspect --format {{.Config.Image}} container-id")',
     `    echo "\${STUB_IMAGE:-${ORIGINAL_IMAGE}}"`,
     "    ;;",
+    // The digest the pulled tag resolves to
+    '  "inspect --format"*RepoDigests*)',
+    `    echo "ghcr.io/sbwilson/pangolin@${STUB_DIGEST}"`,
+    "    ;;",
     // Volume name from Mounts (capture DATA_VOL)
     '  "inspect --format"*"Mounts"*)',
     `    echo "${STUB_VOL}"`,
