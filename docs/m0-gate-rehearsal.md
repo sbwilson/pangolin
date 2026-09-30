@@ -1,0 +1,392 @@
+# M0 gate rehearsal
+
+The runbook and decision record for the M0 gate of the platform-foundations epic. It runs the
+epic's seven Done-when items together against one release tag, on the home server, and records
+each result with its evidence. Procedures come from [install.md](install.md) sections 4 to 11;
+this page changes none of them.
+
+Who does what: the human cuts the tag, runs the VM steps and pastes the output. The agent prepares
+this page and fills the record from pasted output. The agent takes no action on the VM and never
+enters credentials. No item counts as demonstrated without pasted output or a CI run URL.
+
+## Rules
+
+- Every item ends as one of: **demonstrated** (output and date in its evidence row), **CI only**
+  (the job name and run URL), or **not demonstrated** (a reason and an owner, accepted by the
+  human), or **failed** (see below).
+- A step whose output differs from the expected output is recorded as **failed**. A failed item
+  stays failed in the record, a bug is raised, and the story is not marked done.
+- A fix needs a new tag (for example `v0.1.1`), cut and rehearsed again. The record notes each
+  attempt with its tag, digest and Release run URL; earlier attempts are kept, not overwritten.
+- Gate decision: the gate is **closed** only when every item is demonstrated, CI only, or not
+  demonstrated and accepted by the human. Otherwise (any failed item, or any unaccepted gap) it
+  is **open**.
+- Only the human marks the story done.
+
+## Prerequisites
+
+Have these before starting.
+
+- A VM with the data disk on LUKS, unlocked at boot by Clevis and Tang (install.md section 2).
+  Record the Debian version (`cat /etc/debian_version`); the rehearsal runs on whichever Debian
+  the VM has (12 or 13) and no document is amended for the difference.
+- Nginx Proxy Manager with a TLS certificate for the app's host name (install.md section 5).
+- A restic REST server started with `--append-only`, reachable from the VM (install.md section 10).
+- Access to GHCR for `ghcr.io/sbwilson/pangolin` (a token with packages: read, if the image is private).
+- A real browser and an authenticator app, for the passkey and TOTP steps.
+- `cosign.pub` in `/opt/pangolin/` on the VM matches the key the Release workflow signs with.
+- A fresh host for item 1: the home server reverted to a clean snapshot, or a rehearsal VM the
+  record names. Item 1 installs the previous release, `v0.0.2`, and item 4 upgrades it to the new
+  tag, so items 1, 4, 5, 6 and 7 are all judged on that same host. Any snapshot revert happens
+  before item 1, never between items 1 and 7.
+
+Shell variables used below (set them in your session):
+
+```sh
+TAG=v0.1.0          # the new release under rehearsal (v0.1.1 and so on after a fix)
+PREV=v0.0.2         # the previous release, installed in item 1
+REPO=ghcr.io/sbwilson/pangolin
+HOST=money.example.com      # the app's public host name
+```
+
+## Step 0. Cut the release tag
+
+The human, from a clean checkout of current `develop` with CI green:
+
+```sh
+git fetch origin && git checkout develop && git pull --ff-only
+git log -1 --format='%H %s'
+git tag "$TAG"
+git push origin "$TAG"
+```
+
+Wait for the Release workflow (jobs `ci`, `image`, `upgrade-test`) to go green, then record:
+
+```sh
+gh run list --workflow Release --limit 1 --json url,conclusion,headSha
+docker buildx imagetools inspect "$REPO:$TAG" | grep -m1 Digest
+```
+
+If the Release run is not green, stop: the VM steps do not start.
+
+| Field | Value |
+| --- | --- |
+| Commit | |
+| Tag | |
+| Image digest | |
+| Release run URL | |
+| Date cut | |
+| VM Debian version | |
+
+## Item 1. Fresh install to one-time link to passkey login (M0 gate)
+
+Done when 1: on a fresh Debian VM, `install.sh` goes from nothing to the setup link, then to a
+passkey login, in one command.
+
+Procedure, on the fresh host (or the reverted snapshot), as root. It installs the previous release
+(`v0.0.2`), so that item 4 can upgrade it to the new tag:
+
+```sh
+date -u
+cat /etc/debian_version
+curl -fsSL https://raw.githubusercontent.com/sbwilson/pangolin/$PREV/deploy/install.sh -o install.sh
+sudo sh install.sh --non-interactive \
+  --image "$REPO:$PREV" \
+  --hostname "$HOST" \
+  --backup-server rest:https://nas.lan:8000/pangolin \
+  --tang-url http://tang.lan \
+  --npm-host 192.168.1.10 \
+  --admin-network 192.168.1.0/24 \
+  --ghcr-token-file /root/ghcr-token.txt
+```
+
+Use your own values for the backup server, Tang, NPM host and admin network. Omit
+`--ghcr-token-file` if the image is public. Then configure NPM (install.md section 5) and:
+
+```sh
+curl https://$HOST/healthz
+sudo pangolin status
+cat /srv/pangolin/setup-link.txt
+```
+
+Open the setup link in the browser over https and complete email, password, passkey,
+authenticator and recovery codes. Sign out, then sign in with the passkey.
+
+Expected:
+
+- `install.sh` exits 0 and prints the one-time setup link (valid 24 hours), with no second command.
+- `/healthz` prints `{"ok":true}`; `pangolin status` exits 0 and shows the release `v0.0.2`.
+- Passkey sign-in succeeds.
+
+Redact the one-time setup link before pasting anything into the record, from the installer output
+and from `setup-link.txt` alike. For example:
+
+```sh
+sudo sh install.sh ... 2>&1 | tee install.log
+sed -E 's#https?://[^ ]*#<setup-link redacted>#g' install.log
+sudo sed -E 's#https?://[^ ]*#<setup-link redacted>#g' /srv/pangolin/setup-link.txt
+```
+
+Check the redacted text by eye before pasting. Never paste recovery codes or passwords.
+
+| Evidence | |
+| --- | --- |
+| Command | `install.sh` as above |
+| Observed output (link redacted) | |
+| `/healthz` and `pangolin status` output | |
+| Passkey sign-in (yes/no, screenshot or note) | |
+| Date | |
+| Tag and digest | |
+| Outcome | |
+
+## Item 2. Backup and restore on every release, verified (M0 gate)
+
+Done when 2: CI backs up and restores a synthetic database on every release, verifying
+integrity_check, row counts and per-table checksums.
+
+CI proof: job **Container and end-to-end** in the CI workflow (run by the Release workflow's `ci`
+job), steps "Back up the end-to-end household", "Restore into the running stack's volume" and
+"Sign in to the restored household". Record the run URL from the Release run of the tag.
+
+Optional proof on the VM, after item 1.
+
+Warning: `pangolin restore latest` replaces the live household data with the snapshot. Run it
+only after taking a fresh `pangolin backup` (the first command below), and note in the evidence
+row that you did.
+
+```sh
+sudo pangolin backup
+sudo pangolin restore latest
+sudo pangolin status
+```
+
+Expected: `backup` prints a snapshot ID and exits 0; `restore` names the verification passing
+(integrity_check ok, row counts and checksums match) and starts the stack; `status` exits 0.
+
+| Evidence | |
+| --- | --- |
+| CI job and run URL | |
+| VM output (optional) | |
+| Date | |
+| Tag and digest | |
+| Outcome | |
+
+## Item 3. Registration closes; recovery; 24-hour partner link
+
+Done when 3: registration closes once both partners exist. Recovery codes and partner-assisted
+re-enrolment each restore access in a test, and the partner reset link expires after 24 hours.
+
+CI proof:
+
+- Playwright `e2e/auth.spec.ts`, "invites the partner, who registers; then any further sign-up is
+  refused".
+- Playwright `e2e/recovery.spec.ts`, "a recovery code and the password sign in to a forced new
+  passkey; the code works once" and "Alex resets Sam's access: Sam sets a new password, re-enrols
+  and alone sees the notice".
+- Vitest `packages/app/src/identity/recovery.test.ts`, "expires 24 hours after issue"; and
+  `sign-up.test.ts`, "refuses a link older than 24 hours". Expiry of the 24 hour link is
+  demonstrated in CI only.
+
+Record the Release run URL (jobs `ci` > "Lint, types, tests, STRICT" and "Container and
+end-to-end").
+
+Optional on the VM (install.md sections 6 and 9): register the partner through the app's invite,
+then open the setup link again and confirm sign-up is refused ("Registration is closed").
+
+| Evidence | |
+| --- | --- |
+| CI jobs and run URL | |
+| VM observation (optional) | |
+| Date | |
+| Tag and digest | |
+| Outcome (expiry is CI only) | |
+
+## Item 4. Signed image verified before pull; upgrade with automatic rollback
+
+Done when 4: `pangolin upgrade` rolls back automatically when a seeded health check fails. The
+release image is signed with cosign and the signature is verified before the image is pulled.
+
+Decided by the human on 2026-10-01: rollback is evidenced by the CI upgrade-test job (image B to C). On the VM,
+show a successful upgrade and a refused unsigned or tampered tag. No unhealthy image is built.
+
+CI proof: Release workflow job **upgrade-test**, steps "Upgrade to B (must succeed)" and "Upgrade
+to C (must fail and roll back to B with B's schema)". Record the job URL.
+
+VM proof A, a successful upgrade on the host item 1 installed, which runs `v0.0.2`:
+
+```sh
+date -u
+sudo pangolin status
+sudo pangolin upgrade "$TAG"
+sudo pangolin status
+curl https://$HOST/healthz
+grep '^PANGOLIN_IMAGE=' /opt/pangolin/.env
+```
+
+Expected: the output shows "Pulling", "Verifying ...@sha256:...", "Starting upgraded stack",
+exit 0; `status` shows release `$TAG`; `.env` holds the image digest matching the Release run.
+
+VM proof B, a refused wrong-key verification. The signature check runs before the stack is
+stopped, so there is no downtime. Use any valid public key that did not sign the image (for
+example one made with `cosign generate-key-pair` on another machine), swap it in, try, and
+restore the real key through a trap:
+
+```sh
+sudo sh -c '
+  cp /opt/pangolin/cosign.pub /root/cosign.pub.real
+  trap "cp /root/cosign.pub.real /opt/pangolin/cosign.pub" EXIT
+  cp /path/to/other-cosign.pub /opt/pangolin/cosign.pub
+  pangolin upgrade "$0" > /root/refusal.log 2>&1; echo "exit=$?"; cat /root/refusal.log
+' "$TAG"
+sudo cmp /root/cosign.pub.real /opt/pangolin/cosign.pub && echo "real key restored"
+grep 'bad signature' /root/refusal.log
+sudo pangolin status
+```
+
+Expected: the output contains `pangolin: bad signature:`, the `grep` finds it, `cmp` prints nothing
+before "real key restored", the stack is untouched and `status` exits 0. A non-zero exit without
+the signature-refusal message is not a refusal (record it as failed and investigate). If no
+refusal message appears, do not record this proof as demonstrated.
+
+| Evidence | |
+| --- | --- |
+| CI upgrade-test job and run URL (rollback B to C) | |
+| VM upgrade output (proof A) | |
+| VM refused-signature output (proof B) | |
+| Date | |
+| Tag and digest | |
+| Outcome | |
+
+## Item 5. Non-root, read-only container; firewall
+
+Done when 5: the app container runs non-root and read-only. The VM firewall allows inbound only
+from NPM and outbound only to the allowlist.
+
+```sh
+date -u
+sudo docker compose -f /opt/pangolin/compose.yaml exec pangolin id
+sudo docker inspect --format 'user={{.Config.User}} readonly={{.HostConfig.ReadonlyRootfs}} capdrop={{.HostConfig.CapDrop}} secopt={{.HostConfig.SecurityOpt}}' \
+  $(sudo docker compose -f /opt/pangolin/compose.yaml ps -q pangolin)
+sudo docker compose -f /opt/pangolin/compose.yaml exec pangolin sh -c 'touch /probe' ; echo "exit=$?"
+sudo nft list table inet pangolin
+# From the container: an allowlisted host answers, anything else times out
+sudo docker compose -f /opt/pangolin/compose.yaml exec pangolin node -e \
+  "fetch('https://query1.finance.yahoo.com', { signal: AbortSignal.timeout(5000) }).then(r => console.log('ok', r.status), e => console.log('blocked', e.name, e.cause?.code))"
+sudo docker compose -f /opt/pangolin/compose.yaml exec pangolin node -e \
+  "fetch('https://example.com', { signal: AbortSignal.timeout(5000) }).then(r => console.log('ok', r.status), e => console.log('blocked', e.name, e.cause?.code))"
+```
+
+From a machine that is not the NPM host (and not on the allowed admin path for port 3000):
+
+```sh
+curl -m 5 http://<vm-ip>:3000/healthz; echo "exit=$?"
+```
+
+Expected: `id` shows uid 1000 (not 0); `readonly=true`, `capdrop=[ALL]`, `no-new-privileges`;
+`touch /probe` fails with "Read-only file system"; the ruleset lists the NPM host and admin
+network as the only inbound sources; the Yahoo fetch prints `ok <status>`; the
+example.com fetch prints `blocked` with the error name and code (a timeout is `TimeoutError`); the remote curl times out (exit 28).
+
+CI also proves non-root: job "Container and end-to-end", step "The server runs as a non-root user".
+
+| Evidence | |
+| --- | --- |
+| Container user and read-only output | |
+| Firewall ruleset and allow/block outputs | |
+| Closed-port curl from another machine | |
+| Date | |
+| Tag and digest | |
+| Outcome | |
+
+## Item 6. Recovery bundle and clean-host restore
+
+Done when 6: `install.sh` produces the recovery bundle, and CI restores onto a clean host from the
+bundle alone, decrypting a sample attachment and logging in with TOTP.
+
+Decided by the human on 2026-10-01: the sample-attachment decrypt is **not demonstrated, epic 5** (the
+attachment store does not exist yet; owner: epic 5). M0 closes without it.
+
+VM proof, after item 1 (install.md section 7; do not paste the contents):
+
+```sh
+date -u
+sudo ls -l /root/pangolin-recovery-bundle-*.txt
+sudo grep -o '^[A-Z_]*=' /root/pangolin-recovery-bundle-*.txt
+```
+
+Expected: one file, mode `-rw-------`, owned by root, holding `PANGOLIN_APP_KEY=`, `PANGOLIN_AUTH_SECRET=`, `RESTIC_PASSWORD=` and `RESTIC_REPOSITORY=`
+(the grep prints the names only; never paste values).
+
+Order: first store the bundle offline, then fill the evidence row below, and only then shred it
+(install.md section 7):
+
+```sh
+sudo shred -u /root/pangolin-recovery-bundle-*.txt
+```
+
+Shredding earlier loses the only copy of the keys if the row or the offline copy goes wrong.
+
+CI proof: job "Container and end-to-end", steps "Restore onto a clean host from the recovery
+bundle's values alone" and "Sign in on the clean host (password and TOTP)". Record the run URL.
+
+| Evidence | |
+| --- | --- |
+| Bundle listing on the VM (names and mode only) | |
+| CI job and run URL (clean-host restore and TOTP login) | |
+| Sample-attachment decrypt | Not demonstrated: epic 5 (attachment store). Needs the human's acceptance. |
+| Date | |
+| Tag and digest | |
+| Outcome | |
+
+## Item 7. Deployed with `pangolin upgrade`; CI green on the release tag
+
+Done when 7: deployed to the home server with `pangolin upgrade`, and CI (lint, types, unit,
+migration, Playwright) is green on the release tag.
+
+The deployment evidence is item 4's proof A (the VM upgrade from `v0.0.2` to `$TAG`, on the same host items 1 and 4 used, with no snapshot revert in between; record that host). CI evidence is the Release
+run of the tag, whose `ci` job runs lint, typecheck, unit, STRICT tables, migrations, shell
+scripts, compose validation and Playwright:
+
+```sh
+gh run view <run-id> --json conclusion,jobs --jq '{conclusion, jobs: [.jobs[] | {name, conclusion}]}'
+```
+
+Expected: `conclusion` is `success` for every job.
+
+| Evidence | |
+| --- | --- |
+| Release run URL and job conclusions | |
+| VM upgrade output (same as item 4, proof A) | |
+| Date | |
+| Tag and digest | |
+| Outcome | |
+
+## Results summary (the M0 decision record)
+
+Fill this last. One outcome per item: demonstrated, CI only, not demonstrated (with reason and owner), or failed.
+For a rehearsal repeated on a new tag, add a row set per attempt and note each attempt's tag.
+
+| # | Done-when item | Outcome | Evidence | Date |
+| --- | --- | --- | --- | --- |
+| 1 | Fresh install to setup link to passkey login | | | |
+| 2 | CI backup and restore on every release | | | |
+| 3 | Registration closes; recovery; 24 h partner link | | | |
+| 4 | Signed image; upgrade rollback | | | |
+| 5 | Non-root, read-only; firewall | | | |
+| 6 | Recovery bundle and clean-host restore | Attachment decrypt: not demonstrated, epic 5 | | |
+| 7 | Deployed by `pangolin upgrade`; CI green on the tag | | | |
+
+| Field | Value |
+| --- | --- |
+| Tag | |
+| Image digest | |
+| Release run URL | |
+| Debian version on the VM | |
+| Rehearsal dates | |
+| Gate decision (open / closed) | |
+| Accepted by the human (name, date) | |
+
+Gate decision rule: closed only when every item is demonstrated, CI only, or not demonstrated and
+accepted by the human. Otherwise open. If any item failed, list the bug references here, cut a new
+tag (for example `v0.1.1`), rehearse again and record that attempt with its tag, digest and run
+URL. Do not mark the story done; only the human does.

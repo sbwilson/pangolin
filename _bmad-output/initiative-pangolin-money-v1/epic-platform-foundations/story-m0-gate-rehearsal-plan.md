@@ -3,12 +3,13 @@ title: 'M0 gate rehearsal'
 type: 'chore'
 ticket: '13'
 created: '2026-10-01'
-status: 'draft'
+status: 'built'
+baseline_revision: '86b9e3c0fa3d365c3741ac819342d62d75fe6ece'
 route: 'full'
 route_source: 'auto'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'thorough'
+review_source: 'auto'
+lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 0
 context: []
 ---
@@ -55,8 +56,8 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `docs/m0-gate-rehearsal.md` -- runbook: prerequisites, then items 1-7 each with exact commands, expected output and an evidence row to fill -- repeatable gate
-- [ ] `docs/m0-gate-rehearsal.md` -- a results summary table with one of demonstrated / CI only / not demonstrated per item, and the tag, digest and CI run URL -- the M0 decision record
+- [x] `docs/m0-gate-rehearsal.md` -- runbook: prerequisites, then items 1-7 each with exact commands, expected output and an evidence row to fill -- repeatable gate
+- [x] `docs/m0-gate-rehearsal.md` -- a results summary table with one of demonstrated / CI only / not demonstrated per item, and the tag, digest and CI run URL -- the M0 decision record
 - [ ] (human) cut the tag, run the runbook on the VM, paste outputs; (agent) fill the record from them
 
 **Acceptance Criteria:**
@@ -69,6 +70,19 @@ context: []
 ## Plan Change Log
 
 ## Review Triage Log
+
+Pass 1 (thorough; four lenses). Patched: 9 medium/low runbook fixes. Rest rejected.
+
+| Verdict | Route | Finding and evidence |
+|---|---|---|
+| medium | patch (done) | Item 1 installed v0.1.0, so item 4's upgrade to v0.1.0 was a no-op. Item 1 now installs the previous release; same-host and snapshot-order rules added. |
+| medium | patch (done) | Proof B: stray sentence, irrelevant timeout variable, key restore not guarded, refusal not distinguished from other failures. Now a trap restore, `cmp` check and a required refusal message. |
+| low | patch (done) | `$TAG`/`$REPO` defined but commands hardcoded; now used throughout. |
+| medium | patch (done) | No "failed" outcome, re-tag rule or gate rule. Added. |
+| low | patch (done) | Setup link unredacted in pasted output; bundle shredded before offline copy confirmed; `restore latest` overwrites live data unwarned; item 5 fetches without timeout; decisions lacked a decider. All fixed. |
+| low | rejected | Private-repo install.sh fetch, multiple bundle files, empty `ps -q`, `nft` table fallback, host IPv6/DNS egress, other listening ports, "every release" coverage of item 2, cosign.pub pre-tag check, teardown section: each is an additional guard or scope beyond the plan; the human runs this once and can adapt. |
+| low | rejected | Record is seven tables rather than one; no CI URL column everywhere: the information is present; shape preference only. |
+| false | rejected | "No verification gaps": docs-only change; nothing to test. |
 
 ## Verification
 
