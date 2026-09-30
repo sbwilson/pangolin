@@ -50,11 +50,16 @@ jobs:
             -t ghcr.io/${{ env.REPO }}:latest \
             ghcr.io/${{ env.REPO }}@${{ steps.build.outputs.digest }}
       - uses: sigstore/cosign-installer@v3
-      - name: Sign the image
+      - name: Check the signing key is configured
         run: |
-          echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
-          cosign sign --key cosign.key --tlog-upload=false -y "ghcr.io/${{ env.REPO }}@${{ steps.build.outputs.digest }}"
+          [ -n "$COSIGN_PRIVATE_KEY" ] || { echo "::error::Repository secret COSIGN_PRIVATE_KEY is empty: add the contents of cosign.key (see docs/install.md)"; exit 1; }
+          printf '%s\n' "$COSIGN_PRIVATE_KEY" | head -1 | grep -q 'BEGIN ENCRYPTED SIGSTORE PRIVATE KEY' || { echo "::error::COSIGN_PRIVATE_KEY is not a cosign private key (expected the contents of cosign.key)"; exit 1; }
         env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      - name: Sign the image
+        run: cosign sign --key env://COSIGN_PRIVATE_KEY --tlog-upload=false -y "ghcr.io/${{ env.REPO }}@${{ steps.build.outputs.digest }}"
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
       - name: Attach SBOM
         uses: anchore/sbom-action@v0
@@ -64,8 +69,9 @@ jobs:
           output-file: sbom.spdx.json
       - name: Attest SBOM
         run: |
-          cosign attest --key cosign.key --type spdxjson --predicate sbom.spdx.json --tlog-upload=false -y "ghcr.io/${{ env.REPO }}@${{ steps.build.outputs.digest }}"
+          cosign attest --key env://COSIGN_PRIVATE_KEY --type spdxjson --predicate sbom.spdx.json --tlog-upload=false -y "ghcr.io/${{ env.REPO }}@${{ steps.build.outputs.digest }}"
         env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
       - uses: softprops/action-gh-release@v3
         with:

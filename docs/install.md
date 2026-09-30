@@ -474,6 +474,13 @@ If the new image fails to become healthy (e.g. bad migrations), the script autom
 ### Release process
 
 To cut a new release:
-1. Set GitHub repository secrets for `COSIGN_PRIVATE_KEY` and `COSIGN_PASSWORD`.
+1. Once, create the signing key pair and set the secrets (the repository ships a placeholder `deploy/cosign.pub` that cannot verify anything):
+   ```sh
+   cosign generate-key-pair          # asks for a password; writes cosign.key and cosign.pub
+   cp cosign.pub deploy/cosign.pub   # commit it: servers verify upgrades against it
+   gh secret set COSIGN_PRIVATE_KEY < cosign.key
+   gh secret set COSIGN_PASSWORD     # the password you chose
+   ```
+   Keep `cosign.key` out of the repository. Servers installed earlier need the new `cosign.pub` in `/opt/pangolin/` before their next upgrade.
 2. Push a new Git tag matching `v*.*.*` (e.g. `git tag v1.2.0 && git push origin v1.2.0`).
 3. CI automatically builds the image for amd64/arm64, runs vulnerability scans, pushes it to GHCR by digest, and signs it. It attaches a signed SBOM.
