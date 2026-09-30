@@ -230,7 +230,13 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
   if (!demo) {
     try {
       const jobs =
-        options.jobs ?? createJobs({ timezone, dataDir: config.dataDir, backup: config.backup });
+        options.jobs ??
+        createJobs({
+          timezone,
+          dataDir: config.dataDir,
+          backup: config.backup,
+          migrationsDir: options.migrationsDir,
+        });
       runner = createRunner({
         uow,
         clock,

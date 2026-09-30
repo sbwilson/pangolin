@@ -6,6 +6,9 @@ import type { SystemHealthPort } from "../ports/system-health.ts";
 export const READINESS_CHECKS = ["migrations", "database", "jobs", "forced"] as const;
 export type ReadinessCheck = (typeof READINESS_CHECKS)[number];
 
+/** Warnings `/healthz` reports beside a result without changing it: never a failing check. */
+export type ReadinessWarning = "backup-stale";
+
 export interface ReadinessContext {
   readonly systemHealth: SystemHealthPort;
   readonly clock: Clock;
@@ -40,13 +43,19 @@ export const readinessInput = z
     runner: z.union([z.literal("skip"), z.null(), runnerLiveness]),
     /** Test builds only (the upgrade-rollback test): report a failing "forced" check. */
     forceUnhealthy: z.boolean().optional(),
+    /** The last good backup is stale: reported as a warning, and readiness stays as it was. */
+    backupStale: z.boolean().optional(),
   })
   .strict();
 export type ReadinessInput = z.input<typeof readinessInput>;
 
 export type ReadinessOutput =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly failing: readonly ReadinessCheck[] };
+  | { readonly ok: true; readonly warnings?: readonly ReadinessWarning[] }
+  | {
+      readonly ok: false;
+      readonly failing: readonly ReadinessCheck[];
+      readonly warnings?: readonly ReadinessWarning[];
+    };
 
 /** A runner that has not ticked within this many poll intervals is reported as failing. */
 export const RUNNER_STALE_POLLS = 3;
@@ -62,10 +71,11 @@ function probe(check: () => boolean): boolean {
 /**
  * `system.readiness`, behind `/healthz`: every migration applied, the database writable, and
  * the job runner running and ticked within `RUNNER_STALE_POLLS` poll intervals (skipped in
- * demo mode). Reports only the names of the failing checks.
+ * demo mode). Reports only the names of the failing checks, and the warnings (a stale backup).
  */
 export function readiness(ctx: ReadinessContext, input: ReadinessInput): ReadinessOutput {
-  const { expectedSchemaVersion, runner, forceUnhealthy } = readinessInput.parse(input);
+  const { expectedSchemaVersion, runner, forceUnhealthy, backupStale } =
+    readinessInput.parse(input);
   const failing: ReadinessCheck[] = [];
   if (!probe(() => ctx.systemHealth.schemaVersion() === expectedSchemaVersion)) {
     failing.push("migrations");
@@ -81,5 +91,7 @@ export function readiness(ctx: ReadinessContext, input: ReadinessInput): Readine
       now - runner.lastTickAt <= RUNNER_STALE_POLLS * runner.pollMs;
     if (!fresh) failing.push("jobs");
   }
-  return failing.length === 0 ? { ok: true } : { ok: false, failing };
+  const warnings: { readonly warnings?: readonly ReadinessWarning[] } =
+    backupStale === true ? { warnings: ["backup-stale"] } : {};
+  return failing.length === 0 ? { ok: true, ...warnings } : { ok: false, failing, ...warnings };
 }

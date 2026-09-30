@@ -72,7 +72,12 @@ async function backUp(db: Db): Promise<string> {
     uow,
     clock,
     newId,
-    ...createJobs({ timezone: "UTC", dataDir, backup: config.backup }),
+    ...createJobs({
+      timezone: "UTC",
+      dataDir,
+      backup: config.backup,
+      migrationsDir: packageMigrationsDir,
+    }),
     log: () => {},
   });
   const jobId = requestBackup({ viewer: systemViewer("cli:backup"), clock, newId, uow });

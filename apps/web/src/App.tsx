@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useState } from "react";
 import {
   ApiError,
+  type BackupVerification,
   dismissNotice,
   fetchBackupStatus,
   fetchDeadJobs,
@@ -79,13 +80,40 @@ function LastBackup() {
   });
   if (backup.isPending) return null;
   if (backup.isError) return <p>Backup status unavailable</p>;
-  const { configured, last } = backup.data;
+  const { configured, last, stale, check, drill } = backup.data;
   if (!configured) return <p>Backups not configured</p>;
-  if (last === null) return <p>No backup yet</p>;
   return (
-    <p>
-      Last backup <time dateTime={last.pushedAt}>{last.pushedAt}</time> (snapshot{" "}
-      <code title={last.snapshotId}>{last.snapshotId.slice(0, 8)}</code>)
+    <>
+      {last === null ? (
+        <p>No backup yet</p>
+      ) : (
+        <p>
+          Last backup <time dateTime={last.pushedAt}>{last.pushedAt}</time> (snapshot{" "}
+          <code title={last.snapshotId}>{last.snapshotId.slice(0, 8)}</code>)
+        </p>
+      )}
+      {stale ? <p role="alert">Warning: no good backup in the last 48 hours</p> : null}
+      <Verification label="Repository check" none="No repository check yet" result={check} />
+      <Verification label="Restore drill" none="No restore drill yet" result={drill} />
+    </>
+  );
+}
+
+/** One check or drill result: when it ran, and whether it passed or what failed. */
+function Verification({
+  label,
+  none,
+  result,
+}: {
+  label: string;
+  none: string;
+  result: BackupVerification | null;
+}) {
+  if (result === null) return <p>{none}</p>;
+  return (
+    <p role={result.ok ? undefined : "alert"}>
+      {label} {result.ok ? "passed" : "failed"} <time dateTime={result.at}>{result.at}</time>:{" "}
+      {result.summary}
     </p>
   );
 }

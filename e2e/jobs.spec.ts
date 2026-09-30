@@ -25,5 +25,7 @@ test("the status page shows the backup line from /api/system/backup", async ({ p
   await signInWithPassword(page, loadAccount());
   await expect(page.getByText("No backup yet", { exact: true })).toBeVisible();
   const backup = await page.evaluate(async () => (await fetch("/api/system/backup")).json());
-  expect(backup).toEqual({ configured: true, last: null });
+  expect(backup).toEqual({ configured: true, last: null, stale: false, check: null, drill: null });
+  await expect(page.getByText("No repository check yet", { exact: true })).toBeVisible();
+  await expect(page.getByText("No restore drill yet", { exact: true })).toBeVisible();
 });

@@ -284,9 +284,9 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
       code: EXIT_FAILED,
       err: /Backups are not configured: set PANGOLIN_BACKUP_REPOSITORY/,
     });
-    expect((await cli(["status"])).out).toContain(
-      "Backups:   not configured (PANGOLIN_BACKUP_REPOSITORY is empty)",
-    );
+    const status = (await cli(["status"])).out;
+    expect(status).toContain("Backups:   not configured (PANGOLIN_BACKUP_REPOSITORY is empty)");
+    expect(status).not.toMatch(/^(Check|Drill|Warning):/m);
     // Nothing was enqueued, and no nightly schedule exists.
     expect(withDb((db) => db.prepare("SELECT COUNT(*) FROM job").pluck().get())).toBe(0);
   });
@@ -325,15 +325,24 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
     const stub = stubRestic(join(dir, "stub"));
     backup = stub.config;
     await boot();
-    expect((await cli(["status"])).out).toContain(
-      "Backups:   none yet (nightly at 02:30, household time)",
-    );
-    // The nightly schedule's row waits for 02:30.
+    const first = (await cli(["status"])).out;
+    expect(first).toContain("Backups:   none yet (nightly at 02:30, household time)");
+    expect(first).toContain("Check:     no check yet");
+    expect(first).toContain("Drill:     no restore drill yet");
+    expect(first).not.toContain("Warning:");
+    // The schedules' rows wait for 02:30, Sunday 03:30 and the 1st at 04:00.
     expect(
       withDb((db) =>
-        db.prepare("SELECT dedupe_key FROM job WHERE status = 'pending'").pluck().all(),
+        db
+          .prepare("SELECT dedupe_key FROM job WHERE status = 'pending' ORDER BY dedupe_key")
+          .pluck()
+          .all(),
       ),
-    ).toEqual(["schedule:backup-nightly"]);
+    ).toEqual([
+      "schedule:backup-check-weekly",
+      "schedule:backup-drill-monthly",
+      "schedule:backup-nightly",
+    ]);
     const result = await cli(["backup"]);
     expect(result.err).toBe("");
     expect(result.code).toBe(EXIT_OK);
@@ -351,6 +360,32 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
           .all(),
       ),
     ).toEqual(["cli:backup", "job:backup-snapshot", "job:backup-push"]);
+  });
+
+  it("status warns of a stale backup and shows a failed check and drill, yet still exits 0", async () => {
+    backup = stubRestic(join(dir, "stub")).config;
+    await boot();
+    withDb((db) => {
+      // Backups were first scheduled long ago, and none has been pushed since.
+      db.prepare(
+        "UPDATE job SET created_at = '2020-01-01T00:00:00.000Z' WHERE kind = 'backup-snapshot'",
+      ).run();
+      const insert = db.prepare(
+        "INSERT INTO backup_verification (id, kind, at, ok, summary) VALUES (?, ?, ?, ?, ?)",
+      );
+      insert.run("V1", "check", "2026-09-27T03:30:00.000Z", 0, "restic check exited with 1");
+      insert.run("V2", "drill", "2026-09-01T04:00:00.000Z", 1, "restored and verified");
+    });
+    const result = await cli(["status"]);
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.out).toContain("Readiness: ok");
+    expect(result.out).toContain("Warning:   no good backup in the last 48 hours");
+    expect(result.out).toContain(
+      "Check:     FAILED at 2026-09-27T03:30:00.000Z: restic check exited with 1",
+    );
+    expect(result.out).toContain(
+      "Drill:     passed at 2026-09-01T04:00:00.000Z: restored and verified",
+    );
   });
 
   it("backup stops waiting after its limit, exit 1, while the backup goes on", async () => {

@@ -125,7 +125,7 @@ describe("the admin socket", () => {
       readiness: { ok: true },
       jobs: { pending: 0, running: 0, dead: 0 },
       deadJobs: [],
-      backup: { configured: false, last: null },
+      backup: { configured: false, last: null, stale: false, check: null, drill: null },
     });
     // The client removed its proof; the server consumed it.
     expect(readdirSync(join(dir, "run"))).toEqual(["admin.sock"]);

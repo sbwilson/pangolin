@@ -120,7 +120,7 @@ describe("GET /api/system/health", () => {
     const app = createApp(deps(openDb()));
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 6, writable: true });
+    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 7, writable: true });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
@@ -128,7 +128,11 @@ describe("GET /api/system/health", () => {
     const app = createApp(deps(openDb(true)));
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ status: "unhealthy", schemaVersion: 6, writable: false });
+    expect(await res.json()).toEqual({
+      status: "unhealthy",
+      schemaVersion: MIGRATIONS,
+      writable: false,
+    });
   });
 });
 
@@ -305,7 +309,13 @@ describe("GET /api/system/backup", () => {
     const res = await createApp(deps(db)).request("/api/system/backup", signedIn);
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(await res.json()).toEqual({ configured: false, last: null });
+    expect(await res.json()).toEqual({
+      configured: false,
+      last: null,
+      stale: false,
+      check: null,
+      drill: null,
+    });
   });
 
   it("shows the last pushed backup's times and restic snapshot ID", async () => {
@@ -315,6 +325,9 @@ describe("GET /api/system/backup", () => {
     expect(await (await app.request("/api/system/backup", signedIn)).json()).toEqual({
       configured: true,
       last: null,
+      stale: false,
+      check: null,
+      drill: null,
     });
     insertBackup(db, "A", "1".repeat(64), "2026-09-27T00:05:00.000Z");
     insertBackup(db, "B", "2".repeat(64), "2026-09-28T00:05:00.000Z");
@@ -326,7 +339,63 @@ describe("GET /api/system/backup", () => {
         takenAt: "2026-09-27T00:00:00.000Z",
         pushedAt: "2026-09-28T00:05:00.000Z",
       },
+      // The fixed clock is 2026-09-27: the last good backup is newer than that.
+      stale: false,
+      check: null,
+      drill: null,
     });
+  });
+
+  it("warns when the last good backup is over 48 hours old, and shows the check and drill", async () => {
+    const db = openDb();
+    addPerson(db);
+    insertBackup(db, "A", "1".repeat(64), "2026-09-27T00:05:00.000Z");
+    const later = { ...deps(db), backupConfigured: true, clock: fixedClockAt("2026-09-30") };
+    db.prepare(
+      "INSERT INTO backup_verification (id, kind, at, ok, summary) VALUES ('V1', 'check', '2026-09-28T03:30:00.000Z', 0, 'restic check exited with 1')",
+    ).run();
+    db.prepare(
+      "INSERT INTO backup_verification (id, kind, at, ok, summary) VALUES ('V2', 'drill', '2026-09-01T04:00:00.000Z', 1, 'restored and verified')",
+    ).run();
+    const body = await (await createApp(later).request("/api/system/backup", signedIn)).json();
+    expect(body).toMatchObject({
+      configured: true,
+      stale: true,
+      check: { ok: false, summary: "restic check exited with 1" },
+      drill: { ok: true, summary: "restored and verified" },
+    });
+  });
+});
+
+describe("GET /healthz with a stale backup", () => {
+  it("stays 200 and ready, with a warning in the body only when the backup is stale", async () => {
+    const db = openDb();
+    db.prepare(
+      `INSERT INTO backup_snapshot (id, taken_at, schema_version, table_count, row_count,
+         manifest_sha256, push_job_id, restic_snapshot_id, pushed_at, created_at, updated_at)
+       VALUES ('A', '2026-09-27T00:00:00.000Z', 6, 10, 100, 'x', 'j', ?, '2026-09-27T00:05:00.000Z', 'x', 'x')`,
+    ).run("1".repeat(64));
+    const at = (day: string) => ({
+      ...deps(db),
+      backupConfigured: true,
+      clock: fixedClockAt(day),
+      healthz: {
+        expectedSchemaVersion: MIGRATIONS,
+        // The runner ticked just now by whichever fixed clock is used.
+        runner: () => ({ ...ticking, lastTickAt: fixedClockAt(day).now().epochMilliseconds }),
+      },
+    });
+    const fresh = await createApp(at("2026-09-28")).request("/healthz");
+    expect(fresh.status).toBe(200);
+    expect(await fresh.json()).toEqual({ ok: true });
+    const stale = await createApp(at("2026-09-30")).request("/healthz");
+    expect(stale.status).toBe(200);
+    expect(await stale.json()).toEqual({ ok: true, warnings: ["backup-stale"] });
+    // Not configured: never a warning.
+    const off = await createApp({ ...at("2026-09-30"), backupConfigured: false }).request(
+      "/healthz",
+    );
+    expect(await off.json()).toEqual({ ok: true });
   });
 });
 

@@ -3,6 +3,7 @@
 // data-directory lock throughout, and cancels jobs with external effects after the swap.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import type { JobSignal } from "@pangolin/app";
 import {
   MANIFEST_FILE,
   type Migration,
@@ -45,15 +46,16 @@ export async function fetchSnapshot(
   restic: Restic,
   ref: string,
   dir: string,
+  signal?: JobSignal,
 ): Promise<FetchedSnapshot> {
-  const snapshot = await restic.findSnapshot(ref);
+  const snapshot = await restic.findSnapshot(ref, signal);
   if (snapshot === undefined) throw new SnapshotNotFound(ref);
   const staged = snapshot.paths.filter((path) => STAGED.test(path));
   if (staged.length !== 1) {
     throw new Error(`Snapshot ${snapshot.id.slice(0, 8)} is not a Pangolin backup`);
   }
   const attachments = snapshot.paths.find((path) => path.endsWith("/attachments"));
-  await restic.restore(snapshot.id, dir);
+  await restic.restore(snapshot.id, dir, signal);
   const inDir = (path: string) => join(dir, path);
   return {
     snapshot,

@@ -29,7 +29,14 @@ export async function fetchDeadJobs(): Promise<DeadJob[]> {
   return body.dead;
 }
 
-/** The last backup as the status page shows it (story 1.10). */
+/** A weekly repository check or monthly restore drill result (story 1.14). */
+export interface BackupVerification {
+  readonly at: string;
+  readonly ok: boolean;
+  readonly summary: string;
+}
+
+/** The last backup, its stale warning and the latest check and drill, as the page shows them. */
 export interface BackupStatus {
   /** False when no backup repository is configured. */
   readonly configured: boolean;
@@ -38,6 +45,10 @@ export interface BackupStatus {
     readonly takenAt: string;
     readonly pushedAt: string;
   } | null;
+  /** The last good backup is older than 48 hours. */
+  readonly stale: boolean;
+  readonly check: BackupVerification | null;
+  readonly drill: BackupVerification | null;
 }
 
 export async function fetchBackupStatus(): Promise<BackupStatus> {

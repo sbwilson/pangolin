@@ -57,6 +57,11 @@ export interface Restic {
   findSnapshot(ref: string, signal?: JobSignal): Promise<ResticSnapshot | undefined>;
   /** Restores the whole snapshot `id` under `target`, keeping its absolute paths. */
   restore(id: string, target: string, signal?: JobSignal): Promise<void>;
+  /**
+   * `restic check`: the repository's structure and indexes (metadata only, no pack data read).
+   * Throws `ResticError` with restic's exit code when it finds a problem.
+   */
+  check(signal?: JobSignal): Promise<void>;
 }
 
 export class ResticError extends Error {
@@ -260,6 +265,11 @@ export function createRestic(options: ResticOptions): Restic {
     restore: async (id, target, signal) => {
       const ran = await run(["restore", id, "--target", target], undefined, signal);
       if (ran.code !== 0) throw failed("restore", ran);
+    },
+
+    check: async (signal) => {
+      const ran = await run(["check"], undefined, signal);
+      if (ran.code !== 0) throw failed("check", ran);
     },
   };
 }

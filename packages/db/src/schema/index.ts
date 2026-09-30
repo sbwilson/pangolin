@@ -10,6 +10,7 @@ export {
   authVerification,
 } from "./auth.ts";
 export { backupSnapshot } from "./backup-snapshot.ts";
+export { backupVerification } from "./backup-verification.ts";
 export { householdSettings } from "./household-settings.ts";
 export { job } from "./job.ts";
 export { loginAttempt } from "./login-attempt.ts";

@@ -87,7 +87,7 @@ describe("startServer", () => {
     try {
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 6, writable: true },
+        body: { status: "ok", schemaVersion: 7, writable: true },
       });
     } finally {
       await server.close();
@@ -100,7 +100,7 @@ describe("startServer", () => {
     try {
       expect((await getHealth(server.port)).body).toEqual({
         status: "ok",
-        schemaVersion: 6,
+        schemaVersion: 7,
         writable: true,
       });
     } finally {
@@ -121,7 +121,7 @@ describe("startServer", () => {
       try {
         expect(await getHealth(server.port)).toEqual({
           status: 503,
-          body: { status: "unhealthy", schemaVersion: 6, writable: false },
+          body: { status: "unhealthy", schemaVersion: 7, writable: false },
         });
       } finally {
         await server.close();
@@ -143,7 +143,7 @@ describe("startServer", () => {
 
     await expect(boot(migrationsDir)).rejects.toThrow(/Migration 0099_broken failed/);
     const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
-    expect(schemaVersion(db)).toBe(6);
+    expect(schemaVersion(db)).toBe(7);
     db.close();
   });
 });
@@ -469,7 +469,7 @@ describe("startServer in demo mode", () => {
       );
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 6, writable: true },
+        body: { status: "ok", schemaVersion: 7, writable: true },
       });
       // Demo mode runs no jobs, so /healthz skips the runner check.
       expect(await getHealthz(server.port)).toEqual({ status: 200, body: { ok: true } });

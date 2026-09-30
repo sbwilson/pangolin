@@ -9,7 +9,13 @@
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BACKUP_TIME, type BackupProgress, newId, systemClock } from "@pangolin/app";
+import {
+  BACKUP_TIME,
+  type BackupProgress,
+  type BackupVerification,
+  newId,
+  systemClock,
+} from "@pangolin/app";
 import {
   createUnitOfWork,
   type Db,
@@ -92,6 +98,11 @@ function printError(io: CliIo, error: { code: string; message: string; details?:
   }
 }
 
+function verificationLine(result: BackupVerification | null, none: string): string {
+  if (result === null) return none;
+  return `${result.ok ? "passed" : "FAILED"} at ${result.at}: ${result.summary}`;
+}
+
 function printStatus(io: CliIo, status: StatusResult): void {
   const { readiness, jobs } = status;
   io.out(`Pangolin Money ${status.version}`);
@@ -108,6 +119,15 @@ function printStatus(io: CliIo, status: StatusResult): void {
     io.out(`Backups:   none yet (nightly at ${at}, household time)`);
   } else {
     io.out(`Backups:   last at ${backup.last.pushedAt}, snapshot ${backup.last.snapshotId}`);
+  }
+  if (backup.configured) {
+    if (backup.stale) {
+      io.out("Warning:   no good backup in the last 48 hours; check the backup server");
+    }
+    io.out(`Check:     ${verificationLine(backup.check, "no check yet (weekly, Sundays 03:30)")}`);
+    io.out(
+      `Drill:     ${verificationLine(backup.drill, "no restore drill yet (monthly, the 1st at 04:00)")}`,
+    );
   }
   if (status.deadJobs.length > 0) {
     const shown = status.deadJobs.length;

@@ -2,6 +2,7 @@ import type { AuditRow, HouseholdSettingsRow, ReadRepos, TxRepos, UnitOfWork } f
 import { eq } from "drizzle-orm";
 import { type BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
 import { createBackupSnapshotRepo } from "./backup-snapshot-repo.ts";
+import { createBackupVerificationRepo } from "./backup-verification-repo.ts";
 import {
   createCredentialRepo,
   createLoginAttemptRepo,
@@ -86,6 +87,7 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     jobs: createJobRepo(orm, () => guard(scope)),
     reviewItems: createReviewItemRepo(orm, () => guard(scope)),
     backups: createBackupSnapshotRepo(orm, () => guard(scope)),
+    backupVerifications: createBackupVerificationRepo(orm, () => guard(scope)),
   };
 }
 
@@ -140,9 +142,11 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               listDead: repos.jobs.listDead,
               countByStatus: repos.jobs.countByStatus,
               find: repos.jobs.find,
+              firstCreatedAt: repos.jobs.firstCreatedAt,
             },
             reviewItems: { listOpenFor: repos.reviewItems.listOpenFor },
             backups: { find: repos.backups.find, latestPushed: repos.backups.latestPushed },
+            backupVerifications: { latest: repos.backupVerifications.latest },
           };
         },
         fn,

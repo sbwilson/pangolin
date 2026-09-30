@@ -4,7 +4,9 @@
 import {
   AppError,
   type BackupProgress,
+  type BackupStatus,
   backupProgress,
+  backupStatus,
   type Clock,
   type DeadJob,
   deadJobs,
@@ -12,8 +14,6 @@ import {
   type IdGenerator,
   type JobCounts,
   jobCounts,
-  type LastBackup,
-  lastBackup,
   listLogins,
   type ReadinessOutput,
   type RunnerLiveness,
@@ -65,11 +65,7 @@ export interface StatusResult {
   readonly backup: BackupStatus;
 }
 
-/** Backups as `status` reports them: whether configured, and the last pushed backup. */
-export interface BackupStatus {
-  readonly configured: boolean;
-  readonly last: LastBackup | null;
-}
+export type { BackupStatus };
 
 /** What `backup` answers: the manual backup's snapshot job, which `backup-status` follows. */
 export interface BackupStarted {
@@ -135,10 +131,8 @@ export function statusCommand(deps: AdminDeps, args: unknown = {}): StatusResult
     ),
     jobs: jobCounts(ctx),
     deadJobs: deadJobs(ctx),
-    backup: {
-      configured: deps.backupConfigured,
-      last: deps.backupConfigured ? lastBackup(ctx) : null,
-    },
+    // Staleness is a warning: it never makes the status (or its exit code) fail.
+    backup: backupStatus(ctx, deps.backupConfigured),
   };
 }
 

@@ -113,6 +113,8 @@ export interface JobRepo {
    * error, whoever holds its lease (restore, AD-16). Returns how many it changed.
    */
   cancelLive(kinds: readonly string[], now: string, reason: string): number;
+  /** When the first job of `kind` was created, or undefined when there has been none. */
+  firstCreatedAt(kind: string): string | undefined;
 }
 
 /** One `backup_snapshot` row (story 1.10). Times are `formatInstant` text. */
@@ -143,6 +145,24 @@ export interface BackupSnapshotRepo {
   markPushed(id: string, resticSnapshotId: string, pushedAt: string): boolean;
   /** Of the pushed snapshots, the one taken last (by `takenAt`, then ID), if any. */
   latestPushed(): BackupSnapshotRow | undefined;
+}
+
+export type BackupVerificationKind = "check" | "drill";
+
+/** One `backup_verification` row (story 1.14): the result of a repository check or restore drill. */
+export interface BackupVerificationRow {
+  readonly id: Id<"BackupVerification">;
+  readonly kind: BackupVerificationKind;
+  readonly at: string;
+  readonly ok: boolean;
+  /** What was checked, or what failed; never a secret. */
+  readonly summary: string;
+}
+
+export interface BackupVerificationRepo {
+  insert(row: BackupVerificationRow): void;
+  /** The newest result of `kind`, if any. */
+  latest(kind: BackupVerificationKind): BackupVerificationRow | undefined;
 }
 
 /** One `review_item` row (AD-17). Open while `resolvedAt` is null. */
@@ -360,6 +380,7 @@ export interface TxRepos {
   readonly jobs: JobRepo;
   readonly reviewItems: ReviewItemRepo;
   readonly backups: BackupSnapshotRepo;
+  readonly backupVerifications: BackupVerificationRepo;
 }
 
 /** The read-only subset of `TxRepos`, for queries. */
@@ -371,9 +392,10 @@ export interface ReadRepos {
   readonly loginAttempts: Pick<LoginAttemptRepo, "listSince">;
   readonly recoveryCodes: Pick<RecoveryCodeRepo, "counts">;
   readonly reEnrolmentLinks: Pick<ReEnrolmentLinkRepo, "findByTokenHash" | "findById">;
-  readonly jobs: Pick<JobRepo, "listDead" | "countByStatus" | "find">;
+  readonly jobs: Pick<JobRepo, "listDead" | "countByStatus" | "find" | "firstCreatedAt">;
   readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
   readonly backups: Pick<BackupSnapshotRepo, "find" | "latestPushed">;
+  readonly backupVerifications: Pick<BackupVerificationRepo, "latest">;
 }
 
 export interface UnitOfWork {

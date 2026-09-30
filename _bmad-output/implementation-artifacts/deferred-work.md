@@ -61,3 +61,10 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - disposition: still deferred
   summary: Weekly `restic check`, monthly restore drill, stale-backup warning, attachment snapshotting and sample decrypt.
   evidence: Already recorded above for story 1.10b and epic 5.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-backup-monitoring-plan.md`
+  summary: Test the web status page's rendering of the stale warning and of failed or passed check and drill results (story 1.14).
+  evidence: Verification-gap review of 1.14: only the empty state is covered (e2e/jobs.spec.ts); needs the web component harness or a seeded e2e, which no story has built yet.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-backup-monitoring-plan.md`
+  summary: Warn when the weekly check or monthly drill is overdue (for example 8 and 35 days), and guard the drill against low disk headroom on the data volume.
+  evidence: Review of 1.14: a silently stopped check or drill keeps showing its last result; the drill restores the full snapshot onto the data volume with no free-space check. Both matter more once attachments exist (epic 5).

@@ -6,18 +6,29 @@ import type { JobRow } from "../ports/unit-of-work.ts";
 import { systemViewer } from "../system-viewer.ts";
 import { manualClock, memoryContext } from "../testing/fixtures.ts";
 import {
+  BACKUP_CHECK_JOB,
+  BACKUP_DRILL_JOB,
   BACKUP_PUSH_JOB,
   BACKUP_SCHEDULE_NAME,
   BACKUP_SNAPSHOT_JOB,
+  backupCheckSchedule,
+  backupDrillSchedule,
+  backupFreshness,
   backupProgress,
+  backupStatus,
   dailyAt,
   lastBackup,
   MANUAL_BACKUP_KEY,
+  monthlyAt,
   nightlyBackupSchedule,
   recordBackupPush,
   recordBackupSnapshot,
+  recordBackupVerification,
   requestBackup,
+  STALE_BACKUP_MS,
+  weeklyAt,
 } from "./backups.ts";
+import { listReviewItems } from "./review-items.ts";
 
 const SHA = "a".repeat(64);
 const RESTIC_1 = "1".repeat(64);
@@ -272,5 +283,202 @@ describe("backupProgress", () => {
     expect(() => backupProgress(ctx, { jobId: "missing" })).toThrow(
       expect.objectContaining({ code: "NotFound" }),
     );
+  });
+});
+
+describe("weeklyAt and monthlyAt", () => {
+  const at = (iso: string) => Temporal.Instant.from(iso);
+  const local = (instant: Temporal.Instant, zone: string) =>
+    instant.toZonedDateTimeISO(zone).toString({ timeZoneName: "never" });
+
+  it("runs Sundays at 03:30 household time, strictly after the given instant", () => {
+    const next = weeklyAt("Australia/Sydney", 3, 30);
+    // 2026-07-01 is a Wednesday; Sunday 2026-07-05 03:30 AEST is 2026-07-04T17:30Z.
+    expect(next(at("2026-07-01T00:00:00Z")).toString()).toBe("2026-07-04T17:30:00Z");
+    expect(next(at("2026-07-04T17:29:59Z")).toString()).toBe("2026-07-04T17:30:00Z");
+    expect(next(at("2026-07-04T17:30:00Z")).toString()).toBe("2026-07-11T17:30:00Z");
+  });
+
+  it("keeps 03:30 local across the clocks changing on a Sunday, both ways", () => {
+    const sydney = weeklyAt("Australia/Sydney", 3, 30);
+    // Sunday 2026-10-04: 02:00 -> 03:00 (clocks forward); 03:30 is AEDT (UTC+11).
+    const forward = sydney(at("2026-09-30T00:00:00Z"));
+    expect(local(forward, "Australia/Sydney")).toBe("2026-10-04T03:30:00+11:00");
+    // Sunday 2026-04-05: 03:00 -> 02:00 (clocks back); 03:30 is AEST (UTC+10), once.
+    const back = sydney(at("2026-04-01T00:00:00Z"));
+    expect(local(back, "Australia/Sydney")).toBe("2026-04-05T03:30:00+10:00");
+    const newYork = weeklyAt("America/New_York", 3, 30);
+    // Sunday 2026-03-08: 02:00 -> 03:00; Sunday 2026-11-01: 02:00 -> 01:00.
+    expect(local(newYork(at("2026-03-04T00:00:00Z")), "America/New_York")).toBe(
+      "2026-03-08T03:30:00-04:00",
+    );
+    expect(local(newYork(at("2026-10-28T00:00:00Z")), "America/New_York")).toBe(
+      "2026-11-01T03:30:00-05:00",
+    );
+    // A time inside the gap runs just after the jump; inside the overlap, the first time.
+    expect(
+      local(weeklyAt("America/New_York", 2, 30)(at("2026-03-04T00:00:00Z")), "America/New_York"),
+    ).toBe("2026-03-08T03:30:00-04:00");
+    expect(
+      local(weeklyAt("America/New_York", 1, 30)(at("2026-10-28T00:00:00Z")), "America/New_York"),
+    ).toBe("2026-11-01T01:30:00-04:00");
+  });
+
+  it("runs at 04:00 on the 1st across month lengths and clock changes", () => {
+    const next = monthlyAt("Australia/Sydney", 4, 0);
+    expect(local(next(at("2026-01-15T00:00:00Z")), "Australia/Sydney")).toBe(
+      "2026-02-01T04:00:00+11:00",
+    );
+    // From the 1st after 04:00 it is the next month; before it, the same day.
+    expect(local(next(at("2026-02-01T00:00:00Z")), "Australia/Sydney")).toBe(
+      "2026-03-01T04:00:00+11:00",
+    );
+    expect(local(next(at("2026-02-01T16:59:00Z")), "Australia/Sydney")).toBe(
+      "2026-03-01T04:00:00+11:00",
+    );
+    expect(local(next(at("2026-02-28T12:00:00Z")), "Australia/Sydney")).toBe(
+      "2026-03-01T04:00:00+11:00",
+    );
+    // Year end, and the 1st of April just as Sydney's clocks go back (2026-04-05, not the 1st).
+    expect(local(next(at("2026-12-01T20:00:00Z")), "Australia/Sydney")).toBe(
+      "2027-01-01T04:00:00+11:00",
+    );
+    expect(local(next(at("2026-03-20T00:00:00Z")), "Australia/Sydney")).toBe(
+      "2026-04-01T04:00:00+11:00",
+    );
+    // Clocks change around the month's start: New York 2026-11-01 (the 1st, Sunday) 04:00 is EST.
+    expect(
+      local(monthlyAt("America/New_York", 4, 0)(at("2026-10-15T00:00:00Z")), "America/New_York"),
+    ).toBe("2026-11-01T04:00:00-05:00");
+  });
+
+  it("refuses an unknown time zone; the schedules carry the check and drill kinds", () => {
+    expect(() => weeklyAt("Mars/Olympus", 3, 30)).toThrow(RangeError);
+    expect(() => monthlyAt("Mars/Olympus", 4, 0)).toThrow(RangeError);
+    expect(backupCheckSchedule("UTC")).toMatchObject({
+      name: "backup-check-weekly",
+      kind: BACKUP_CHECK_JOB,
+      payload: {},
+    });
+    expect(backupDrillSchedule("UTC")).toMatchObject({
+      name: "backup-drill-monthly",
+      kind: BACKUP_DRILL_JOB,
+      payload: {},
+    });
+    // 2026-09-27 is a Sunday.
+    expect(backupCheckSchedule("UTC").next(at("2026-09-27T03:00:00Z")).toString()).toBe(
+      "2026-09-27T03:30:00Z",
+    );
+    expect(backupDrillSchedule("UTC").next(at("2026-09-27T03:00:00Z")).toString()).toBe(
+      "2026-10-01T04:00:00Z",
+    );
+  });
+
+  it("the check and drill are net-lane reads with no external effects, needing a person when dead", () => {
+    for (const kind of [BACKUP_CHECK_JOB, BACKUP_DRILL_JOB]) {
+      expect(kind).toMatchObject({
+        lane: "net",
+        externalEffects: false,
+        needsPersonWhenDead: true,
+      });
+    }
+  });
+});
+
+describe("backupFreshness", () => {
+  const now = Temporal.Instant.from("2026-09-30T00:00:00Z");
+  const ago = (ms: number) => new Date(now.epochMilliseconds - ms).toISOString();
+
+  it("is stale only when the last good backup is strictly older than 48 hours", () => {
+    expect(backupFreshness({ takenAt: ago(STALE_BACKUP_MS) }, now, null).stale).toBe(false);
+    expect(backupFreshness({ takenAt: ago(STALE_BACKUP_MS + 1) }, now, null).stale).toBe(true);
+    expect(backupFreshness({ takenAt: ago(60_000) }, now, null).stale).toBe(false);
+  });
+
+  it("times a repository with no backup from first start, and judges nothing without one", () => {
+    expect(backupFreshness(null, now, ago(47 * 3_600_000)).stale).toBe(false);
+    expect(backupFreshness(null, now, ago(49 * 3_600_000)).stale).toBe(true);
+    expect(backupFreshness(null, now, null).stale).toBe(false);
+    // A good backup wins over an old first start.
+    expect(backupFreshness({ takenAt: ago(3_600_000) }, now, ago(400 * 3_600_000)).stale).toBe(
+      false,
+    );
+  });
+});
+
+describe("recordBackupVerification and backupStatus", () => {
+  it("records each result with history, audited, and shows the latest of each kind", () => {
+    const { clock, ctx, uow } = setup();
+    recordBackupVerification(ctx, { kind: "check", ok: true, summary: "fine" });
+    clock.advance(3_600_000);
+    expect(backupStatus(ctx, true)).toMatchObject({
+      configured: true,
+      check: { ok: true, summary: "fine" },
+      drill: null,
+    });
+    recordBackupVerification(ctx, { kind: "drill", ok: true, summary: "restored" });
+    recordBackupVerification(ctx, { kind: "check", ok: false, summary: "broken" });
+    expect(uow.state.backupVerifications).toHaveLength(3);
+    expect(backupStatus(ctx, true)).toMatchObject({
+      check: { ok: false, summary: "broken" },
+      drill: { ok: true, summary: "restored" },
+    });
+    expect(uow.state.audit.filter((row) => row.entity === "backup_verification")).toHaveLength(3);
+  });
+
+  it("raises one household item on the first failure, none on repeats, and resolves it on a pass", () => {
+    const { ctx, uow } = setup();
+    const open = () => listReviewItems(ctx, {}).map((item) => item.kind);
+    recordBackupVerification(ctx, { kind: "check", ok: false, summary: "a" });
+    recordBackupVerification(ctx, { kind: "check", ok: false, summary: "b" });
+    expect(open()).toEqual(["system.backup-verification-failed"]);
+    // The drill has its own item, and its pass leaves the check's open.
+    recordBackupVerification(ctx, { kind: "drill", ok: false, summary: "c" });
+    expect(open()).toHaveLength(2);
+    recordBackupVerification(ctx, { kind: "drill", ok: true, summary: "d" });
+    expect(open()).toHaveLength(1);
+    recordBackupVerification(ctx, { kind: "check", ok: true, summary: "e" });
+    expect(open()).toEqual([]);
+    // A pass with nothing open writes no review audit; a later failure opens a new item.
+    recordBackupVerification(ctx, { kind: "check", ok: true, summary: "f" });
+    recordBackupVerification(ctx, { kind: "check", ok: false, summary: "g" });
+    expect(open()).toHaveLength(1);
+    expect(
+      uow.state.reviewItems.filter((item) => item.kind.startsWith("system.backup")),
+    ).toHaveLength(3);
+    expect(
+      uow.state.reviewItems.every((item) => item.accountId === null && item.personId === null),
+    ).toBe(true);
+  });
+
+  it("reports nothing when no repository is configured", () => {
+    const { ctx } = setup();
+    recordBackupVerification(ctx, { kind: "check", ok: false, summary: "x" });
+    expect(backupStatus(ctx, false)).toEqual({
+      configured: false,
+      last: null,
+      stale: false,
+      check: null,
+      drill: null,
+    });
+  });
+
+  it("warns when the last good backup is over 48 hours old, and times a first backup from start", () => {
+    const { clock, ctx } = setup();
+    // The first scheduled job marks the first start.
+    requestBackup(ctx);
+    expect(backupStatus(ctx, true).stale).toBe(false);
+    clock.set("2026-09-28T23:59:00Z");
+    expect(backupStatus(ctx, true).stale).toBe(false);
+    clock.set("2026-09-29T00:01:00Z");
+    expect(backupStatus(ctx, true)).toMatchObject({ stale: true, last: null });
+    const row = recordBackupSnapshot(ctx, {
+      ...snapshotInput("J1"),
+      takenAt: "2026-09-29T00:00:00.000Z",
+    });
+    recordBackupPush(ctx, { id: row.id, resticSnapshotId: RESTIC_1 });
+    expect(backupStatus(ctx, true).stale).toBe(false);
+    clock.set("2026-10-01T00:01:00Z");
+    expect(backupStatus(ctx, true).stale).toBe(true);
   });
 });

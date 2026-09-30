@@ -7,6 +7,8 @@ import type {
   AuditRow,
   BackupSnapshotRepo,
   BackupSnapshotRow,
+  BackupVerificationRepo,
+  BackupVerificationRow,
   CredentialRepo,
   HouseholdSettingsRow,
   JobRepo,
@@ -37,6 +39,7 @@ export interface MemoryState {
   jobs: JobRow[];
   reviewItems: ReviewItemRow[];
   backups: BackupSnapshotRow[];
+  backupVerifications: BackupVerificationRow[];
   /** IDs of better-auth users; tests add them to stand in for better-auth's inserts. */
   users: string[];
   /** Email per user ID, standing in for `auth_user.email`. */
@@ -169,6 +172,13 @@ function jobRepo(working: MemoryState, check: () => void): JobRepo {
       check();
       return working.jobs.find((job) => job.id === id);
     },
+    firstCreatedAt: (kind) => {
+      check();
+      return working.jobs
+        .filter((job) => job.kind === kind)
+        .map((job) => job.createdAt)
+        .sort()[0];
+    },
     cancelLive: (kinds, now, reason) => {
       check();
       let changed = 0;
@@ -216,6 +226,24 @@ function backupRepo(working: MemoryState, check: () => void): BackupSnapshotRepo
       return working.backups
         .filter((b) => b.pushedAt !== null)
         .sort((a, b) => (`${a.takenAt}|${a.id}` < `${b.takenAt}|${b.id}` ? 1 : -1))[0];
+    },
+  };
+}
+
+function backupVerificationRepo(working: MemoryState, check: () => void): BackupVerificationRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.backupVerifications.some((v) => v.id === row.id)) {
+        throw new Error("UNIQUE constraint failed: backup_verification.id");
+      }
+      working.backupVerifications.push(row);
+    },
+    latest: (kind) => {
+      check();
+      return working.backupVerifications
+        .filter((v) => v.kind === kind)
+        .sort((a, b) => (`${a.at}|${a.id}` < `${b.at}|${b.id}` ? 1 : -1))[0];
     },
   };
 }
@@ -505,6 +533,7 @@ export function memoryUnitOfWork(
       jobs: [],
       reviewItems: [],
       backups: [],
+      backupVerifications: [],
       users: [],
       emails: {},
       enrolments: {},
@@ -524,6 +553,7 @@ export function memoryUnitOfWork(
         jobs: [...uow.state.jobs],
         reviewItems: [...uow.state.reviewItems],
         backups: [...uow.state.backups],
+        backupVerifications: [...uow.state.backupVerifications],
         users: [...uow.state.users],
         emails: uow.state.emails,
         enrolments: uow.state.enrolments,
@@ -566,6 +596,7 @@ export function memoryUnitOfWork(
         jobs: jobRepo(working, check),
         reviewItems: reviewItemRepo(working, check),
         backups: backupRepo(working, check),
+        backupVerifications: backupVerificationRepo(working, check),
       };
       try {
         const result = fn(tx);
@@ -575,6 +606,7 @@ export function memoryUnitOfWork(
         uow.state.jobs = working.jobs;
         uow.state.reviewItems = working.reviewItems;
         uow.state.backups = working.backups;
+        uow.state.backupVerifications = working.backupVerifications;
         uow.state.users = working.users;
         uow.state.setupLinks = working.setupLinks;
         uow.state.loginAttempts = working.loginAttempts;
@@ -611,12 +643,14 @@ export function memoryUnitOfWork(
           listDead: jobRepo(uow.state, check).listDead,
           countByStatus: jobRepo(uow.state, check).countByStatus,
           find: jobRepo(uow.state, check).find,
+          firstCreatedAt: jobRepo(uow.state, check).firstCreatedAt,
         },
         reviewItems: { listOpenFor: reviewItemRepo(uow.state, check).listOpenFor },
         backups: {
           find: backupRepo(uow.state, check).find,
           latestPushed: backupRepo(uow.state, check).latestPushed,
         },
+        backupVerifications: { latest: backupVerificationRepo(uow.state, check).latest },
       });
     },
   };

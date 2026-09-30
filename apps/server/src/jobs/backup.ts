@@ -4,6 +4,8 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {
+  BACKUP_CHECK_JOB,
+  BACKUP_DRILL_JOB,
   BACKUP_PUSH_JOB,
   BACKUP_SNAPSHOT_JOB,
   backupsAwaitingPush,
@@ -13,9 +15,18 @@ import {
   lastBackup,
   recordBackupPush,
   recordBackupSnapshot,
+  recordBackupVerification,
 } from "@pangolin/app";
-import { type BackupPaths, backupPaths, PARTIAL_SUFFIX, stagingDir } from "../backup/paths.ts";
-import { createRestic, type Restic } from "../backup/restic.ts";
+import { loadMigrations } from "@pangolin/db";
+import {
+  type BackupPaths,
+  backupPaths,
+  fileStamp,
+  PARTIAL_SUFFIX,
+  stagingDir,
+} from "../backup/paths.ts";
+import { createRestic, type Restic, ResticError } from "../backup/restic.ts";
+import { fetchSnapshot, SnapshotNotFound, verifyFetched } from "../backup/restore.ts";
 import {
   type SnapshotSummary,
   type TakeSnapshotOptions,
@@ -25,6 +36,8 @@ import type { BackupConfig } from "../config.ts";
 
 export interface BackupJobDeps {
   readonly dataDir: string;
+  /** This build's migrations, which the restore drill verifies the snapshot against. */
+  readonly migrationsDir: string;
   readonly backup: BackupConfig;
   /** Replaces restic, for tests. */
   readonly restic?: Restic;
@@ -48,6 +61,9 @@ function listStaged(paths: BackupPaths): string[] {
 function removeStaged(paths: BackupPaths, name: string): void {
   rmSync(join(paths.stagingRoot, name), { recursive: true, force: true });
 }
+
+/** The restore drill's directory names, under `<dataDir>/backup`. */
+const DRILL_PREFIX = "drill-";
 
 export function backupJobs(deps: BackupJobDeps): JobRegistration[] {
   const paths = backupPaths(deps.dataDir);
@@ -126,5 +142,69 @@ export function backupJobs(deps: BackupJobDeps): JobRegistration[] {
     }
   });
 
-  return [snapshotHandler, pushHandler];
+  const checkHandler = jobHandler(BACKUP_CHECK_JOB, async (ctx) => {
+    if (repository === null) return;
+    // Nothing pushed yet: the repository may not exist, and there is nothing to check.
+    if (lastBackup(ctx) === null) return;
+    try {
+      await resticFor(repository).check(ctx.signal);
+    } catch (error) {
+      // restic ran and found a problem. Anything else (could not run, no answer, aborted) is
+      // not a verdict: the runner retries it, and a dead job raises its own review item.
+      if (!(error instanceof ResticError) || error.exitCode === null) throw error;
+      recordBackupVerification(ctx, {
+        kind: "check",
+        ok: false,
+        summary: error.message.slice(0, 500),
+      });
+      return;
+    }
+    recordBackupVerification(ctx, {
+      kind: "check",
+      ok: true,
+      summary: "the repository check found no errors",
+    });
+  });
+
+  const drillHandler = jobHandler(BACKUP_DRILL_JOB, async (ctx) => {
+    if (repository === null) return;
+    if (lastBackup(ctx) === null) return;
+    const client = resticFor(repository);
+    // On the data volume, not `/tmp`; never anywhere the live files are. A directory an earlier
+    // attempt left when it died is removed first.
+    for (const name of existsSync(paths.backupDir) ? readdirSync(paths.backupDir) : []) {
+      if (name.startsWith(DRILL_PREFIX)) {
+        rmSync(join(paths.backupDir, name), { recursive: true, force: true });
+      }
+    }
+    const dir = join(
+      paths.backupDir,
+      `${DRILL_PREFIX}${fileStamp(ctx.clock.now().epochMilliseconds)}`,
+    );
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    try {
+      let summary: string;
+      let ok: boolean;
+      try {
+        const fetched = await fetchSnapshot(client, "latest", dir, ctx.signal);
+        const verdict = verifyFetched(fetched, loadMigrations(deps.migrationsDir));
+        ok = verdict.ok;
+        summary = verdict.ok
+          ? `restored snapshot ${fetched.snapshot.id.slice(0, 8)} and verified ${verdict.tables} tables, ${verdict.rows} rows`
+          : `the ${verdict.check} check failed on snapshot ${fetched.snapshot.id.slice(0, 8)}: ${verdict.message}`;
+      } catch (error) {
+        if (error instanceof SnapshotNotFound) return;
+        if (error instanceof ResticError && error.exitCode === null) throw error;
+        if (ctx.signal.aborted) throw error;
+        // restic ran and failed, or the snapshot is not a Pangolin backup.
+        ok = false;
+        summary = `the restore failed: ${error instanceof Error ? error.message : String(error)}`;
+      }
+      recordBackupVerification(ctx, { kind: "drill", ok, summary: summary.slice(0, 500) });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  return [snapshotHandler, pushHandler, checkHandler, drillHandler];
 }

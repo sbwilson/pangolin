@@ -132,6 +132,10 @@ switch (command) {
     cpSync(join(snapshotsDir, match[0].id, "tree"), target, { recursive: true });
     break;
   }
+  case "check":
+    requireRepo();
+    process.stdout.write("no errors were found\n");
+    break;
   case "forget":
   case "prune":
     requireRepo();

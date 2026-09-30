@@ -1,6 +1,8 @@
 // Backups (story 1.10), owned by `system`: the two job kinds, the nightly schedule, and the use
 // cases that record a snapshot and its push in `backup_snapshot`. The snapshot and the push
 // themselves (`VACUUM INTO`, restic) are I/O the server's job handlers do before calling these.
+// Backup monitoring (story 1.14) adds the weekly repository check, the monthly restore drill,
+// their recorded results (`backup_verification`) and the stale-backup rule.
 import type { Id } from "@pangolin/shared";
 import { formatInstant, Temporal } from "@pangolin/shared/temporal";
 import { z } from "zod";
@@ -8,8 +10,16 @@ import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { enqueueJob } from "../jobs/enqueue.ts";
 import { defineJobKind, defineSchedule, type Schedule } from "../jobs/registry.ts";
-import type { BackupSnapshotRow, TxRepos, UnitOfWork } from "../ports/unit-of-work.ts";
+import type { Clock } from "../ports/clock.ts";
+import type {
+  BackupSnapshotRow,
+  BackupVerificationKind,
+  BackupVerificationRow,
+  TxRepos,
+  UnitOfWork,
+} from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
+import { defineReviewKind, raiseReviewItem, resolveReviewItem } from "./review-items.ts";
 
 /**
  * Writes a consistent snapshot (`VACUUM INTO`) and its manifest to the staging directory, then
@@ -32,6 +42,31 @@ export const BACKUP_PUSH_JOB = defineJobKind({
   lane: "net",
   retry: { maxAttempts: 6, baseDelayMs: 60_000, maxDelayMs: 60 * 60_000 },
   externalEffects: true,
+  needsPersonWhenDead: true,
+  timeoutMs: 6 * 60 * 60_000,
+});
+
+/** `restic check` of the repository, weekly. Reads the repository only. */
+export const BACKUP_CHECK_JOB = defineJobKind({
+  kind: "backup-check",
+  schema: z.object({}).strict(),
+  lane: "net",
+  retry: { maxAttempts: 3, baseDelayMs: 15 * 60_000, maxDelayMs: 60 * 60_000 },
+  externalEffects: false,
+  needsPersonWhenDead: true,
+  timeoutMs: 2 * 60 * 60_000,
+});
+
+/**
+ * The monthly restore drill: restores the latest snapshot into a temporary directory and runs
+ * the restore's own verification on it. Never touches the live data files.
+ */
+export const BACKUP_DRILL_JOB = defineJobKind({
+  kind: "backup-drill",
+  schema: z.object({}).strict(),
+  lane: "net",
+  retry: { maxAttempts: 3, baseDelayMs: 15 * 60_000, maxDelayMs: 60 * 60_000 },
+  externalEffects: false,
   needsPersonWhenDead: true,
   timeoutMs: 6 * 60 * 60_000,
 });
@@ -65,6 +100,79 @@ export function dailyAt(
       date = date.add({ days: 1 });
     }
   };
+}
+
+export const BACKUP_CHECK_SCHEDULE_NAME = "backup-check-weekly";
+export const BACKUP_DRILL_SCHEDULE_NAME = "backup-drill-monthly";
+
+/** The weekly repository check: Sundays, in the household time zone. */
+export const BACKUP_CHECK_TIME = { hour: 3, minute: 30 } as const;
+/** The monthly restore drill: the 1st of the month, in the household time zone. */
+export const BACKUP_DRILL_TIME = { hour: 4, minute: 0 } as const;
+
+/**
+ * A schedule's `next`: the first `hour:minute` in `timeZone` on a Sunday strictly after `after`.
+ * A time that does not exist that day runs just after the jump; one that happens twice, the
+ * first time. Throws `RangeError` for an unknown time zone.
+ */
+export function weeklyAt(
+  timeZone: string,
+  hour: number,
+  minute: number,
+): (after: Temporal.Instant) => Temporal.Instant {
+  const plainTime = Temporal.PlainTime.from({ hour, minute });
+  Temporal.Instant.fromEpochMilliseconds(0).toZonedDateTimeISO(timeZone);
+  return (after) => {
+    let date = after.toZonedDateTimeISO(timeZone).toPlainDate();
+    for (;;) {
+      if (date.dayOfWeek === 7) {
+        const at = date.toZonedDateTime({ timeZone, plainTime }).toInstant();
+        if (Temporal.Instant.compare(at, after) > 0) return at;
+      }
+      date = date.add({ days: 1 });
+    }
+  };
+}
+
+/**
+ * A schedule's `next`: the first `hour:minute` in `timeZone` on the 1st of a month strictly
+ * after `after`. DST gaps and overlaps resolve as in `dailyAt`.
+ */
+export function monthlyAt(
+  timeZone: string,
+  hour: number,
+  minute: number,
+): (after: Temporal.Instant) => Temporal.Instant {
+  const plainTime = Temporal.PlainTime.from({ hour, minute });
+  Temporal.Instant.fromEpochMilliseconds(0).toZonedDateTimeISO(timeZone);
+  return (after) => {
+    let date = after.toZonedDateTimeISO(timeZone).toPlainDate().with({ day: 1 });
+    for (;;) {
+      const at = date.toZonedDateTime({ timeZone, plainTime }).toInstant();
+      if (Temporal.Instant.compare(at, after) > 0) return at;
+      date = date.add({ months: 1 });
+    }
+  };
+}
+
+/** The weekly `restic check`, Sundays at 03:30 in the household time zone. */
+export function backupCheckSchedule(timeZone: string): Schedule {
+  return defineSchedule({
+    name: BACKUP_CHECK_SCHEDULE_NAME,
+    kind: BACKUP_CHECK_JOB,
+    payload: {},
+    next: weeklyAt(timeZone, BACKUP_CHECK_TIME.hour, BACKUP_CHECK_TIME.minute),
+  });
+}
+
+/** The monthly restore drill, the 1st at 04:00 in the household time zone. */
+export function backupDrillSchedule(timeZone: string): Schedule {
+  return defineSchedule({
+    name: BACKUP_DRILL_SCHEDULE_NAME,
+    kind: BACKUP_DRILL_JOB,
+    payload: {},
+    next: monthlyAt(timeZone, BACKUP_DRILL_TIME.hour, BACKUP_DRILL_TIME.minute),
+  });
 }
 
 /** The nightly backup at 02:30 in the household time zone. */
@@ -307,4 +415,133 @@ export function lastBackup(ctx: { readonly uow: Pick<UnitOfWork, "read"> }): Las
   const row = ctx.uow.read((repos) => repos.backups.latestPushed());
   if (row === undefined || row.resticSnapshotId === null || row.pushedAt === null) return null;
   return { snapshotId: row.resticSnapshotId, takenAt: row.takenAt, pushedAt: row.pushedAt };
+}
+
+/** A last good backup older than this is stale. */
+export const STALE_BACKUP_MS = 48 * 60 * 60_000;
+
+/**
+ * The one stale-backup rule, for the CLI, the status page and `/healthz`. The last good backup is
+ * the newest pushed one (by when its database was taken). With none yet, the clock runs from
+ * `firstStart` (when backups were first scheduled); with neither there is nothing to judge.
+ * Stale means strictly older than `STALE_BACKUP_MS`.
+ */
+export function backupFreshness(
+  last: Pick<LastBackup, "takenAt"> | null,
+  now: Temporal.Instant,
+  firstStart: string | null,
+): { readonly stale: boolean } {
+  const since = last?.takenAt ?? firstStart;
+  if (since === null) return { stale: false };
+  const at = Date.parse(since);
+  if (Number.isNaN(at)) return { stale: false };
+  return { stale: now.epochMilliseconds - at > STALE_BACKUP_MS };
+}
+
+/** A household review item raised by a failed check or drill, resolved by the next pass. */
+export const BACKUP_VERIFICATION_FAILED_REVIEW = defineReviewKind({
+  kind: "system.backup-verification-failed",
+  module: "system",
+  scope: "household",
+});
+
+const verificationDedupeKey = (kind: BackupVerificationKind) => `backup-verification:${kind}`;
+
+export const recordBackupVerificationInput = z
+  .object({
+    kind: z.enum(["check", "drill"]),
+    ok: z.boolean(),
+    summary: z.string().min(1).max(500),
+  })
+  .strict();
+export type RecordBackupVerificationInput = z.input<typeof recordBackupVerificationInput>;
+
+/**
+ * `system.recordBackupVerification`: records the result of a repository check or restore drill,
+ * in `backup_verification`. A failure raises one household review item for its kind (repeat
+ * failures change nothing); a pass resolves it.
+ */
+export function recordBackupVerification(
+  ctx: UseCaseContext,
+  raw: RecordBackupVerificationInput,
+): BackupVerificationRow {
+  const input = parseInput(recordBackupVerificationInput, raw);
+  return write(ctx, (tx, audit) => {
+    const row: BackupVerificationRow = {
+      id: ctx.newId<"BackupVerification">(),
+      kind: input.kind,
+      at: formatInstant(ctx.clock.now()),
+      ok: input.ok,
+      summary: input.summary,
+    };
+    tx.backupVerifications.insert(row);
+    audit({
+      entity: "backup_verification",
+      entityId: row.id,
+      action: "record",
+      before: null,
+      after: row,
+    });
+    const dedupeKey = verificationDedupeKey(input.kind);
+    if (input.ok) {
+      resolveReviewItem(tx, audit, ctx, { dedupeKey, resolution: `the next ${input.kind} passed` });
+    } else {
+      raiseReviewItem(tx, audit, ctx, {
+        kind: BACKUP_VERIFICATION_FAILED_REVIEW,
+        entityRef: `backup-verification:${input.kind}`,
+        dedupeKey,
+      });
+    }
+    return row;
+  });
+}
+
+/** A recorded check or drill as the status shows it. */
+export interface BackupVerification {
+  readonly at: string;
+  readonly ok: boolean;
+  readonly summary: string;
+}
+
+/** The one backup payload of `pangolin status` and `/api/system/backup`. */
+export interface BackupStatus {
+  /** False when no backup repository is configured. */
+  readonly configured: boolean;
+  readonly last: LastBackup | null;
+  /** The last good backup is older than 48 hours (or none was made within 48 hours of start). */
+  readonly stale: boolean;
+  /** The latest weekly repository check, or null if none has run. */
+  readonly check: BackupVerification | null;
+  /** The latest monthly restore drill, or null if none has run. */
+  readonly drill: BackupVerification | null;
+}
+
+function shown(row: BackupVerificationRow | undefined): BackupVerification | null {
+  return row === undefined ? null : { at: row.at, ok: row.ok, summary: row.summary };
+}
+
+/**
+ * `system.backupStatus`: the last backup, the stale warning and the latest check and drill.
+ * No viewer: it shows no household data. Nothing is reported when no repository is configured.
+ */
+export function backupStatus(
+  ctx: { readonly uow: Pick<UnitOfWork, "read">; readonly clock: Clock },
+  configured: boolean,
+): BackupStatus {
+  if (!configured) return { configured, last: null, stale: false, check: null, drill: null };
+  return ctx.uow.read((repos) => {
+    const row = repos.backups.latestPushed();
+    const last: LastBackup | null =
+      row === undefined || row.resticSnapshotId === null || row.pushedAt === null
+        ? null
+        : { snapshotId: row.resticSnapshotId, takenAt: row.takenAt, pushedAt: row.pushedAt };
+    const firstStart = repos.jobs.firstCreatedAt(BACKUP_SNAPSHOT_JOB.kind) ?? null;
+    return {
+      configured,
+      last,
+      stale: backupFreshness(last, ctx.clock.now(), firstStart).stale,
+      check: shown(repos.backupVerifications.latest("check")),
+      drill: shown(repos.backupVerifications.latest("drill")),
+    };
+  });
 }

@@ -4,6 +4,7 @@ import { getConnInfo } from "@hono/node-server/conninfo";
 import { serveStatic } from "@hono/node-server/serve-static";
 import {
   AppError,
+  backupStatus,
   type Clock,
   type CodeHasher,
   checkSignUp,
@@ -17,7 +18,6 @@ import {
   issueInitialRecoveryCodes,
   issueReEnrolmentLink,
   issueSetupLink,
-  lastBackup,
   listNotices,
   me,
   type ReadinessOutput,
@@ -187,10 +187,10 @@ export function createApi(deps: ApiDeps) {
       return c.json({ dead: deadJobs({ uow: deps.uow }, {}) }, 200);
     })
     .get("/api/system/backup", (c) => {
-      // The last pushed backup's time and restic ID, read from `backup_snapshot` (AD-9).
+      // The last pushed backup (time and restic ID), the stale warning and the latest check and
+      // drill, read from `backup_snapshot` and `backup_verification` (AD-9).
       c.header("Cache-Control", "no-store");
-      const configured = deps.backupConfigured ?? false;
-      return c.json({ configured, last: configured ? lastBackup({ uow: deps.uow }) : null }, 200);
+      return c.json(backupStatus(deps, deps.backupConfigured ?? false), 200);
     })
     .get("/api/identity/me", (c) => {
       c.header("Cache-Control", "no-store");
@@ -356,6 +356,15 @@ const ENROLMENT_AUTH_PATHS: ReadonlySet<string> = new Set([
   "/api/auth/two-factor/verify-totp",
 ]);
 
+/** Whether the backup is stale; a read that fails counts as not stale (readiness says so). */
+function backupStale(deps: AppDeps): boolean {
+  try {
+    return backupStatus(deps, deps.backupConfigured ?? false).stale;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The whole HTTP surface: the Origin check and session on `/api/*`, better-auth under
  * `/api/auth/*`, the API, then the static PWA with an SPA fallback to the page shell, which is
@@ -380,6 +389,8 @@ export function createApp(deps: AppDeps): Hono<SessionEnv> {
           expectedSchemaVersion: deps.healthz.expectedSchemaVersion,
           runner: runner === "skip" ? "skip" : (runner() ?? null),
           forceUnhealthy: deps.healthz.forceUnhealthy === true,
+          // A stale backup is a warning in the body, never a failing check.
+          backupStale: backupStale(deps),
         },
       );
       cachedReadiness = { at: now, result };

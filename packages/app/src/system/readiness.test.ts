@@ -30,6 +30,19 @@ describe("system.readiness", () => {
     expect(check(port(5, true))).toEqual({ ok: true });
   });
 
+  it("reports a stale backup as a warning, never as a failing check", () => {
+    expect(check(port(5, true), { backupStale: true })).toEqual({
+      ok: true,
+      warnings: ["backup-stale"],
+    });
+    expect(check(port(5, true), { backupStale: false })).toEqual({ ok: true });
+    expect(check(port(4, true), { backupStale: true })).toEqual({
+      ok: false,
+      failing: ["migrations"],
+      warnings: ["backup-stale"],
+    });
+  });
+
   it("names a missing migration", () => {
     expect(check(port(4, true))).toEqual({ ok: false, failing: ["migrations"] });
   });
