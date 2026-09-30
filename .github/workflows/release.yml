@@ -30,7 +30,8 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: true
+          # Untagged: pushed by digest, then scanned and signed, and only then tagged below.
+          outputs: type=image,name=ghcr.io/${{ env.REPO }},push-by-digest=true,name-canonical=true,push=true
           build-args: PANGOLIN_VERSION=${{ github.ref_name }}
           provenance: false
           sbom: false
