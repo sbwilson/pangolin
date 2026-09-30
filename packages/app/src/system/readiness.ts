@@ -38,6 +38,8 @@ export const readinessInput = z
      * `"skip"` in demo mode, which runs no jobs.
      */
     runner: z.union([z.literal("skip"), z.null(), runnerLiveness]),
+    /** Test builds only (the upgrade-rollback test): report a failing "forced" check. */
+    forceUnhealthy: z.boolean().optional(),
   })
   .strict();
 export type ReadinessInput = z.input<typeof readinessInput>;
@@ -63,13 +65,13 @@ function probe(check: () => boolean): boolean {
  * demo mode). Reports only the names of the failing checks.
  */
 export function readiness(ctx: ReadinessContext, input: ReadinessInput): ReadinessOutput {
-  const { expectedSchemaVersion, runner } = readinessInput.parse(input);
+  const { expectedSchemaVersion, runner, forceUnhealthy } = readinessInput.parse(input);
   const failing: ReadinessCheck[] = [];
   if (!probe(() => ctx.systemHealth.schemaVersion() === expectedSchemaVersion)) {
     failing.push("migrations");
   }
   if (!probe(() => ctx.systemHealth.probeWrite())) failing.push("database");
-  if (process.env.PANGOLIN_TEST_FORCE_UNHEALTHY) failing.push("forced");
+  if (forceUnhealthy) failing.push("forced");
 
   if (runner !== "skip") {
     const now = ctx.clock.now().epochMilliseconds;

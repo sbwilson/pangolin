@@ -777,7 +777,7 @@ describe("startServer upgrade-failed marker", () => {
         uow: server.uow,
         clock: server.clock,
         newId: createIdGenerator(),
-        viewer: systemViewer(),
+        viewer: systemViewer("cli:test"),
       };
       const items = listReviewItems(ctx);
       expect(items.some((i) => i.kind === "system.upgrade-failed")).toBe(true);
@@ -794,7 +794,7 @@ describe("startServer upgrade-failed marker", () => {
         uow: server.uow,
         clock: server.clock,
         newId: createIdGenerator(),
-        viewer: systemViewer(),
+        viewer: systemViewer("cli:test"),
       };
       const items = listReviewItems(ctx);
       expect(items.some((i) => i.kind === "system.upgrade-failed")).toBe(false);

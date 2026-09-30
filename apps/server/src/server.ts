@@ -196,6 +196,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       backupConfigured,
       healthz: {
         expectedSchemaVersion,
+        forceUnhealthy: Boolean(process.env.PANGOLIN_TEST_FORCE_UNHEALTHY),
         runner: demo ? "skip" : () => runner?.liveness(),
       },
       ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),

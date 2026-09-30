@@ -23,7 +23,12 @@ export function raiseUpgradeFailedIfMarked(deps: UpgradeMarkerDeps): void {
   const markerFile = join(deps.dataDir, "upgrade-failed.json");
   if (!existsSync(markerFile)) return;
   try {
-    const ctx = { uow: deps.uow, clock: deps.clock, newId: deps.newId, viewer: systemViewer() };
+    const ctx = {
+      uow: deps.uow,
+      clock: deps.clock,
+      newId: deps.newId,
+      viewer: systemViewer("cli:upgrade"),
+    };
     write(ctx, (tx, audit) => {
       raiseReviewItem(tx, audit, ctx, {
         kind: UPGRADE_FAILED_REVIEW,

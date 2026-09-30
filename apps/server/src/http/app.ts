@@ -89,6 +89,8 @@ export interface HealthzDeps {
    * in demo mode, which runs no jobs.
    */
   readonly runner: (() => RunnerLiveness | undefined) | "skip";
+  /** Test builds only: make `/healthz` fail (PANGOLIN_TEST_FORCE_UNHEALTHY). */
+  readonly forceUnhealthy?: boolean;
 }
 
 const signUpBody = z
@@ -377,6 +379,7 @@ export function createApp(deps: AppDeps): Hono<SessionEnv> {
         {
           expectedSchemaVersion: deps.healthz.expectedSchemaVersion,
           runner: runner === "skip" ? "skip" : (runner() ?? null),
+          forceUnhealthy: deps.healthz.forceUnhealthy === true,
         },
       );
       cachedReadiness = { at: now, result };
