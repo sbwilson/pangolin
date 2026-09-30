@@ -14,6 +14,8 @@ export const RESTIC_TAG = "pangolin";
 
 /** restic's exit code for "no repository at this location" (0.17 and later). */
 const EXIT_NO_REPOSITORY = 10;
+/** How long `cat config` may take before the repository counts as unreachable. */
+const PROBE_TIMEOUT_MS = 60_000;
 /** How much of restic's stderr an error keeps. */
 const STDERR_TAIL = 2000;
 
@@ -111,7 +113,12 @@ function tmpDirOf(options: ResticOptions): string {
 
 export function createRestic(options: ResticOptions): Restic {
   /** Runs restic, calling `onLine` for each stdout line; resolves with the exit code. */
-  function run(args: readonly string[], onLine?: (line: string) => void, signal?: JobSignal) {
+  function run(
+    args: readonly string[],
+    onLine?: (line: string) => void,
+    signal?: JobSignal,
+    timeoutMs?: number,
+  ) {
     checkPasswordFile(options.passwordFile);
     mkdirSync(options.cacheDir, { recursive: true, mode: 0o700 });
     mkdirSync(tmpDirOf(options), { recursive: true, mode: 0o700 });
@@ -124,6 +131,15 @@ export function createRestic(options: ResticOptions): Restic {
       let stdout = "";
       let stderr = "";
       const onAbort = () => child.kill("SIGTERM");
+      // restic retries connection errors quietly for about 15 minutes: give a probe a deadline.
+      let timedOut = false;
+      const timer =
+        timeoutMs === undefined
+          ? undefined
+          : setTimeout(() => {
+              timedOut = true;
+              child.kill("SIGTERM");
+            }, timeoutMs);
       signal?.addEventListener("abort", onAbort, { once: true });
       child.stdout.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => {
@@ -140,11 +156,17 @@ export function createRestic(options: ResticOptions): Restic {
         stderr = (stderr + chunk).slice(-STDERR_TAIL);
       });
       child.once("error", (error) => {
+        clearTimeout(timer);
         signal?.removeEventListener("abort", onAbort);
         reject(new ResticError(`Could not run ${options.bin}: ${error.message}`, null));
       });
       child.once("close", (code) => {
+        clearTimeout(timer);
         signal?.removeEventListener("abort", onAbort);
+        if (timedOut) {
+          resolve({ code: null, stderr: `no answer in ${timeoutMs} ms; ${stderr}` });
+          return;
+        }
         if (stdout !== "") onLine?.(stdout);
         if (signal?.aborted) reject(signal.reason);
         else resolve({ code, stderr });
@@ -183,7 +205,7 @@ export function createRestic(options: ResticOptions): Restic {
   return {
     ensureRepository: async (signal) => {
       await checkRepositoryReachable(options.repository);
-      const probe = await run(["cat", "config"], undefined, signal);
+      const probe = await run(["cat", "config"], undefined, signal, PROBE_TIMEOUT_MS);
       if (probe.code === 0) return;
       if (probe.code !== EXIT_NO_REPOSITORY) throw failed("cat config", probe);
       const init = await run(["init"], undefined, signal);

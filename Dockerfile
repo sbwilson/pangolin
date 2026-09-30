@@ -74,6 +74,9 @@ COPY --from=build /out/package.json ./package.json
 COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /src/apps/server/dist ./dist
 COPY --from=restic /usr/local/bin/restic /usr/local/bin/restic
+# restic (Go) verifies HTTPS servers against the system CA store, which node:*-slim lacks (Node
+# bundles its own); without it every https:// backup server fails with "unknown authority".
+COPY --from=restic /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 # The production compose file, allowlist and firewall, for an install.sh downloaded on its own.
 COPY --from=build /src/deploy ./deploy
 
