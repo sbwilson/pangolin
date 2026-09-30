@@ -15,18 +15,18 @@ jobs:
       contents: write
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Lowercase repo
         run: echo "REPO=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -34,7 +34,7 @@ jobs:
           build-args: PANGOLIN_VERSION=${{ github.ref_name }}
           provenance: false
           sbom: false
-      - uses: anchore/scan-action@v6
+      - uses: anchore/scan-action@v7
         with:
           image: ghcr.io/${{ env.REPO }}@${{ steps.build.outputs.digest }}
           fail-build: true
@@ -66,7 +66,7 @@ jobs:
           cosign attest --key cosign.key --type spdxjson --predicate sbom.spdx.json --tlog-upload=false -y "ghcr.io/${{ env.REPO }}@${{ steps.build.outputs.digest }}"
         env:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: |
@@ -82,14 +82,14 @@ jobs:
         ports:
           - 5000:5000
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Lowercase repo
         run: echo "REPO=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
         with:
           driver-opts: network=host
       - name: Build image A (healthy base)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
@@ -97,18 +97,29 @@ jobs:
           build-args: PANGOLIN_VERSION=v1.0.0
       - name: Add extra migration for image B
         run: |
-          echo "CREATE TABLE IF NOT EXISTS _upgrade_test_sentinel (id INTEGER PRIMARY KEY);" > packages/db/migrations/0999_test_sentinel.sql
+          echo "CREATE TABLE _upgrade_test_sentinel (id INTEGER PRIMARY KEY) STRICT;" > packages/db/migrations/0006_test_sentinel.sql
+          # The migration loader rejects a .sql file that is not in the journal.
+          node -e '
+            const fs = require("node:fs");
+            const p = "packages/db/migrations/meta/_journal.json";
+            const j = JSON.parse(fs.readFileSync(p, "utf8"));
+            const last = j.entries[j.entries.length - 1];
+            j.entries.push({ idx: last.idx + 1, version: last.version, when: last.when + 1000, tag: "0006_test_sentinel", breakpoints: true });
+            fs.writeFileSync(p, JSON.stringify(j, null, 2));
+          '
       - name: Build image B (healthy + extra migration)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           tags: localhost:5000/${{ env.REPO }}:v2.0.0
           build-args: PANGOLIN_VERSION=v2.0.0
       - name: Remove extra migration (C is forced-unhealthy without it)
-        run: rm packages/db/migrations/0999_test_sentinel.sql
+        run: |
+          rm packages/db/migrations/0006_test_sentinel.sql
+          git checkout -- packages/db/migrations/meta/_journal.json
       - name: Build image C (forced unhealthy — triggers rollback to B)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
