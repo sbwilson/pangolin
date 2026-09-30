@@ -10,7 +10,7 @@ jobs:
 
   image:
     needs: ci
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
       packages: write
@@ -82,7 +82,7 @@ jobs:
 
 
   upgrade-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     services:
       registry:
         image: registry:2

@@ -18,7 +18,7 @@ concurrency:
 jobs:
   check:
     name: Lint, types, tests, STRICT
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v5 # version from package.json "packageManager"
@@ -61,7 +61,7 @@ jobs:
 
   container:
     name: Container and end-to-end
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: check
     steps:
       - uses: actions/checkout@v6
@@ -294,7 +294,7 @@ jobs:
 
   secrets:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v6
         with:
