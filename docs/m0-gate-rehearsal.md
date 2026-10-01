@@ -331,12 +331,12 @@ bundle's values alone" and "Sign in on the clean host (password and TOTP)". Reco
 
 | Evidence | |
 | --- | --- |
-| Bundle listing on the VM (names and mode only) | The first bundle (written at install, with the install-time restic password) was no longer on the VM, and the restic password was later changed by hand, so the bundle was regenerated with `install.sh --bundle` from the current secrets. `grep -o '^[A-Z_]*=' /root/pangolin-recovery-bundle-2026-10-02.txt` (as root) -> `PANGOLIN_APP_KEY=`, `PANGOLIN_AUTH_SECRET=`, `RESTIC_PASSWORD=`, `RESTIC_REPOSITORY=`. File mode and owner (`ls -l`), the non-empty `RESTIC_PASSWORD` check and the offline copy have not been shown yet |
+| Bundle listing on the VM (names and mode only) | As root: `ls -l /root/pangolin-recovery-bundle-2026-10-02.txt` -> `-rw------- 1 root root 660 Oct  2 03:52` (mode 0600, root-owned; 03:52 host time is the install time, so this is the bundle `install.sh` wrote at install, not a regenerated one). `grep -o '^[A-Z_]*=' ...` -> `PANGOLIN_APP_KEY=`, `PANGOLIN_AUTH_SECRET=`, `RESTIC_PASSWORD=`, `RESTIC_REPOSITORY=`. An earlier `sudo ls /root/pangolin-recovery-bundle-*.txt` failed only because the glob was expanded by the non-root shell. Not yet shown: that `RESTIC_PASSWORD` in the bundle equals the current `/opt/pangolin/secrets/restic-password` (the password was changed by hand after install), and the offline copy |
 | CI job and run URL (clean-host restore and TOTP login) | Release run https://github.com/sbwilson/pangolin/actions/runs/36792497800 (`v0.1.0`): job `ci / Container and end-to-end` succeeded, including the clean-host restore and TOTP sign-in steps |
 | Sample-attachment decrypt | Not demonstrated: epic 5 (attachment store). Accepted by the human on 2026-10-01. |
-| Date | 2026-10-02 (bundle regenerated; host local date) |
+| Date | 2026-10-02 (host local date) |
 | Tag and digest | `v0.1.0`, `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` |
-| Outcome | Partial: bundle keys present (names only) and CI clean-host restore with TOTP demonstrated; file mode, non-empty password and offline copy still to confirm. Attachment decrypt: not demonstrated, epic 5 (accepted) |
+| Outcome | Partial: bundle present with mode 0600, root-owned, and all four keys (names only); CI clean-host restore with TOTP demonstrated; still to confirm the bundle's restic password matches the current one, and the offline copy. Attachment decrypt: not demonstrated, epic 5 (accepted) |
 
 ## Item 7. Deployed with `pangolin upgrade`; CI green on the release tag
 
