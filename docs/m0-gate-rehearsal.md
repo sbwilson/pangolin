@@ -291,12 +291,12 @@ CI also proves non-root: job "Container and end-to-end", step "The server runs a
 
 | Evidence | |
 | --- | --- |
-| Container user and read-only output | |
-| Firewall ruleset and allow/block outputs | |
-| Closed-port curl from another machine | |
-| Date | |
-| Tag and digest | |
-| Outcome | |
+| Container user and read-only output | `id` -> `uid=1000(node) gid=1000(node)`; `docker inspect` -> `user=node readonly=true capdrop=[ALL] secopt=[no-new-privileges:true]`; `touch /probe` -> "Read-only file system", `exit=1`. CI also proves non-root: Release run https://github.com/sbwilson/pangolin/actions/runs/36792497800, job `ci / Container and end-to-end` |
+| Firewall ruleset and allow/block outputs | `nft list table inet pangolin` shows `input` and `output` chains with `policy drop`. Inbound accepts: loopback, established, DHCP replies, `ip saddr 10.0.0.0/8` to tcp 22 and ICMP echo (the admin network), and `ip saddr 10.0.1.10 tcp dport 3000` (the NPM host, the only source for the app port); everything else logs and drops. Outbound is allowed only to DNS resolvers (10.0.1.1, 10.0.1.11), NTP, ICMP echo, and the allowlisted address sets (restic 10.0.1.10:443, GHCR/GitHub, Docker, Debian, the API hosts). The `forward` chain drops published-port traffic that is not from 10.0.1.10, and the `containers` chain drops container egress outside the allowlist. From the container: `fetch('https://query1.finance.yahoo.com')` -> `ok 404` (reached; an allowlisted host answers), `fetch('https://example.com')` -> `blocked TimeoutError undefined` (the error code is empty, the error name is the timeout) |
+| Closed-port curl from another machine | Pending: not yet run (needs a machine that is neither the NPM host nor on the admin network) |
+| Date | 2026-10-01 19:55 UTC (`date -u` on the VM) |
+| Tag and digest | `v0.1.0`, `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` |
+| Outcome | Partial: container hardening and the firewall ruleset with outbound allow/block demonstrated; the closed-port check from another machine still to do |
 
 ## Item 6. Recovery bundle and clean-host restore
 
