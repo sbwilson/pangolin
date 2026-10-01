@@ -107,3 +107,12 @@ Process lessons (narrowed to the sessions available):
 4. **Release hygiene (R5, R3):** should these fixes land before epic 2 starts, or ride with the first epic 2 release?
 
 Could not be resolved by the analyses: whether the suspected seams in S11 are real (nothing was executed).
+
+## Human decisions on the open questions (2026-10-02)
+
+1. **Restore and credentials (S4):** prompt the user whether to restore the snapshot's credentials or not. Ticket 1.16.
+2. **AD-27 warning (R4):** build it now. Ticket 1.17.
+3. **Spec drops (R6):** Caddy and Tailscale proxy modes are deferred to the next version (not required for the human's workflow), recorded in `deferred-work.md`. The other spec drops (host hardening, WireGuard, email, allowlist re-auth) were not discussed and stay as open reconciliation items.
+4. **Release hygiene (R3, R5):** fix now. Ticket 1.18. The unsafe upgrade copy (S1 to S3, action item 1) was also scheduled now as ticket 1.15, as a data-loss path on the same release and upgrade path.
+
+Not yet scheduled: S6 (secrets across uninstall and reinstall), action items 8 to 10, and the stale-text reconciliation (R8).

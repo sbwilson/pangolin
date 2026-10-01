@@ -175,3 +175,51 @@ after = [12, 14]
 hitl = true
 risk = "medium"
 done_checkpoint = true
+
+[[entry]]
+id = 15
+type = "story"
+title = "Safe pre-upgrade copy"
+description = "Makes pangolin upgrade refuse to stop the stack unless the pre-upgrade database copy is non-empty, creates that copy mode 0700, and removes the .env.bak, compose.yaml.bak and pangolin.bak files after a successful upgrade, so a failed copy can never turn a rollback into data loss and a stale backup file is never restored over a good install."
+verify = "deploy/pangolin tests show a failed or empty copy aborts before the stack is stopped, a rollback never deletes the live database, the copy directory is 0700, and a leftover .bak from an earlier upgrade is not restored by an interrupted one."
+covers = ["CAP-16"]
+after = [13]
+hitl = false
+risk = "high"
+references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, findings S1, S2 and S3", "ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Install and upgrade"]
+
+[[entry]]
+id = 16
+type = "story"
+title = "Restore asks about credentials"
+description = "Makes pangolin restore ask whether to restore the snapshot's credentials (sessions, passkeys, TOTP, recovery codes and re-enrolment links) or to keep the current ones and revoke the snapshot's, with a non-interactive flag for each choice, records the choice in the audit log and raises a household review item that data was rolled back."
+verify = "Tests show restoring with each choice leaves the expected credentials usable or revoked, the choice is audited, a household review item records the roll-back, and the non-interactive flags need no prompt."
+covers = ["CAP-15", "CAP-16"]
+after = [13]
+hitl = false
+risk = "high"
+references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, finding S4 and the human decision of 2026-10-02", "security — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md, Account recovery"]
+
+[[entry]]
+id = 17
+type = "story"
+title = "Recovery bundle storage warning"
+description = "Adds the AD-27 warning: pangolin status, the web status page and the /healthz warnings field show that the recovery bundle has not been confirmed stored safely until a confirm command, audited, records that it is; the warning never fails readiness, and a re-install that writes a new bundle makes it unconfirmed again."
+verify = "Tests show the warning is present until the confirm command runs, absent after it, back after a new bundle is written, shown in status, the page and the healthz body, and readiness stays ok throughout."
+covers = ["CAP-15", "CAP-16"]
+after = [13]
+hitl = false
+risk = "medium"
+references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-27", "retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, finding R4 and the human decision of 2026-10-02", "cli plan — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-cli-and-admin-socket-plan.md, residual risk"]
+
+[[entry]]
+id = 18
+type = "story"
+title = "Release hygiene"
+description = "Orders release.yml so the image is signed before it is tagged or tagging waits for the upgrade test, and adds a CI step at release that migrates a database created by the previous release's image to the current schema, as the spine and the ops spec require."
+verify = "A release dry run or a step-order test shows no tag is pushed unless signing and upgrade-test succeeded, and a CI step upgrades a database created by the previous tag to the current schema and passes its integrity and manifest checks."
+covers = ["CAP-16"]
+after = [13]
+hitl = false
+risk = "medium"
+references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, findings R3 and R5", "ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, CI/CD", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, Consistency Conventions (Migrations, Health and upgrade)"]
