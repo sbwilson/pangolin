@@ -3,7 +3,7 @@ title: 'M0 gate rehearsal'
 type: 'chore'
 ticket: '13'
 created: '2026-10-01'
-status: 'built'
+status: done
 baseline_revision: '86b9e3c0fa3d365c3741ac819342d62d75fe6ece'
 route: 'full'
 route_source: 'auto'
