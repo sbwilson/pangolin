@@ -195,11 +195,11 @@ then open the setup link again and confirm sign-up is refused ("Registration is 
 
 | Evidence | |
 | --- | --- |
-| CI jobs and run URL | |
-| VM observation (optional) | Partial, 2026-10-02: with only the first person registered, the already-used setup link was opened again; the form accepted input (email, password, display name, colour) and "Create account" showed "Registration is closed" (screenshot seen). This shows the one-time setup link cannot be reused. It is not yet the "partner registered, then a further sign-up refused" case: still to do after the partner is invited and registered. |
-| Date | |
-| Tag and digest | |
-| Outcome (expiry is CI only) | |
+| CI jobs and run URL | Release run https://github.com/sbwilson/pangolin/actions/runs/36792497800 (`v0.1.0`): jobs `ci / Lint, types, tests, STRICT` and `ci / Container and end-to-end` succeeded |
+| VM observation (optional) | Partial, 2026-10-02: with only the first person registered, the already-used setup link was opened again; the form accepted input (email, password, display name, colour) and "Create account" showed "Registration is closed" (screenshot seen). This shows the one-time setup link cannot be reused. It is not yet the "partner registered, then a further sign-up refused" case: still to do after the partner is invited and registered. 2026-10-02: the human then reported "the recover partner flow works as expected" (partner recovery); which steps were run (partner registered, third sign-up refused, recovery code, partner link used once and refused a second time) and their outputs were not captured. |
+| Date | 2026-10-02 |
+| Tag and digest | VM: `v0.1.0`, `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` |
+| Outcome (expiry is CI only) | Expiry: CI only (run URL above). VM partner flow: reported working by the human, no output captured, so not yet recorded as demonstrated |
 
 ## Item 4. Signed image verified before pull; upgrade with automatic rollback
 
@@ -251,11 +251,11 @@ refusal message appears, do not record this proof as demonstrated.
 | Evidence | |
 | --- | --- |
 | CI upgrade-test job and run URL (rollback B to C) | Release run https://github.com/sbwilson/pangolin/actions/runs/36792497800: job `upgrade-test` succeeded (its steps upgrade to B and require C to fail and roll back to B) |
-| VM upgrade output (proof A) | `pangolin upgrade v0.1.0` on the host running v0.0.2: pulled `ghcr.io/sbwilson/pangolin:v0.1.0`, "Verifying ghcr.io/sbwilson/pangolin@sha256:70bf69b5...a120fe" (the v0.1.0 digest) before stopping the stack, stopped, started the upgraded stack, "Upgrade to v0.1.0 successful. Old image was ghcr.io/sbwilson/pangolin:v0.0.2". `pangolin status` after: `Pangolin Money v0.1.0`, `Schema: 7 (this build expects 7)` (migrated from 6), `Readiness: ok`, `Jobs: 3 pending, 0 running, 0 dead`, last backup unchanged, `Check: no check yet (weekly, Sundays 03:30)`, `Drill: no restore drill yet (monthly, the 1st at 04:00)`. `/healthz` -> `{"ok":true}`. The `.env` image line was not captured: `grep` ran without sudo and got "Permission denied" (the runbook command now has `sudo`) |
+| VM upgrade output (proof A) | `pangolin upgrade v0.1.0` on the host running v0.0.2: pulled `ghcr.io/sbwilson/pangolin:v0.1.0`, "Verifying ghcr.io/sbwilson/pangolin@sha256:70bf69b5...a120fe" (the v0.1.0 digest) before stopping the stack, stopped, started the upgraded stack, "Upgrade to v0.1.0 successful. Old image was ghcr.io/sbwilson/pangolin:v0.0.2". `pangolin status` after: `Pangolin Money v0.1.0`, `Schema: 7 (this build expects 7)` (migrated from 6), `Readiness: ok`, `Jobs: 3 pending, 0 running, 0 dead`, last backup unchanged, `Check: no check yet (weekly, Sundays 03:30)`, `Drill: no restore drill yet (monthly, the 1st at 04:00)`. `/healthz` -> `{"ok":true}`. `sudo grep '^PANGOLIN_IMAGE=' /opt/pangolin/.env` -> `PANGOLIN_IMAGE=ghcr.io/sbwilson/pangolin@sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` (pinned by digest) |
 | VM refused-signature output (proof B) | |
 | Date | 2026-10-01 18:16 UTC (proof A) |
 | Tag and digest | `v0.1.0`, `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` |
-| Outcome | Partial: CI rollback and VM proof A demonstrated; `.env` image pin and proof B (refused signature) still to do |
+| Outcome | Partial: CI rollback and VM proof A (including the digest pin) demonstrated; proof B (refused signature) still to do |
 
 ## Item 5. Non-root, read-only container; firewall
 
