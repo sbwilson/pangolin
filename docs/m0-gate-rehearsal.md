@@ -355,11 +355,11 @@ Expected: `conclusion` is `success` for every job.
 
 | Evidence | |
 | --- | --- |
-| Release run URL and job conclusions | |
-| VM upgrade output (same as item 4, proof A) | |
-| Date | |
-| Tag and digest | |
-| Outcome | |
+| Release run URL and job conclusions | https://github.com/sbwilson/pangolin/actions/runs/36792497800: `conclusion: success`; jobs `upgrade-test`, `ci / Lint, types, tests, STRICT`, `ci / Secret scan`, `ci / Container and end-to-end` and `image` all `success` |
+| VM upgrade output (same as item 4, proof A) | See item 4: `pangolin upgrade v0.1.0` on the dev VM `pang-dev.net5.co` (web host `money-dev.net5.co`), from v0.0.2: signature verified, schema 6 to 7, `Readiness: ok`, `/healthz` -> `{"ok":true}`, `.env` pinned to `ghcr.io/sbwilson/pangolin@sha256:70bf69b5...a120fe`. Done on the same host as items 1 and 4, with no snapshot revert in between |
+| Date | 2026-10-01 (upgrade 18:16 UTC) |
+| Tag and digest | `v0.1.0`, `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` |
+| Outcome | Demonstrated on the dev VM, not the home server: Done when 7 says "the home server", and this rehearsal ran on `pang-dev.net5.co`. Needs the human's acceptance, or a run of `pangolin upgrade` on the home server |
 
 ## Open findings
 
@@ -374,22 +374,22 @@ For a rehearsal repeated on a new tag, add a row set per attempt and note each a
 
 | # | Done-when item | Outcome | Evidence | Date |
 | --- | --- | --- | --- | --- |
-| 1 | Fresh install to setup link to passkey login | | | |
-| 2 | CI backup and restore on every release | | | |
-| 3 | Registration closes; recovery; 24 h partner link | | | |
-| 4 | Signed image; upgrade rollback | | | |
-| 5 | Non-root, read-only; firewall | | | |
-| 6 | Recovery bundle and clean-host restore | Attachment decrypt: not demonstrated, epic 5 | | |
-| 7 | Deployed by `pangolin upgrade`; CI green on the tag | | | |
+| 1 | Fresh install to setup link to passkey login | Demonstrated | Item 1: install, setup link, `/healthz` through NPM, `pangolin status`; passkey sign-in reported by the human (signed-in screenshot) | 2026-10-01 |
+| 2 | CI backup and restore on every release | Demonstrated (CI and VM) | Release run 36792497800; VM backup and verified restore | 2026-10-01 |
+| 3 | Registration closes; recovery; 24 h partner link | Demonstrated; 24 h expiry CI only | Screenshots: third sign-up refused, partner-link and recovery-code notices; single-use refusal reported, not captured | 2026-10-02 |
+| 4 | Signed image; upgrade rollback | Demonstrated (rollback: CI only) | VM upgrade with digest pin; bad signature refused before the stack was touched; rollback in CI `upgrade-test` | 2026-10-01 |
+| 5 | Non-root, read-only; firewall | Demonstrated | Container inspect, ruleset, egress allow and block, closed port 3000 from another host; firewall reload at boot not separately shown | 2026-10-02 |
+| 6 | Recovery bundle and clean-host restore | Demonstrated; attachment decrypt: not demonstrated, epic 5 (accepted by the human) | Bundle mode 0600, four keys, password matches; CI clean-host restore with TOTP | 2026-10-02 |
+| 7 | Deployed by `pangolin upgrade`; CI green on the tag | Demonstrated on the dev VM, not the home server (needs acceptance) | Item 4 proof A; Release run all jobs success | 2026-10-01 |
 
 | Field | Value |
 | --- | --- |
-| Tag | |
-| Image digest | |
-| Release run URL | |
-| Debian version on the VM | |
-| Rehearsal dates | |
-| Gate decision (open / closed) | |
+| Tag | `v0.1.0` |
+| Image digest | `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` |
+| Release run URL | https://github.com/sbwilson/pangolin/actions/runs/36792497800 |
+| Debian version on the VM | Debian GNU/Linux 13.7 (trixie), dev VM `pang-dev.net5.co` |
+| Rehearsal dates | 2026-10-01 to 2026-10-02 |
+| Gate decision (open / closed) | Open: the clean reboot test (open finding) is pending, and item 7's home-server wording needs the human's acceptance |
 | Accepted by the human (name, date) | |
 
 Gate decision rule: closed only when every item is demonstrated, CI only, or not demonstrated and
