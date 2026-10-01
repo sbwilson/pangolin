@@ -134,10 +134,10 @@ Check the redacted text by eye before pasting. Never paste recovery codes or pas
 | Command | `install.sh` as above |
 | Observed output (link redacted) | `install.sh` exited 0 and printed the setup link (redacted here), the NPM proxy-host instructions, the recovery bundle path and the administration help; it finished with 1 warning: `/srv/pangolin` is on a dm-crypt (LUKS) device but is not a mount point (dev VM; a production host should mount the data disk there). Pulled `ghcr.io/sbwilson/pangolin:v0.0.2` (digest `sha256:44abe15b40ec578e99c2463491d33f2612e28bb76d6df57eb4e11dcfda1961ad`); "Healthy after 6 s". Backup server `rest:https://pangolin@restic.net5.co/pangolin`, NPM host 10.0.1.10, admin network 10.0.0.0/8. |
 | `/healthz` and `pangolin status` output | `curl https://money-dev.net5.co/healthz` -> `{"ok":true}` (through NPM). `pangolin status`: `Pangolin Money v0.0.2`, `Schema: 6 (this build expects 6)`, `Readiness: ok`, `Jobs: 1 pending, 0 running, 0 dead`, `Backups: none yet (nightly at 02:30, household time)`. |
-| Passkey sign-in (yes/no, screenshot or note) | Yes: reported by the human (setup link, sign out, passkey sign-in on `money-dev.net5.co`); no screenshot |
+| Passkey sign-in (yes/no, screenshot or note) | Yes: reported by the human (setup link, sign out, passkey sign-in on `money-dev.net5.co`); the signed-in page was shown in a screenshot ("Signed in as Simon", Healthy, Schema version 6, No backup yet, 10 unused recovery codes), which does not itself show the sign-in method |
 | Date | 2026-10-01 17:52 UTC (`date -u` on the VM) |
 | Tag and digest | Installed `v0.0.2` (to be upgraded to `v0.1.0`, digest above) |
-| Outcome | Demonstrated (Debian 13.7; passkey sign-in reported by the human, no screenshot) |
+| Outcome | Demonstrated (Debian 13.7; passkey sign-in reported by the human, signed-in screenshot seen) |
 
 ## Item 2. Backup and restore on every release, verified (M0 gate)
 
