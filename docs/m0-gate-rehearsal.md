@@ -165,11 +165,11 @@ Expected: `backup` prints a snapshot ID and exits 0; `restore` names the verific
 
 | Evidence | |
 | --- | --- |
-| CI job and run URL | |
-| VM output (optional) | |
-| Date | |
-| Tag and digest | |
-| Outcome | |
+| CI job and run URL | Release run https://github.com/sbwilson/pangolin/actions/runs/36792497800 (`v0.1.0`): job `ci / Container and end-to-end` succeeded, which runs the backup, restore and restored-household sign-in steps |
+| VM output (optional) | On the VM (running v0.0.2): `pangolin backup` -> "Backup done at 2026-10-01T18:10:15.150Z: snapshot f3c1bc24939d..." (pushed with restic in 1 s, exit 0). A fresh backup was taken first, as the warning requires. `pangolin restore latest` -> stopped the stack, fetched snapshot f3c1bc24 (taken 18:10:12Z), `integrity_check: ok`, "Manifest: all 17 tables match (44 rows)", `Schema: version 6`, swapped in the snapshot (replaced files kept in `/data/pre-restore-...`), "Cancelled 0 pending jobs with external effects", started the stack. `pangolin status` afterwards: `Readiness: ok`, last backup 2026-10-01T18:10:30Z. An earlier backup (18:05:57Z) had also pushed, on its third attempt (cause not recorded) |
+| Date | 2026-10-01 (CI run 2026-09-30 UTC; VM 18:10 UTC) |
+| Tag and digest | CI: `v0.1.0`, `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe`. VM: `v0.0.2` |
+| Outcome | Demonstrated (CI on `v0.1.0`; VM backup and verified restore on `v0.0.2`) |
 
 ## Item 3. Registration closes; recovery; 24-hour partner link
 
@@ -360,6 +360,10 @@ Expected: `conclusion` is `success` for every job.
 | Date | |
 | Tag and digest | |
 | Outcome | |
+
+## Open findings
+
+- **App not running after a reboot (under investigation).** After a reboot on 2026-10-02 04:06 (local), Docker started but `pangolin-pangolin-1` stayed `Exited (0)` and `https://money-dev.net5.co/healthz` returned 502; `pangolin status` said "Pangolin is not running". The container had been started 16 s before the reboot and received SIGTERM at the shutdown. The compose file has `restart: unless-stopped`. A clean reboot test (stack up, nothing else, `sudo reboot`) is pending; if the app does not return on its own, item 1 and item 5 are failed and need a fix and a new tag.
 
 ## Results summary (the M0 decision record)
 
