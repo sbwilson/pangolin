@@ -486,3 +486,16 @@ To cut a new release:
    Keep `cosign.key` out of the repository. Servers installed earlier need the new `cosign.pub` in `/opt/pangolin/` before their next upgrade.
 2. Push a new Git tag matching `v*.*.*` (e.g. `git tag v1.2.0 && git push origin v1.2.0`).
 3. CI automatically builds the image for amd64/arm64, runs vulnerability scans, pushes it to GHCR by digest, and signs it. It attaches a signed SBOM.
+
+## 12. Uninstalling
+
+`uninstall.sh` (attached to each release beside `install.sh`) reverses the install: it stops the stack, removes the firewall rules and units, the `pangolin` command, the container images and `/opt/pangolin`. Run it as root:
+
+```sh
+curl -fsSL -o uninstall.sh https://github.com/sbwilson/pangolin/releases/download/<tag>/uninstall.sh
+sudo sh uninstall.sh
+```
+
+It asks before removing anything, then separately asks whether to delete the data directory (`/srv/pangolin`, or the `PANGOLIN_DATA_ROOT` in `.env`): the household database and attachments. Answer `y`, then type the directory back to confirm. Take a `pangolin backup` first if you might want the data. Any other answer keeps it. `--keep-data` and `--delete-data` answer for you, `--yes` skips the first question, and `--non-interactive` never prompts (and keeps the data unless `--delete-data` is given).
+
+It does not touch Docker or its apt source, the recovery bundle in `/root`, the backup server's repository (append-only, so the VM cannot delete it), the Nginx Proxy Manager host, or any Tang binding or LUKS key slot. Remove those yourself if they were only for Pangolin.

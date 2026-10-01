@@ -78,6 +78,7 @@ jobs:
           generate_release_notes: true
           files: |
             deploy/install.sh
+            deploy/uninstall.sh
             deploy/cosign.pub
 
 
