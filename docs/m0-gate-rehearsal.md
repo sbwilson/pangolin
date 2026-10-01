@@ -220,7 +220,7 @@ sudo pangolin status
 sudo pangolin upgrade "$TAG"
 sudo pangolin status
 curl https://$HOST/healthz
-grep '^PANGOLIN_IMAGE=' /opt/pangolin/.env
+sudo grep '^PANGOLIN_IMAGE=' /opt/pangolin/.env
 ```
 
 Expected: the output shows "Pulling", "Verifying ...@sha256:...", "Starting upgraded stack",
@@ -250,12 +250,12 @@ refusal message appears, do not record this proof as demonstrated.
 
 | Evidence | |
 | --- | --- |
-| CI upgrade-test job and run URL (rollback B to C) | |
-| VM upgrade output (proof A) | |
+| CI upgrade-test job and run URL (rollback B to C) | Release run https://github.com/sbwilson/pangolin/actions/runs/36792497800: job `upgrade-test` succeeded (its steps upgrade to B and require C to fail and roll back to B) |
+| VM upgrade output (proof A) | `pangolin upgrade v0.1.0` on the host running v0.0.2: pulled `ghcr.io/sbwilson/pangolin:v0.1.0`, "Verifying ghcr.io/sbwilson/pangolin@sha256:70bf69b5...a120fe" (the v0.1.0 digest) before stopping the stack, stopped, started the upgraded stack, "Upgrade to v0.1.0 successful. Old image was ghcr.io/sbwilson/pangolin:v0.0.2". `pangolin status` after: `Pangolin Money v0.1.0`, `Schema: 7 (this build expects 7)` (migrated from 6), `Readiness: ok`, `Jobs: 3 pending, 0 running, 0 dead`, last backup unchanged, `Check: no check yet (weekly, Sundays 03:30)`, `Drill: no restore drill yet (monthly, the 1st at 04:00)`. `/healthz` -> `{"ok":true}`. The `.env` image line was not captured: `grep` ran without sudo and got "Permission denied" (the runbook command now has `sudo`) |
 | VM refused-signature output (proof B) | |
-| Date | |
-| Tag and digest | |
-| Outcome | |
+| Date | 2026-10-01 18:16 UTC (proof A) |
+| Tag and digest | `v0.1.0`, `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` |
+| Outcome | Partial: CI rollback and VM proof A demonstrated; `.env` image pin and proof B (refused signature) still to do |
 
 ## Item 5. Non-root, read-only container; firewall
 
