@@ -296,7 +296,7 @@ CI also proves non-root: job "Container and end-to-end", step "The server runs a
 | Closed-port curl from another machine | From the human's own machine (not the NPM host): `curl -m 5 http://pang-dev.net5.co:3000/healthz` -> `curl: (28) Connection timed out after 5000 milliseconds`. The same app answers through NPM (`https://money-dev.net5.co/healthz` -> `{"ok":true}`), so the timeout is the firewall, not a dead service. The machine's address was not recorded; the ruleset accepts port 3000 only from 10.0.1.10, so any other source, inside the admin network or not, is dropped |
 | Date | 2026-10-01 19:55 UTC (`date -u` on the VM) |
 | Tag and digest | `v0.1.0`, `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` |
-| Outcome | Demonstrated: non-root, read-only, cap-drop ALL and no-new-privileges; inbound only from NPM (and admin SSH/ping); outbound only to the allowlist; port 3000 closed to other hosts. Firewall persistence across a reboot was not separately shown |
+| Outcome | Demonstrated: non-root, read-only, cap-drop ALL and no-new-privileges; inbound only from NPM (and admin SSH/ping); outbound only to the allowlist; port 3000 closed to other hosts. Firewall reload at boot shown by the clean reboot test (see Open findings) |
 
 ## Item 6. Recovery bundle and clean-host restore
 
@@ -359,11 +359,11 @@ Expected: `conclusion` is `success` for every job.
 | VM upgrade output (same as item 4, proof A) | See item 4: `pangolin upgrade v0.1.0` on the dev VM `pang-dev.net5.co` (web host `money-dev.net5.co`), from v0.0.2: signature verified, schema 6 to 7, `Readiness: ok`, `/healthz` -> `{"ok":true}`, `.env` pinned to `ghcr.io/sbwilson/pangolin@sha256:70bf69b5...a120fe`. Done on the same host as items 1 and 4, with no snapshot revert in between |
 | Date | 2026-10-01 (upgrade 18:16 UTC) |
 | Tag and digest | `v0.1.0`, `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` |
-| Outcome | Demonstrated on the dev VM, not the home server: Done when 7 says "the home server", and this rehearsal ran on `pang-dev.net5.co`. Needs the human's acceptance, or a run of `pangolin upgrade` on the home server |
+| Outcome | Demonstrated on the dev VM, not the home server: Done when 7 says "the home server", and this rehearsal ran on `pang-dev.net5.co`. Accepted by the human on 2026-10-02: `pang-dev.net5.co` stands in for the home server |
 
 ## Open findings
 
-- **App not running after a reboot (under investigation).** After a reboot on 2026-10-02 04:06 (local), Docker started but `pangolin-pangolin-1` stayed `Exited (0)` and `https://money-dev.net5.co/healthz` returned 502; `pangolin status` said "Pangolin is not running". The container had been started 16 s before the reboot and received SIGTERM at the shutdown. The compose file has `restart: unless-stopped`. A clean reboot test (stack up, nothing else, `sudo reboot`) is pending; if the app does not return on its own, item 1 and item 5 are failed and need a fix and a new tag.
+- **App not running after a reboot: not reproduced, closed 2026-10-02.** After an earlier reboot (2026-10-02 04:06 local) Docker started but `pangolin-pangolin-1` stayed `Exited (0)` and `/healthz` returned 502. The container had been started 16 s before that reboot, and the human had run a wrong command while changing the restic password, so a manual stop or recreate is the likely cause (unconfirmed). Clean reboot test, with nothing started by hand (human's statement): boot at 2026-10-02 06:07:40 local (20:07:40 UTC); `pangolin-pangolin-1` `started=2026-10-01T20:08:01Z`, `restarts=0`, `Up ... (healthy)`; `curl https://money-dev.net5.co/healthz` -> `{"ok":true}`; `sudo nft list table inet pangolin` shows the table; `systemctl is-active pangolin-firewall.service pangolin-allowlist.timer` -> `active`, `active`. So the app restarts on its own and the firewall loads at boot.
 
 - **Setup page still shows the form when registration is closed (minor).** Reopening the setup link after both partners exist shows the full "Set up your sign-in" form; the refusal comes only on submit. Not a gate failure; a candidate improvement.
 
@@ -378,9 +378,9 @@ For a rehearsal repeated on a new tag, add a row set per attempt and note each a
 | 2 | CI backup and restore on every release | Demonstrated (CI and VM) | Release run 36792497800; VM backup and verified restore | 2026-10-01 |
 | 3 | Registration closes; recovery; 24 h partner link | Demonstrated; 24 h expiry CI only | Screenshots: third sign-up refused, partner-link and recovery-code notices; single-use refusal reported, not captured | 2026-10-02 |
 | 4 | Signed image; upgrade rollback | Demonstrated (rollback: CI only) | VM upgrade with digest pin; bad signature refused before the stack was touched; rollback in CI `upgrade-test` | 2026-10-01 |
-| 5 | Non-root, read-only; firewall | Demonstrated | Container inspect, ruleset, egress allow and block, closed port 3000 from another host; firewall reload at boot not separately shown | 2026-10-02 |
+| 5 | Non-root, read-only; firewall | Demonstrated | Container inspect, ruleset, egress allow and block, closed port 3000 from another host; firewall loaded at boot (clean reboot test) | 2026-10-02 |
 | 6 | Recovery bundle and clean-host restore | Demonstrated; attachment decrypt: not demonstrated, epic 5 (accepted by the human) | Bundle mode 0600, four keys, password matches; CI clean-host restore with TOTP | 2026-10-02 |
-| 7 | Deployed by `pangolin upgrade`; CI green on the tag | Demonstrated on the dev VM, not the home server (needs acceptance) | Item 4 proof A; Release run all jobs success | 2026-10-01 |
+| 7 | Deployed by `pangolin upgrade`; CI green on the tag | Demonstrated on `pang-dev` (accepted by the human as the home server, 2026-10-02) | Item 4 proof A; Release run all jobs success | 2026-10-01 |
 
 | Field | Value |
 | --- | --- |
@@ -389,8 +389,8 @@ For a rehearsal repeated on a new tag, add a row set per attempt and note each a
 | Release run URL | https://github.com/sbwilson/pangolin/actions/runs/36792497800 |
 | Debian version on the VM | Debian GNU/Linux 13.7 (trixie), dev VM `pang-dev.net5.co` |
 | Rehearsal dates | 2026-10-01 to 2026-10-02 |
-| Gate decision (open / closed) | Open: the clean reboot test (open finding) is pending, and item 7's home-server wording needs the human's acceptance |
-| Accepted by the human (name, date) | |
+| Gate decision (open / closed) | Closed: every item is demonstrated, CI only, or not demonstrated and accepted (item 6 attachment decrypt, epic 5; item 7 on `pang-dev`) |
+| Accepted by the human (name, date) | Simon, 2026-10-02 (item 6 attachment decrypt not demonstrated, epic 5; `pang-dev` accepted as the home server) |
 
 Gate decision rule: closed only when every item is demonstrated, CI only, or not demonstrated and
 accepted by the human. Otherwise open. If any item failed, list the bug references here, cut a new
