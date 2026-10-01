@@ -196,7 +196,7 @@ then open the setup link again and confirm sign-up is refused ("Registration is 
 | Evidence | |
 | --- | --- |
 | CI jobs and run URL | |
-| VM observation (optional) | |
+| VM observation (optional) | Partial, 2026-10-02: with only the first person registered, the already-used setup link was opened again; the form accepted input (email, password, display name, colour) and "Create account" showed "Registration is closed" (screenshot seen). This shows the one-time setup link cannot be reused. It is not yet the "partner registered, then a further sign-up refused" case: still to do after the partner is invited and registered. |
 | Date | |
 | Tag and digest | |
 | Outcome (expiry is CI only) | |
