@@ -71,12 +71,12 @@ If the Release run is not green, stop: the VM steps do not start.
 
 | Field | Value |
 | --- | --- |
-| Commit | |
-| Tag | |
-| Image digest | |
-| Release run URL | |
-| Date cut | |
-| VM Debian version | |
+| Commit | `40db6356f8f978ee3b3477793e7c44fc79251708` |
+| Tag | `v0.1.0` (annotated) |
+| Image digest | `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` (`ghcr.io/sbwilson/pangolin:v0.1.0`) |
+| Release run URL | https://github.com/sbwilson/pangolin/actions/runs/36792497800 (success: ci, image, upgrade-test) |
+| Date cut | 2026-09-30 (Release run started 23:42 UTC) |
+| VM Debian version | Debian GNU/Linux 13.7 (trixie), dev VM `pang-dev.net5.co`; web host `money-dev.net5.co` |
 
 ## Item 1. Fresh install to one-time link to passkey login (M0 gate)
 
@@ -132,12 +132,12 @@ Check the redacted text by eye before pasting. Never paste recovery codes or pas
 | Evidence | |
 | --- | --- |
 | Command | `install.sh` as above |
-| Observed output (link redacted) | |
-| `/healthz` and `pangolin status` output | |
-| Passkey sign-in (yes/no, screenshot or note) | |
-| Date | |
-| Tag and digest | |
-| Outcome | |
+| Observed output (link redacted) | `install.sh` exited 0 and printed the setup link (redacted here), the NPM proxy-host instructions, the recovery bundle path and the administration help; it finished with 1 warning: `/srv/pangolin` is on a dm-crypt (LUKS) device but is not a mount point (dev VM; a production host should mount the data disk there). Pulled `ghcr.io/sbwilson/pangolin:v0.0.2` (digest `sha256:44abe15b40ec578e99c2463491d33f2612e28bb76d6df57eb4e11dcfda1961ad`); "Healthy after 6 s". Backup server `rest:https://pangolin@restic.net5.co/pangolin`, NPM host 10.0.1.10, admin network 10.0.0.0/8. |
+| `/healthz` and `pangolin status` output | `curl https://money-dev.net5.co/healthz` -> `{"ok":true}` (through NPM). `pangolin status`: `Pangolin Money v0.0.2`, `Schema: 6 (this build expects 6)`, `Readiness: ok`, `Jobs: 1 pending, 0 running, 0 dead`, `Backups: none yet (nightly at 02:30, household time)`. |
+| Passkey sign-in (yes/no, screenshot or note) | Pending: not yet done |
+| Date | 2026-10-01 17:52 UTC (`date -u` on the VM) |
+| Tag and digest | Installed `v0.0.2` (to be upgraded to `v0.1.0`, digest above) |
+| Outcome | Partial: install, setup link, `/healthz` through NPM and `pangolin status` pass; passkey sign-in still to be shown |
 
 ## Item 2. Backup and restore on every release, verified (M0 gate)
 
