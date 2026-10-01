@@ -371,17 +371,24 @@ describe("the pangolin command", () => {
   it("restore stops the stack, restores in a one-off container, and starts the stack again", () => {
     const home = at("opt/pangolin");
     const compose = `compose --project-directory ${home} -f ${home}/compose.yaml`;
-    const result = wrapper(["restore", "latest"], "running");
+    const result = wrapper(["restore", "--keep-credentials", "latest"], "running");
     expect(result.status, result.stderr).toBe(0);
     expect(dockerLog().trim().split("\n")).toEqual([
       `${compose} stop pangolin`,
-      `${compose} run --rm --no-deps -T pangolin node dist/cli.js restore latest`,
+      `${compose} run --rm --no-deps -T pangolin node dist/cli.js restore --keep-credentials latest`,
       `${compose} up -d pangolin`,
     ]);
   });
 
+  it("restore with no flag and no terminal refuses before stopping anything", () => {
+    const result = wrapper(["restore", "latest"], "running");
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/--restore-credentials or --keep-credentials/);
+    expect(existsSync(at("docker.log"))).toBe(false);
+  });
+
   it("restore starts the stack again after a failed check, and keeps the CLI's exit code", () => {
-    const result = wrapper(["restore"], "running", 1);
+    const result = wrapper(["restore", "--restore-credentials"], "running", 1);
     expect(result.status).toBe(1);
     expect(dockerLog().trim().split("\n").at(-1)).toMatch(/ up -d pangolin$/);
   });
@@ -391,6 +398,9 @@ describe("the pangolin command", () => {
       ["restore", "../x"],
       ["restore", "latest", "extra"],
       ["restore", "XYZ"],
+      ["restore", "--keep-credentials", "--restore-credentials"],
+      ["restore", "--keep-credentials", "--keep-credentials"],
+      ["restore", "--nope"],
     ]) {
       const result = wrapper(args, "running");
       expect(result.status).toBe(2);
@@ -400,7 +410,7 @@ describe("the pangolin command", () => {
   });
 
   it("restore starts the stack again when the one-off run is interrupted", () => {
-    const result = wrapper(["restore", "latest"], "running", -1);
+    const result = wrapper(["restore", "--keep-credentials", "latest"], "running", -1);
     expect(result.status).toBe(143);
     expect(dockerLog().trim().split("\n").at(-1)).toMatch(/ up -d pangolin$/);
   });

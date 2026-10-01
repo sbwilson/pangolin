@@ -50,6 +50,16 @@ export const UPGRADE_FAILED_REVIEW = defineReviewKind({
   scope: "household",
 });
 
+/**
+ * A restore rolled the data back to a snapshot (story 1.16). Household scope; entity
+ * `backup_snapshot:<restic snapshot ID>`, one item per snapshot restored.
+ */
+export const RESTORED_REVIEW = defineReviewKind({
+  kind: "system.restored",
+  module: "system",
+  scope: "household",
+});
+
 export const JOB_DEAD_REVIEW = defineReviewKind({
   kind: "job.dead",
   module: "system",

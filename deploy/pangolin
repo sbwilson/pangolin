@@ -8,7 +8,7 @@
 # Usage: sudo pangolin status
 #        sudo pangolin upgrade <tag>   (PANGOLIN_UPGRADE_TIMEOUT=<seconds> waits longer than 60s for healthy; polled every 3s, so the wait rounds up to a multiple of 3)
 #        sudo pangolin backup
-#        sudo pangolin restore [snapshot|latest]
+#        sudo pangolin restore [--restore-credentials|--keep-credentials] [snapshot|latest]
 #        sudo pangolin reset-user <email|person-id>
 #        sudo pangolin --help
 set -eu
@@ -197,21 +197,47 @@ if [ "${1:-}" = upgrade ]; then
   fi
 fi
 
-# restore: stop → one-off run (which verifies, swaps and cancels jobs under the lock) → start. The
-
-# stack comes back up even when a check fails, on the database it had.
+# restore: stop → one-off run (which verifies, asks about credentials, swaps and cancels jobs under
+# the lock) → start. The stack comes back up even when a check fails, on the database it had.
 if [ "${1:-}" = restore ]; then
-  # Check the arguments before stopping anything: at most `latest` or a hex snapshot ID.
-  if [ $# -gt 2 ] || { [ $# -eq 2 ] && ! printf '%s\n' "$2" | grep -Eqx 'latest|[0-9a-f]{4,64}'; }; then
-    printf '%s\n' "pangolin: usage: pangolin restore [latest|<snapshot ID>]" >&2
+  # Check the arguments before stopping anything: at most one of --restore-credentials and
+  # --keep-credentials, and at most `latest` or a hex snapshot ID.
+  shift
+  CRED_FLAGS=0
+  REFS=0
+  BAD=0
+  for arg in "$@"; do
+    case "$arg" in
+      --restore-credentials | --keep-credentials) CRED_FLAGS=$((CRED_FLAGS + 1)) ;;
+      -*) BAD=1 ;;
+      *)
+        REFS=$((REFS + 1))
+        printf '%s\n' "$arg" | grep -Eqx 'latest|[0-9a-f]{4,64}' || BAD=1
+        ;;
+    esac
+  done
+  if [ $BAD -ne 0 ] || [ $REFS -gt 1 ] || [ $CRED_FLAGS -gt 1 ]; then
+    printf '%s\n' "pangolin: usage: pangolin restore [--restore-credentials|--keep-credentials] [latest|<snapshot ID>]" >&2
     exit 2
+  fi
+  # Without a flag the CLI asks about the credentials, which needs a terminal: refuse now, before
+  # stopping anything. With a flag there is no question, so no terminal is needed (-T).
+  if [ $CRED_FLAGS -eq 0 ]; then
+    if [ ! -t 0 ]; then
+      printf '%s\n' "pangolin: restore asks whether to restore the snapshot's credentials or keep the current ones, and there is no terminal to ask on: pass --restore-credentials or --keep-credentials" >&2
+      exit 2
+    fi
+    TTY_FLAG=""
+  else
+    TTY_FLAG="-T"
   fi
   # Interrupted (Ctrl-C, SIGTERM) during the one-off run: start the stack again all the same.
   trap 'trap - INT TERM; compose up -d pangolin; exit 130' INT
   trap 'trap - INT TERM; compose up -d pangolin; exit 143' TERM
   compose stop pangolin || die "could not stop the stack"
   set +e
-  compose run --rm --no-deps -T pangolin node dist/cli.js "$@"
+  # shellcheck disable=SC2086
+  compose run --rm --no-deps $TTY_FLAG pangolin node dist/cli.js restore "$@"
   code=$?
   set -e
   trap - INT TERM

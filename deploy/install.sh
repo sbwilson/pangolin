@@ -1312,7 +1312,7 @@ summary() {
   step "Administration"
   printf '%s\n' "  sudo pangolin status                 is the server up and ready, its jobs and last backup?" \
     "  sudo pangolin backup                 back up now (nightly at 02:30 otherwise)" \
-    "  sudo pangolin restore [latest|ID]    stop, verify and swap in a backup, start again" \
+    "  sudo pangolin restore [latest|ID]    stop, verify and swap in a backup, start again (asks about credentials)" \
     "  sudo pangolin reset-user <email>     both of you locked out: clears that person's sign-in" \
     "                                       and prints a 24-hour link to set it up again"
 

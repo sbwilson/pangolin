@@ -386,6 +386,10 @@ sudo pangolin restore             # the newest backup
 sudo pangolin restore 1a2b3c4d    # a snapshot by ID, as pangolin backup and status print it
 ```
 
+Restore asks whether to restore the snapshot's sign-in details (sessions, passkeys, authenticator,
+recovery codes) or keep the current ones; the default is to keep them. Without a terminal, pass
+`--keep-credentials` or `--restore-credentials` (for example `sudo pangolin restore --keep-credentials latest`).
+
 It stops the stack, then in a one-off container, under the exclusive lock on the data directory:
 
 1. restores the snapshot into a fresh `/srv/pangolin/restore-<time>/`;

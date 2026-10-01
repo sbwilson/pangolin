@@ -13,7 +13,14 @@ import { join } from "node:path";
 import { type Db, loadMigrations, openDatabase, packageMigrationsDir } from "@pangolin/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { acquireDataDirLock } from "./admin/lock.ts";
-import { EXIT_FAILED, EXIT_NOT_RUNNING, EXIT_OK, EXIT_USAGE, runCli } from "./cli.ts";
+import {
+  type CliOptions,
+  EXIT_FAILED,
+  EXIT_NOT_RUNNING,
+  EXIT_OK,
+  EXIT_USAGE,
+  runCli,
+} from "./cli.ts";
 import {
   type BackupConfig,
   DEFAULT_BACKUP_CONFIG,
@@ -77,7 +84,11 @@ function withDb<T>(fn: (db: Db) => T): T {
   }
 }
 
-async function cli(argv: string[], migrationsDir = packageMigrationsDir) {
+async function cli(
+  argv: string[],
+  migrationsDir = packageMigrationsDir,
+  extra: Partial<Pick<CliOptions, "ask" | "interactive">> = {},
+) {
   const out: string[] = [];
   const err: string[] = [];
   const code = await runCli(argv, {
@@ -92,6 +103,8 @@ async function cli(argv: string[], migrationsDir = packageMigrationsDir) {
     migrationsDir,
     pollMs: 20,
     checkReachable: async () => {},
+    interactive: false,
+    ...extra,
     io: { out: (text) => out.push(text), err: (text) => err.push(text) },
   });
   return { code, out: out.join("\n"), err: err.join("\n") };
@@ -105,6 +118,18 @@ describe("pangolin (the admin CLI)", () => {
     expect(await cli(["backup", "now"])).toMatchObject({ code: EXIT_USAGE });
     expect(await cli(["restore", "a", "b"])).toMatchObject({ code: EXIT_USAGE });
     expect(await cli(["restore", "../etc"])).toMatchObject({ code: EXIT_USAGE });
+    expect(await cli(["restore", "--nope"])).toMatchObject({ code: EXIT_USAGE });
+    expect(await cli(["restore", "--keep-credentials", "--restore-credentials"])).toMatchObject({
+      code: EXIT_USAGE,
+      err: /choose one/,
+    });
+    expect(await cli(["restore", "--keep-credentials", "--keep-credentials"])).toMatchObject({
+      code: EXIT_USAGE,
+      err: /repeated option/,
+    });
+    expect(await cli(["restore", "--keep-credentials", "a", "b"])).toMatchObject({
+      code: EXIT_USAGE,
+    });
     expect(await cli(["status", "extra"])).toMatchObject({ code: EXIT_USAGE });
     expect(await cli(["reset-user", "a", "b"])).toMatchObject({ code: EXIT_USAGE });
   });
@@ -451,16 +476,18 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
     await boot();
     withDb((db) => addLogin(db, "alex@example.com", "Alex"));
     expect((await cli(["backup"])).code).toBe(EXIT_OK);
-    const refused = await cli(["restore"]);
+    const refused = await cli(["restore", "--keep-credentials"]);
     expect(refused).toMatchObject({ code: EXIT_FAILED, err: /Another process holds/ });
     await stop();
     withDb((db) => db.prepare("DELETE FROM person").run());
-    const result = await cli(["restore", "latest"]);
+    const result = await cli(["restore", "latest", "--restore-credentials"]);
     expect(result.err).toBe("");
     expect(result.code).toBe(EXIT_OK);
     expect(result.out).toContain("integrity_check: ok");
     expect(result.out).toMatch(/Manifest: all \d+ tables match/);
     expect(result.out).toMatch(/Swapped in snapshot [0-9a-f]{64}; the replaced files are in /);
+    expect(result.out).toContain("Credentials: the snapshot's sessions");
+    expect(result.out).toContain("A review item records that the data was rolled back");
     expect(result.out).toContain("Cancelled 0 pending jobs with external effects");
     expect(withDb((db) => db.prepare("SELECT COUNT(*) FROM person").pluck().get())).toBe(1);
   });
@@ -478,10 +505,96 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
       for (const id of readdirSync(staging))
         writeFileSync(join(staging, id, "pangolin.sqlite"), "junk");
     }
-    const result = await cli(["restore"]);
+    const result = await cli(["restore", "--keep-credentials"]);
     expect(result).toMatchObject({
       code: EXIT_FAILED,
       err: /the integrity check failed: [\s\S]*Nothing was swapped in/,
     });
+  });
+  /** A backed-up login, then a stopped stack on which the login's password has been changed. */
+  async function arrangeLogin(): Promise<void> {
+    backup = stubRestic(join(dir, "stub")).config;
+    await boot();
+    withDb((db) => addLogin(db, "alex@example.com", "Alex"));
+    expect((await cli(["backup"])).code).toBe(EXIT_OK);
+    await stop();
+    withDb((db) => {
+      db.prepare("UPDATE auth_account SET password = 'reset-hash'").run();
+      db.prepare("DELETE FROM auth_session").run();
+    });
+  }
+
+  const alexState = () => withDb((db) => signIn(db, "alex@example.com"));
+
+  it("restore with no flag asks, and k (or just Enter) keeps the current credentials", async () => {
+    await arrangeLogin();
+    const questions: string[] = [];
+    const result = await cli(["restore"], packageMigrationsDir, {
+      interactive: true,
+      ask: async (question) => {
+        questions.push(question);
+        return "";
+      },
+    });
+    expect(result.err).toBe("");
+    expect(result.code).toBe(EXIT_OK);
+    expect(questions).toHaveLength(1);
+    expect(questions[0]).toContain("Keep or restore? [K/r]");
+    expect(result.out).toContain("Credentials: the current ones kept for 1 login");
+    expect(alexState()).toEqual({ password: "reset-hash", sessions: 0 });
+  });
+
+  it("answering r restores the snapshot's credentials", async () => {
+    await arrangeLogin();
+    const result = await cli(["restore"], packageMigrationsDir, {
+      interactive: true,
+      ask: async () => "R",
+    });
+    expect(result.code).toBe(EXIT_OK);
+    expect(alexState()).toEqual({ password: "old-hash", sessions: 1 });
+  });
+
+  it("a flag restores or keeps without asking, even with no terminal", async () => {
+    await arrangeLogin();
+    const ask = async () => {
+      throw new Error("must not ask");
+    };
+    expect(
+      (await cli(["restore", "--restore-credentials"], packageMigrationsDir, { ask })).code,
+    ).toBe(EXIT_OK);
+    expect(alexState()).toEqual({ password: "old-hash", sessions: 1 });
+    // The snapshot is back in place: keep now has nothing different to carry.
+    expect((await cli(["restore", "--keep-credentials"], packageMigrationsDir, { ask })).code).toBe(
+      EXIT_OK,
+    );
+    expect(alexState()).toEqual({ password: "old-hash", sessions: 1 });
+  });
+
+  it("with no terminal and no flag it refuses, touching nothing", async () => {
+    await arrangeLogin();
+    const result = await cli(["restore"]);
+    expect(result).toMatchObject({ code: EXIT_USAGE, err: /no terminal to ask on/ });
+    expect(alexState()).toEqual({ password: "reset-hash", sessions: 0 });
+    expect(readdirSync(dataDir()).filter((name) => name.includes("restore-"))).toEqual([]);
+  });
+
+  it("asks again after a bad answer, and fails with nothing swapped in after three, or on no answer", async () => {
+    await arrangeLogin();
+    const answers = ["maybe", "r"];
+    const again = await cli(["restore"], packageMigrationsDir, {
+      interactive: true,
+      ask: async () => answers.shift(),
+    });
+    expect(again.code).toBe(EXIT_OK);
+    expect(again.err).toContain('"maybe" is not k or r');
+    expect(alexState()).toEqual({ password: "old-hash", sessions: 1 });
+
+    withDb((db) => db.prepare("UPDATE auth_account SET password = 'reset-hash'").run());
+    for (const ask of [async () => "x", async () => undefined]) {
+      const failed = await cli(["restore"], packageMigrationsDir, { interactive: true, ask });
+      expect(failed).toMatchObject({ code: EXIT_FAILED, err: /nothing was swapped in/ });
+      expect(alexState().password).toBe("reset-hash");
+      expect(readdirSync(dataDir()).filter((name) => name.includes("restore-"))).toHaveLength(1);
+    }
   });
 });

@@ -30,9 +30,10 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Config, DEFAULT_JOBS_CONFIG, defaultAuthConfig } from "../config.ts";
 import { createJobs, createRunner } from "../jobs/index.ts";
+import { addLogin } from "../testing/logins.ts";
 import { type StubRestic, stubRestic } from "../testing/restic.ts";
 import { acquireDataDirLock } from "./lock.ts";
-import { type RestoreResult, restoreStopped } from "./restore.ts";
+import { type CredentialChoice, type RestoreResult, restoreStopped } from "./restore.ts";
 
 let dir: string;
 let dataDir: string;
@@ -88,9 +89,14 @@ async function backUp(db: Db): Promise<string> {
   return progress.snapshotId;
 }
 
-function restore(ref = "latest", migrationsDir = packageMigrationsDir): Promise<RestoreResult> {
+function restore(
+  ref = "latest",
+  migrationsDir = packageMigrationsDir,
+  credentials: () => Promise<CredentialChoice> = async () => "keep",
+): Promise<RestoreResult> {
   return restoreStopped(ref, {
     config,
+    credentials,
     migrationsDir,
     out: (line) => out.push(line),
     now: () => NOW,
@@ -287,6 +293,304 @@ describe("restoreStopped", () => {
     config = { ...config, backup: { ...config.backup, repository: null } };
     expect(await restore()).toMatchObject({ ok: false, failed: "config" });
     expectUntouched();
+  });
+});
+
+describe("restoreStopped: credentials (story 1.16)", () => {
+  let alexUser: string;
+  let bobUser: string;
+  let alexPerson: string;
+  let bobPerson: string;
+
+  const userOf = (db: Db, email: string) =>
+    db.prepare("SELECT id FROM auth_user WHERE email = ?").pluck().get(email) as string;
+
+  function addCredentials(db: Db, user: string, person: string, tag: string): void {
+    db.prepare(
+      `INSERT INTO auth_passkey (id, user_id, public_key, credential_id, counter, device_type, backed_up)
+       VALUES (?, ?, 'pk', ?, 0, 'single', 0)`,
+    ).run(`pk-${tag}`, user, `cred-${tag}`);
+    db.prepare(
+      "INSERT INTO auth_two_factor (id, user_id, secret, backup_codes) VALUES (?, ?, ?, '[]')",
+    ).run(`tf-${tag}`, user, `secret-${tag}`);
+    db.prepare(
+      "INSERT INTO recovery_code (id, person_id, code_hash, created_at) VALUES (?, ?, ?, 't')",
+    ).run(`rc-${tag}`, person, `hash-${tag}`);
+    db.prepare("UPDATE auth_user SET two_factor_enabled = 1 WHERE id = ?").run(user);
+  }
+
+  /** A snapshot with two logins, then a reset of Alex's (as `reset-user` leaves it). */
+  async function arrange(): Promise<void> {
+    await withLiveAsync(async (db) => {
+      alexPerson = addLogin(db, "alex@example.com", "Alex login");
+      bobPerson = addLogin(db, "bob@example.com", "Bob login");
+      alexUser = userOf(db, "alex@example.com");
+      bobUser = userOf(db, "bob@example.com");
+      addCredentials(db, alexUser, alexPerson, "alex-snap");
+      addCredentials(db, bobUser, bobPerson, "bob-snap");
+      db.prepare(
+        `INSERT INTO re_enrolment_link (id, person_id, issued_by, token_hash, created_at, expires_at, used_at)
+         VALUES ('link-snap', ?, 'cli:reset-user', 'th-snap', 't', '2099-01-01T00:00:00.000Z', 't')`,
+      ).run(bobPerson);
+      snapshotId = await backUp(db);
+    });
+    withLive((db) => {
+      for (const table of ["auth_passkey", "auth_two_factor", "auth_session"]) {
+        db.prepare(`DELETE FROM ${table} WHERE user_id = ?`).run(alexUser);
+      }
+      db.prepare("DELETE FROM recovery_code WHERE person_id = ?").run(alexPerson);
+      db.prepare("UPDATE auth_user SET two_factor_enabled = 0 WHERE id = ?").run(alexUser);
+      db.prepare("UPDATE auth_account SET password = 'reset-hash' WHERE user_id = ?").run(alexUser);
+      db.prepare(
+        `INSERT INTO re_enrolment_link (id, person_id, issued_by, token_hash, created_at, expires_at)
+         VALUES ('link-now', ?, 'cli:reset-user', 'th-now', 't', '2099-01-01T00:00:00.000Z')`,
+      ).run(alexPerson);
+    });
+  }
+
+  async function withLiveAsync(fn: (db: Db) => Promise<void>): Promise<void> {
+    const db = openDatabase(join(dataDir, "pangolin.sqlite"));
+    try {
+      await fn(db);
+    } finally {
+      db.close();
+    }
+  }
+
+  /** What a login can sign in with, and what it holds. */
+  function state(db: Db, userId: string, personId: string) {
+    const count = (sql: string, id: string) => db.prepare(sql).pluck().get(id) as number;
+    return {
+      password: db
+        .prepare("SELECT password FROM auth_account WHERE user_id = ?")
+        .pluck()
+        .get(userId),
+      twoFactorEnabled: db
+        .prepare("SELECT two_factor_enabled FROM auth_user WHERE id = ?")
+        .pluck()
+        .get(userId),
+      passkeys: count("SELECT count(*) FROM auth_passkey WHERE user_id = ?", userId),
+      twoFactor: count("SELECT count(*) FROM auth_two_factor WHERE user_id = ?", userId),
+      sessions: count("SELECT count(*) FROM auth_session WHERE user_id = ?", userId),
+      recoveryCodes: count("SELECT count(*) FROM recovery_code WHERE person_id = ?", personId),
+      links: db
+        .prepare("SELECT id FROM re_enrolment_link WHERE person_id = ? ORDER BY id")
+        .pluck()
+        .all(personId),
+    };
+  }
+
+  function recorded(db: Db) {
+    return {
+      audit: db
+        .prepare(
+          "SELECT actor, after FROM audit_log WHERE entity = 'restore' AND action = 'credentials'",
+        )
+        .all()
+        .map((row) => {
+          const { actor, after } = row as { actor: string; after: string };
+          return { actor, after: JSON.parse(after) as unknown };
+        }),
+      items: db
+        .prepare("SELECT kind, dedupe_key, person_id, account_id, resolved_at FROM review_item")
+        .all(),
+    };
+  }
+
+  it("keep: the current credentials survive, and the snapshot's are dropped", async () => {
+    await arrange();
+    const asked: string[] = [];
+    const result = await restore(snapshotId, packageMigrationsDir, async () => {
+      asked.push("asked");
+      return "keep";
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      credentials: { choice: "keep", carried: true, keptLogins: 2, clearedLogins: 0 },
+    });
+    expect(asked).toEqual(["asked"]);
+    withLive((db) => {
+      // Alex keeps what the reset left: the new password, no passkey, authenticator, session or
+      // code, and the live re-enrolment link instead of none.
+      expect(state(db, alexUser, alexPerson)).toEqual({
+        password: "reset-hash",
+        twoFactorEnabled: 0,
+        passkeys: 0,
+        twoFactor: 0,
+        sessions: 0,
+        recoveryCodes: 0,
+        links: ["link-now"],
+      });
+      // Bob had nothing changed since: the same current rows (the snapshot's link is replaced by the current rows).
+      expect(state(db, bobUser, bobPerson)).toMatchObject({
+        password: "old-hash",
+        passkeys: 1,
+        recoveryCodes: 1,
+        links: ["link-snap"],
+      });
+      expect(recorded(db)).toEqual({
+        audit: [
+          {
+            actor: "cli:restore",
+            after: { choice: "keep", carried: true, keptLogins: 2, clearedLogins: 0 },
+          },
+        ],
+        items: [
+          {
+            kind: "system.restored",
+            dedupe_key: `system.restored:${snapshotId}`,
+            person_id: null,
+            account_id: null,
+            resolved_at: null,
+          },
+        ],
+      });
+    });
+  });
+
+  it("keep: a login only the snapshot has loses its credentials", async () => {
+    await arrange();
+    // Bob is gone from the live database, so only the snapshot has him.
+    withLive((db) => {
+      db.prepare("DELETE FROM re_enrolment_link WHERE person_id = ?").run(bobPerson);
+      db.prepare("UPDATE person SET user_id = NULL WHERE id = ?").run(bobPerson);
+      db.prepare("DELETE FROM recovery_code WHERE person_id = ?").run(bobPerson);
+      db.prepare("DELETE FROM auth_user WHERE id = ?").run(bobUser);
+    });
+    const result = await restore(snapshotId);
+    expect(result).toMatchObject({
+      ok: true,
+      credentials: { choice: "keep", carried: true, keptLogins: 1, clearedLogins: 1 },
+    });
+    withLive((db) => {
+      expect(state(db, bobUser, bobPerson)).toEqual({
+        password: "old-hash",
+        twoFactorEnabled: 0,
+        passkeys: 0,
+        twoFactor: 0,
+        sessions: 0,
+        recoveryCodes: 0,
+        links: [],
+      });
+      expect(state(db, alexUser, alexPerson)).toMatchObject({
+        password: "reset-hash",
+        passkeys: 0,
+      });
+      expect(
+        db
+          .prepare("SELECT actor, after FROM audit_log WHERE entity = 'user' AND action = 'reset'")
+          .all(),
+      ).toEqual([
+        {
+          actor: "cli:restore",
+          after: expect.stringContaining('"reason":"restore"'),
+        },
+      ]);
+      expect(recorded(db).audit).toHaveLength(1);
+      expect(recorded(db).items).toHaveLength(1);
+    });
+  });
+
+  it("restore: the snapshot's credentials come back, and the choice and roll-back are recorded", async () => {
+    await arrange();
+    const result = await restore(snapshotId, packageMigrationsDir, async () => "restore");
+    expect(result).toMatchObject({
+      ok: true,
+      credentials: { choice: "restore", carried: false, keptLogins: 0, clearedLogins: 0 },
+    });
+    withLive((db) => {
+      expect(state(db, alexUser, alexPerson)).toEqual({
+        password: "old-hash",
+        twoFactorEnabled: 1,
+        passkeys: 1,
+        twoFactor: 1,
+        sessions: 1,
+        recoveryCodes: 1,
+        links: [],
+      });
+      const { audit, items } = recorded(db);
+      expect(audit).toEqual([
+        {
+          actor: "cli:restore",
+          after: { choice: "restore", carried: false, keptLogins: 0, clearedLogins: 0 },
+        },
+      ]);
+      expect(items).toHaveLength(1);
+      expect(items).toMatchObject([{ kind: "system.restored" }]);
+    });
+  });
+
+  it("keep copes with a replaced database that lacks credential tables (an older schema)", async () => {
+    await arrange();
+    withLive((db) => {
+      db.exec("DROP TABLE recovery_code; DROP TABLE re_enrolment_link");
+    });
+    const result = await restore(snapshotId);
+    expect(result).toMatchObject({ ok: true, credentials: { choice: "keep", keptLogins: 2 } });
+    withLive((db) => {
+      // Nothing current to carry: the snapshot's rows for those logins are dropped, not kept.
+      expect(state(db, alexUser, alexPerson)).toMatchObject({
+        password: "reset-hash",
+        recoveryCodes: 0,
+        links: [],
+      });
+      expect(state(db, bobUser, bobPerson)).toMatchObject({ recoveryCodes: 0, links: [] });
+    });
+  });
+
+  it("onto a fresh data directory there is nothing to keep, so nothing is asked", async () => {
+    await arrange();
+    for (const name of ["pangolin.sqlite", "pangolin.sqlite-wal", "pangolin.sqlite-shm"]) {
+      rmSync(join(dataDir, name), { force: true });
+    }
+    let asked = 0;
+    const result = await restore(snapshotId, packageMigrationsDir, async () => {
+      asked++;
+      return "keep";
+    });
+    expect(asked).toBe(0);
+    expect(result).toMatchObject({ ok: true, credentials: { choice: "restore", carried: false } });
+    expect(out).toContain("No current database: the snapshot's sign-in details are restored.");
+    withLive((db) => expect(state(db, alexUser, alexPerson)).toMatchObject({ passkeys: 1 }));
+  });
+
+  it("swaps nothing when the question gets no answer", async () => {
+    await arrange();
+    const result = await restore(snapshotId, packageMigrationsDir, async () => {
+      throw new Error("no answer to the credentials question");
+    });
+    expect(result).toEqual({
+      ok: false,
+      failed: "credentials",
+      message: "no answer to the credentials question; nothing was swapped in",
+    });
+    withLive((db) => {
+      expect(state(db, alexUser, alexPerson)).toMatchObject({
+        password: "reset-hash",
+        passkeys: 0,
+      });
+      expect(db.prepare("SELECT count(*) FROM review_item").pluck().get()).toBe(0);
+    });
+    expect(
+      readdirSync(dataDir).filter(
+        (name) => name.startsWith("restore-") || name.startsWith("pre-restore-"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("asks after verification: a snapshot that fails a check is never asked about", async () => {
+    await arrange();
+    const file = pushedDb();
+    const bytes = readFileSync(file);
+    for (let i = 4096; i < bytes.length; i++) bytes[i] = 0x5a;
+    writeFileSync(file, bytes);
+    let asked = 0;
+    const result = await restore(snapshotId, packageMigrationsDir, async () => {
+      asked++;
+      return "keep";
+    });
+    expect(result).toMatchObject({ ok: false, failed: "integrity" });
+    expect(asked).toBe(0);
   });
 });
 

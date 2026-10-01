@@ -72,3 +72,16 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md`
   summary: The Caddy and Tailscale proxy modes of install.sh (the spec's three proxy modes; only NPM is built and the others print "not yet supported").
   evidence: Human decision 2026-10-02 (epic 1 retrospective, open question 3): deferred to the next version because the NPM mode covers the human's workflow.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-restore-asks-about-credentials-plan.md`
+  summary: Test `pangolin restore --keep-credentials` across a real schema difference between the snapshot and the replaced database.
+  evidence: Every test builds both databases from the same migrations, so `sharedColumns` (the column intersection) is untested; it matters when a migration next changes an auth table.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-restore-asks-about-credentials-plan.md`
+  summary: Check that the web review inbox renders the new `system.restored` household item.
+  evidence: The diff raises the item and tests assert the row, but nothing shows it reaches the household-facing inbox (unverified).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-restore-asks-about-credentials-plan.md`
+  summary: Test the real terminal prompt (`askOnTerminal`) and the wrapper's no-flag TTY path of `pangolin restore`.
+  evidence: Every test injects `ask`/`interactive` or runs without a TTY, so readline close/SIGINT handling and the `-T`-less `compose run` are never executed.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-restore-asks-about-credentials-plan.md`
+  summary: Add failure-injection tests for the keep-credentials carry (a throw after the swap, an unopenable replaced database).
+  evidence: Only the generic afterSwap failure is tested; nothing proves a failed carry undoes the swap and leaves the previous files untouched.
