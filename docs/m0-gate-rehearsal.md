@@ -331,12 +331,12 @@ bundle's values alone" and "Sign in on the clean host (password and TOTP)". Reco
 
 | Evidence | |
 | --- | --- |
-| Bundle listing on the VM (names and mode only) | |
-| CI job and run URL (clean-host restore and TOTP login) | |
-| Sample-attachment decrypt | Not demonstrated: epic 5 (attachment store). Needs the human's acceptance. |
-| Date | |
-| Tag and digest | |
-| Outcome | |
+| Bundle listing on the VM (names and mode only) | The first bundle (written at install, with the install-time restic password) was no longer on the VM, and the restic password was later changed by hand, so the bundle was regenerated with `install.sh --bundle` from the current secrets. `grep -o '^[A-Z_]*=' /root/pangolin-recovery-bundle-2026-10-02.txt` (as root) -> `PANGOLIN_APP_KEY=`, `PANGOLIN_AUTH_SECRET=`, `RESTIC_PASSWORD=`, `RESTIC_REPOSITORY=`. File mode and owner (`ls -l`), the non-empty `RESTIC_PASSWORD` check and the offline copy have not been shown yet |
+| CI job and run URL (clean-host restore and TOTP login) | Release run https://github.com/sbwilson/pangolin/actions/runs/36792497800 (`v0.1.0`): job `ci / Container and end-to-end` succeeded, including the clean-host restore and TOTP sign-in steps |
+| Sample-attachment decrypt | Not demonstrated: epic 5 (attachment store). Accepted by the human on 2026-10-01. |
+| Date | 2026-10-02 (bundle regenerated; host local date) |
+| Tag and digest | `v0.1.0`, `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` |
+| Outcome | Partial: bundle keys present (names only) and CI clean-host restore with TOTP demonstrated; file mode, non-empty password and offline copy still to confirm. Attachment decrypt: not demonstrated, epic 5 (accepted) |
 
 ## Item 7. Deployed with `pangolin upgrade`; CI green on the release tag
 
