@@ -196,7 +196,7 @@ then open the setup link again and confirm sign-up is refused ("Registration is 
 | Evidence | |
 | --- | --- |
 | CI jobs and run URL | Release run https://github.com/sbwilson/pangolin/actions/runs/36792497800 (`v0.1.0`): jobs `ci / Lint, types, tests, STRICT` and `ci / Container and end-to-end` succeeded |
-| VM observation (optional) | Partial, 2026-10-02: with only the first person registered, the already-used setup link was opened again; the form accepted input (email, password, display name, colour) and "Create account" showed "Registration is closed" (screenshot seen). This shows the one-time setup link cannot be reused. It is not yet the "partner registered, then a further sign-up refused" case: still to do after the partner is invited and registered. 2026-10-02, with both partners registered, two screenshots were seen. (1) A third sign-up from the setup link (display name "Third") shows "Registration is closed". (2) The partner Carissa's page shows two notices: "A one-time recovery link for your account was issued on 2026-10-01 by Simon" (2026-10-01T18:17:16Z, with Revoke and Dismiss), and "One of your recovery codes was used to sign in on 2026-10-01, and your passkeys were removed" (2026-10-01T18:24:12Z). So on the VM: registration stays closed once both partners exist; the partner-issued link and its notice reach the affected person; a recovery code signs in and removes the passkeys (forcing new enrolment). The human reports the flows "work as expected", including that reuse is refused; the refused second use of a link or code was not captured. |
+| VM observation (optional) | Partial, 2026-10-02: with only the first person registered, the already-used setup link was opened again; the form accepted input (email, password, display name, colour) and "Create account" showed "Registration is closed" (screenshot seen). This shows the one-time setup link cannot be reused. It is not yet the "partner registered, then a further sign-up refused" case: still to do after the partner is invited and registered. 2026-10-02, with both partners registered, two screenshots were seen. (1) A third sign-up from the setup link (display name "Third") shows "Registration is closed". (2) The partner Carissa's page shows two notices: "A one-time recovery link for your account was issued on 2026-10-01 by Simon" (2026-10-01T18:17:16Z, with Revoke and Dismiss), and "One of your recovery codes was used to sign in on 2026-10-01, and your passkeys were removed" (2026-10-01T18:24:12Z). So on the VM: registration stays closed once both partners exist; the partner-issued link and its notice reach the affected person; a recovery code signs in and removes the passkeys (forcing new enrolment). The human reports the flows "work as expected"; for reuse of the setup link, the page still shows the "Set up your sign-in" form and refuses on submit with "Registration is closed". The refused second use of a partner link or recovery code was not captured. |
 | Date | 2026-10-02 |
 | Tag and digest | VM: `v0.1.0`, `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` |
 | Outcome (expiry is CI only) | Demonstrated: registration closed with both partners (screenshot), partner link issued and noticed, recovery code used and passkeys removed (screenshot). Expiry: CI only (run URL above). Single-use refusal of a second link or code: reported by the human, not captured |
@@ -239,7 +239,7 @@ sudo sh -c '
   pangolin upgrade "$0" > /root/refusal.log 2>&1; echo "exit=$?"; cat /root/refusal.log
 ' "$TAG"
 sudo cmp /root/cosign.pub.real /opt/pangolin/cosign.pub && echo "real key restored"
-grep 'bad signature' /root/refusal.log
+sudo grep 'bad signature' /root/refusal.log
 sudo pangolin status
 ```
 
@@ -252,10 +252,10 @@ refusal message appears, do not record this proof as demonstrated.
 | --- | --- |
 | CI upgrade-test job and run URL (rollback B to C) | Release run https://github.com/sbwilson/pangolin/actions/runs/36792497800: job `upgrade-test` succeeded (its steps upgrade to B and require C to fail and roll back to B) |
 | VM upgrade output (proof A) | `pangolin upgrade v0.1.0` on the host running v0.0.2: pulled `ghcr.io/sbwilson/pangolin:v0.1.0`, "Verifying ghcr.io/sbwilson/pangolin@sha256:70bf69b5...a120fe" (the v0.1.0 digest) before stopping the stack, stopped, started the upgraded stack, "Upgrade to v0.1.0 successful. Old image was ghcr.io/sbwilson/pangolin:v0.0.2". `pangolin status` after: `Pangolin Money v0.1.0`, `Schema: 7 (this build expects 7)` (migrated from 6), `Readiness: ok`, `Jobs: 3 pending, 0 running, 0 dead`, last backup unchanged, `Check: no check yet (weekly, Sundays 03:30)`, `Drill: no restore drill yet (monthly, the 1st at 04:00)`. `/healthz` -> `{"ok":true}`. `sudo grep '^PANGOLIN_IMAGE=' /opt/pangolin/.env` -> `PANGOLIN_IMAGE=ghcr.io/sbwilson/pangolin@sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` (pinned by digest) |
-| VM refused-signature output (proof B) | |
-| Date | 2026-10-01 18:16 UTC (proof A) |
+| VM refused-signature output (proof B) | With a different `cosign.pub` (`/home/sim/cosign.pub`) swapped in, `pangolin upgrade v0.1.0` printed `Pulling ...`, `Verifying ghcr.io/sbwilson/pangolin@sha256:70bf69b5...a120fe...`, then `pangolin: bad signature: ... Error: no matching signatures: invalid signature when validating ASN.1 encoded signature`, `exit=1`. It never printed "Stopping stack for upgrade", so the stack was not touched; `pangolin status` afterwards: v0.1.0, schema 7, `Readiness: ok`. `cmp` printed nothing and "real key restored" (the trap restored the real key). The runbook's `grep 'bad signature' /root/refusal.log` failed with "Permission denied" (root-owned file; the command now has `sudo`), but the message is in the `cat` output above |
+| Date | 2026-10-01 (proof A 18:16 UTC; proof B later the same session) |
 | Tag and digest | `v0.1.0`, `sha256:70bf69b5044303a596406880921fb9d62de26a0d04220d60ef13dfd534a120fe` |
-| Outcome | Partial: CI rollback and VM proof A (including the digest pin) demonstrated; proof B (refused signature) still to do |
+| Outcome | Demonstrated: CI rollback (run URL above), VM upgrade with digest pin, and VM refusal of a bad signature before the stack was touched |
 
 ## Item 5. Non-root, read-only container; firewall
 
@@ -364,6 +364,8 @@ Expected: `conclusion` is `success` for every job.
 ## Open findings
 
 - **App not running after a reboot (under investigation).** After a reboot on 2026-10-02 04:06 (local), Docker started but `pangolin-pangolin-1` stayed `Exited (0)` and `https://money-dev.net5.co/healthz` returned 502; `pangolin status` said "Pangolin is not running". The container had been started 16 s before the reboot and received SIGTERM at the shutdown. The compose file has `restart: unless-stopped`. A clean reboot test (stack up, nothing else, `sudo reboot`) is pending; if the app does not return on its own, item 1 and item 5 are failed and need a fix and a new tag.
+
+- **Setup page still shows the form when registration is closed (minor).** Reopening the setup link after both partners exist shows the full "Set up your sign-in" form; the refusal comes only on submit. Not a gate failure; a candidate improvement.
 
 ## Results summary (the M0 decision record)
 
