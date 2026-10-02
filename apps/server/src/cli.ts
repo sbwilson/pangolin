@@ -29,6 +29,7 @@ import {
   acquireDataDirLock,
   BACKUPS_NOT_CONFIGURED,
   type BackupStarted,
+  type ConfirmedRecoveryBundle,
   type CredentialChoice,
   callAdmin,
   type DataDirLock,
@@ -60,6 +61,11 @@ Commands:
                                 link; with no person, lists the people with a login
   backup                        back up now (a snapshot pushed with restic) and print the
                                 snapshot ID; joins a manual backup already running
+  confirm-bundle                confirm the recovery bundle install.sh wrote (its id is in
+                                .env as PANGOLIN_RECOVERY_BUNDLE_ID) is stored safely offline;
+                                first check that id matches the "Bundle id:" line of the
+                                bundle you stored. Ends status's warning until a new bundle is
+                                written; needs the server running (exits 3 when it is not)
   restore [snapshot|latest]     on a stopped stack: fetch the snapshot (default latest), verify
     [--restore-credentials |    it, ask whether to restore the snapshot's sign-in details (sessions,
      --keep-credentials]        passkeys, authenticator, recovery codes) or keep the current ones
@@ -120,6 +126,11 @@ function printStatus(io: CliIo, status: StatusResult): void {
   io.out(
     `Readiness: ${readiness.ok ? "ok" : `not ready (failing: ${readiness.failing.join(", ")})`}`,
   );
+  if (readiness.warnings?.includes("recovery-bundle-unconfirmed")) {
+    io.out(
+      "Warning:   recovery bundle not confirmed stored safely (run sudo pangolin confirm-bundle)",
+    );
+  }
   io.out(`Jobs:      ${jobs.pending} pending, ${jobs.running} running, ${jobs.dead} dead`);
   const { backup } = status;
   if (!backup.configured) {
@@ -188,6 +199,27 @@ async function status(config: Config, io: CliIo): Promise<number> {
   const result = response.result as StatusResult;
   printStatus(io, result);
   return result.readiness.ok ? EXIT_OK : EXIT_FAILED;
+}
+
+/** `confirm-bundle`: over the admin socket only. Exit 0 when confirmed (now or before). */
+async function confirmBundleCli(config: Config, io: CliIo): Promise<number> {
+  if (config.adminSocket === null) {
+    io.err("pangolin: the admin socket is disabled (PANGOLIN_ADMIN_SOCKET is empty)");
+    return EXIT_FAILED;
+  }
+  const response = await viaSocket(config, "confirm-bundle", {});
+  if (response === undefined) return notAnswering(config, io);
+  if (!response.ok) {
+    printError(io, response.error);
+    return EXIT_FAILED;
+  }
+  const result = response.result as ConfirmedRecoveryBundle;
+  io.out(
+    result.alreadyConfirmed
+      ? `Recovery bundle ${result.bundleId} was already confirmed stored safely (at ${result.confirmedAt})`
+      : `Recovery bundle ${result.bundleId} confirmed stored safely`,
+  );
+  return EXIT_OK;
 }
 
 /**
@@ -483,12 +515,15 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
     return EXIT_USAGE;
   };
   if (command === undefined) return usage("name a command");
-  if (!["status", "reset-user", "backup", "restore"].includes(command)) {
+  if (!["status", "reset-user", "backup", "restore", "confirm-bundle"].includes(command)) {
     return usage(`unknown command ${JSON.stringify(command)}`);
   }
   if (command === "status" && rest.length > 0) return usage("status takes no arguments");
   if (command === "reset-user" && rest.length > 1) return usage("reset-user takes one person");
   if (command === "backup" && rest.length > 0) return usage("backup takes no arguments");
+  if (command === "confirm-bundle" && rest.length > 0) {
+    return usage("confirm-bundle takes no arguments");
+  }
   const flags = rest.filter((arg) => arg.startsWith("--"));
   const operands = rest.filter((arg) => !arg.startsWith("--"));
   if (command === "restore") {
@@ -535,6 +570,8 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
         return await backupCli(config, options);
       case "restore":
         return await restoreCli(config, options, ref, flag);
+      case "confirm-bundle":
+        return await confirmBundleCli(config, io);
       default:
         return await resetUserCli(config, options, rest[0]);
     }

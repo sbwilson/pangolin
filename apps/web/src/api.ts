@@ -57,6 +57,21 @@ export async function fetchBackupStatus(): Promise<BackupStatus> {
   return await res.json();
 }
 
+/** Whether the current recovery bundle is confirmed stored safely (story 1.17). */
+export interface RecoveryBundleStatus {
+  /** True when confirmed, or when the server has no bundle id (nothing to confirm). */
+  readonly confirmed: boolean;
+  /** The bundle's id as printed in it; absent when the server has none. */
+  readonly bundleId?: string;
+}
+
+export async function fetchRecoveryBundle(): Promise<RecoveryBundleStatus> {
+  const res = await api.api.system["recovery-bundle"].$get();
+  if (!res.ok) throw new Error(`GET /api/system/recovery-bundle failed with ${res.status}`);
+  const { confirmed, bundleId } = await res.json();
+  return bundleId === undefined ? { confirmed } : { confirmed, bundleId };
+}
+
 /** An error answered in the API's error shape. */
 export class ApiError extends Error {
   readonly code: string;

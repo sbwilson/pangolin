@@ -94,6 +94,8 @@ jobs:
             echo "PANGOLIN_RESTIC_PASSWORD_HOST_FILE=$secrets/restic-password"
             echo "PANGOLIN_PUBLIC_URL=http://localhost:3000"
             echo "PANGOLIN_AUTH_RATE_LIMIT=100"
+            # An unconfirmed recovery bundle: the e2e suite checks the status page warns.
+            echo "PANGOLIN_RECOVERY_BUNDLE_ID=20261003T010203Z-e2e0"
           } > .env
       - name: Start the stack
         run: docker compose up -d
@@ -174,6 +176,10 @@ jobs:
           E2E_SETUP_LINK_COMMAND: docker compose exec -T pangolin cat /data/setup-link.txt
           # Backups are configured (and none taken yet): the status page's backup line is checked.
           E2E_BACKUPS: "1"
+          # The stack has an unconfirmed recovery bundle id: the status page's warning is checked.
+          E2E_BUNDLE_ID: 20261003T010203Z-e2e0
+          # Then confirms it over the admin socket and checks the warning is gone.
+          E2E_CONFIRM_BUNDLE_COMMAND: docker compose exec -T pangolin node dist/cli.js confirm-bundle
       - name: Back up the end-to-end household (pangolin backup over the admin socket)
         run: |
           out=$(docker compose exec -T pangolin node dist/cli.js backup)

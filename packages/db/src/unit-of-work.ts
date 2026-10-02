@@ -14,6 +14,7 @@ import {
 } from "./identity-repos.ts";
 import { createJobRepo } from "./job-repo.ts";
 import type { Db } from "./open.ts";
+import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
 import { auditLog } from "./schema/audit-log.ts";
 import { householdSettings } from "./schema/household-settings.ts";
@@ -88,6 +89,7 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     reviewItems: createReviewItemRepo(orm, () => guard(scope)),
     backups: createBackupSnapshotRepo(orm, () => guard(scope)),
     backupVerifications: createBackupVerificationRepo(orm, () => guard(scope)),
+    recoveryBundle: createRecoveryBundleRepo(orm, () => guard(scope)),
   };
 }
 
@@ -147,6 +149,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
             reviewItems: { listOpenFor: repos.reviewItems.listOpenFor },
             backups: { find: repos.backups.find, latestPushed: repos.backups.latestPushed },
             backupVerifications: { latest: repos.backupVerifications.latest },
+            recoveryBundle: { get: repos.recoveryBundle.get },
           };
         },
         fn,

@@ -7,6 +7,7 @@ import {
   fetchHealth,
   fetchMe,
   fetchNotices,
+  fetchRecoveryBundle,
   invitePartner,
   recoverWithCode,
   reEnrol,
@@ -72,6 +73,23 @@ describe("fetchBackupStatus", () => {
   it("throws on an error response", async () => {
     stubFetch(401, { error: { code: "Unauthenticated", message: "Sign in first" } });
     await expect(fetchBackupStatus()).rejects.toThrow(/401/);
+  });
+});
+
+describe("fetchRecoveryBundle", () => {
+  it("returns whether the current bundle is confirmed, and its id", async () => {
+    stubFetch(200, { confirmed: false, bundleId: "20261003T010203Z-a1b2" });
+    expect(await fetchRecoveryBundle()).toEqual({
+      confirmed: false,
+      bundleId: "20261003T010203Z-a1b2",
+    });
+    stubFetch(200, { confirmed: true });
+    expect(await fetchRecoveryBundle()).toEqual({ confirmed: true });
+  });
+
+  it("throws on an error response", async () => {
+    stubFetch(401, { error: { code: "Unauthenticated", message: "Sign in first" } });
+    await expect(fetchRecoveryBundle()).rejects.toThrow(/401/);
   });
 });
 

@@ -23,6 +23,8 @@ import {
   type ReadinessOutput,
   type RunnerLiveness,
   readiness,
+  recoveryBundleConfirmed,
+  recoveryBundleStatus,
   reEnrolmentUrl,
   regenerateRecoveryCodes,
   revokeMyReEnrolmentLinks,
@@ -60,6 +62,11 @@ export interface ApiDeps {
   readonly authn: Authn;
   /** Whether a backup repository is configured (`PANGOLIN_BACKUP_REPOSITORY`); default false. */
   readonly backupConfigured?: boolean;
+  /**
+   * The current recovery bundle's id (`PANGOLIN_RECOVERY_BUNDLE_ID`); `/healthz` and the status
+   * page warn until it is confirmed. Undefined (dev, CI, demo): nothing to confirm.
+   */
+  readonly bundleId?: string;
 }
 
 export interface AppDeps extends ApiDeps {
@@ -191,6 +198,12 @@ export function createApi(deps: ApiDeps) {
       // drill, read from `backup_snapshot` and `backup_verification` (AD-9).
       c.header("Cache-Control", "no-store");
       return c.json(backupStatus(deps, deps.backupConfigured ?? false), 200);
+    })
+    .get("/api/system/recovery-bundle", (c) => {
+      // Whether the current recovery bundle is confirmed stored safely, and its id (never a
+      // secret: the bundle itself stays off the server).
+      c.header("Cache-Control", "no-store");
+      return c.json(recoveryBundleStatus(deps.uow, deps.bundleId), 200);
     })
     .get("/api/identity/me", (c) => {
       c.header("Cache-Control", "no-store");
@@ -365,6 +378,15 @@ function backupStale(deps: AppDeps): boolean {
   }
 }
 
+/** Whether the recovery bundle is unconfirmed; a read that fails counts as unconfirmed. */
+function bundleUnconfirmed(deps: AppDeps): boolean {
+  try {
+    return !recoveryBundleConfirmed(deps.uow, deps.bundleId);
+  } catch {
+    return deps.bundleId !== undefined;
+  }
+}
+
 /**
  * The whole HTTP surface: the Origin check and session on `/api/*`, better-auth under
  * `/api/auth/*`, the API, then the static PWA with an SPA fallback to the page shell, which is
@@ -391,6 +413,8 @@ export function createApp(deps: AppDeps): Hono<SessionEnv> {
           forceUnhealthy: deps.healthz.forceUnhealthy === true,
           // A stale backup is a warning in the body, never a failing check.
           backupStale: backupStale(deps),
+          // So is an unconfirmed recovery bundle (AD-27).
+          bundleUnconfirmed: bundleUnconfirmed(deps),
         },
       );
       cachedReadiness = { at: now, result };

@@ -43,6 +43,23 @@ describe("system.readiness", () => {
     });
   });
 
+  it("reports an unconfirmed recovery bundle as a warning, never as a failing check", () => {
+    expect(check(port(5, true), { bundleUnconfirmed: true })).toEqual({
+      ok: true,
+      warnings: ["recovery-bundle-unconfirmed"],
+    });
+    expect(check(port(5, true), { bundleUnconfirmed: false })).toEqual({ ok: true });
+    expect(check(port(5, true), { bundleUnconfirmed: true, backupStale: true })).toEqual({
+      ok: true,
+      warnings: ["backup-stale", "recovery-bundle-unconfirmed"],
+    });
+    expect(check(port(5, true), { runner: null, bundleUnconfirmed: true })).toEqual({
+      ok: false,
+      failing: ["jobs"],
+      warnings: ["recovery-bundle-unconfirmed"],
+    });
+  });
+
   it("names a missing migration", () => {
     expect(check(port(4, true))).toEqual({ ok: false, failing: ["migrations"] });
   });

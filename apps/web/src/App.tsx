@@ -9,6 +9,7 @@ import {
   fetchHealth,
   fetchMe,
   fetchNotices,
+  fetchRecoveryBundle,
   invitePartner,
   type Me,
   type Notice,
@@ -96,6 +97,30 @@ function LastBackup() {
       <Verification label="Repository check" none="No repository check yet" result={check} />
       <Verification label="Restore drill" none="No restore drill yet" result={drill} />
     </>
+  );
+}
+
+/** The recovery bundle's warning, shown until its safe storage is confirmed. */
+function RecoveryBundle() {
+  const bundle = useQuery({
+    queryKey: ["system", "recovery-bundle"],
+    queryFn: fetchRecoveryBundle,
+    retry: false,
+  });
+  if (bundle.isPending || bundle.isError || bundle.data.confirmed) return null;
+  const { bundleId } = bundle.data;
+  return (
+    <p role="alert">
+      Warning: the recovery bundle
+      {bundleId === undefined ? null : (
+        <>
+          {" "}
+          <code>{bundleId}</code>
+        </>
+      )}{" "}
+      is not confirmed stored safely. Store it offline, then run{" "}
+      <code>sudo pangolin confirm-bundle</code> on the server.
+    </p>
   );
 }
 
@@ -299,6 +324,7 @@ function Home({
       <Notices />
       <HealthStatus />
       <LastBackup />
+      <RecoveryBundle />
       <DeadJobs />
       {me.canInvite && !me.demo ? <InvitePartner onSignOut={onSignOut} /> : null}
       {me.demo ? null : (

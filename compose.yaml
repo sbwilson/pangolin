@@ -19,6 +19,8 @@ services:
       # Backups (story 1.10): empty turns them off. With the `backup` profile,
       # rest:http://restic:8000/pangolin is the append-only rest-server below.
       PANGOLIN_BACKUP_REPOSITORY: ${PANGOLIN_BACKUP_REPOSITORY:-}
+      # The recovery bundle's id (story 1.17): the server warns until it is confirmed. Empty: none.
+      PANGOLIN_RECOVERY_BUNDLE_ID: ${PANGOLIN_RECOVERY_BUNDLE_ID:-}
     ports:
       - "3000:3000"
     volumes:

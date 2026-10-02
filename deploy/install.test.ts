@@ -359,6 +359,15 @@ describe("the pangolin command", () => {
     ]);
   });
 
+  it("passes confirm-bundle to the running container's CLI, with no terminal (-T)", () => {
+    const result = wrapper(["confirm-bundle"], "running");
+    expect(result.status, result.stderr).toBe(0);
+    const home = at("opt/pangolin");
+    expect(dockerLog().trim().split("\n").at(-1)).toBe(
+      `compose --project-directory ${home} -f ${home}/compose.yaml exec -T pangolin node dist/cli.js confirm-bundle`,
+    );
+  });
+
   it("runs the CLI in a one-off container when the stack is stopped", () => {
     const result = wrapper(["reset-user", "alex@example.com"], "stopped");
     expect(result.status, result.stderr).toBe(0);
@@ -517,6 +526,101 @@ describe("install.sh, re-run", () => {
     for (const bundle of bundles()) rmSync(at(`root/${bundle}`));
     expect(install("--bundle").status).toBe(0);
     expect(bundles()).toHaveLength(1);
+  });
+});
+
+describe("install.sh, recovery bundle id", () => {
+  const BUNDLE_ID = /^PANGOLIN_RECOVERY_BUNDLE_ID=(\d{8}T\d{6}Z-[0-9a-f]{4})$/m;
+  const bundleId = (): string | undefined => read("opt/pangolin/.env").match(BUNDLE_ID)?.[1];
+  const bundleText = () => {
+    const [bundle] = bundles();
+    return bundle === undefined ? "" : read(`root/${bundle}`);
+  };
+
+  it("gives the first bundle an id in .env, prints it in the bundle, and says to confirm it", () => {
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    const id = bundleId();
+    expect(id).toBeDefined();
+    expect(read("opt/pangolin/.env").match(/^PANGOLIN_RECOVERY_BUNDLE_ID=/gm)).toHaveLength(1);
+    expect(bundleText()).toContain(`Bundle id: ${id}\n`);
+    expect(result.stdout).toContain(`Its id is ${id}`);
+    expect(result.stdout).toContain("sudo pangolin confirm-bundle");
+    expect(result.stdout).toMatch(/sudo pangolin confirm-bundle +the recovery bundle/);
+    // The bundle sets the id; no throwaway id is added first.
+    expect(result.stdout).not.toMatch(/Added:.*PANGOLIN_RECOVERY_BUNDLE_ID/);
+  });
+
+  it("keeps the id on a plain re-run, which writes no bundle", () => {
+    expect(install().status).toBe(0);
+    const id = bundleId();
+    for (const bundle of bundles()) rmSync(at(`root/${bundle}`));
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    expect(bundles()).toEqual([]);
+    expect(bundleId()).toBe(id);
+    expect(result.stdout).not.toContain("now tracks whether its recovery bundle");
+  });
+
+  it("gives a bundle written again with --bundle a new id, so the warning comes back", () => {
+    expect(install().status).toBe(0);
+    const first = bundleId();
+    for (const bundle of bundles()) rmSync(at(`root/${bundle}`));
+    const result = install("--bundle");
+    expect(result.status, result.stderr).toBe(0);
+    const second = bundleId();
+    expect(second).toBeDefined();
+    expect(second).not.toBe(first);
+    expect(read("opt/pangolin/.env").match(/^PANGOLIN_RECOVERY_BUNDLE_ID=/gm)).toHaveLength(1);
+    expect(bundleText()).toContain(`Bundle id: ${second}\n`);
+    expect(mode("opt/pangolin/.env")).toBe(0o600);
+  });
+
+  it("gives a regenerated secret's bundle a new id", () => {
+    expect(install().status).toBe(0);
+    const first = bundleId();
+    for (const bundle of bundles()) rmSync(at(`root/${bundle}`));
+    rmSync(at("opt/pangolin/secrets/app-key"));
+    expect(install().status).toBe(0);
+    expect(bundles()).toHaveLength(1);
+    expect(bundleId()).not.toBe(first);
+  });
+
+  it("adds an id to an install that has none, without writing a bundle", () => {
+    expect(install().status).toBe(0);
+    for (const bundle of bundles()) rmSync(at(`root/${bundle}`));
+    writeFileSync(
+      at("opt/pangolin/.env"),
+      read("opt/pangolin/.env").replace(/^PANGOLIN_RECOVERY_BUNDLE_ID=.*\n/m, ""),
+    );
+    expect(bundleId()).toBeUndefined();
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    const id = bundleId();
+    expect(id).toBeDefined();
+    expect(bundles()).toEqual([]);
+    expect(result.stdout).toContain("Added: PANGOLIN_RECOVERY_BUNDLE_ID");
+    expect(result.stdout).toContain(`bundle id${"\n"}  ${id} in .env`);
+    expect(result.stdout).toContain("sudo pangolin confirm-bundle");
+  });
+
+  it("replaces an empty id line with an id, without writing a bundle", () => {
+    expect(install().status).toBe(0);
+    for (const bundle of bundles()) rmSync(at(`root/${bundle}`));
+    writeFileSync(
+      at("opt/pangolin/.env"),
+      read("opt/pangolin/.env").replace(
+        /^PANGOLIN_RECOVERY_BUNDLE_ID=.*$/m,
+        "PANGOLIN_RECOVERY_BUNDLE_ID=",
+      ),
+    );
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    expect(bundleId()).toBeDefined();
+    expect(read("opt/pangolin/.env").match(/^PANGOLIN_RECOVERY_BUNDLE_ID=/gm)).toHaveLength(1);
+    expect(bundles()).toEqual([]);
+    expect(result.stdout).toMatch(/Added:.*PANGOLIN_RECOVERY_BUNDLE_ID/);
+    expect(result.stdout).toContain("sudo pangolin confirm-bundle");
   });
 });
 

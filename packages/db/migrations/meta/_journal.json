@@ -50,6 +50,13 @@
       "when": 1790806190307,
       "tag": "0006_backup_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790974659810,
+      "tag": "0007_recovery_bundle",
+      "breakpoints": true
     }
   ]
 }

@@ -152,15 +152,15 @@ What it does, in order:
 5. Writes `compose.yaml`, the allowlist and the firewall, and turns the firewall on.
 6. Starts the stack and waits up to 90 seconds for `/healthz`. If it is not healthy, it prints
    the container's last log lines and exits 1.
-7. Prints the NPM settings, the optional Proxmox rules, the recovery bundle's path and the
-   one-time setup link.
+7. Prints the NPM settings, the optional Proxmox rules, the recovery bundle's path and id, and
+   the one-time setup link.
 
 ### What it writes
 
 | Path | Mode | Holds |
 | --- | --- | --- |
 | `/opt/pangolin/compose.yaml` | 0644 | The production stack (replaced on every run; put settings in `.env`) |
-| `/opt/pangolin/.env` | 0600 | Every setting: image, public URL, NPM host, admin network, ports, data root, backup repository |
+| `/opt/pangolin/.env` | 0600 | Every setting: image, public URL, NPM host, admin network, ports, data root, backup repository, and the recovery bundle's id (`PANGOLIN_RECOVERY_BUNDLE_ID`, see [The recovery bundle](#7-the-recovery-bundle)) |
 | `/opt/pangolin/allowlist.conf` | 0644 | The outbound allowlist, one `host[:port]` per line |
 | `/opt/pangolin/secrets/` | 0700 | `auth-secret` (0600) and `restic-password` (0400), owned by the container's user (uid 1000) and each mounted read-only into the container as a single file; `app-key` (0600, 32 random bytes, base64), root's, held for the attachments story; `ghcr-token` (0600, root's) if you gave one |
 | `/opt/pangolin/firewall/` | | `render.sh` and the last applied `pangolin.nft`, which loads at boot |
@@ -208,13 +208,20 @@ NPM adds `X-Forwarded-For`, which Pangolin believes only from the NPM host
 (`PANGOLIN_TRUSTED_PROXIES`). Check it end to end:
 
 ```sh
-curl https://money.example.com/healthz        # {"ok":true}
+curl https://money.example.com/healthz        # {"ok":true,"warnings":["recovery-bundle-unconfirmed"]}
 ```
+
+Right after the install the answer carries the `recovery-bundle-unconfirmed` warning until you
+run `sudo pangolin confirm-bundle` ([section 7](#7-the-recovery-bundle)); then it is
+`{"ok":true}`.
 
 `/healthz` answers 200 `{"ok":true}` when every migration is applied, the database is writable
 and the job runner has ticked recently. Otherwise it answers 503 with the failing checks' names
 only, e.g. `{"ok":false,"failing":["jobs"]}`. It needs no sign-in, so NPM, Docker and upgrades
-can probe it.
+can probe it. Warnings ride along without changing the status or `ok`: `backup-stale`, and
+`recovery-bundle-unconfirmed` until you confirm the recovery bundle is stored safely
+([section 7](#7-the-recovery-bundle)), e.g. `{"ok":true,"warnings":["recovery-bundle-unconfirmed"]}`
+right after the first install.
 
 ## 6. First login
 
@@ -236,6 +243,27 @@ away), then delete it:
 ```sh
 shred -u /root/pangolin-recovery-bundle-*.txt
 ```
+
+Every bundle has an id, printed at its top (`Bundle id: 20261003T010203Z-a1b2`) and kept in
+`/opt/pangolin/.env` as `PANGOLIN_RECOVERY_BUNDLE_ID`. The id is not a secret, and the bundle
+itself never reaches the server. Until you confirm the bundle with that id is stored safely,
+`/healthz`, `pangolin status` and the status page in the app warn (a warning only: the server
+stays ready). Once the bundle is stored offline, check that the id in `.env` (`grep
+PANGOLIN_RECOVERY_BUNDLE_ID /opt/pangolin/.env`) matches the `Bundle id:` line of the bundle you
+stored, then, with the stack running, confirm it:
+
+```sh
+sudo pangolin confirm-bundle
+```
+
+It needs the server running: on a stopped stack it says "Pangolin is not running" and exits 3.
+
+The confirmation is recorded in the database and audited as `cli:confirm-bundle`. A new bundle
+(`--bundle`, or a secret that had to be generated again) gets a new id, so the warning comes
+back until you confirm that one. An install from before bundle ids gets an id the next time you
+re-run `install.sh` (no bundle is written; `pangolin upgrade` does not add one), and then warns
+until you confirm the bundle you already have. Restoring a backup taken before your last
+confirmation brings the warning back; confirm again.
 
 `sudo sh deploy/install.sh --bundle` writes it again from the secrets on the VM.
 
@@ -312,14 +340,23 @@ sudo pangolin status                       # version, schema, readiness, jobs, l
 sudo pangolin backup                       # back up now
 sudo pangolin restore latest               # restore the newest backup (see section 10)
 sudo pangolin reset-user alex@example.com  # both of you locked out: reset one person
+sudo pangolin confirm-bundle               # the recovery bundle is stored safely (section 7)
 sudo pangolin --help
 ```
 
 - **`status`** prints the release, the schema version against the one the build expects,
   readiness (`ok`, or the failing checks as `/healthz` names them), how many jobs are
   pending, running and dead, with each dead job's kind and time, and the last backup (its time
-  and restic snapshot ID, "none yet", or "not configured"). It exits 0 when ready, 1 when
-  not, and 3 with "Pangolin is not running" when the server is down (it then opens nothing).
+  and restic snapshot ID, "none yet", or "not configured"). While the recovery bundle is not
+  confirmed it adds `Warning:   recovery bundle not confirmed stored safely (run sudo pangolin
+  confirm-bundle)`. It exits 0 when ready, 1 when not (a warning never changes this), and 3
+  with "Pangolin is not running" when the server is down (it then opens nothing).
+- **`confirm-bundle`** records that the recovery bundle whose id is in `.env` is stored safely
+  offline, which ends the warning ([section 7](#7-the-recovery-bundle)); it is audited as
+  `cli:confirm-bundle`. Before running it, check that id matches the `Bundle id:` line of the
+  bundle you stored. It needs the stack running (exit 3, "Pangolin is not running", otherwise). Run again, it says the bundle was already confirmed and records
+  nothing. With no bundle id set it exits 1 ("no recovery bundle id is set"); re-run
+  `install.sh` to add one.
 - **`backup`** and **`restore`**: see [Backups and restore](#10-backups-and-restore).
 - **`reset-user <email or person ID>`** is for when both of you are locked out (otherwise your
   partner's link in the app does it). It clears the person's passkeys, authenticator, sessions,

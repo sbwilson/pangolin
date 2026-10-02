@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { RECOVERY_BUNDLE_ID_PATTERN } from "@pangolin/app";
 import { z } from "zod";
 
 const minutes = (fallback: number) =>
@@ -84,6 +85,23 @@ const envSchema = z.object({
     .pipe(z.string().startsWith("/", { message: "Expected an absolute path" })),
   /** The restic binary; the image ships a pinned one on the PATH. */
   PANGOLIN_RESTIC_BIN: z.string().min(1).default("restic"),
+  /**
+   * The id of the recovery bundle install.sh last wrote (story 1.17, AD-27); never a secret.
+   * Until it is confirmed (`pangolin confirm-bundle`) the server warns. Unset or empty (local
+   * dev, CI): nothing to confirm.
+   */
+  PANGOLIN_RECOVERY_BUNDLE_ID: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(
+      z.union([
+        z.literal(""),
+        z.string().regex(RECOVERY_BUNDLE_ID_PATTERN, {
+          message: "Expected a recovery bundle id like 20261003T010203Z-a1b2",
+        }),
+      ]),
+    )
+    .optional(),
 });
 
 export interface BackupConfig {
@@ -140,6 +158,8 @@ export interface Config {
   /** The release (`PANGOLIN_VERSION`); `dev` for local builds. */
   readonly version: string;
   readonly backup: BackupConfig;
+  /** The current recovery bundle's id (`PANGOLIN_RECOVERY_BUNDLE_ID`); undefined when unset. */
+  readonly recoveryBundleId?: string;
 }
 
 /** The auth settings for `dataDir` with every default, for tests and callers without an env. */
@@ -211,5 +231,9 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       passwordFile: parsed.PANGOLIN_RESTIC_PASSWORD_FILE,
       resticBin: parsed.PANGOLIN_RESTIC_BIN,
     },
+    ...(parsed.PANGOLIN_RECOVERY_BUNDLE_ID === undefined ||
+    parsed.PANGOLIN_RECOVERY_BUNDLE_ID === ""
+      ? {}
+      : { recoveryBundleId: parsed.PANGOLIN_RECOVERY_BUNDLE_ID }),
   };
 }

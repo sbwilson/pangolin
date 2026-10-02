@@ -120,7 +120,7 @@ describe("GET /api/system/health", () => {
     const app = createApp(deps(openDb()));
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 7, writable: true });
+    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 8, writable: true });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
@@ -396,6 +396,95 @@ describe("GET /healthz with a stale backup", () => {
       "/healthz",
     );
     expect(await off.json()).toEqual({ ok: true });
+  });
+});
+
+describe("the recovery bundle warning", () => {
+  const A = "20261003T010203Z-a1b2";
+  const B = "20261104T050607Z-c3d4";
+  const confirm = (db: Db, bundleId: string) =>
+    db
+      .prepare(
+        "INSERT OR REPLACE INTO recovery_bundle (id, bundle_id, confirmed_at) VALUES (1, ?, 'x')",
+      )
+      .run(bundleId);
+
+  it("warns in /healthz while the bundle is unconfirmed, staying 200 and ok", async () => {
+    const db = openDb();
+    const res = await createApp({ ...deps(db), bundleId: A }).request("/healthz");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, warnings: ["recovery-bundle-unconfirmed"] });
+  });
+
+  it("stops warning once that id is confirmed, and warns again for a new bundle", async () => {
+    const db = openDb();
+    confirm(db, A);
+    const confirmed = await createApp({ ...deps(db), bundleId: A }).request("/healthz");
+    expect(await confirmed.json()).toEqual({ ok: true });
+    const fresh = await createApp({ ...deps(db), bundleId: B }).request("/healthz");
+    expect(fresh.status).toBe(200);
+    expect(await fresh.json()).toEqual({ ok: true, warnings: ["recovery-bundle-unconfirmed"] });
+  });
+
+  it("never warns without a bundle id (dev, CI)", async () => {
+    const db = openDb();
+    expect(await (await createApp(deps(db)).request("/healthz")).json()).toEqual({ ok: true });
+  });
+
+  it("keeps a failing check failing, with the warning beside it", async () => {
+    const db = openDb();
+    const app = createApp({
+      ...deps(db),
+      bundleId: A,
+      healthz: { expectedSchemaVersion: MIGRATIONS, runner: () => undefined },
+    });
+    const res = await app.request("/healthz");
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({
+      ok: false,
+      failing: ["jobs"],
+      warnings: ["recovery-bundle-unconfirmed"],
+    });
+  });
+
+  it("counts a failed read as unconfirmed", async () => {
+    const db = openDb();
+    const broken: UnitOfWork = {
+      transaction: () => {
+        throw new Error("SQLITE_IOERR");
+      },
+      read: () => {
+        throw new Error("SQLITE_IOERR");
+      },
+    };
+    const res = await createApp({ ...deps(db), uow: broken, bundleId: A }).request("/healthz");
+    expect(await res.json()).toMatchObject({ warnings: ["recovery-bundle-unconfirmed"] });
+  });
+
+  it("GET /api/system/recovery-bundle needs a session", async () => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp({ ...deps(db), bundleId: A }).request(
+      "/api/system/recovery-bundle",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("GET /api/system/recovery-bundle says whether the current id is confirmed", async () => {
+    const db = openDb();
+    addPerson(db);
+    const app = createApp({ ...deps(db), bundleId: A });
+    const before = await app.request("/api/system/recovery-bundle", signedIn);
+    expect(before.status).toBe(200);
+    expect(before.headers.get("cache-control")).toBe("no-store");
+    expect(await before.json()).toEqual({ confirmed: false, bundleId: A });
+    confirm(db, A);
+    expect(await (await app.request("/api/system/recovery-bundle", signedIn)).json()).toEqual({
+      confirmed: true,
+      bundleId: A,
+    });
+    const none = await createApp(deps(db)).request("/api/system/recovery-bundle", signedIn);
+    expect(await none.json()).toEqual({ confirmed: true });
   });
 });
 

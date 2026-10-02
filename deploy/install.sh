@@ -74,6 +74,8 @@ TTY_ECHO_OFF=0
 WARNINGS=0
 GENERATED=0
 BUNDLE_PATH=
+BUNDLE_ID=
+NEW_BUNDLE_ID=0
 # .env keys this run replaces because a flag asked for a new value (--image, --build, --data-root).
 REPLACE=
 
@@ -777,16 +779,28 @@ store_token() {
   say "Stored the GHCR token"
 }
 
+# A recovery bundle's id: the UTC time and 4 random hex characters, e.g. 20261003T010203Z-a1b2.
+# Not a secret: the server only compares it with the id `pangolin confirm-bundle` confirmed.
+new_bundle_id() {
+  printf '%s-%s\n' "$(date -u +%Y%m%dT%H%M%SZ)" "$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+}
+
+# Every bundle written gets a new id in .env (PANGOLIN_RECOVERY_BUNDLE_ID, printed in the bundle
+# too), so the server warns until that bundle's safe storage is confirmed (AD-27).
 write_bundle() {
   if [ "$GENERATED" -eq 0 ] && [ "$BUNDLE" -eq 0 ]; then return 0; fi
   secrets=$(path "$INSTALL_DIR/secrets")
   mkdir -p "$(path /root)"
   BUNDLE_PATH=/root/pangolin-recovery-bundle-$(date +%Y-%m-%d).txt
   bundle=$(path "$BUNDLE_PATH")
+  previous_id=$(existing PANGOLIN_RECOVERY_BUNDLE_ID)
+  BUNDLE_ID=$(new_bundle_id)
+  while [ "$BUNDLE_ID" = "$previous_id" ]; do BUNDLE_ID=$(new_bundle_id); done
   (
     umask 077
     {
       printf '%s\n' "Pangolin Money recovery bundle for https://$PUBLIC_HOST, written $(date -u +%Y-%m-%dT%H:%M:%SZ)." \
+        "Bundle id: $BUNDLE_ID" \
         "" \
         "Everything needed to restore this server onto a new host: without these, a backup cannot" \
         "be decrypted, attachments cannot be read and authenticator codes stop working." \
@@ -799,8 +813,17 @@ write_bundle() {
       if [ -n "$BACKUP" ]; then printf 'RESTIC_REPOSITORY=%s\n' "$BACKUP"; fi
     } >"$bundle.new"
   )
+  # The id goes into .env before the bundle is in place, so no bundle names an id the server
+  # never sees.
+  if env_has PANGOLIN_RECOVERY_BUNDLE_ID; then
+    env_replace PANGOLIN_RECOVERY_BUNDLE_ID "$BUNDLE_ID"
+  else
+    env_add PANGOLIN_RECOVERY_BUNDLE_ID "$BUNDLE_ID"
+  fi
+  chmod 0600 "$(env_file)"
   mv "$bundle.new" "$bundle"
   chmod 0600 "$bundle"
+  say "Recovery bundle id $BUNDLE_ID set in .env (PANGOLIN_RECOVERY_BUNDLE_ID)"
 }
 
 # Appends KEY=VALUE to .env unless KEY is already there.
@@ -861,6 +884,18 @@ write_env() {
   env_add PANGOLIN_DATA_ROOT "$DATA_ROOT"
   if [ -n "$BACKUP" ]; then env_add PANGOLIN_BACKUP_REPOSITORY "$BACKUP"; fi
   if [ -n "$TANG_URL" ]; then env_add PANGOLIN_TANG_URL "$TANG_URL"; fi
+  # An install from before bundle ids (story 1.17), or with an empty one, gets an id now, so the
+  # server warns until the bundle it already has is confirmed stored safely; no bundle is
+  # written for it. When this run writes a bundle, write_bundle sets the id instead.
+  if [ -z "$(existing PANGOLIN_RECOVERY_BUNDLE_ID)" ] && [ "$GENERATED" -eq 0 ] && [ "$BUNDLE" -eq 0 ]; then
+    if env_has PANGOLIN_RECOVERY_BUNDLE_ID; then
+      env_replace PANGOLIN_RECOVERY_BUNDLE_ID "$(new_bundle_id)"
+      ENV_ADDED="$ENV_ADDED PANGOLIN_RECOVERY_BUNDLE_ID"
+    else
+      env_add PANGOLIN_RECOVERY_BUNDLE_ID "$(new_bundle_id)"
+    fi
+    NEW_BUNDLE_ID=1
+  fi
   if [ "$SELINUX" -eq 1 ]; then
     env_add PANGOLIN_DATA_MOUNT_MODE "rw,Z"
     env_add PANGOLIN_SECRETS_MOUNT_MODE "ro,Z"
@@ -1277,7 +1312,8 @@ summary() {
     "    SSL Certificate         request a new one (or choose yours)" \
     "    Force SSL, HTTP/2 Support, HSTS Enabled: on" \
     "  NPM sends X-Forwarded-For; Pangolin believes it only from $NPM_HOST." \
-    "  Check it afterwards: curl https://$host/healthz  ->  {\"ok\":true}"
+    "  Check it afterwards: curl https://$host/healthz  ->  {\"ok\":true,...}" \
+    "  (with \"warnings\":[\"recovery-bundle-unconfirmed\"] until you run: sudo pangolin confirm-bundle)"
 
   proxmox=$(path "$INSTALL_DIR/proxmox-firewall.txt")
   if [ -f "$proxmox" ]; then
@@ -1292,7 +1328,15 @@ summary() {
       "  holds the application key, auth secret and restic password: everything a restore onto a" \
       "  new host needs. Store it offline now (a password manager, or printed and locked away)," \
       "  then delete it: shred -u $BUNDLE_PATH" \
-      "  It is written again only with: install.sh --bundle"
+      "  It is written again only with: install.sh --bundle" \
+      "  Its id is $BUNDLE_ID. Once it is stored safely, run: sudo pangolin confirm-bundle" \
+      "  (pangolin status warns until you do)"
+  elif [ "$NEW_BUNDLE_ID" -eq 1 ]; then
+    step "Recovery bundle"
+    printf '%s\n' \
+      "  This install now tracks whether its recovery bundle is stored safely (bundle id" \
+      "  $(existing PANGOLIN_RECOVERY_BUNDLE_ID) in .env). Once the bundle you already have is stored" \
+      "  offline, run: sudo pangolin confirm-bundle  (or write a new one with install.sh --bundle)"
   fi
 
   step "First login"
@@ -1314,7 +1358,9 @@ summary() {
     "  sudo pangolin backup                 back up now (nightly at 02:30 otherwise)" \
     "  sudo pangolin restore [latest|ID]    stop, verify and swap in a backup, start again (asks about credentials)" \
     "  sudo pangolin reset-user <email>     both of you locked out: clears that person's sign-in" \
-    "                                       and prints a 24-hour link to set it up again"
+    "                                       and prints a 24-hour link to set it up again" \
+    "  sudo pangolin confirm-bundle         the recovery bundle is stored safely offline: ends" \
+    "                                       status's warning until a new bundle is written"
 
   if [ "$WARNINGS" -gt 0 ]; then
     printf '\nFinished with %s warning(s); see the WARNING lines above.\n' "$WARNINGS"

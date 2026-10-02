@@ -7,7 +7,7 @@ export const READINESS_CHECKS = ["migrations", "database", "jobs", "forced"] as 
 export type ReadinessCheck = (typeof READINESS_CHECKS)[number];
 
 /** Warnings `/healthz` reports beside a result without changing it: never a failing check. */
-export type ReadinessWarning = "backup-stale";
+export type ReadinessWarning = "backup-stale" | "recovery-bundle-unconfirmed";
 
 export interface ReadinessContext {
   readonly systemHealth: SystemHealthPort;
@@ -45,6 +45,11 @@ export const readinessInput = z
     forceUnhealthy: z.boolean().optional(),
     /** The last good backup is stale: reported as a warning, and readiness stays as it was. */
     backupStale: z.boolean().optional(),
+    /**
+     * The current recovery bundle's safe storage is not confirmed (AD-27): reported as a warning,
+     * and readiness stays as it was.
+     */
+    bundleUnconfirmed: z.boolean().optional(),
   })
   .strict();
 export type ReadinessInput = z.input<typeof readinessInput>;
@@ -71,10 +76,11 @@ function probe(check: () => boolean): boolean {
 /**
  * `system.readiness`, behind `/healthz`: every migration applied, the database writable, and
  * the job runner running and ticked within `RUNNER_STALE_POLLS` poll intervals (skipped in
- * demo mode). Reports only the names of the failing checks, and the warnings (a stale backup).
+ * demo mode). Reports only the names of the failing checks, and the warnings (a stale backup, an
+ * unconfirmed recovery bundle). Warnings never add to `failing`.
  */
 export function readiness(ctx: ReadinessContext, input: ReadinessInput): ReadinessOutput {
-  const { expectedSchemaVersion, runner, forceUnhealthy, backupStale } =
+  const { expectedSchemaVersion, runner, forceUnhealthy, backupStale, bundleUnconfirmed } =
     readinessInput.parse(input);
   const failing: ReadinessCheck[] = [];
   if (!probe(() => ctx.systemHealth.schemaVersion() === expectedSchemaVersion)) {
@@ -91,7 +97,10 @@ export function readiness(ctx: ReadinessContext, input: ReadinessInput): Readine
       now - runner.lastTickAt <= RUNNER_STALE_POLLS * runner.pollMs;
     if (!fresh) failing.push("jobs");
   }
+  const list: ReadinessWarning[] = [];
+  if (backupStale === true) list.push("backup-stale");
+  if (bundleUnconfirmed === true) list.push("recovery-bundle-unconfirmed");
   const warnings: { readonly warnings?: readonly ReadinessWarning[] } =
-    backupStale === true ? { warnings: ["backup-stale"] } : {};
+    list.length > 0 ? { warnings: list } : {};
   return failing.length === 0 ? { ok: true, ...warnings } : { ok: false, failing, ...warnings };
 }

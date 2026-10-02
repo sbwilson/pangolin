@@ -35,10 +35,13 @@ let dir: string;
 let server: RunningServer | undefined;
 /** The backup settings the server and the CLI both read; none unless a test sets them. */
 let backup: BackupConfig = DEFAULT_BACKUP_CONFIG;
+/** The server's recovery bundle id (`PANGOLIN_RECOVERY_BUNDLE_ID`); none unless a test sets it. */
+let bundleId: string | undefined;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "pangolin-cli-"));
   backup = DEFAULT_BACKUP_CONFIG;
+  bundleId = undefined;
 });
 
 afterEach(async () => {
@@ -63,6 +66,7 @@ async function boot(): Promise<RunningServer> {
       trustedProxies: [],
       adminSocket: socketPath(),
       version: "v1.2.3",
+      ...(bundleId === undefined ? {} : { recoveryBundleId: bundleId }),
     },
     migrationsDir: packageMigrationsDir,
   });
@@ -99,6 +103,7 @@ async function cli(
       PANGOLIN_BACKUP_REPOSITORY: backup.repository ?? "",
       PANGOLIN_RESTIC_PASSWORD_FILE: backup.passwordFile,
       PANGOLIN_RESTIC_BIN: backup.resticBin,
+      PANGOLIN_RECOVERY_BUNDLE_ID: bundleId ?? "",
     },
     migrationsDir,
     pollMs: 20,
@@ -132,6 +137,11 @@ describe("pangolin (the admin CLI)", () => {
     });
     expect(await cli(["status", "extra"])).toMatchObject({ code: EXIT_USAGE });
     expect(await cli(["reset-user", "a", "b"])).toMatchObject({ code: EXIT_USAGE });
+    expect(await cli(["confirm-bundle", "now"])).toMatchObject({
+      code: EXIT_USAGE,
+      err: /confirm-bundle takes no arguments/,
+    });
+    expect(await cli(["--help"])).toMatchObject({ out: /confirm-bundle/ });
   });
 
   it("status on a running server prints readiness and job state, exit 0", async () => {
@@ -168,6 +178,68 @@ describe("pangolin (the admin CLI)", () => {
     expect(result.out).toContain("Dead jobs (newest 50 of 51):");
     expect(result.out).toContain("  2026-09-27T00:00:50.000Z  test-dead");
     expect(result.out).not.toContain("2026-09-27T00:00:00.000Z");
+  });
+
+  it("status warns of an unconfirmed recovery bundle yet exits 0; confirm-bundle ends it", async () => {
+    bundleId = "20261003T010203Z-a1b2";
+    await boot();
+    const WARNING =
+      "Warning:   recovery bundle not confirmed stored safely (run sudo pangolin confirm-bundle)";
+    const before = await cli(["status"]);
+    expect(before.code).toBe(EXIT_OK);
+    expect(before.out).toMatch(/Readiness: ok/);
+    expect(before.out).toContain(WARNING);
+
+    expect(await cli(["confirm-bundle"])).toEqual({
+      code: EXIT_OK,
+      out: "Recovery bundle 20261003T010203Z-a1b2 confirmed stored safely",
+      err: "",
+    });
+    const after = await cli(["status"]);
+    expect(after.code).toBe(EXIT_OK);
+    expect(after.out).not.toContain(WARNING);
+
+    const again = await cli(["confirm-bundle"]);
+    expect(again.code).toBe(EXIT_OK);
+    expect(again.out).toMatch(
+      /^Recovery bundle 20261003T010203Z-a1b2 was already confirmed stored safely \(at .+\)$/,
+    );
+    const audit = withDb((db) =>
+      db
+        .prepare("SELECT actor, entity, action FROM audit_log WHERE entity = 'recovery_bundle'")
+        .all(),
+    );
+    expect(audit).toEqual([
+      { actor: "cli:confirm-bundle", entity: "recovery_bundle", action: "confirm" },
+    ]);
+
+    // A new bundle (install.sh --bundle) has a new id: the warning is back until confirmed.
+    await stop();
+    bundleId = "20261104T050607Z-c3d4";
+    await boot();
+    const renewed = await cli(["status"]);
+    expect(renewed.code).toBe(EXIT_OK);
+    expect(renewed.out).toContain(WARNING);
+  });
+
+  it("confirm-bundle refuses with no bundle id set, exit 1, and status never warns", async () => {
+    await boot();
+    expect((await cli(["status"])).out).not.toContain("recovery bundle");
+    const result = await cli(["confirm-bundle"]);
+    expect(result.code).toBe(EXIT_FAILED);
+    expect(result.err).toMatch(/^pangolin: no recovery bundle id is set/);
+    const audited = withDb((db) =>
+      db.prepare("SELECT count(*) FROM audit_log WHERE entity = 'recovery_bundle'").pluck().get(),
+    );
+    expect(audited).toBe(0);
+  });
+
+  it("confirm-bundle on a stopped server says it is not running, exit 3", async () => {
+    bundleId = "20261003T010203Z-a1b2";
+    expect(await cli(["confirm-bundle"])).toMatchObject({
+      code: EXIT_NOT_RUNNING,
+      out: "Pangolin is not running",
+    });
   });
 
   it("status says the socket is unreachable while the data directory is locked, exit 1", async () => {

@@ -173,6 +173,8 @@ export type {
   PersonRepo,
   PersonRow,
   ReadRepos,
+  RecoveryBundleRepo,
+  RecoveryBundleRow,
   RecoveryCodeCounts,
   RecoveryCodeRepo,
   RecoveryCodeRow,
@@ -273,6 +275,18 @@ export {
   readiness,
   readinessInput,
 } from "./system/readiness.ts";
+export {
+  type ConfirmedRecoveryBundle,
+  type ConfirmRecoveryBundleInput,
+  confirmRecoveryBundle,
+  confirmRecoveryBundleInput,
+  NO_RECOVERY_BUNDLE_ID,
+  RECOVERY_BUNDLE_ID_PATTERN,
+  type RecoveryBundleStatus,
+  recoveryBundleConfirmed,
+  recoveryBundleId,
+  recoveryBundleStatus,
+} from "./system/recovery-bundle.ts";
 export {
   defineReviewKind,
   JOB_DEAD_REVIEW,

@@ -17,6 +17,7 @@ import type {
   LoginAttemptRow,
   PersonRepo,
   PersonRow,
+  RecoveryBundleRow,
   RecoveryCodeRepo,
   RecoveryCodeRow,
   ReEnrolmentLinkRepo,
@@ -40,6 +41,8 @@ export interface MemoryState {
   reviewItems: ReviewItemRow[];
   backups: BackupSnapshotRow[];
   backupVerifications: BackupVerificationRow[];
+  /** The confirmed recovery bundle; undefined until the first confirmation. */
+  recoveryBundle: RecoveryBundleRow | undefined;
   /** IDs of better-auth users; tests add them to stand in for better-auth's inserts. */
   users: string[];
   /** Email per user ID, standing in for `auth_user.email`. */
@@ -534,6 +537,7 @@ export function memoryUnitOfWork(
       reviewItems: [],
       backups: [],
       backupVerifications: [],
+      recoveryBundle: undefined,
       users: [],
       emails: {},
       enrolments: {},
@@ -554,6 +558,7 @@ export function memoryUnitOfWork(
         reviewItems: [...uow.state.reviewItems],
         backups: [...uow.state.backups],
         backupVerifications: [...uow.state.backupVerifications],
+        recoveryBundle: uow.state.recoveryBundle,
         users: [...uow.state.users],
         emails: uow.state.emails,
         enrolments: uow.state.enrolments,
@@ -597,6 +602,16 @@ export function memoryUnitOfWork(
         reviewItems: reviewItemRepo(working, check),
         backups: backupRepo(working, check),
         backupVerifications: backupVerificationRepo(working, check),
+        recoveryBundle: {
+          get: () => {
+            check();
+            return working.recoveryBundle;
+          },
+          set: (row) => {
+            check();
+            working.recoveryBundle = row;
+          },
+        },
       };
       try {
         const result = fn(tx);
@@ -607,6 +622,7 @@ export function memoryUnitOfWork(
         uow.state.reviewItems = working.reviewItems;
         uow.state.backups = working.backups;
         uow.state.backupVerifications = working.backupVerifications;
+        uow.state.recoveryBundle = working.recoveryBundle;
         uow.state.users = working.users;
         uow.state.setupLinks = working.setupLinks;
         uow.state.loginAttempts = working.loginAttempts;
@@ -651,6 +667,12 @@ export function memoryUnitOfWork(
           latestPushed: backupRepo(uow.state, check).latestPushed,
         },
         backupVerifications: { latest: backupVerificationRepo(uow.state, check).latest },
+        recoveryBundle: {
+          get: () => {
+            check();
+            return uow.state.recoveryBundle;
+          },
+        },
       });
     },
   };

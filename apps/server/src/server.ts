@@ -194,6 +194,10 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       trustedProxies: config.trustedProxies,
       recoveryRateLimitPerMinute: config.auth.rateLimitPerMinute,
       backupConfigured,
+      // Demo mode has no install and no bundle to confirm.
+      ...(demo || config.recoveryBundleId === undefined
+        ? {}
+        : { bundleId: config.recoveryBundleId }),
       healthz: {
         expectedSchemaVersion,
         forceUnhealthy: Boolean(process.env.PANGOLIN_TEST_FORCE_UNHEALTHY),
@@ -268,6 +272,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       runner: () => runner?.liveness(),
       version: config.version,
       backupConfigured,
+      ...(config.recoveryBundleId === undefined ? {} : { bundleId: config.recoveryBundleId }),
     };
     try {
       adminSocket = await listenAdminSocket({
