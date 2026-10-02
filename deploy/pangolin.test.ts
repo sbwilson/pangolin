@@ -219,7 +219,7 @@ describe("pangolin upgrade", () => {
     expect(res.status, res.stderr).toBe(0);
     const dirs = readdirSync(homeDir).filter((f) => f.startsWith("pre-upgrade-"));
     expect(dirs).toHaveLength(1);
-    expect(statSync(join(homeDir, dirs[0])).mode & 0o777).toBe(0o700);
+    expect(statSync(join(homeDir, dirs[0] ?? "")).mode & 0o777).toBe(0o700);
   });
 
   it("keeps .env.bak private while the upgrade runs", () => {
