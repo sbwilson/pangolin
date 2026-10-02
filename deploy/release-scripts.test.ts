@@ -100,14 +100,24 @@ describe("previous-release.sh", () => {
     const result = previous("v9.9.9");
     expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("Tag v9.9.9 is not in the repository's vX.Y.Z tags");
+    expect(result.stderr).toContain("Tag v9.9.9 is not in the repository's v*.*.* tags");
   });
 
-  it("skips pre-release tags, which version sort puts above their release", () => {
-    tag("v1.1.0", "v1.2.0-rc1", "v1.2.0", "v1.3.0-rc1", "v1.3.0");
+  it("never picks a pre-release, and a pre-release migrates from the last release", () => {
+    tag("v1.1.0", "v1.2.0-rc1", "v1.2.0", "v1.3.0-rc1", "v1.3.0-rc2", "v1.3.0");
     expect(previous("v1.2.0").stdout).toBe("v1.1.0\n");
     expect(previous("v1.3.0").stdout).toBe("v1.2.0\n");
-    expect(previous("v1.3.0-rc1").status).toBe(1);
+    expect(previous("v1.2.0-rc1").stdout).toBe("v1.1.0\n");
+    const rc = previous("v1.3.0-rc2");
+    expect(rc.status).toBe(0);
+    expect(rc.stdout).toBe("v1.2.0\n");
+  });
+
+  it("prints nothing for a pre-release of the first release", () => {
+    tag("v1.0.0-rc1", "v1.0.0");
+    const result = previous("v1.0.0-rc1");
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("");
   });
 
   it("fails without exactly one argument", () => {
