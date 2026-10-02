@@ -8,6 +8,7 @@
 // Exit codes: 0 done (status: ready), 1 failed (status: not ready), 2 usage, 3 not running.
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import {
   BACKUP_TIME,
@@ -28,6 +29,7 @@ import {
   acquireDataDirLock,
   BACKUPS_NOT_CONFIGURED,
   type BackupStarted,
+  type CredentialChoice,
   callAdmin,
   type DataDirLock,
   DataDirLocked,
@@ -59,8 +61,12 @@ Commands:
   backup                        back up now (a snapshot pushed with restic) and print the
                                 snapshot ID; joins a manual backup already running
   restore [snapshot|latest]     on a stopped stack: fetch the snapshot (default latest), verify
-                                it, swap it in and cancel pending jobs with external effects
-                                (the host's pangolin stops and starts the stack around it)
+    [--restore-credentials |    it, ask whether to restore the snapshot's sign-in details (sessions,
+     --keep-credentials]        passkeys, authenticator, recovery codes) or keep the current ones
+                                (default: keep), swap it in and cancel pending jobs with external
+                                effects; a flag answers without the question, and with no
+                                terminal and no flag it refuses (the host's pangolin stops and
+                                starts the stack around it)
   --help                        show this help`;
 
 export interface CliIo {
@@ -79,6 +85,10 @@ export interface CliOptions {
   readonly backupWaitMs?: number;
   /** Replaces restic for `restore`, for tests. */
   readonly restic?: Restic;
+  /** Whether a person can answer a question on the terminal. Defaults to `stdin.isTTY`. */
+  readonly interactive?: boolean;
+  /** Asks a question and returns the line typed; undefined when the input closed. For tests. */
+  readonly ask?: (question: string) => Promise<string | undefined>;
   /** Replaces the backup server reachability check `backup` makes first, for tests. */
   readonly checkReachable?: (repository: string) => Promise<void>;
 }
@@ -370,11 +380,59 @@ async function backupCli(config: Config, options: CliOptions): Promise<number> {
 
 const VERIFY_CHECKS = new Set(["integrity", "manifest", "schema"]);
 
+/** One line from the terminal; undefined when the input ends or Ctrl-C closes it. */
+function askOnTerminal(question: string): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    let answered = false;
+    rl.on("close", () => {
+      if (!answered) resolve(undefined);
+    });
+    rl.on("SIGINT", () => rl.close());
+    rl.question(question, (line) => {
+      answered = true;
+      rl.close();
+      resolve(line);
+    });
+  });
+}
+
+const CREDENTIAL_QUESTION = `The snapshot has its own sign-in details (sessions, passkeys, authenticator, recovery
+codes, re-enrolment links); the current database has others, which may include a reset since.
+  [k] keep the current ones (the snapshot's are dropped; anyone only in the snapshot must re-enrol)
+  [r] restore the snapshot's
+Keep or restore? [K/r] `;
+
+/** Asks until it has an answer; three bad answers or no answer fail with nothing swapped in. */
+async function askCredentials(
+  ask: (question: string) => Promise<string | undefined>,
+  io: CliIo,
+): Promise<CredentialChoice> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const line = await ask(attempt === 0 ? CREDENTIAL_QUESTION : "Keep or restore? [K/r] ");
+    if (line === undefined) throw new Error("no answer to the credentials question");
+    const answer = line.trim().toLowerCase();
+    if (answer === "" || answer === "k" || answer === "keep") return "keep";
+    if (answer === "r" || answer === "restore") return "restore";
+    io.err(`pangolin: ${JSON.stringify(line.trim())} is not k or r`);
+  }
+  throw new Error("no valid answer to the credentials question");
+}
+
 /** `restore [snapshot|latest]` on a stopped stack. Exit 0 when swapped in, 1 when not. */
-async function restoreCli(config: Config, options: CliOptions, ref: string): Promise<number> {
+async function restoreCli(
+  config: Config,
+  options: CliOptions,
+  ref: string,
+  flag: CredentialChoice | undefined,
+): Promise<number> {
   const { io } = options;
   const result = await restoreStopped(ref, {
     config,
+    credentials:
+      flag !== undefined
+        ? async () => flag
+        : () => askCredentials(options.ask ?? askOnTerminal, io),
     migrationsDir: options.migrationsDir,
     out: io.out,
     ...(options.restic === undefined ? {} : { restic: options.restic }),
@@ -392,6 +450,17 @@ async function restoreCli(config: Config, options: CliOptions, ref: string): Pro
   io.out(
     `Swapped in snapshot ${result.snapshotId}; the replaced files are in ${result.preRestoreDir}`,
   );
+  const { credentials } = result;
+  if (credentials.choice === "restore") {
+    io.out("Credentials: the snapshot's sessions, passkeys, authenticator and recovery codes");
+  } else if (!credentials.carried) {
+    io.out("Credentials: the snapshot's (there was no current database to keep them from)");
+  } else {
+    io.out(
+      `Credentials: the current ones kept for ${credentials.keptLogins} login${credentials.keptLogins === 1 ? "" : "s"}; cleared for ${credentials.clearedLogins} only in the snapshot`,
+    );
+  }
+  io.out("A review item records that the data was rolled back to the snapshot");
   io.out(
     `Cancelled ${result.cancelled} pending job${result.cancelled === 1 ? "" : "s"} with external effects`,
   );
@@ -420,10 +489,35 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
   if (command === "status" && rest.length > 0) return usage("status takes no arguments");
   if (command === "reset-user" && rest.length > 1) return usage("reset-user takes one person");
   if (command === "backup" && rest.length > 0) return usage("backup takes no arguments");
-  if (command === "restore" && rest.length > 1) return usage("restore takes one snapshot");
-  const ref = rest[0] ?? "latest";
+  const flags = rest.filter((arg) => arg.startsWith("--"));
+  const operands = rest.filter((arg) => !arg.startsWith("--"));
+  if (command === "restore") {
+    const known = ["--restore-credentials", "--keep-credentials"];
+    const unknown = flags.find((flag) => !known.includes(flag));
+    if (unknown !== undefined) return usage(`unknown option ${JSON.stringify(unknown)}`);
+    if (flags.includes(known[0] as string) && flags.includes(known[1] as string)) {
+      return usage("choose one of --restore-credentials and --keep-credentials");
+    }
+    if (flags.length > 1 && new Set(flags).size === 1) return usage(`repeated option ${flags[0]}`);
+    if (operands.length > 1) return usage("restore takes one snapshot");
+  }
+  const ref = operands[0] ?? "latest";
   if (command === "restore" && !SNAPSHOT_REF.test(ref)) {
     return usage("name a snapshot by its ID (hex) or latest");
+  }
+  const flag: CredentialChoice | undefined = flags.includes("--restore-credentials")
+    ? "restore"
+    : flags.includes("--keep-credentials")
+      ? "keep"
+      : undefined;
+  if (
+    command === "restore" &&
+    flag === undefined &&
+    !(options.interactive ?? process.stdin.isTTY)
+  ) {
+    return usage(
+      "restore asks whether to restore the snapshot's credentials or keep the current ones, and there is no terminal to ask on: pass --restore-credentials or --keep-credentials",
+    );
   }
 
   let config: Config;
@@ -440,7 +534,7 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
       case "backup":
         return await backupCli(config, options);
       case "restore":
-        return await restoreCli(config, options, ref);
+        return await restoreCli(config, options, ref, flag);
       default:
         return await resetUserCli(config, options, rest[0]);
     }

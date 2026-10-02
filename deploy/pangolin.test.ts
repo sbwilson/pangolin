@@ -4,8 +4,10 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -95,6 +97,15 @@ function buildDockerStub(extraCases: string[] = []): string {
     "  *entrypoint*sh*-c*sqlite*|*entrypoint*sh*-c*cp*backup*|*entrypoint*sh*-c*rm*sqlite*|*entrypoint*sh*-c*upgrade-failed*)",
     '    [ "$STUB_BACKUP_FAIL" = 1 ] && [ ! -f "${HOME_DIR}/.env.bak" ] && exit 1',
     '    [ "$STUB_BACKUP_FAIL" = 1 ] && case "$*" in *"cp -a /data"*) exit 1 ;; esac',
+    '    case "$*" in *sha256sum*) [ "$STUB_COPY_MISMATCH" = 1 ] && exit 1 ;; esac',
+    // The rollback restore: the guard may be made to fail; otherwise it records that it ran.
+    '    case "$*" in *"[ -s /backup"*)',
+    '      [ "$STUB_RESTORE_GUARD_FAIL" = 1 ] && exit 1',
+    `      echo restore-ran >> "${at("cmd.log")}" ;; esac`,
+    // A real copy lands in the host directory mounted at /backup (empty when STUB_BACKUP_EMPTY=1).
+    '    case "$*" in *"cp -a /data"*)',
+    '      a="$*"; d=${a#*-v }; d=${d#*-v }; d=${d%%:/backup*}',
+    '      if [ "$STUB_BACKUP_EMPTY" = 1 ]; then : > "$d/pangolin.sqlite"; else echo db > "$d/pangolin.sqlite"; fi ;; esac',
     "    ;;",
     // Extract files from new image into staging
     `  *"${ORIGINAL_IMAGE.replace(/\//g, "\\/")}*sh*-c*cp*/app/deploy"*|*"ghcr.io"*"sh -c 'cp /app/deploy"*)`,
@@ -187,6 +198,113 @@ describe("pangolin upgrade", () => {
     // stop, then up again
     expect(res.logs.lastIndexOf("compose")).toBeGreaterThan(res.logs.indexOf("stop"));
     expect(res.logs).toMatch(/stop[\s\S]*up -d/);
+  });
+
+  it.each([
+    ["fails", { STUB_BACKUP_FAIL: "1" }],
+    ["is empty", { STUB_BACKUP_EMPTY: "1" }],
+  ])("aborts before replacing anything when the database copy %s", (_name, extra) => {
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1", ...extra });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain("upgrade aborted, nothing was changed");
+    expect(res.logs).not.toContain("rm -f /data");
+    expect(res.logs).toMatch(/stop[\s\S]*up -d/);
+    expect(readFileSync(join(homeDir, ".env"), "utf8")).toBe(ORIGINAL_ENV);
+    expect(existsSync(join(homeDir, ".env.bak"))).toBe(false);
+    expect(readdirSync(homeDir).filter((f) => f.startsWith("pre-upgrade-"))).toEqual([]);
+  });
+
+  it("creates the pre-upgrade copy 0700", () => {
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1" });
+    expect(res.status, res.stderr).toBe(0);
+    const dirs = readdirSync(homeDir).filter((f) => f.startsWith("pre-upgrade-"));
+    expect(dirs).toHaveLength(1);
+    expect(statSync(join(homeDir, dirs[0])).mode & 0o777).toBe(0o700);
+  });
+
+  it("keeps .env.bak private while the upgrade runs", () => {
+    chmodSync(join(homeDir, ".env"), 0o644);
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1", STUB_HEALTH_AFTER: "unhealthy" });
+    expect(res.status).toBe(1);
+    // rolled back: the restored .env came from the private .env.bak
+    expect(statSync(join(homeDir, ".env")).mode & 0o777).toBe(0o600);
+  });
+
+  it("restores the database in a rollback when the copy is good", () => {
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1", STUB_HEALTH_AFTER: "unhealthy" });
+    expect(res.status).toBe(1);
+    expect(res.logs).toContain("restore-ran");
+  });
+
+  it("restarts the previous stack, and leaves the live database alone, when the rollback restore is refused", () => {
+    const res = runUpgrade("v2.0", {
+      STUB_RUNNING: "1",
+      STUB_HEALTH_AFTER: "unhealthy",
+      STUB_RESTORE_GUARD_FAIL: "1",
+    });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain("could not restore the DB copy");
+    expect(res.stderr).toContain("pre-upgrade-");
+    expect(res.logs).not.toContain("restore-ran");
+    expect(res.logs).toMatch(/up -d[\s\S]*up -d/);
+    expect(res.logs.trimEnd().split("\n").pop()).toMatch(/up -d/);
+    expect(readFileSync(join(homeDir, ".env"), "utf8")).toBe(ORIGINAL_ENV);
+    expect(readFileSync(join(homeDir, "compose.yaml"), "utf8")).toBe(ORIGINAL_COMPOSE);
+    for (const f of [".env.bak", "compose.yaml.bak", "pangolin.bak"]) {
+      expect(existsSync(join(homeDir, f))).toBe(false);
+    }
+  });
+
+  it("removes the .bak files after a successful upgrade", () => {
+    const ok = runUpgrade("v2.0", { STUB_RUNNING: "1" });
+    expect(ok.status, ok.stderr).toBe(0);
+    for (const f of [".env.bak", "compose.yaml.bak", "pangolin.bak"]) {
+      expect(existsSync(join(homeDir, f))).toBe(false);
+    }
+  });
+
+  it("aborts when the copy does not hash the same as the original", () => {
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1", STUB_COPY_MISMATCH: "1" });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain("does not match the original");
+    expect(readdirSync(homeDir).filter((f) => f.startsWith("pre-upgrade-"))).toEqual([]);
+    expect(readFileSync(join(homeDir, ".env"), "utf8")).toBe(ORIGINAL_ENV);
+  });
+
+  it("never reuses or removes an existing backup directory", () => {
+    const clock = "#!/bin/sh\necho 20260101000000\n";
+    mkdirSync(join(homeDir, "pre-upgrade-20260101000000"));
+    writeFileSync(join(homeDir, "pre-upgrade-20260101000000", "pangolin.sqlite"), "precious");
+    mkdirSync(at("bin"), { recursive: true });
+    writeFileSync(at("bin/date"), clock);
+    chmodSync(at("bin/date"), 0o755);
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1" });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain("could not create");
+    expect(
+      readFileSync(join(homeDir, "pre-upgrade-20260101000000", "pangolin.sqlite"), "utf8"),
+    ).toBe("precious");
+  });
+
+  it("sets a leftover .bak aside as .bak.stale instead of deleting it, and drops it after a good upgrade", () => {
+    writeFileSync(join(homeDir, ".env.bak"), "stale");
+    const bad = runUpgrade("v2.0", { STUB_RUNNING: "1", STUB_BACKUP_FAIL: "1" });
+    expect(bad.status).not.toBe(0);
+    expect(readFileSync(join(homeDir, ".env.bak.stale"), "utf8")).toBe("stale");
+    const ok = runUpgrade("v2.0", { STUB_RUNNING: "1" });
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(existsSync(join(homeDir, ".env.bak.stale"))).toBe(false);
+  });
+
+  it("never restores a .bak left by an earlier upgrade when this one is interrupted", () => {
+    for (const f of [".env.bak", "compose.yaml.bak", "pangolin.bak"]) {
+      writeFileSync(join(homeDir, f), "stale");
+    }
+    const bad = runUpgrade("v2.0", { STUB_RUNNING: "1", STUB_BACKUP_FAIL: "1" });
+    expect(bad.status).not.toBe(0);
+    expect(readFileSync(join(homeDir, ".env"), "utf8")).toBe(ORIGINAL_ENV);
+    expect(readFileSync(join(homeDir, "compose.yaml"), "utf8")).toBe(ORIGINAL_COMPOSE);
+    expect(readFileSync(join(root, "usr", "local", "bin", "pangolin"), "utf8")).toBe("# bin");
   });
 
   it("waits 60 seconds for health by default, and PANGOLIN_UPGRADE_TIMEOUT changes that", () => {

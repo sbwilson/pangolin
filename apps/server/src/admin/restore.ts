@@ -4,20 +4,28 @@
 //   1. restore the restic snapshot into a fresh `<dataDir>/restore-<stamp>/`;
 //   2. verify it: `PRAGMA integrity_check`, every table against its manifest, and a schema no
 //      newer than this build;
-//   3. swap it in, moving the replaced files to `<dataDir>/pre-restore-<stamp>/`;
-//   4. before the server starts, migrate it and make every pending or running job with external
-//      effects `dead` (reason `restored`); the server re-seeds the schedules when it starts.
-//   5. record the restored snapshot as the last backup, so status shows where the data came from.
+//   3. ask whether to restore the snapshot's credentials or keep the current ones (story 1.16);
+//      an interrupt or no answer here changes nothing;
+//   4. swap it in, moving the replaced files to `<dataDir>/pre-restore-<stamp>/`;
+//   5. before the server starts, migrate it, apply the credential choice, raise the household
+//      review item that the data was rolled back, and make every pending or running job with
+//      external effects `dead` (reason `restored`); the server re-seeds the schedules when it starts.
+//   6. record the restored snapshot as the last backup, so status shows where the data came from.
 // A failed check swaps nothing. A lock held by anyone refuses before anything is touched.
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
 import {
   cancelJobsForRestore,
+  clearCredentials,
   newId,
+  type PersonRow,
+  RESTORED_REVIEW,
+  raiseReviewItem,
   recordBackupPush,
   recordBackupSnapshot,
   systemClock,
   type UseCaseContext,
+  write,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import {
@@ -38,8 +46,17 @@ import { EXTERNAL_EFFECT_KINDS } from "../jobs/index.ts";
 import { BACKUPS_NOT_CONFIGURED } from "./commands.ts";
 import { acquireDataDirLock, type DataDirLock, DataDirLocked } from "./lock.ts";
 
+/** Whose sign-in details the restored database keeps: the snapshot's, or the current ones. */
+export type CredentialChoice = "restore" | "keep";
+
 export interface RestoreDeps {
   readonly config: Config;
+  /**
+   * Answers the credential question. Called after verification and before the swap, only when
+   * there is a current database to keep credentials from. Rejecting (no answer) fails the
+   * restore with nothing swapped in.
+   */
+  readonly credentials: () => Promise<CredentialChoice>;
   /** The migrations this build ships. */
   readonly migrationsDir: string;
   /** Progress lines for the console. */
@@ -59,13 +76,114 @@ export type RestoreResult =
       readonly schemaVersion: number;
       readonly cancelled: number;
       readonly preRestoreDir: string;
+      /** What happened to the credentials. */
+      readonly credentials: CredentialOutcome;
     }
   | {
       readonly ok: false;
-      /** `lock`, `config`, `fetch`, a verification check (`integrity`, `manifest`, `schema`), or `swap`. */
+      /** `lock`, `config`, `fetch`, `credentials` (no answer), a verification check (`integrity`, `manifest`, `schema`), or `swap`. */
       readonly failed: string;
       readonly message: string;
     };
+
+/** What the credential step did, as audited and printed. */
+export interface CredentialOutcome {
+  readonly choice: CredentialChoice;
+  /** `keep` only: whether a current database was there to carry credentials from. */
+  readonly carried: boolean;
+  /** Logins whose current credentials were carried onto the restored database. */
+  readonly keptLogins: number;
+  /** Logins only the snapshot had, whose credentials were cleared. */
+  readonly clearedLogins: number;
+}
+
+/** [table, the column that owns a row: a login (`auth_user.id`) or a person]. */
+const CREDENTIAL_TABLES = [
+  ["auth_account", "user_id"],
+  ["auth_passkey", "user_id"],
+  ["auth_session", "user_id"],
+  ["auth_two_factor", "user_id"],
+  ["recovery_code", "person_id"],
+  ["re_enrolment_link", "person_id"],
+] as const;
+
+function columns(db: Db, schema: "main" | "cur", table: string): string[] {
+  return (db.pragma(`${schema}.table_info(${table})`) as { name: string }[]).map((c) => c.name);
+}
+
+function ident(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`;
+}
+
+/**
+ * `keep`: ATTACHes the replaced database as `cur` and, for every login in both (same
+ * `auth_user.id`), replaces the restored rows of the six credential tables with the current ones
+ * (shared columns only, so an older schema still works; a table or column the replaced database
+ * lacks carries nothing, and the snapshot's rows for that login are dropped). Re-enrolment links
+ * of a login only the snapshot has are removed. Returns the people of the logins only the
+ * snapshot has, for `clearCredentials`, and how many logins were kept.
+ */
+function carryCredentials(
+  db: Db,
+  previousDb: string,
+): { kept: number; snapshotOnly: (PersonRow & { userId: string })[] } {
+  db.prepare("ATTACH DATABASE ? AS cur").run(previousDb);
+  try {
+    return db.transaction(() => {
+      db.exec(
+        "CREATE TEMP TABLE keep_user (id TEXT PRIMARY KEY); CREATE TEMP TABLE keep_person (id TEXT PRIMARY KEY)",
+      );
+      const hasCurrentLogins = columns(db, "cur", "auth_user").includes("id");
+      if (hasCurrentLogins) {
+        db.exec(
+          "INSERT INTO keep_user SELECT m.id FROM main.auth_user m JOIN cur.auth_user c ON c.id = m.id",
+        );
+      }
+      db.exec(
+        "INSERT INTO keep_person SELECT id FROM main.person WHERE user_id IN (SELECT id FROM keep_user)",
+      );
+      for (const [table, owner] of CREDENTIAL_TABLES) {
+        const set = owner === "user_id" ? "keep_user" : "keep_person";
+        db.exec(
+          `DELETE FROM main.${ident(table)} WHERE ${ident(owner)} IN (SELECT id FROM ${set})`,
+        );
+        const current = new Set(columns(db, "cur", table));
+        const shared = columns(db, "main", table).filter((name) => current.has(name));
+        if (!shared.includes(owner)) continue;
+        const list = shared.map(ident).join(", ");
+        db.exec(
+          `INSERT INTO main.${ident(table)} (${list}) SELECT ${list} FROM cur.${ident(table)} WHERE ${ident(owner)} IN (SELECT id FROM ${set})`,
+        );
+      }
+      if (
+        columns(db, "main", "auth_user").includes("two_factor_enabled") &&
+        columns(db, "cur", "auth_user").includes("two_factor_enabled")
+      ) {
+        db.exec(
+          `UPDATE main.auth_user SET two_factor_enabled =
+             (SELECT c.two_factor_enabled FROM cur.auth_user c WHERE c.id = main.auth_user.id)
+           WHERE id IN (SELECT id FROM keep_user)`,
+        );
+      }
+      const snapshotOnly = db
+        .prepare(
+          `SELECT id, user_id AS userId, display_name AS displayName, colour,
+                  created_at AS createdAt, updated_at AS updatedAt, deleted_at AS deletedAt
+           FROM main.person
+           WHERE user_id IS NOT NULL AND user_id NOT IN (SELECT id FROM keep_user)`,
+        )
+        .all() as (PersonRow & { userId: string })[];
+      for (const person of snapshotOnly) {
+        db.prepare("DELETE FROM main.re_enrolment_link WHERE person_id = ?").run(person.id);
+      }
+      const kept = db.prepare("SELECT count(*) FROM keep_user").pluck().get() as number;
+      db.exec("DROP TABLE keep_user; DROP TABLE keep_person");
+      return { kept, snapshotOnly };
+    })();
+  } finally {
+    db.exec("DETACH DATABASE cur");
+  }
+}
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -80,7 +198,9 @@ function afterSwap(
   dbFile: string,
   migrationsDir: string,
   fetched: FetchedSnapshot,
-): { schemaVersion: number; cancelled: number } {
+  choice: CredentialChoice,
+  previousDb: string | undefined,
+): { schemaVersion: number; cancelled: number; credentials: CredentialOutcome } {
   const snapshotId = fetched.snapshot.id;
   const text = readFileSync(join(fetched.dbDir, MANIFEST_FILE), "utf8");
   const manifest = parseManifest(text);
@@ -96,6 +216,33 @@ function afterSwap(
       newId,
       uow,
     };
+    // `keep` with no replaced database (a restore onto an empty data directory) has nothing to
+    // keep: the snapshot's credentials stand.
+    const carry =
+      choice === "keep" && previousDb !== undefined ? carryCredentials(db, previousDb) : undefined;
+    const credentials: CredentialOutcome = {
+      choice,
+      carried: carry !== undefined,
+      keptLogins: carry?.kept ?? 0,
+      clearedLogins: carry?.snapshotOnly.length ?? 0,
+    };
+    write(ctx, (tx, audit) => {
+      for (const person of carry?.snapshotOnly ?? []) {
+        clearCredentials(ctx, tx, audit, person, "restore");
+      }
+      audit({
+        entity: "restore",
+        entityId: snapshotId,
+        action: "credentials",
+        before: null,
+        after: credentials,
+      });
+      raiseReviewItem(tx, audit, ctx, {
+        kind: RESTORED_REVIEW,
+        entityRef: `backup_snapshot:${snapshotId}`,
+        dedupeKey: `system.restored:${snapshotId}`,
+      });
+    });
     const cancelled = cancelJobsForRestore(ctx, {
       kinds: EXTERNAL_EFFECT_KINDS,
       snapshot: snapshotId,
@@ -111,7 +258,7 @@ function afterSwap(
       manifestSha256: manifestSha256(text),
     });
     recordBackupPush(ctx, { id, resticSnapshotId: snapshotId });
-    return { schemaVersion, cancelled };
+    return { schemaVersion, cancelled, credentials };
   } finally {
     db?.close();
   }
@@ -177,6 +324,25 @@ export async function restoreStopped(ref: string, deps: RestoreDeps): Promise<Re
     out("integrity_check: ok");
     out(`Manifest: all ${verdict.tables} tables match (${verdict.rows} rows)`);
 
+    // Ask before anything moves, so an interrupt or a closed input changes nothing. With no
+    // current database there is nothing to keep, and nothing to ask.
+    let choice: CredentialChoice = "restore";
+    const hasCurrent = existsSync(paths.dbFile);
+    if (hasCurrent) {
+      try {
+        choice = await deps.credentials();
+      } catch (error) {
+        cleanUp();
+        return {
+          ok: false,
+          failed: "credentials",
+          message: `${message(error)}; nothing was swapped in`,
+        };
+      }
+    } else {
+      out("No current database: the snapshot's sign-in details are restored.");
+    }
+
     let swapped: ReturnType<typeof swapIn>;
     try {
       swapped = swapIn(config.dataDir, fetched, stamp);
@@ -185,9 +351,16 @@ export async function restoreStopped(ref: string, deps: RestoreDeps): Promise<Re
       cleanUp();
       return { ok: false, failed: "swap", message: `${message(error)}; nothing was swapped in` };
     }
-    let after: { schemaVersion: number; cancelled: number };
+    let after: ReturnType<typeof afterSwap>;
     try {
-      after = afterSwap(paths.dbFile, deps.migrationsDir, fetched);
+      const previousDb = join(swapped.preRestoreDir, basename(paths.dbFile));
+      after = afterSwap(
+        paths.dbFile,
+        deps.migrationsDir,
+        fetched,
+        choice,
+        existsSync(previousDb) ? previousDb : undefined,
+      );
     } catch (error) {
       try {
         swapped.undo();
@@ -216,6 +389,7 @@ export async function restoreStopped(ref: string, deps: RestoreDeps): Promise<Re
       schemaVersion: after.schemaVersion,
       cancelled: after.cancelled,
       preRestoreDir: swapped.preRestoreDir,
+      credentials: after.credentials,
     };
   } catch (error) {
     cleanUp();

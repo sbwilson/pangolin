@@ -156,7 +156,7 @@ row that you did.
 
 ```sh
 sudo pangolin backup
-sudo pangolin restore latest
+sudo pangolin restore latest      # asks about credentials: answer r for this proof
 sudo pangolin status
 ```
 

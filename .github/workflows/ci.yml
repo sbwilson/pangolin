@@ -201,7 +201,7 @@ jobs:
           test "$(restic snapshots --json | jq length)" -ge 1
       - name: Restore into the running stack's volume (the host's pangolin restore)
         run: |
-          out=$(PANGOLIN_HOME="$PWD" sh deploy/pangolin restore latest)
+          out=$(PANGOLIN_HOME="$PWD" sh deploy/pangolin restore --restore-credentials latest)
           echo "$out"
           echo "$out" | grep -qx 'integrity_check: ok'
           echo "$out" | grep -Eq '^Manifest: all [0-9]+ tables match'
@@ -248,7 +248,7 @@ jobs:
             -e "PANGOLIN_BACKUP_REPOSITORY=$(value RESTIC_REPOSITORY)" \
             -e PANGOLIN_PUBLIC_URL=http://localhost:3002 \
             -e PANGOLIN_AUTH_RATE_LIMIT=100
-          out=$(docker run --rm "$@" pangolin:local node dist/cli.js restore latest)
+          out=$(docker run --rm "$@" pangolin:local node dist/cli.js restore --restore-credentials latest)
           echo "$out"
           echo "$out" | grep -qx 'integrity_check: ok'
           echo "$out" | grep -Eq '^Manifest: all [0-9]+ tables match'
