@@ -85,3 +85,9 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-restore-asks-about-credentials-plan.md`
   summary: Add failure-injection tests for the keep-credentials carry (a throw after the swap, an unopenable replaced database).
   evidence: Only the generic afterSwap failure is tested; nothing proves a failed carry undoes the swap and leaves the previous files untouched.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-release-hygiene-plan.md`
+  summary: `publish` always moves `latest` and `vX.Y`, so a patch release on an older line, or two tags pushed close together, can move them backwards; add a release concurrency group and move `latest` only for the highest `vX.Y.Z` tag.
+  evidence: pre-existing in release.yml's tag step (it always tagged latest); found in the story 1.18 review.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-release-hygiene-plan.md`
+  summary: Reconcile `deployment-and-ops.md` (CI/CD) and the spine's Migrations row, which say the previous-release migration runs on every push, with the human decision of 2026-10-03 to run it only at release.
+  evidence: story 1.18 intent-alignment review; the spec text and release.yml now disagree.

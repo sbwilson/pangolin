@@ -11,6 +11,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "check:strict": "node src/cli/check-strict.ts",
+    "check:upgrade": "node src/cli/check-upgrade.ts",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

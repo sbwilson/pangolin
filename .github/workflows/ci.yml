@@ -38,7 +38,7 @@ jobs:
       - name: Migrations match the schema
         run: pnpm --filter @pangolin/db db:generate && git diff --exit-code -- packages/db/migrations
       - name: Shell scripts
-        run: shellcheck -S warning .githooks/pre-commit .githooks/commit-msg scripts/install-git-hooks.sh deploy/pangolin deploy/*.sh deploy/firewall/*.sh
+        run: shellcheck -S warning .githooks/pre-commit .githooks/commit-msg scripts/install-git-hooks.sh deploy/pangolin deploy/*.sh deploy/firewall/*.sh .github/scripts/*.sh
       - name: Production compose file is valid
         run: |
           stage="$RUNNER_TEMP/pangolin-stage"
