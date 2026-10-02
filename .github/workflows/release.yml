@@ -12,12 +12,19 @@ jobs:
     needs: ci
     runs-on: ubuntu-26.04
     permissions:
-      contents: write
+      contents: read
       packages: write
+    # Builds, scans, signs and attests by digest only; `publish` tags it once every gate passed.
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      repo: ${{ steps.repo.outputs.repo }}
     steps:
       - uses: actions/checkout@v6
       - name: Lowercase repo
-        run: echo "REPO=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+        id: repo
+        run: |
+          echo "REPO=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+          echo "repo=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
@@ -30,7 +37,7 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          # Untagged: pushed by digest, then scanned and signed, and only then tagged below.
+          # Untagged: pushed by digest, then scanned and signed, and only then tagged by `publish`.
           outputs: type=image,name=ghcr.io/${{ env.REPO }},push-by-digest=true,name-canonical=true,push=true
           build-args: PANGOLIN_VERSION=${{ github.ref_name }}
           provenance: false
@@ -41,14 +48,6 @@ jobs:
           fail-build: true
           severity-cutoff: critical
           only-fixed: true
-      - name: Tag the image
-        run: |
-          MAJOR_MINOR=$(echo "${{ github.ref_name }}" | grep -oE '^v[0-9]+\.[0-9]+')
-          docker buildx imagetools create \
-            -t ghcr.io/${{ env.REPO }}:${{ github.ref_name }} \
-            -t ghcr.io/${{ env.REPO }}:${MAJOR_MINOR} \
-            -t ghcr.io/${{ env.REPO }}:latest \
-            ghcr.io/${{ env.REPO }}@${{ steps.build.outputs.digest }}
       - uses: sigstore/cosign-installer@v3
       - name: Check the signing key is configured
         run: |
@@ -73,6 +72,89 @@ jobs:
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+  # The previous release's database must migrate to this one (retro R3). It is the database the
+  # previous release's image creates on first boot: no seeded household.
+  migrate-previous:
+    needs: ci
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Find the previous release
+        id: prev
+        run: |
+          prev=$(sh .github/scripts/previous-release.sh "$GITHUB_REF_NAME")
+          if [ -z "$prev" ]; then
+            echo "::notice::No release before $GITHUB_REF_NAME: nothing to migrate"
+          else
+            echo "Previous release: $prev"
+          fi
+          echo "tag=$prev" >> "$GITHUB_OUTPUT"
+          echo "REPO=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - if: steps.prev.outputs.tag != ''
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create a database with the previous release
+        if: steps.prev.outputs.tag != ''
+        env:
+          PREV: ${{ steps.prev.outputs.tag }}
+        run: |
+          data="$RUNNER_TEMP/previous-data"
+          sh .github/scripts/previous-db.sh "ghcr.io/$REPO:$PREV" "$data"
+          echo "DB=$data/pangolin.sqlite" >> "$GITHUB_ENV"
+      - if: steps.prev.outputs.tag != ''
+        uses: pnpm/action-setup@v5 # version from package.json "packageManager"
+      - if: steps.prev.outputs.tag != ''
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: steps.prev.outputs.tag != ''
+        run: pnpm install --frozen-lockfile
+      - name: Migrate it with this release's migrations and check it
+        if: steps.prev.outputs.tag != ''
+        env:
+          PREV: ${{ steps.prev.outputs.tag }}
+        run: |
+          echo "From $PREV to $GITHUB_REF_NAME:"
+          pnpm check:upgrade "$DB"
+
+  # The only job that tags the image or creates the release: after signing, the SBOM attestation,
+  # the upgrade test and the previous-release migration all passed.
+  publish:
+    needs: [image, upgrade-test, migrate-previous]
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+      packages: write
+    env:
+      REPO: ${{ needs.image.outputs.repo }}
+      DIGEST: ${{ needs.image.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tag the image
+        run: |
+          [ -n "$REPO" ] && [ -n "$DIGEST" ] || { echo "::error::The image job gave no repository or digest"; exit 1; }
+          MAJOR_MINOR=$(echo "$GITHUB_REF_NAME" | grep -oE '^v[0-9]+\.[0-9]+')
+          docker buildx imagetools create \
+            -t "ghcr.io/$REPO:$GITHUB_REF_NAME" \
+            -t "ghcr.io/$REPO:$MAJOR_MINOR" \
+            -t "ghcr.io/$REPO:latest" \
+            "ghcr.io/$REPO@$DIGEST"
       - uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
@@ -80,7 +162,6 @@ jobs:
             deploy/install.sh
             deploy/uninstall.sh
             deploy/cosign.pub
-
 
   upgrade-test:
     runs-on: ubuntu-26.04

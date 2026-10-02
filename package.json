@@ -14,6 +14,7 @@
     "typecheck": "pnpm -r typecheck && tsc -p tsconfig.json",
     "test": "vitest run",
     "check:strict": "pnpm --filter @pangolin/db check:strict",
+    "check:upgrade": "pnpm --filter @pangolin/db check:upgrade",
     "build": "pnpm --filter @pangolin/web build && pnpm --filter @pangolin/server build",
     "seed": "node tools/seed/src/cli.ts",
     "mock:llm": "node tools/mock-llm/src/cli.ts",
@@ -24,6 +25,7 @@
     "@biomejs/biome": "2.5.14",
     "@types/node": "22.20.4",
     "typescript": "7.0.2",
-    "vitest": "5.0.2"
+    "vitest": "5.0.2",
+    "yaml": "2.9.1"
   }
 }
