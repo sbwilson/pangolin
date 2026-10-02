@@ -144,6 +144,50 @@ describe("the admin socket", () => {
     });
   });
 
+  it("confirms the recovery bundle as cli:confirm-bundle, with exactly one audit row", async () => {
+    deps = { ...deps, bundleId: "20261003T010203Z-a1b2" };
+    await listen();
+    const status = async () =>
+      ((await callAdmin(sockPath, "status")) as { result: StatusResult }).result.readiness;
+    // A warning only: readiness stays ok.
+    expect(await status()).toEqual({ ok: true, warnings: ["recovery-bundle-unconfirmed"] });
+
+    const first = await callAdmin(sockPath, "confirm-bundle");
+    expect(first).toMatchObject({
+      ok: true,
+      result: { bundleId: "20261003T010203Z-a1b2", alreadyConfirmed: false },
+    });
+    expect(await status()).toEqual({ ok: true });
+    const second = await callAdmin(sockPath, "confirm-bundle");
+    expect(second).toMatchObject({ ok: true, result: { alreadyConfirmed: true } });
+
+    const rows = db.prepare("SELECT actor, entity, entity_id, action, after FROM audit_log").all();
+    expect(rows).toEqual([
+      {
+        actor: "cli:confirm-bundle",
+        entity: "recovery_bundle",
+        entity_id: "1",
+        action: "confirm",
+        after: expect.stringContaining('"bundleId":"20261003T010203Z-a1b2"'),
+      },
+    ]);
+  });
+
+  it("refuses confirm-bundle with no bundle id, and with arguments", async () => {
+    await listen();
+    expect(await callAdmin(sockPath, "confirm-bundle")).toMatchObject({
+      ok: false,
+      error: {
+        code: "Validation",
+        message: expect.stringMatching(/^no recovery bundle id is set/),
+      },
+    });
+    expect(
+      await callAdmin(sockPath, "confirm-bundle", { bundleId: "20261003T010203Z-a1b2" }),
+    ).toMatchObject({ ok: false, error: { code: "Validation" } });
+    expect(db.prepare("SELECT count(*) FROM audit_log").pluck().get()).toBe(0);
+  });
+
   it("resets a user as cli:reset-user, and returns the link without logging it", async () => {
     const alex = addLogin(db, "alex@example.com", "Alex");
     addLogin(db, "sam@example.com", "Sam");

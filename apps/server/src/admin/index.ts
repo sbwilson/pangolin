@@ -9,6 +9,8 @@ export {
   type BackupStatus,
   backupCommand,
   backupStatusCommand,
+  type ConfirmedRecoveryBundle,
+  confirmBundleCommand,
   isAdminCommand,
   type LoginChoice,
   type ResetUserDeps,

@@ -10,6 +10,7 @@
 #        sudo pangolin backup
 #        sudo pangolin restore [--restore-credentials|--keep-credentials] [snapshot|latest]
 #        sudo pangolin reset-user <email|person-id>
+#        sudo pangolin confirm-bundle
 #        sudo pangolin --help
 set -eu
 

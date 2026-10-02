@@ -202,6 +202,24 @@ export interface ReviewItemRepo {
   listOpenFor(viewer: Viewer): ReviewItemRow[];
 }
 
+/**
+ * `recovery_bundle`: the recovery bundle the household confirmed it stored safely (story 1.17).
+ * Only its id, never a secret.
+ */
+export interface RecoveryBundleRow {
+  /** The bundle's id, as `PANGOLIN_RECOVERY_BUNDLE_ID` and the printed bundle give it. */
+  readonly bundleId: string;
+  /** UTC ISO-8601 timestamp. */
+  readonly confirmedAt: string;
+}
+
+/** The single `recovery_bundle` row, absent until the first confirmation. */
+export interface RecoveryBundleRepo {
+  get(): RecoveryBundleRow | undefined;
+  /** Inserts or replaces the row. */
+  set(row: RecoveryBundleRow): void;
+}
+
 export interface HouseholdSettingsRepo {
   get(): HouseholdSettingsRow;
   update(row: HouseholdSettingsRow): void;
@@ -381,6 +399,7 @@ export interface TxRepos {
   readonly reviewItems: ReviewItemRepo;
   readonly backups: BackupSnapshotRepo;
   readonly backupVerifications: BackupVerificationRepo;
+  readonly recoveryBundle: RecoveryBundleRepo;
 }
 
 /** The read-only subset of `TxRepos`, for queries. */
@@ -396,6 +415,7 @@ export interface ReadRepos {
   readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
   readonly backups: Pick<BackupSnapshotRepo, "find" | "latestPushed">;
   readonly backupVerifications: Pick<BackupVerificationRepo, "latest">;
+  readonly recoveryBundle: Pick<RecoveryBundleRepo, "get">;
 }
 
 export interface UnitOfWork {

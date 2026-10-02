@@ -8,6 +8,8 @@ import {
   backupProgress,
   backupStatus,
   type Clock,
+  type ConfirmedRecoveryBundle,
+  confirmRecoveryBundle,
   type DeadJob,
   deadJobs,
   health,
@@ -18,6 +20,7 @@ import {
   type ReadinessOutput,
   type RunnerLiveness,
   readiness,
+  recoveryBundleConfirmed,
   reEnrolmentUrl,
   requestBackup,
   resetUser,
@@ -29,7 +32,13 @@ import {
 import { systemViewer } from "@pangolin/app/system-viewer";
 import { z } from "zod";
 
-export const ADMIN_COMMANDS = ["status", "reset-user", "backup", "backup-status"] as const;
+export const ADMIN_COMMANDS = [
+  "status",
+  "reset-user",
+  "backup",
+  "backup-status",
+  "confirm-bundle",
+] as const;
 export type AdminCommand = (typeof ADMIN_COMMANDS)[number];
 
 /** Everything the commands run with; the server builds it once at startup. */
@@ -49,6 +58,11 @@ export interface AdminDeps {
   readonly version: string;
   /** Whether a backup repository is configured (`PANGOLIN_BACKUP_REPOSITORY`). */
   readonly backupConfigured: boolean;
+  /**
+   * The current recovery bundle's id (`PANGOLIN_RECOVERY_BUNDLE_ID`); undefined when unset, when
+   * there is nothing to confirm and `confirm-bundle` refuses.
+   */
+  readonly bundleId?: string;
 }
 
 /** What `reset-user` needs: enough to run on a stopped stack, without the runner. */
@@ -58,6 +72,10 @@ export interface StatusResult {
   readonly version: string;
   readonly schemaVersion: number;
   readonly expectedSchemaVersion: number;
+  /**
+   * Readiness, with its warnings: `recovery-bundle-unconfirmed` while the current recovery
+   * bundle's safe storage is not confirmed. A warning never makes it (or the exit code) fail.
+   */
   readonly readiness: ReadinessOutput;
   readonly jobs: JobCounts;
   /** Dead jobs by kind and failure time only, newest first (AD-9). */
@@ -65,7 +83,7 @@ export interface StatusResult {
   readonly backup: BackupStatus;
 }
 
-export type { BackupStatus };
+export type { BackupStatus, ConfirmedRecoveryBundle };
 
 /** What `backup` answers: the manual backup's snapshot job, which `backup-status` follows. */
 export interface BackupStarted {
@@ -92,6 +110,7 @@ export interface LoginChoice {
 
 const statusArgs = z.object({}).strict();
 const backupArgs = z.object({}).strict();
+const confirmBundleArgs = z.object({}).strict();
 const backupStatusArgs = z.object({ jobId: z.string().min(1).max(64) }).strict();
 const resetUserArgs = z
   .object({
@@ -127,7 +146,11 @@ export function statusCommand(deps: AdminDeps, args: unknown = {}): StatusResult
     expectedSchemaVersion: deps.expectedSchemaVersion,
     readiness: readiness(
       { systemHealth: deps.systemHealth, clock: deps.clock },
-      { expectedSchemaVersion: deps.expectedSchemaVersion, runner: deps.runner() ?? null },
+      {
+        expectedSchemaVersion: deps.expectedSchemaVersion,
+        runner: deps.runner() ?? null,
+        bundleUnconfirmed: !recoveryBundleConfirmed(deps.uow, deps.bundleId),
+      },
     ),
     jobs: jobCounts(ctx),
     deadJobs: deadJobs(ctx),
@@ -151,6 +174,18 @@ export function backupCommand(deps: AdminDeps, args: unknown = {}): BackupStarte
 export function backupStatusCommand(deps: AdminDeps, args: unknown = {}): BackupProgress {
   const { jobId } = parseArgs(backupStatusArgs, args);
   return backupProgress({ uow: deps.uow }, { jobId });
+}
+
+/**
+ * `confirm-bundle`: records that the current recovery bundle (`PANGOLIN_RECOVERY_BUNDLE_ID`) is
+ * stored safely (`system.confirmRecoveryBundle`, audited as `cli:confirm-bundle`), which ends the
+ * warning. Confirming it again writes nothing. `Validation` when there is no bundle id.
+ */
+export function confirmBundleCommand(deps: AdminDeps, args: unknown = {}): ConfirmedRecoveryBundle {
+  parseArgs(confirmBundleArgs, args);
+  return confirmRecoveryBundle(context(deps, "confirm-bundle"), {
+    ...(deps.bundleId === undefined ? {} : { bundleId: deps.bundleId }),
+  });
 }
 
 /**
@@ -202,5 +237,7 @@ export function runAdminCommand(deps: AdminDeps, command: string, args: unknown)
       return backupCommand(deps, args);
     case "backup-status":
       return backupStatusCommand(deps, args);
+    case "confirm-bundle":
+      return confirmBundleCommand(deps, args);
   }
 }

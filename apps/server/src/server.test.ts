@@ -87,7 +87,7 @@ describe("startServer", () => {
     try {
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 7, writable: true },
+        body: { status: "ok", schemaVersion: 8, writable: true },
       });
     } finally {
       await server.close();
@@ -100,7 +100,7 @@ describe("startServer", () => {
     try {
       expect((await getHealth(server.port)).body).toEqual({
         status: "ok",
-        schemaVersion: 7,
+        schemaVersion: 8,
         writable: true,
       });
     } finally {
@@ -121,7 +121,7 @@ describe("startServer", () => {
       try {
         expect(await getHealth(server.port)).toEqual({
           status: 503,
-          body: { status: "unhealthy", schemaVersion: 7, writable: false },
+          body: { status: "unhealthy", schemaVersion: 8, writable: false },
         });
       } finally {
         await server.close();
@@ -143,7 +143,7 @@ describe("startServer", () => {
 
     await expect(boot(migrationsDir)).rejects.toThrow(/Migration 0099_broken failed/);
     const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
-    expect(schemaVersion(db)).toBe(7);
+    expect(schemaVersion(db)).toBe(8);
     db.close();
   });
 });
@@ -433,7 +433,11 @@ describe("startServer in demo mode", () => {
   });
 
   /** `file: null` leaves `config.seedFile` unset. */
-  async function bootDemo(file: string | null = seedFile, defaultSeedFile?: string) {
+  async function bootDemo(
+    file: string | null = seedFile,
+    defaultSeedFile?: string,
+    recoveryBundleId?: string,
+  ) {
     return startServer({
       config: {
         dataDir: dataDir(),
@@ -446,6 +450,7 @@ describe("startServer in demo mode", () => {
         adminSocket: null,
         version: "test",
         ...(file === null ? {} : { seedFile: file }),
+        ...(recoveryBundleId === undefined ? {} : { recoveryBundleId }),
       },
       migrationsDir: packageMigrationsDir,
       ...(defaultSeedFile === undefined ? {} : { defaultSeedFile }),
@@ -469,7 +474,7 @@ describe("startServer in demo mode", () => {
       );
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 7, writable: true },
+        body: { status: "ok", schemaVersion: 8, writable: true },
       });
       // Demo mode runs no jobs, so /healthz skips the runner check.
       expect(await getHealthz(server.port)).toEqual({ status: 200, body: { ok: true } });
@@ -477,6 +482,12 @@ describe("startServer in demo mode", () => {
       expect(settings.timezone).toBe(expectations["people-and-household.timezone"]);
     });
     expect(existsSync(dataDir())).toBe(false);
+  });
+
+  it("never warns of the recovery bundle, even with a bundle id set", async () => {
+    await withDemo(await bootDemo(seedFile, undefined, "20261003T010203Z-a1b2"), async (server) => {
+      expect(await getHealthz(server.port)).toEqual({ status: 200, body: { ok: true } });
+    });
   });
 
   it("rejects every write with Conflict", async () => {
@@ -564,6 +575,19 @@ describe("loadConfig", () => {
       backup: DEFAULT_BACKUP_CONFIG,
     });
     expect(loadConfig({}).auth).toEqual(defaultAuthConfig("/data"));
+  });
+
+  it("reads the recovery bundle id, trimmed; empty means none, and a malformed one throws", () => {
+    expect(loadConfig({})).not.toHaveProperty("recoveryBundleId");
+    expect(loadConfig({ PANGOLIN_RECOVERY_BUNDLE_ID: "" })).not.toHaveProperty("recoveryBundleId");
+    expect(loadConfig({ PANGOLIN_RECOVERY_BUNDLE_ID: "   " })).not.toHaveProperty(
+      "recoveryBundleId",
+    );
+    expect(
+      loadConfig({ PANGOLIN_RECOVERY_BUNDLE_ID: " 20261003T010203Z-a1b2 " }).recoveryBundleId,
+    ).toBe("20261003T010203Z-a1b2");
+    expect(() => loadConfig({ PANGOLIN_RECOVERY_BUNDLE_ID: "20261003-a1b2" })).toThrow();
+    expect(() => loadConfig({ PANGOLIN_RECOVERY_BUNDLE_ID: "20261003T010203Z-A1B2" })).toThrow();
   });
 
   it("reads the backup repository (empty means not configured) and the restic password file", () => {
