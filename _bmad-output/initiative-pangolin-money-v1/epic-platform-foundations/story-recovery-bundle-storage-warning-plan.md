@@ -3,7 +3,7 @@ title: 'Recovery bundle storage warning'
 type: 'feature'
 ticket: '17'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: 'cf073271a712c77328ff937a35f187befe458c22'
 route: 'full'
 route_source: 'auto'

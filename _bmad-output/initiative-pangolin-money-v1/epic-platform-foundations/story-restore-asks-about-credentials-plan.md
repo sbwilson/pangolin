@@ -3,7 +3,7 @@ title: 'Restore asks about credentials'
 type: 'bugfix'
 ticket: '16'
 created: '2026-10-02'
-status: 'built'
+status: done
 baseline_revision: 'daad9bd9cdf99cb719415a386f0fc4d0bc1639dc'
 route: 'full'
 route_source: 'auto'
