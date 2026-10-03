@@ -35,6 +35,8 @@ export {
   lockedUntil,
   type RecordLoginAttemptInput,
   recordLoginAttempt,
+  releaseLoginAttempt,
+  reserveLoginAttempt,
 } from "./identity/lockout.ts";
 export {
   demoViewer,

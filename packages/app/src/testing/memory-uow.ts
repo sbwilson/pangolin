@@ -365,6 +365,19 @@ function loginAttemptRepo(working: MemoryState, check: () => void): LoginAttempt
       check();
       working.loginAttempts = working.loginAttempts.filter((a) => a.at >= before);
     },
+    deleteNewestFailure: (email) => {
+      check();
+      // Newest by `at`, then by insertion order (the SQLite adapter's `id`).
+      let newest = -1;
+      working.loginAttempts.forEach((a, index) => {
+        if (a.email !== email || a.ok) return;
+        const best = working.loginAttempts[newest];
+        if (best === undefined || a.at >= best.at) newest = index;
+      });
+      if (newest >= 0) {
+        working.loginAttempts = working.loginAttempts.filter((_, index) => index !== newest);
+      }
+    },
   };
 }
 

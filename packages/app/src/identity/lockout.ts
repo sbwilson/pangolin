@@ -74,12 +74,58 @@ export function assertLoginAllowed(
   const now = ctx.clock.now();
   const since = formatInstant(now.subtract({ milliseconds: horizonMs(policy) }));
   const attempts = ctx.uow.read((repos) => repos.loginAttempts.listSince(email, since));
+  assertNotLocked(attempts, now, policy);
+}
+
+/** Throws `RateLimited` when `attempts` lock the email at `now`. */
+function assertNotLocked(
+  attempts: readonly LoginAttemptRow[],
+  now: Temporal.Instant,
+  policy: LockoutPolicy,
+): void {
   const until = lockedUntil(attempts, policy);
   if (until !== undefined && Temporal.Instant.compare(now, until) < 0) {
     throw new AppError("RateLimited", "Too many failed sign-in attempts. Try again later.", {
       retryAfterSeconds: Math.ceil((until.epochMilliseconds - now.epochMilliseconds) / 1000),
     });
   }
+}
+
+/**
+ * `identity.reserveLoginAttempt`: the lockout check and the attempt's count in one transaction,
+ * with no await between them, so concurrent attempts for one email cannot all pass the check
+ * before any is counted. Throws `RateLimited` (writing nothing) while the email is locked;
+ * otherwise records the attempt as a provisional failure before the password or code is checked.
+ * Afterwards the caller records a success (`recordLoginAttempt` with `ok: true`), leaves the
+ * failure for a rejected password or code, or calls `releaseLoginAttempt` for an outcome that is
+ * neither. An attempt whose outcome is never seen stays counted as a failure.
+ */
+export function reserveLoginAttempt(
+  ctx: LockoutContext,
+  input: AssertLoginAllowedInput,
+  policy: LockoutPolicy = DEFAULT_LOCKOUT,
+): void {
+  const { email } = parseInput(loginAttemptInput, input);
+  const now = ctx.clock.now();
+  const before = formatInstant(now.subtract({ milliseconds: horizonMs(policy) }));
+  ctx.uow.transaction((tx) => {
+    assertNotLocked(tx.loginAttempts.listSince(email, before), now, policy);
+    tx.loginAttempts.deleteBefore(before);
+    tx.loginAttempts.insert({ email, at: formatInstant(now), ok: false });
+  });
+}
+
+/**
+ * `identity.releaseLoginAttempt`: removes one provisional failure that `reserveLoginAttempt`
+ * recorded, for an attempt that ended neither in a session nor in a rejected password or code
+ * (a right password awaiting its TOTP code, or another error). Removes the email's newest
+ * failure: what the release preserves is the count of failures. Under concurrency the row
+ * removed may be another attempt's rather than this one's; since `lockedUntil` reads the
+ * timestamps, that can only move a lock's end by the gap between the two attempts.
+ */
+export function releaseLoginAttempt(ctx: LockoutContext, input: AssertLoginAllowedInput): void {
+  const { email } = parseInput(loginAttemptInput, input);
+  ctx.uow.transaction((tx) => tx.loginAttempts.deleteNewestFailure(email));
 }
 
 export const recordLoginAttemptInput = z.object({ email: emailSchema, ok: z.boolean() }).strict();

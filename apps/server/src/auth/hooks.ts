@@ -5,7 +5,6 @@
 import type { AsyncLocalStorage } from "node:async_hooks";
 import {
   AppError,
-  assertLoginAllowed,
   checkSignUp,
   completeSignUp,
   type ErrorCode,
@@ -14,7 +13,9 @@ import {
   type RecordCredentialChangeInput,
   recordCredentialChange,
   recordLoginAttempt,
+  releaseLoginAttempt,
   requireRecentAuth,
+  reserveLoginAttempt,
   sessionViewer,
 } from "@pangolin/app";
 import type { BetterAuthOptions } from "better-auth";
@@ -219,9 +220,12 @@ async function auditPasskey(
 /**
  * `hooks`: the lockout, the re-auth gate and passkey audit.
  * - Before a password sign-in or TOTP check reaches better-auth, a locked email is refused with
- *   429 `RateLimited`, so correct credentials during a lockout never reach it. Afterwards a
- *   rejected password or code counts as a failure, and a new session (password without 2FA,
- *   TOTP, or passkey) as a success. A right password awaiting its TOTP code counts as neither.
+ *   429 `RateLimited`, so correct credentials during a lockout never reach it; otherwise the
+ *   attempt is counted as a provisional failure in the same transaction as the check, so a
+ *   concurrent burst cannot all pass it (seam S11a). Afterwards a rejected password or code (401)
+ *   keeps that failure, and a new session (password without 2FA, TOTP, or passkey) replaces it
+ *   with a success. A right password awaiting its TOTP code, or any other outcome, releases the
+ *   provisional failure: it counts as neither.
  * - A credential change (`RECENT_AUTH_PATHS`) with a session older than 5 minutes is refused
  *   with 403 `ReauthRequired`.
  * - A passkey added or deleted is audited (AD-1).
@@ -236,7 +240,7 @@ export function authHooks(
       if (hook.path !== SIGN_IN && hook.path !== VERIFY_TOTP) return;
       const email = await attemptEmail(hook);
       if (email === undefined) return;
-      asApi(() => assertLoginAllowed(ctx, { email }, policy));
+      asApi(() => reserveLoginAttempt(ctx, { email }, policy));
     }),
     after: createAuthMiddleware(async (hook) => {
       if (hook.path === REGISTER_PASSKEY || hook.path === DELETE_PASSKEY) {
@@ -253,14 +257,25 @@ export function authHooks(
         const pendingTotp =
           hook.path === SIGN_IN &&
           (session.user as { twoFactorEnabled?: boolean | null }).twoFactorEnabled === true;
-        if (!pendingTotp) recordLoginAttempt(ctx, { email: session.user.email, ok: true }, policy);
-        return;
+        if (!pendingTotp) {
+          const email = session.user.email;
+          // A password or TOTP success replaces its provisional failure; a passkey had none.
+          if (hook.path !== VERIFY_PASSKEY) releaseLoginAttempt(ctx, { email });
+          recordLoginAttempt(ctx, { email, ok: true }, policy);
+          return;
+        }
       }
-      const returned = hook.context.returned;
       if (hook.path === VERIFY_PASSKEY) return;
-      if (!isAPIError(returned) || returned.statusCode !== 401) return;
+      const returned = hook.context.returned;
+      const rejected =
+        (session === null || session === undefined) &&
+        isAPIError(returned) &&
+        returned.statusCode === 401;
+      // A rejected password or code was counted by the reservation: the failure stays. Anything
+      // else (a right password awaiting TOTP, another error) counts as neither.
+      if (rejected) return;
       const email = await attemptEmail(hook);
-      if (email !== undefined) recordLoginAttempt(ctx, { email, ok: false }, policy);
+      if (email !== undefined) releaseLoginAttempt(ctx, { email });
     }),
   };
 }

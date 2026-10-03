@@ -169,6 +169,35 @@ describe("recovery codes", () => {
     expect(signIn.status).toBe(429);
   });
 
+  it("a concurrent burst of wrong codes evaluates exactly 5, and refuses a right code in it", {
+    timeout: 20_000,
+  }, async () => {
+    const { b } = await enrolled(h.firstLink(), alex, "Alex");
+    const { body } = await b.json<{ codes: string[] }>("/api/identity/recovery-codes/initial", {
+      method: "POST",
+    });
+    const attempts = (ok: number) =>
+      count("SELECT count(*) FROM login_attempt WHERE email = ? AND ok = ?", alex.email, ok);
+    const failuresBefore = attempts(0);
+    const successesBefore = attempts(1);
+    // 19 wrong codes, then the right one, all at once (seam S11a on /recover).
+    const statuses = await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        new Browser(h.app)
+          .request("/api/identity/recover", {
+            body: { ...alex, code: i === 19 ? body.codes[0] : "AAAAA-AAAAA" },
+          })
+          .then((res) => res.status),
+      ),
+    );
+    expect(statuses.filter((status) => status !== 401 && status !== 429)).toEqual([]);
+    expect(statuses.filter((status) => status === 401).length).toBe(5);
+    expect(statuses[19]).toBe(429);
+    expect(attempts(0)).toBe(failuresBefore + 5);
+    expect(attempts(1)).toBe(successesBefore);
+    expect(count("SELECT count(*) FROM recovery_code WHERE used_at IS NULL")).toBe(10);
+  });
+
   it("regenerating needs a recent sign-in and invalidates the unused codes", async () => {
     const { b, secret } = await enrolled(h.firstLink(), alex, "Alex");
     const first = await b.json<{ codes: string[] }>("/api/identity/recovery-codes/initial", {
@@ -641,5 +670,34 @@ describe("a session that cannot be started after the redemption committed", () =
     expect(logged).toHaveLength(2);
     expect(logged.join("\n")).not.toContain(token);
     expect(logged.join("\n")).not.toContain(codes[0] ?? "-");
+  });
+
+  it("releases the attempt when recover fails with an error other than Unauthenticated", async () => {
+    const { a } = await household();
+    const codes = await initialCodes(a.b);
+    const broken: RecoveryAuth = {
+      ...failing(),
+      $context: failing().$context.then((ctx) => ({
+        ...ctx,
+        password: {
+          ...ctx.password,
+          verify: async () => {
+            throw new Error("hasher down");
+          },
+        },
+      })),
+    };
+    const gateway = recoveryGateway(
+      h.identity,
+      { maxFailures: 5, windowMs: 15 * 60_000, lockMs: 15 * 60_000 },
+      broken,
+      () => {},
+    );
+    const before = count("SELECT count(*) FROM login_attempt");
+    await expect(gateway.recover({ ...alex, code: codes[0] ?? "" }, new Headers())).rejects.toThrow(
+      "hasher down",
+    );
+    expect(count("SELECT count(*) FROM login_attempt")).toBe(before);
+    expect(count("SELECT count(*) FROM recovery_code WHERE used_at IS NOT NULL")).toBe(0);
   });
 });

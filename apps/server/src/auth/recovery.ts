@@ -4,7 +4,6 @@
 // recovery-code sign-in. The rules themselves are `identity` use cases.
 import {
   AppError,
-  assertLoginAllowed,
   type CodeHasher,
   checkReEnrolmentLink,
   type IdentityContext,
@@ -13,6 +12,8 @@ import {
   recoveryRefused,
   redeemRecoveryCode,
   redeemReEnrolmentLink,
+  releaseLoginAttempt,
+  reserveLoginAttempt,
 } from "@pangolin/app";
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthEndpoint } from "better-auth/api";
@@ -134,9 +135,10 @@ async function afterCommit(
 
 /**
  * `recover` and `reEnrol` for the `AuthGateway`.
- * - `recover`: a locked email is refused before anything is checked. A wrong email, password or
- *   code (unknown, malformed or used) is one `Unauthenticated` and one failed `login_attempt`.
- *   A success records a successful attempt, then starts the session.
+ * - `recover`: a locked email is refused before anything is checked; otherwise the attempt is
+ *   counted as a failure up front. A wrong email, password or code (unknown, malformed or used)
+ *   is one `Unauthenticated` and keeps that failed `login_attempt`; any other error releases
+ *   it. A success replaces it with a successful attempt, then starts the session.
  * - `reEnrol`: a dead link is refused before the new password is hashed; the hash is made
  *   outside the write (AD-2), and the use case checks the link again inside it. A redemption
  *   records a successful attempt for the email, ending any lockout on the old password.
@@ -152,18 +154,26 @@ export function recoveryGateway(
   return {
     recover: async (input, headers) => {
       const email = input.email.trim().toLowerCase();
-      assertLoginAllowed(deps, { email }, policy);
+      // Counted as a failure before the password is hashed, so a concurrent burst cannot all
+      // pass the lockout check (seam S11a).
+      reserveLoginAttempt(deps, { email }, policy);
       let userId: string | undefined;
       try {
         userId = await verifiedUser(auth, email, input.password);
         if (userId === undefined) throw recoveryRefused();
         redeemRecoveryCode(deps, { userId, code: input.code });
       } catch (error) {
-        if (error instanceof AppError && error.code === "Unauthenticated") {
-          recordLoginAttempt(deps, { email, ok: false }, policy);
+        // A wrong email, password or code keeps the failure; anything else counts as neither.
+        if (!(error instanceof AppError && error.code === "Unauthenticated")) {
+          try {
+            releaseLoginAttempt(deps, { email });
+          } catch {
+            // The original error is the answer; an unreleased attempt stays counted as a failure.
+          }
         }
         throw error;
       }
+      releaseLoginAttempt(deps, { email });
       recordLoginAttempt(deps, { email, ok: true }, policy);
       const recovered = userId;
       return afterCommit(log, recovered, () => startSession(auth, recovered, headers));

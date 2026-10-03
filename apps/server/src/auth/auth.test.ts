@@ -360,6 +360,16 @@ async function enrolled(hh: Harness): Promise<string> {
   return secret;
 }
 
+/** The `login_attempt` failures and successes recorded for `email`. */
+function attemptCounts(hh: Harness, email: string): { failures: number; successes: number } {
+  const of = (ok: number) =>
+    hh.db
+      .prepare("SELECT count(*) FROM login_attempt WHERE email = ? AND ok = ?")
+      .pluck()
+      .get(email, ok) as number;
+  return { failures: of(0), successes: of(1) };
+}
+
 /** A six-digit code that is not the current one (nor its neighbours). */
 function wrongCode(secret: string): string {
   const now = Date.now();
@@ -400,6 +410,66 @@ describe("TOTP lockout", () => {
   });
 });
 
+describe("the lockout counts each attempt before the password is checked", () => {
+  const failures = (hh: Harness) =>
+    hh.db.prepare("SELECT count(*) FROM login_attempt WHERE ok = 0").pluck().get() as number;
+  const successes = (hh: Harness) =>
+    hh.db.prepare("SELECT count(*) FROM login_attempt WHERE ok = 1").pluck().get() as number;
+  const signIn = async (hh: Harness, body: Record<string, unknown>) =>
+    (await new Browser(hh.app).request("/api/auth/sign-in/email", { body })).status;
+  const wrong = { email: alex.email, password: "wrong password!!" };
+
+  it("one at a time: each wrong password is one failure; the locked one records nothing", async () => {
+    const hh = createHarness();
+    try {
+      expect((await signUp(new Browser(hh.app), hh.firstLink(), alex, "Alex")).status).toBe(201);
+      const before = failures(hh);
+      for (let i = 1; i <= 5; i++) {
+        expect(await signIn(hh, wrong)).toBe(401);
+        expect(failures(hh)).toBe(before + i);
+      }
+      expect(await signIn(hh, alex)).toBe(429);
+      expect(failures(hh)).toBe(before + 5);
+      expect(successes(hh)).toBe(0);
+    } finally {
+      hh.close();
+    }
+  });
+
+  it("a success replaces its provisional failure with one success, and ends the count", async () => {
+    const hh = createHarness();
+    try {
+      expect((await signUp(new Browser(hh.app), hh.firstLink(), alex, "Alex")).status).toBe(201);
+      const before = failures(hh);
+      for (let i = 0; i < 4; i++) expect(await signIn(hh, wrong)).toBe(401);
+      expect(await signIn(hh, alex)).toBe(200);
+      expect(failures(hh)).toBe(before + 4);
+      expect(successes(hh)).toBe(1);
+      // The four earlier failures no longer count: five more are evaluated, then the lock.
+      for (let i = 0; i < 5; i++) expect(await signIn(hh, wrong)).toBe(401);
+      expect(await signIn(hh, alex)).toBe(429);
+    } finally {
+      hh.close();
+    }
+  });
+
+  it("an outcome that is neither success nor a rejected password releases its failure", async () => {
+    const hh = createHarness();
+    try {
+      expect((await signUp(new Browser(hh.app), hh.firstLink(), alex, "Alex")).status).toBe(201);
+      const rows = () => hh.db.prepare("SELECT count(*) FROM login_attempt").pluck().get();
+      const before = rows();
+      // No password: better-auth refuses the body (400) after the attempt was reserved.
+      for (let i = 0; i < 6; i++) expect(await signIn(hh, { email: alex.email })).toBe(400);
+      expect(rows()).toBe(before);
+      expect(await signIn(hh, wrong)).toBe(401);
+      expect(await signIn(hh, alex)).toBe(200);
+    } finally {
+      hh.close();
+    }
+  });
+});
+
 describe("idle timeout", () => {
   it("ends a session unused for longer than the idle time", async () => {
     const hh = createHarness({ sessionIdleMs: 2000 });
@@ -427,6 +497,7 @@ describe("passkey sign-in and the lockout", () => {
           })
         ).status;
       for (let i = 0; i < 4; i++) expect(await wrong()).toBe(401);
+      const before = attemptCounts(hh, alex.email);
       // better-auth's passkey verification needs a real authenticator, which the harness lacks:
       // run our after-hook as it runs once that verification has created the session.
       const hooks = authHooks(hh.identity, {
@@ -439,6 +510,11 @@ describe("passkey sign-in and the lockout", () => {
         context: { newSession: { user: { email: alex.email } } },
         headers: new Headers(),
       });
+      // A passkey reserved nothing, so its success releases no failure: it only adds a success.
+      expect(attemptCounts(hh, alex.email)).toEqual({
+        failures: before.failures,
+        successes: before.successes + 1,
+      });
       expect(await wrong()).toBe(401);
       // The count restarted at the passkey sign-in: four more wrong passwords, then the lock.
       for (let i = 0; i < 4; i++) expect(await wrong()).toBe(401);
@@ -449,15 +525,16 @@ describe("passkey sign-in and the lockout", () => {
   });
 });
 
-// Seam S11a (spike "Check the suspected seams"): real. The lockout is check-then-act across the
-// scrypt hash: the before-hook reads the attempts, better-auth hashes the password (async scrypt,
-// off the event loop), and only the after-hook records the failure, so concurrent sign-ins all
-// pass the check before any failure is recorded. In the spike's run all 20 concurrent wrong
-// passwords were evaluated (401), and a right one sent last in the same burst signed in (200);
-// with the production per-client limit (10 a minute) one client still got 10. The fix story
-// turns this test on.
+// Seam S11a (spike "Check the suspected seams"), now fixed. The lockout was check-then-act across
+// the scrypt hash: the before-hook read the attempts, better-auth hashed the password (async
+// scrypt, off the event loop), and only the after-hook recorded the failure, so concurrent
+// sign-ins all passed the check before any failure was recorded. In the spike's run all 20
+// concurrent wrong passwords were evaluated (401), and a right one sent last in the same burst
+// signed in (200); with the production per-client limit (10 a minute) one client still got 10.
+// The before-hook now reserves each attempt as a failure in the same transaction as the check,
+// before the hash runs, so the burst stops at maxFailures.
 describe("concurrent sign-ins and the lockout (seam S11a)", () => {
-  it.fails("S11a: evaluates at most maxFailures of a concurrent burst, and refuses a right password in it", {
+  it("S11a: evaluates exactly maxFailures of a concurrent burst, and refuses a right password in it", {
     timeout: 20_000,
   }, async () => {
     // The harness runs with this lockout, so the limit is read from its auth config.
@@ -478,11 +555,45 @@ describe("concurrent sign-ins and the lockout (seam S11a)", () => {
       );
       // Each is refused: 401 for a password evaluated, 429 once the email is locked.
       expect(statuses.filter((status) => status !== 401 && status !== 429)).toEqual([]);
-      expect(statuses.filter((status) => status === 401).length).toBeLessThanOrEqual(
-        lockout.maxFailures,
-      );
+      expect(statuses.filter((status) => status === 401).length).toBe(lockout.maxFailures);
       // The right password, sent after more than maxFailures wrong ones, is refused.
       expect(statuses[19]).toBe(429);
+      expect(attemptCounts(hh, alex.email)).toEqual({
+        failures: lockout.maxFailures,
+        successes: 0,
+      });
+    } finally {
+      hh.close();
+    }
+  });
+});
+
+describe("concurrent TOTP checks and the lockout", () => {
+  it("evaluates exactly maxFailures of a burst of wrong codes; the rest are 429", {
+    timeout: 20_000,
+  }, async () => {
+    const { lockout } = defaultAuthConfig("/unused");
+    const hh = createHarness({ lockout });
+    try {
+      const secret = await enrolled(hh);
+      const b = new Browser(hh.app);
+      const first = await b.json("/api/auth/sign-in/email", { body: alex });
+      expect(first.body).toMatchObject({ twoFactorRedirect: true });
+      const before = attemptCounts(hh, alex.email);
+      // One pending challenge (the same cookie), 20 wrong codes at once.
+      const statuses = await Promise.all(
+        Array.from({ length: 20 }, () =>
+          b
+            .request("/api/auth/two-factor/verify-totp", { body: { code: wrongCode(secret) } })
+            .then((res) => res.status),
+        ),
+      );
+      expect(statuses.filter((status) => status !== 401 && status !== 429)).toEqual([]);
+      expect(statuses.filter((status) => status === 401).length).toBe(lockout.maxFailures);
+      expect(attemptCounts(hh, alex.email)).toEqual({
+        failures: before.failures + lockout.maxFailures,
+        successes: before.successes,
+      });
     } finally {
       hh.close();
     }

@@ -16,6 +16,8 @@ import {
   listLogins,
   personForUser,
   recordLoginAttempt,
+  releaseLoginAttempt,
+  reserveLoginAttempt,
   type TokenPort,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
@@ -230,5 +232,31 @@ describe("login attempts on SQLite", () => {
     recordLoginAttempt(ctx(), { email: "b@example.com", ok: true });
     expect(db.prepare("SELECT email FROM login_attempt").pluck().all()).toEqual(["b@example.com"]);
     expect(db.prepare("SELECT count(*) FROM audit_log").pluck().get()).toBe(0);
+  });
+
+  it("reserves as a failure and releases the newest failure of that email only", () => {
+    recordLoginAttempt(ctx(), { email: "a@example.com", ok: true });
+    reserveLoginAttempt(ctx(), { email: "A@example.com" });
+    reserveLoginAttempt(ctx(), { email: "b@example.com" });
+    reserveLoginAttempt(ctx(), { email: "a@example.com" });
+    releaseLoginAttempt(ctx(), { email: "a@example.com" });
+    const rows = () => db.prepare("SELECT id, email, ok FROM login_attempt ORDER BY id").all();
+    // Same timestamp throughout: the newest is the highest id.
+    expect(rows()).toEqual([
+      { id: 1, email: "a@example.com", ok: 1 },
+      { id: 2, email: "a@example.com", ok: 0 },
+      { id: 3, email: "b@example.com", ok: 0 },
+    ]);
+    releaseLoginAttempt(ctx(), { email: "a@example.com" });
+    releaseLoginAttempt(ctx(), { email: "a@example.com" });
+    expect(rows()).toEqual([
+      { id: 1, email: "a@example.com", ok: 1 },
+      { id: 3, email: "b@example.com", ok: 0 },
+    ]);
+    for (let i = 0; i < 5; i++) reserveLoginAttempt(ctx(), { email: "a@example.com" });
+    expect(errorCode(() => reserveLoginAttempt(ctx(), { email: "a@example.com" }))).toBe(
+      "RateLimited",
+    );
+    expect(db.prepare("SELECT count(*) FROM login_attempt").pluck().get()).toBe(7);
   });
 });
