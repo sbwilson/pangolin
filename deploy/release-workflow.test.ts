@@ -148,7 +148,7 @@ describe("release.yml", () => {
     // No tag is hard-coded: latest and vX.Y come only from the script.
     expect(tag?.run).not.toMatch(/:latest"|\$MAJOR_MINOR/);
     const release = steps.find(isReleaseStep);
-    expect(release?.with?.make_latest).toBe("${{ steps.tags.outputs.latest }}");
-    expect(release?.with?.prerelease).toBe("${{ steps.tags.outputs.prerelease }}");
+    expect(release?.with?.make_latest).toMatch(/^\$\{\{ steps\.tags\.outputs\.latest \}\}$/);
+    expect(release?.with?.prerelease).toMatch(/^\$\{\{ steps\.tags\.outputs\.prerelease \}\}$/);
   });
 });
