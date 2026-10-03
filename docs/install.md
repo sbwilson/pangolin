@@ -187,6 +187,9 @@ Tang server back if it is missing), and then restarts the stack. The exceptions 
 `--build`, `--data-root`, `--backup-server` and `--dns`: asked for explicitly, they replace their
 `.env` value and say so.
 To change any other setting, edit `/opt/pangolin/.env` and re-run.
+After a `pangolin upgrade`, `.env` pins the new image by digest; a re-run that does not replace the
+image (no `--image` or `--build`) then takes `compose.yaml` and the `pangolin` command from that
+image rather than from your checkout, so they always match the image that runs.
 
 ## 5. Nginx Proxy Manager
 

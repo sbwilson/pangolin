@@ -1186,6 +1186,31 @@ obtain_image() {
 
 # Where compose.yaml, allowlist.conf.default and firewall/ come from: next to this script (a
 # checkout), the --build clone, or the image itself (/app/deploy) for a lone downloaded script.
+# A re-run that keeps an image `pangolin upgrade` pinned by digest takes compose.yaml and the
+# pangolin command from that image, as a lone script does, so they match the image that runs
+# rather than this checkout (seam S11e). Sets PINNED to the image's deploy directory, or leaves
+# it empty: a tag-pinned image, --image, --build or --no-docker use the checkout's files.
+PINNED=
+take_pinned_files() {
+  [ -z "$ARG_IMAGE" ] && [ "$BUILD" -eq 0 ] && run_stack || return 0
+  case "$IMAGE" in *@sha256:*) ;; *) return 0 ;; esac
+  # Already taken from the image (a lone script).
+  [ "$SUPPORT" != "$WORK/deploy" ] || return 0
+  if ! container=$(docker create "$IMAGE" 2>/dev/null); then
+    warn "could not read the pinned image $IMAGE: compose.yaml and the pangolin command come from this checkout"
+    return 0
+  fi
+  if ! docker cp "$container:/app/deploy" "$WORK/pinned" >/dev/null; then
+    warn "could not copy /app/deploy out of the pinned image $IMAGE: compose.yaml and the pangolin command come from this checkout"
+  elif [ ! -f "$WORK/pinned/compose.yaml" ]; then
+    warn "the pinned image $IMAGE has no /app/deploy/compose.yaml: compose.yaml and the pangolin command come from this checkout"
+  else
+    PINNED=$WORK/pinned
+    say "Taking compose.yaml and the pangolin command from the pinned image $IMAGE"
+  fi
+  docker rm "$container" >/dev/null 2>&1 || true
+}
+
 locate_support() {
   script_dir=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || script_dir=
   for candidate in "$script_dir" "$(path "$INSTALL_DIR/src/deploy")"; do
@@ -1225,7 +1250,7 @@ distro_allowlist() {
 write_files() {
   step "Writing compose.yaml, the allowlist and the firewall"
   install_dir=$(path "$INSTALL_DIR")
-  cp "$SUPPORT/compose.yaml" "$install_dir/compose.yaml.new"
+  cp "${PINNED:-$SUPPORT}/compose.yaml" "$install_dir/compose.yaml.new"
   cp "$SUPPORT/cosign.pub" "$install_dir/cosign.pub"
   chmod 0644 "$install_dir/compose.yaml.new"
   mv "$install_dir/compose.yaml.new" "$install_dir/compose.yaml"
@@ -1268,10 +1293,12 @@ write_files() {
   chmod 0755 "$install_dir/firewall/render.sh"
 
   # The admin CLI on the host: `pangolin status`, `pangolin reset-user` (run in the container).
-  if [ -f "$SUPPORT/pangolin" ]; then
+  cli=$SUPPORT/pangolin
+  if [ -n "$PINNED" ] && [ -f "$PINNED/pangolin" ]; then cli=$PINNED/pangolin; fi
+  if [ -f "$cli" ]; then
     bin=$(path /usr/local/bin)
     mkdir -p "$bin"
-    cp "$SUPPORT/pangolin" "$bin/pangolin.new"
+    cp "$cli" "$bin/pangolin.new"
     chmod 0755 "$bin/pangolin.new"
     mv "$bin/pangolin.new" "$bin/pangolin"
     say "Installed the pangolin command to /usr/local/bin/pangolin"
@@ -1521,6 +1548,7 @@ main() {
   write_bundle
   obtain_image
   locate_support
+  take_pinned_files
   write_files
   install_firewall
   start_stack
