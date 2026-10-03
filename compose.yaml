@@ -29,6 +29,9 @@ services:
       # backups are off.
       - ${PANGOLIN_RESTIC_PASSWORD_HOST_FILE:-/dev/null}:/secrets/restic-password:ro
     restart: unless-stopped
+    # Longer than the job runner's 10 s wait for running jobs, so the database closes before
+    # Docker's SIGKILL.
+    stop_grace_period: 20s
 
   # An append-only restic REST server, as on the NAS: backups can be added, never removed.
   restic:

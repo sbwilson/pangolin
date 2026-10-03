@@ -695,10 +695,11 @@ describe("install.sh, re-run", () => {
     expect(noDocker.stderr).not.toContain("pinned image");
   });
 
-  // Seam S11f (spike "Check the suspected seams"): real. `--backup-server ""` is taken as "no
-  // answer": the existing PANGOLIN_BACKUP_REPOSITORY is kept (with a warning to edit .env), so
-  // the flag cannot turn backups off. The fix story turns this test on.
-  it.fails('S11f: --backup-server "" turns backups off in .env', () => {
+  // Seam S11f (spike "Check the suspected seams"), fixed by story 11.10. `--backup-server ""`
+  // used to be taken as "no answer": the existing PANGOLIN_BACKUP_REPOSITORY was kept (with two
+  // contradictory warnings), so the flag could not turn backups off. It now empties the value,
+  // drops the old repository's allowlist entry and says, once, that backups are off.
+  it('S11f: --backup-server "" turns backups off in .env', () => {
     expect(install().status).toBe(0);
     expect(read("opt/pangolin/.env")).toContain(
       "PANGOLIN_BACKUP_REPOSITORY=rest:https://nas.lan:8000/pangolin\n",
@@ -706,6 +707,78 @@ describe("install.sh, re-run", () => {
     const result = install("--backup-server", "");
     expect(result.status, result.stderr).toBe(0);
     expect(read("opt/pangolin/.env")).not.toMatch(/^PANGOLIN_BACKUP_REPOSITORY=\S/m);
+  });
+
+  it('--backup-server "" drops the old allowlist entry and says once that backups are off', () => {
+    expect(install().status).toBe(0);
+    expect(read("opt/pangolin/allowlist.conf")).toMatch(/^nas\.lan:8000$/m);
+    const result = install("--backup-server", "");
+    expect(result.status, result.stderr).toBe(0);
+    const allowlist = read("opt/pangolin/allowlist.conf");
+    expect(allowlist).not.toMatch(/^nas\.lan:8000$/m);
+    expect(allowlist).not.toContain("# Backup server");
+    expect(allowlist).toContain("deb.debian.org");
+    expect(`${result.stdout}${result.stderr}`.match(/backups are off/gi)).toHaveLength(1);
+    expect(result.stderr).not.toContain("kept PANGOLIN_BACKUP_REPOSITORY");
+    expect(result.stderr).not.toContain("no backup server set");
+  });
+
+  it("keeps the stored backup server on a re-run without --backup-server", () => {
+    expect(install().status).toBe(0);
+    const args = ANSWERS.filter(
+      (arg) => arg !== "--backup-server" && arg !== "rest:https://nas.lan:8000/pangolin",
+    );
+    const result = run("sh", [INSTALL, "--root", root, ...args]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(read("opt/pangolin/.env")).toContain(
+      "PANGOLIN_BACKUP_REPOSITORY=rest:https://nas.lan:8000/pangolin\n",
+    );
+    expect(read("opt/pangolin/allowlist.conf")).toMatch(/^nas\.lan:8000$/m);
+    expect(result.stdout).not.toMatch(/backups are off/i);
+  });
+
+  it("writes no recovery bundle when the backup server is emptied", () => {
+    expect(install().status).toBe(0);
+    const id = read("opt/pangolin/.env").match(/^PANGOLIN_RECOVERY_BUNDLE_ID=.*$/m)?.[0];
+    expect(id).toBeDefined();
+    for (const bundle of bundles()) rmSync(at(`root/${bundle}`));
+    const result = install("--backup-server", "");
+    expect(result.status, result.stderr).toBe(0);
+    expect(bundles()).toEqual([]);
+    expect(read("opt/pangolin/.env").match(/^PANGOLIN_RECOVERY_BUNDLE_ID=.*$/m)?.[0]).toBe(id);
+    expect(existsSync(at("opt/pangolin/secrets/.bundle-pending"))).toBe(false);
+  });
+
+  it("keeps a backup host the operator listed themselves when backups are turned off", () => {
+    expect(install().status).toBe(0);
+    writeFileSync(at("opt/pangolin/allowlist.conf"), "# my NAS\nnas.lan:8000\nexample.org:443\n");
+    const result = install("--backup-server", "");
+    expect(result.status, result.stderr).toBe(0);
+    expect(read("opt/pangolin/allowlist.conf")).toBe("# my NAS\nnas.lan:8000\nexample.org:443\n");
+    expect(result.stdout).toContain(
+      "Kept nas.lan:8000 in allowlist.conf: install.sh did not write it there",
+    );
+  });
+
+  it("keeps an operator-added allowlist line when backups are turned off", () => {
+    expect(install().status).toBe(0);
+    writeFileSync(
+      at("opt/pangolin/allowlist.conf"),
+      `${read("opt/pangolin/allowlist.conf")}\n# my own\nnas.lan:9000\nexample.org:443\n`,
+    );
+    expect(install("--backup-server", "").status).toBe(0);
+    const allowlist = read("opt/pangolin/allowlist.conf");
+    expect(allowlist).not.toMatch(/^nas\.lan:8000$/m);
+    expect(allowlist).toContain("# my own\nnas.lan:9000\nexample.org:443\n");
+  });
+
+  it('treats --backup-server "" on a first install as no backups, with one line', () => {
+    const result = install("--backup-server", "");
+    expect(result.status, result.stderr).toBe(0);
+    expect(read("opt/pangolin/.env")).not.toMatch(/^PANGOLIN_BACKUP_REPOSITORY=\S/m);
+    expect(read("opt/pangolin/allowlist.conf")).not.toMatch(/^nas\.lan:8000$/m);
+    expect(`${result.stdout}${result.stderr}`.match(/backups are off/gi)).toHaveLength(1);
+    expect(result.stderr).not.toContain("no backup server set");
   });
 });
 
@@ -1987,12 +2060,13 @@ describe("firewall/render.sh", () => {
   });
 });
 
-// Seam S11c (spike "Check the suspected seams"): real but harmless. deploy/compose.yaml sets no
-// stop_grace_period, so `compose stop` kills the app after Docker's default 10 s, the same 10 s
+// Seam S11c (spike "Check the suspected seams"): real but harmless. deploy/compose.yaml set no
+// stop_grace_period, so `compose stop` killed the app after Docker's default 10 s, the same 10 s
 // the job runner waits for running handlers before the HTTP server and database close. In the
 // spike's run a handler that ignored its abort signal got SIGKILL at 10.02 s, before the database
 // closed; WAL kept every committed row and integrity_check passed, and the job was left running
-// for its lease to expire. The fix story turns this test on: the grace outlasts the runner's stop.
+// for its lease to expire. Fixed by story 11.10: both set stop_grace_period: 20s, which outlasts
+// the runner's stop.
 /** A Compose duration (`1m30s`, `20s`, `1.5h`, `500ms`, or a bare number of seconds) in ms. */
 function composeDurationMs(value: string | number | undefined): number | undefined {
   if (value === undefined) return undefined;
@@ -2022,7 +2096,7 @@ describe("compose.yaml stop grace (deploy/ and the repository root)", () => {
     expect(composeDurationMs("soon")).toBeUndefined();
   });
 
-  it.fails.each([
+  it.each([
     ["deploy/compose.yaml", join(here, "compose.yaml")],
     ["compose.yaml", join(here, "..", "compose.yaml")],
   ])("S11c: %s gives the app longer to stop than the job runner's 10 s wait", (_name, file) => {

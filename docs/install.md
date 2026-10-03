@@ -127,7 +127,7 @@ sudo sh deploy/install.sh --non-interactive \
 | --- | --- |
 | `--proxy npm` | Proxy mode. Only `npm` works today; `caddy` and `tailscale` answer "not yet supported" and change nothing |
 | `--hostname NAME` | The public host name; the app is served at `https://NAME` |
-| `--backup-server URL` | A restic REST URL (stored in `.env` and allowlisted). Set or changed on a re-run, it writes a new recovery bundle (new id) that includes it as `RESTIC_REPOSITORY` |
+| `--backup-server URL` | A restic REST URL (stored in `.env` and allowlisted). Set or changed on a re-run, it writes a new recovery bundle (new id) that includes it as `RESTIC_REPOSITORY`. An explicit empty value (`--backup-server ""`) turns backups off: on a re-run it empties `PANGOLIN_BACKUP_REPOSITORY` in `.env` and removes the old server's entry that the installer added to `allowlist.conf` (no new bundle is written) |
 | `--tang-url URL` | The Tang server that unlocks the data disk (stored in `.env` and allowlisted) |
 | `--npm-host IP` | The NPM host's IPv4 address; also becomes `PANGOLIN_TRUSTED_PROXIES` |
 | `--admin-network CIDR` | Where SSH is allowed from |
@@ -185,11 +185,15 @@ every value you changed in `.env` (it only adds keys that are missing, and warns
 asks for something different from what `.env` holds), keeps your `allowlist.conf` (adding the
 Tang server back if it is missing), and then restarts the stack. The exceptions are `--image`,
 `--build`, `--data-root`, `--backup-server` and `--dns`: asked for explicitly, they replace their
-`.env` value and say so.
+`.env` value and say so. `--backup-server ""` turns backups off (it empties the value and removes
+the old backup host's entry from `allowlist.conf`, keeping any line you wrote); a re-run without
+`--backup-server` keeps the stored one.
 To change any other setting, edit `/opt/pangolin/.env` and re-run.
 After a `pangolin upgrade`, `.env` pins the new image by digest; a re-run that does not replace the
 image (no `--image` or `--build`) then takes `compose.yaml` and the `pangolin` command from that
 image rather than from your checkout, so they always match the image that runs.
+Such an install gets a change to `compose.yaml` (like story 11.10's `stop_grace_period: 20s`)
+with its next `pangolin upgrade`, not from a re-run of a newer checkout.
 
 ## 5. Nginx Proxy Manager
 
