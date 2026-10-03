@@ -40,7 +40,7 @@ headless: false
 
 ### Diff-scope review (cross-ticket; code lenses run inline, each checked against `64ac5e6`)
 
-`bmad-review`'s adversarial and edge-case lenses reported after the inline pass; their findings are folded in below (F7–F14), each re-checked against `64ac5e6`. The verification-gap lens ran inline only (narrowed).
+`bmad-review`'s adversarial and edge-case lenses reported after the inline pass; their findings are folded in below (F7–F14), each re-checked against `64ac5e6`. The verification-gap lens reported last; its new findings are F15–F19.
 
 | # | Finding | Source | Tickets | Disposition |
 |---|---|---|---|---|
@@ -58,6 +58,11 @@ headless: false
 | F12 | The secrets guard checks only for `pangolin.sqlite`: with the LUKS data disk not yet mounted on a rebuilt host and the secrets missing, install.sh sees no database and generates new secrets and a new bundle. | `install.sh:781-782`, `:655-659` | 11.1 × 11.5 | Defer (refuse when the data root is expected to be a mount point and is not) |
 | F13 | The `release.yml` comment says a cancelled waiting run's tag "must then be pushed again"; pushing an existing tag fires nothing. The docs correctly say delete and re-push (or re-run the run). | `.github/workflows/release.yml:7-9`; `docs/install.md:613` | 11.6 | **Fix now** (comment) |
 | F14 | Smaller edge cases, verified: a rollback with no `pangolin.sqlite*` leaves an empty kept directory yet names it; a CIDR in `PANGOLIN_DNS_SERVERS` would make the live `nft add element` batch fail (render.sh then warns and continues); the "backups are off" wording keys on `--no-docker` rather than `run_stack` under `--root`. | `deploy/pangolin:197`; `render.sh:247-254`; `install.sh:1012-1017` | 11.8, 11.4, 11.10 | Defer |
+| F15 | `detect_dns` (install.sh) has no test and already drifts from render.sh's `host_resolvers`: a non-IP nameserver that render.sh skips with a warning makes a first install without `--dns` die; it also reads the real `/etc/resolv.conf` under `--root`. | `install.sh:345-356, 490-492`; `render.sh:192-208` | 11.4 | Defer |
+| F16 | No round-trip test of the `.bundle-pending` name between install.sh and uninstall.sh: uninstall's test writes the name as a literal; the reinstall test never creates a mark. | `uninstall.sh:230`; `uninstall.test.ts:136-149`; `install.test.ts:1165-1180` | 11.1 × 11.3 | Defer |
+| F17 | The `latest`/`prerelease` outputs computed in `release.yml`'s tag step are never executed by a test; only their wiring is checked. | `release.yml:174-186`; `release-workflow.test.ts:138-152` | 11.6 | Defer |
+| F18 | The stop-grace test compares against a literal 10 s, not the runner's own default, so raising the runner's wait would bring S11c back with the test still green. | `install.test.ts:2069-2076`; `apps/server/src/jobs/runner.ts:141` | 11.10 | Defer |
+| F19 | `install.sh --dns`'s repair loads the new resolvers only at `install_firewall`, after `apt-get update` and the image pull, which run under the stale ruleset; with loopback-only host resolvers the pull can fail first with a misleading message. | `install.sh` `main` order (`install_packages`, `obtain_image` before `install_firewall`) | 11.4 | Defer |
 
 Checked and clean: `release-tags.sh`'s line glob (`v1.2.*` does not match `v1.20.0`; pre-releases filtered); 11.8's `.env.new` clean-up on every path; uninstall keeping `.bundle-pending` (11.1 + 11.3) re-triggers the bundle on reinstall.
 
@@ -140,7 +145,7 @@ Items 2, 4 and 10 are for the human; 1, 3, 5–9 are proposed remediation for th
 
 Accepting the epic needs either action item 4 carried out, or a human decision accepting the epic without it (as epic 1's deviations were accepted).
 
-**Human decisions (2026-10-03):** hold the verdict; the user runs the dev-VM checks (action item 4) next. F1, F7 and F8 (with the F13 comment) are fixed now as story 11.11. The deferred findings F2, F4, F5, F9–F12 and F14 go to `deferred-work.md`.
+**Human decisions (2026-10-03):** hold the verdict; the user runs the dev-VM checks (action item 4) next. F1, F7 and F8 (with the F13 comment) are fixed now as story 11.11. The deferred findings F2, F4, F5, F9–F12 and F14–F19 go to `deferred-work.md`.
 
 ## Open questions
 

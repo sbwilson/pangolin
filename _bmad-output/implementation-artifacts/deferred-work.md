@@ -127,3 +127,18 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
   summary: (F14) Small edge cases: a rollback with no pangolin.sqlite* leaves an empty kept directory yet names it; a CIDR in PANGOLIN_DNS_SERVERS makes the live nft add element batch fail; the "backups are off" wording keys on --no-docker rather than run_stack under --root.
   evidence: deploy/pangolin rollback keep step; render.sh live DNS widening; install.sh write_env message (retro F14).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: (F15) detect_dns in install.sh has no test and drifts from render.sh's host_resolvers (a non-IP nameserver kills a first install without --dns; it reads the real resolv.conf under --root); read the files through path and test it against host_resolvers on the same fixtures.
+  evidence: install.sh:345-356 and 490-492 vs render.sh:192-208 (retro F15).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: (F16) Add a round-trip test of .bundle-pending across install, uninstall --keep-data and reinstall.
+  evidence: uninstall.test.ts writes the name as a literal; install.test.ts's reinstall test makes no mark (retro F16).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: (F17) Execute release.yml's latest/prerelease output computation in a test (or move it into release-tags.sh).
+  evidence: release-workflow.test.ts checks only the wiring (retro F17).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: (F18) Compare stop_grace_period with the job runner's exported default stop timeout instead of a literal 10 s.
+  evidence: install.test.ts:2069-2076 vs runner.ts:141 (retro F18).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: (F19) Load install.sh --dns resolvers into the live firewall before apt-get update and the image pull.
+  evidence: install.sh main runs install_packages and obtain_image before install_firewall (retro F19).
