@@ -14,6 +14,13 @@ covers = ["CAP-3", "CAP-18", "CAP-14"]
 after = [{ epic = 1, needs = "schema and migration tooling, auth sessions, service layer with audit_log, seed generator" }]
 
 [[epic]]
+id = 11
+slug = "epic-platform-hardening"
+title = "Platform hardening"
+covers = ["CAP-16", "CAP-15"]
+after = [{ epic = 1, needs = "install.sh, uninstall.sh, the firewall render and the release workflow" }]
+
+[[epic]]
 id = 3
 slug = "epic-import-dedupe-transfers"
 title = "Import, dedupe and transfer matching"

@@ -1,0 +1,85 @@
+# tickets.toml — the epic's agreed children. Table order is build order; `id` is permanent and not an order.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Secrets survive uninstall and reinstall"
+description = "Makes uninstall.sh keep /opt/pangolin/secrets whenever it keeps the data, and makes install.sh refuse to generate new secrets when the data root already holds a database, with guidance on restoring the old secrets or the recovery bundle."
+verify = "Deploy tests show an uninstall keeping data followed by install.sh reuses the same secrets, and install.sh over an existing database with missing secrets refuses before writing any."
+covers = ["H1"]
+after = ["1.8"]
+hitl = false
+risk = "high"
+references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, finding S6 and action item 3"]
+
+[[entry]]
+id = 2
+type = "spike"
+title = "Check the suspected seams"
+description = "Runs each S10 and S11 case (status's last-backup time after a restore, the lockout check-then-act across the scrypt hash, the drill's integrity_check stalling lease renewal, stop_grace_period against the runner's stop, the rollback discarding writes during the health wait, an install.sh re-run overwriting the compose.yaml and CLI that upgrade installed, and --backup-server \"\" not disabling backups) and records a verdict for each."
+verify = "A findings note beside the spike lists every seam with its evidence and verdict; each real seam in deploy/ has a new story placed before the refactor sweep, and each real seam elsewhere has a backlog ticket."
+covers = ["H6"]
+after = ["1.13"]
+hitl = false
+risk = "medium"
+references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, findings S10 and S11 and action item 9"]
+
+[[entry]]
+id = 3
+type = "story"
+title = "Bundle survives an interrupted install"
+description = "Makes a re-run of install.sh show the recovery bundle notice when the first run died after generating secrets, and rewrite the bundle with RESTIC_REPOSITORY once backups are configured after it was written."
+verify = "install.sh tests show an interrupted first install's re-run writes and announces the bundle, and adding a backup server on a re-run rewrites the bundle with RESTIC_REPOSITORY and a new bundle id."
+covers = ["H2"]
+after = [1]
+hitl = false
+risk = "medium"
+references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, finding S7"]
+
+[[entry]]
+id = 4
+type = "story"
+title = "DNS drift recovery"
+description = "First reproduces the S8 failure, then makes changed resolvers recoverable (with --dns or by re-detecting them) and makes the firewall render refuse to save an empty allowlist ruleset."
+verify = "Tests reproduce the failure, then show changed resolvers recovered on a re-run and the render keeping the last good ruleset instead of saving an empty one."
+covers = ["H3"]
+after = ["1.8"]
+hitl = false
+risk = "medium"
+unknown = "install.sh already prefers a --dns value over the stored one; which step the retrospective saw fail (settle or render.sh) is not yet reproduced."
+references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, finding S8"]
+
+[[entry]]
+id = 5
+type = "story"
+title = "Data-root change clean-up"
+description = "Makes install.sh remove the stale RequiresMountsFor docker drop-in when --data-root changes, and warn before the app starts on a data root with no database while an old one exists."
+verify = "install.sh tests show a data-root change leaves one drop-in for the new path and prints the warning naming the old data root."
+covers = ["H4"]
+after = [3]
+hitl = false
+risk = "low"
+references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, finding S9"]
+
+[[entry]]
+id = 6
+type = "story"
+title = "Releases only move forward"
+description = "Adds a release concurrency group, and moves latest only for the highest vX.Y.Z tag and vX.Y only for the highest tag in its line."
+verify = "The release workflow test shows the concurrency group and the guarded tag step, and a script test shows a patch on an older line moves neither latest nor the newer line's vX.Y."
+covers = ["H5"]
+after = ["1.18"]
+hitl = false
+risk = "low"
+references = ["deferred — _bmad-output/implementation-artifacts/deferred-work.md, the release concurrency entry from story 1.18"]
+
+[[entry]]
+id = 7
+type = "story"
+title = "Refactor sweep"
+description = "Cleans up what this epic's build records and deferred review findings name; scope is set when it starts, cleanup only."
+verify = "Lint, types and the full test suite stay green, and each change traces to a build record or deferred finding of this epic."
+covers = []
+after = [1, 2, 3, 4, 5, 6]
+hitl = false
+risk = "low"
