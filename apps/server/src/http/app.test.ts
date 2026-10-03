@@ -1,7 +1,17 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createIdGenerator, fixedClockAt, systemClock, type UnitOfWork } from "@pangolin/app";
+import {
+  createAccount,
+  createIdGenerator,
+  createPerson,
+  createTransaction,
+  fixedClockAt,
+  systemClock,
+  type UnitOfWork,
+  type UseCaseContext,
+} from "@pangolin/app";
+import { systemViewer } from "@pangolin/app/system-viewer";
 import {
   createSystemHealthRepo,
   createUnitOfWork,
@@ -120,7 +130,7 @@ describe("GET /api/system/health", () => {
     const app = createApp(deps(openDb()));
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 8, writable: true });
+    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 9, writable: true });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
@@ -216,6 +226,63 @@ describe("GET /healthz", () => {
       healthz: { expectedSchemaVersion: MIGRATIONS, runner: "skip" },
     });
     expect((await app.request("/healthz")).status).toBe(200);
+  });
+});
+
+describe("GET /api/ledger/transactions", () => {
+  const alex = "01J0000000000000000000000A";
+
+  /** A shared account and each person's private one, one transaction in each. */
+  function seedLedger(db: Db): void {
+    addPerson(db);
+    const d = deps(db);
+    const ctx: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const sam = createPerson(ctx, { displayName: "Sam", colour: "#000000" });
+    const account = (name: string, isPrivate: boolean, owners: [string, number][]) =>
+      createAccount(ctx, {
+        name,
+        type: "transaction",
+        currency: "AUD",
+        isPrivate,
+        owners: owners.map(([personId, shareBp]) => ({ personId, shareBp })),
+      });
+    const joint = account("Joint", false, [
+      [alex, 5000],
+      [sam, 5000],
+    ]);
+    const mine = account("Alex private", true, [[alex, 10000]]);
+    const theirs = account("Sam private", true, [[sam, 10000]]);
+    for (const [accountId, description] of [
+      [joint, "joint"],
+      [mine, "mine"],
+      [theirs, "theirs"],
+    ] as const) {
+      createTransaction(ctx, { accountId, postedOn: "2026-09-01", amountCents: -100, description });
+    }
+  }
+
+  it("needs a session", async () => {
+    const res = await createApp(deps(openDb())).request("/api/ledger/transactions");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns the shared account's transactions and the viewer's own private ones, uncached", async () => {
+    const db = openDb();
+    seedLedger(db);
+    const res = await createApp(deps(db)).request("/api/ledger/transactions", signedIn);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const body = (await res.json()) as {
+      transactions: { descriptionRaw: string; splits: { beneficiary: string }[] }[];
+    };
+    expect(body.transactions.map((t) => t.descriptionRaw).sort()).toEqual(["joint", "mine"]);
+    const mine = body.transactions.find((t) => t.descriptionRaw === "mine");
+    expect(mine?.splits.map((s) => s.beneficiary)).toEqual([alex]);
   });
 });
 

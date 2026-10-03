@@ -261,6 +261,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
   // be created costs only the CLI: the server logs a warning and keeps serving.
   let adminSocket: AdminSocket | undefined;
   if (!demo && config.adminSocket !== null) {
+    const adminSeedFile = options.config.seedFile ?? options.defaultSeedFile;
     const deps = {
       uow,
       clock,
@@ -272,6 +273,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       runner: () => runner?.liveness(),
       version: config.version,
       backupConfigured,
+      ...(adminSeedFile === undefined ? {} : { seedFile: adminSeedFile }),
       ...(config.recoveryBundleId === undefined ? {} : { bundleId: config.recoveryBundleId }),
     };
     try {

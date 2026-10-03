@@ -180,6 +180,8 @@ jobs:
           E2E_BUNDLE_ID: 20261003T010203Z-e2e0
           # Then confirms it over the admin socket and checks the warning is gone.
           E2E_CONFIRM_BUNDLE_COMMAND: docker compose exec -T pangolin node dist/cli.js confirm-bundle
+          # Once both partners have signed up, the ledger spec seeds the demo accounts onto them.
+          E2E_SEED_COMMAND: docker compose exec -T pangolin node dist/cli.js seed
       - name: Back up the end-to-end household (pangolin backup over the admin socket)
         run: |
           out=$(docker compose exec -T pangolin node dist/cli.js backup)

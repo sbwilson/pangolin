@@ -25,7 +25,7 @@ describe("system health repository", () => {
   it("reports the schema version and a writable database", () => {
     const db = openDatabase(path);
     const repo = createSystemHealthRepo(db);
-    expect(repo.schemaVersion()).toBe(8);
+    expect(repo.schemaVersion()).toBe(9);
     // A value unlike the real schema version, so a probe that changed it would show.
     db.pragma("user_version = 99");
     expect(repo.probeWrite()).toBe(true);
@@ -37,7 +37,7 @@ describe("system health repository", () => {
   it("reports a read-only database as not writable", () => {
     const db = openDatabase(path, { readonly: true });
     const repo = createSystemHealthRepo(db);
-    expect(repo.schemaVersion()).toBe(8);
+    expect(repo.schemaVersion()).toBe(9);
     expect(repo.probeWrite()).toBe(false);
     db.close();
   });

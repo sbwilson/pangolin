@@ -148,3 +148,15 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
   summary: Run the hardening epic's resolver-change check on a real host: change pang-dev's DNS resolver, wait for one pangolin-allowlist timer run, and confirm outbound access (registry-1.docker.io/v2/ answers 401), exercising story 11.4's live DNS widening against real nftables.
   evidence: deferred by the user on 2026-10-04 (epic 11 Done when 6); never run outside stubbed tests.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-tracer-bullet-one-account-s-transactions-seen-per-viewer-plan.md`
+  summary: Make the `seed` command atomic: validate every event with the use-case input schemas before the first write, so a bad seed leaves no partial ledger.
+  evidence: `parseSeed` types `postedOn` as a string and leaves share and currency rules to the use cases, which run per event after earlier events commit (review pass 1, medium, dev-only tool).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-tracer-bullet-one-account-s-transactions-seen-per-viewer-plan.md`
+  summary: Decide whether the `seed` admin command should be refused on real (non-dev) installs.
+  evidence: it is registered for every non-demo server and guards only on two signed-up partners and an empty ledger (review pass 1, medium).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-tracer-bullet-one-account-s-transactions-seen-per-viewer-plan.md`
+  summary: Add `AND account.deleted_at IS NULL` to `visibleTxn`'s account subquery and test soft-deleted accounts, and back the private-account one-owner rule and `split.beneficiary` with database constraints.
+  evidence: `packages/db/src/privacy.ts` visibleTxn omits deleted accounts and migration 0008 enforces the owner and beneficiary rules only in use cases (review pass 1, low; entry 3 privacy core).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-tracer-bullet-one-account-s-transactions-seen-per-viewer-plan.md`
+  summary: Paginate `GET /api/ledger/transactions`, show account name, private marker and account currency on the list page, and add a `visibleAudit` path for audit rows carrying private payloads.
+  evidence: `listVisible` loads every visible transaction, the page hard-codes AUD, and audit rows store private account names and descriptions (review pass 1, low; epic-ledger-workspace).

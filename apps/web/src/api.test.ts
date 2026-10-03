@@ -8,6 +8,7 @@ import {
   fetchMe,
   fetchNotices,
   fetchRecoveryBundle,
+  fetchTransactions,
   invitePartner,
   recoverWithCode,
   reEnrol,
@@ -162,5 +163,28 @@ describe("recovery", () => {
     await expect(dismissNotice("n")).resolves.toBeUndefined();
     stubFetch(404, { error: { code: "NotFound", message: "No such notice" } });
     await expect(dismissNotice("n")).rejects.toMatchObject({ code: "NotFound" });
+  });
+});
+
+describe("fetchTransactions", () => {
+  it("returns the transactions list", async () => {
+    const transactions = [
+      {
+        id: "t1",
+        accountId: "a1",
+        postedOn: "2026-09-01",
+        amountCents: -450,
+        descriptionRaw: "Coffee",
+        status: "posted",
+        splits: [],
+      },
+    ];
+    stubFetch(200, { transactions });
+    expect(await fetchTransactions()).toEqual(transactions);
+  });
+
+  it("throws an ApiError on an error response", async () => {
+    stubFetch(401, { error: { code: "Unauthenticated", message: "Sign in" } });
+    await expect(fetchTransactions()).rejects.toBeInstanceOf(ApiError);
   });
 });

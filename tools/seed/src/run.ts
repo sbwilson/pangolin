@@ -122,10 +122,11 @@ export function runSeed(options: RunOptions): SeedOutput {
 
 /**
  * Modules only see their dependencies' events, so a clash between unrelated modules is caught
- * here: person keys must be unique and at most one module may set the household settings.
+ * here: person and account keys must be unique and at most one module may set the household settings.
  */
 function assertGloballyConsistent(events: readonly EmittedEvent[]): void {
   const personOwner = new Map<string, string>();
+  const accountOwner = new Map<string, string>();
   let settingsOwner: string | undefined;
   for (const event of events) {
     if (event.type === "person.created") {
@@ -136,7 +137,15 @@ function assertGloballyConsistent(events: readonly EmittedEvent[]): void {
         );
       }
       personOwner.set(event.key, event.module);
-    } else {
+    } else if (event.type === "account.created") {
+      const other = accountOwner.get(event.key);
+      if (other !== undefined) {
+        throw new Error(
+          `Seed modules "${other}" and "${event.module}" both create account "${event.key}"`,
+        );
+      }
+      accountOwner.set(event.key, event.module);
+    } else if (event.type === "household.settings") {
       if (settingsOwner !== undefined) {
         throw new Error(
           `Seed modules "${settingsOwner}" and "${event.module}" both set the household settings`,

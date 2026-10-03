@@ -38,6 +38,7 @@ import {
   type ResetUserOutput,
   resetUserCommand,
   restoreStopped,
+  type SeedResult,
   type StatusResult,
 } from "./admin/index.ts";
 import type { AdminResponse } from "./admin/socket.ts";
@@ -66,6 +67,10 @@ Commands:
                                 first check that id matches the "Bundle id:" line of the
                                 bundle you stored. Ends status's warning until a new bundle is
                                 written; needs the server running (exits 3 when it is not)
+  seed                          load the demo seed's accounts and transactions onto the first two
+                                signed-up people (shared and private accounts), for dev installs
+                                and the end-to-end run; needs both partners signed up and an
+                                empty ledger, and the server running (exits 3 when it is not)
   restore [snapshot|latest]     on a stopped stack: fetch the snapshot (default latest), verify
     [--restore-credentials |    it, ask whether to restore the snapshot's sign-in details (sessions,
      --keep-credentials]        passkeys, authenticator, recovery codes) or keep the current ones
@@ -426,6 +431,23 @@ async function backupCli(config: Config, options: CliOptions): Promise<number> {
   }
 }
 
+/** `seed`: over the admin socket only. */
+async function seedCli(config: Config, io: CliIo): Promise<number> {
+  if (config.adminSocket === null) {
+    io.err("pangolin: the admin socket is disabled (PANGOLIN_ADMIN_SOCKET is empty)");
+    return EXIT_FAILED;
+  }
+  const response = await viaSocket(config, "seed", {});
+  if (response === undefined) return notAnswering(config, io);
+  if (!response.ok) {
+    printError(io, response.error);
+    return EXIT_FAILED;
+  }
+  const result = response.result as SeedResult;
+  io.out(`Seeded ${result.accounts} accounts (${result.events} events) onto the signed-up people`);
+  return EXIT_OK;
+}
+
 const VERIFY_CHECKS = new Set(["integrity", "manifest", "schema"]);
 
 /** One line from the terminal; undefined when the input ends or Ctrl-C closes it. */
@@ -531,7 +553,7 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
     return EXIT_USAGE;
   };
   if (command === undefined) return usage("name a command");
-  if (!["status", "reset-user", "backup", "restore", "confirm-bundle"].includes(command)) {
+  if (!["status", "reset-user", "backup", "restore", "confirm-bundle", "seed"].includes(command)) {
     return usage(`unknown command ${JSON.stringify(command)}`);
   }
   if (command === "status" && rest.length > 0) return usage("status takes no arguments");
@@ -540,6 +562,7 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
   if (command === "confirm-bundle" && rest.length > 0) {
     return usage("confirm-bundle takes no arguments");
   }
+  if (command === "seed" && rest.length > 0) return usage("seed takes no arguments");
   const flags = rest.filter((arg) => arg.startsWith("--"));
   const operands = rest.filter((arg) => !arg.startsWith("--"));
   if (command === "restore") {
@@ -588,6 +611,8 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
         return await restoreCli(config, options, ref, flag);
       case "confirm-bundle":
         return await confirmBundleCli(config, io);
+      case "seed":
+        return await seedCli(config, io);
       default:
         return await resetUserCli(config, options, rest[0]);
     }

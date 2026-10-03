@@ -19,6 +19,7 @@ import {
   issueReEnrolmentLink,
   issueSetupLink,
   listNotices,
+  listTransactions,
   me,
   type ReadinessOutput,
   type RunnerLiveness,
@@ -217,6 +218,11 @@ export function createApi(deps: ApiDeps) {
         },
         200,
       );
+    })
+    .get("/api/ledger/transactions", (c) => {
+      // Per viewer (AD-3): shared accounts plus the viewer's own private ones. Never cached.
+      c.header("Cache-Control", "no-store");
+      return c.json({ transactions: listTransactions(ctx(c), {}) }, 200);
     })
     .post("/api/identity/setup-links", (c) => {
       c.header("Cache-Control", "no-store");

@@ -141,7 +141,12 @@ describe("pangolin (the admin CLI)", () => {
       code: EXIT_USAGE,
       err: /confirm-bundle takes no arguments/,
     });
+    expect(await cli(["seed", "path.json"])).toMatchObject({
+      code: EXIT_USAGE,
+      err: /seed takes no arguments/,
+    });
     expect(await cli(["--help"])).toMatchObject({ out: /confirm-bundle/ });
+    expect(await cli(["--help"])).toMatchObject({ out: /seed {26}load the demo seed/ });
   });
 
   it("status on a running server prints readiness and job state, exit 0", async () => {

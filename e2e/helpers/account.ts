@@ -17,7 +17,11 @@ export interface Account {
   readonly recoveryCodes: readonly string[];
 }
 
-const stateFile = join(dirname(fileURLToPath(import.meta.url)), "..", ".state", "account.json");
+const stateDir = join(dirname(fileURLToPath(import.meta.url)), "..", ".state");
+const stateFile = join(stateDir, "account.json");
+const partnerFile = join(stateDir, "partner.json");
+/** The partner's signed-in browser state, saved when they register (see `savePartnerSession`). */
+export const partnerSessionFile = join(stateDir, "partner-session.json");
 
 /**
  * The first-boot setup link: from `E2E_SETUP_LINK_COMMAND` (e.g. `docker compose exec` in CI),
@@ -34,13 +38,18 @@ export function readSetupLink(): string {
   return readFileSync(join(dataDir, "setup-link.txt"), "utf8").trim();
 }
 
-export function saveAccount(account: Account): void {
+/** Which of the household's two people: the first to sign up, or their invited partner. */
+export type Who = "first" | "partner";
+
+export function saveAccount(account: Account, who: Who = "first"): void {
   mkdirSync(dirname(stateFile), { recursive: true });
-  writeFileSync(stateFile, JSON.stringify(account), { mode: 0o600 });
+  writeFileSync(who === "first" ? stateFile : partnerFile, JSON.stringify(account), {
+    mode: 0o600,
+  });
 }
 
-export function loadAccount(): Account {
-  return JSON.parse(readFileSync(stateFile, "utf8")) as Account;
+export function loadAccount(who: Who = "first"): Account {
+  return JSON.parse(readFileSync(who === "first" ? stateFile : partnerFile, "utf8")) as Account;
 }
 
 /** Signs in through the page with email, password and a computed TOTP code. */

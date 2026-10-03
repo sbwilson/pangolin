@@ -234,3 +234,31 @@ export async function dismissNotice(id: string): Promise<void> {
   const res = await api.api.identity.notices[":id"].dismiss.$post({ param: { id } });
   if (!res.ok) throw await apiError(res);
 }
+
+/** One split of a transaction. `beneficiary` is `shared` or a person ID. */
+export interface LedgerSplit {
+  readonly id: string;
+  readonly amountCents: number;
+  readonly beneficiary: string;
+  readonly memo: string | null;
+}
+
+/** A transaction in an account the signed-in person can see, with its splits. */
+export interface LedgerTransaction {
+  readonly id: string;
+  readonly accountId: string;
+  /** `YYYY-MM-DD`. */
+  readonly postedOn: string;
+  /** Signed integer minor units. */
+  readonly amountCents: number;
+  readonly descriptionRaw: string;
+  readonly status: "pending" | "posted";
+  readonly splits: readonly LedgerSplit[];
+}
+
+/** Shared accounts' transactions plus the signed-in person's own private ones, newest first. */
+export async function fetchTransactions(): Promise<LedgerTransaction[]> {
+  const res = await api.api.ledger.transactions.$get();
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()).transactions;
+}

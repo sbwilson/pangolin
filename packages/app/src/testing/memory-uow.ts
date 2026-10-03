@@ -4,6 +4,9 @@
 // claims, visibility); `packages/db` tests prove the adapter on real SQLite.
 import type { Id } from "@pangolin/shared";
 import type {
+  AccountOwnerRow,
+  AccountRepo,
+  AccountRow,
   AuditRow,
   BackupSnapshotRepo,
   BackupSnapshotRow,
@@ -26,6 +29,9 @@ import type {
   ReviewItemRow,
   SetupLinkRepo,
   SetupLinkRow,
+  SplitRow,
+  TransactionRepo,
+  TransactionRow,
   TxRepos,
   UnitOfWork,
   UserEnrolment,
@@ -39,6 +45,10 @@ export interface MemoryState {
   audit: AuditRow[];
   jobs: JobRow[];
   reviewItems: ReviewItemRow[];
+  accounts: AccountRow[];
+  accountOwners: AccountOwnerRow[];
+  transactions: TransactionRow[];
+  splits: SplitRow[];
   backups: BackupSnapshotRow[];
   backupVerifications: BackupVerificationRow[];
   /** The confirmed recovery bundle; undefined until the first confirmation. */
@@ -562,6 +572,71 @@ function reviewItemRepo(working: MemoryState, check: () => void): ReviewItemRepo
   };
 }
 
+function accountVisible(working: MemoryState, viewer: Viewer, account: AccountRow): boolean {
+  if (viewer.kind === "system" || !account.isPrivate) return true;
+  return working.accountOwners.some(
+    (owner) => owner.accountId === account.id && owner.personId === viewer.personId,
+  );
+}
+
+function accountRepo(working: MemoryState, check: () => void): AccountRepo {
+  return {
+    insert: (row, owners) => {
+      check();
+      working.accounts.push(row);
+      working.accountOwners.push(...owners);
+    },
+    findVisible: (viewer, id) => {
+      if (viewer === undefined || viewer === null) throw new TypeError("a viewer is required");
+      check();
+      const account = working.accounts.find((row) => row.id === id);
+      return account !== undefined && accountVisible(working, viewer, account)
+        ? account
+        : undefined;
+    },
+    any: () => {
+      check();
+      return working.accounts.length > 0;
+    },
+    owners: (accountId) => {
+      check();
+      return working.accountOwners.filter((owner) => owner.accountId === accountId);
+    },
+  };
+}
+
+function transactionRepo(working: MemoryState, check: () => void): TransactionRepo {
+  return {
+    insert: (row, splits) => {
+      check();
+      working.transactions.push(row);
+      working.splits.push(...splits);
+    },
+    listVisible: (viewer) => {
+      if (viewer === undefined || viewer === null) throw new TypeError("a viewer is required");
+      check();
+      const visibleIds = new Set(
+        working.accounts.filter((a) => accountVisible(working, viewer, a)).map((a) => a.id),
+      );
+      return working.transactions
+        .filter((row) => visibleIds.has(row.accountId))
+        .sort((a, b) =>
+          `${b.postedOn}|${b.id}` < `${a.postedOn}|${a.id}`
+            ? -1
+            : `${b.postedOn}|${b.id}` > `${a.postedOn}|${a.id}`
+              ? 1
+              : 0,
+        )
+        .map((row) => ({
+          ...row,
+          splits: working.splits
+            .filter((split) => split.transactionId === row.id)
+            .sort((a, b) => (a.id < b.id ? -1 : 1)),
+        }));
+    },
+  };
+}
+
 export function memoryUnitOfWork(
   settings: HouseholdSettingsRow = DEFAULT_SETTINGS,
 ): MemoryUnitOfWork {
@@ -572,6 +647,10 @@ export function memoryUnitOfWork(
       audit: [],
       jobs: [],
       reviewItems: [],
+      accounts: [],
+      accountOwners: [],
+      transactions: [],
+      splits: [],
       backups: [],
       backupVerifications: [],
       recoveryBundle: undefined,
@@ -593,6 +672,10 @@ export function memoryUnitOfWork(
         audit: [...uow.state.audit],
         jobs: [...uow.state.jobs],
         reviewItems: [...uow.state.reviewItems],
+        accounts: [...uow.state.accounts],
+        accountOwners: [...uow.state.accountOwners],
+        transactions: [...uow.state.transactions],
+        splits: [...uow.state.splits],
         backups: [...uow.state.backups],
         backupVerifications: [...uow.state.backupVerifications],
         recoveryBundle: uow.state.recoveryBundle,
@@ -637,6 +720,8 @@ export function memoryUnitOfWork(
         },
         jobs: jobRepo(working, check),
         reviewItems: reviewItemRepo(working, check),
+        accounts: accountRepo(working, check),
+        transactions: transactionRepo(working, check),
         backups: backupRepo(working, check),
         backupVerifications: backupVerificationRepo(working, check),
         recoveryBundle: {
@@ -657,6 +742,10 @@ export function memoryUnitOfWork(
         uow.state.audit = working.audit;
         uow.state.jobs = working.jobs;
         uow.state.reviewItems = working.reviewItems;
+        uow.state.accounts = working.accounts;
+        uow.state.accountOwners = working.accountOwners;
+        uow.state.transactions = working.transactions;
+        uow.state.splits = working.splits;
         uow.state.backups = working.backups;
         uow.state.backupVerifications = working.backupVerifications;
         uow.state.recoveryBundle = working.recoveryBundle;
@@ -701,6 +790,12 @@ export function memoryUnitOfWork(
           firstCreatedAt: jobRepo(uow.state, check).firstCreatedAt,
         },
         reviewItems: { listOpenFor: reviewItemRepo(uow.state, check).listOpenFor },
+        accounts: {
+          findVisible: accountRepo(uow.state, check).findVisible,
+          owners: accountRepo(uow.state, check).owners,
+          any: accountRepo(uow.state, check).any,
+        },
+        transactions: { listVisible: transactionRepo(uow.state, check).listVisible },
         backups: {
           find: backupRepo(uow.state, check).find,
           latestPushed: backupRepo(uow.state, check).latestPushed,

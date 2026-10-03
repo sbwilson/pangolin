@@ -17,7 +17,9 @@ export {
   type ResetUserOutput,
   resetUserCommand,
   runAdminCommand,
+  type SeedResult,
   type StatusResult,
+  seedCommand,
   statusCommand,
 } from "./commands.ts";
 export { acquireDataDirLock, type DataDirLock, DataDirLocked, LOCK_FILE } from "./lock.ts";
@@ -28,7 +30,14 @@ export {
   type RestoreResult,
   restoreStopped,
 } from "./restore.ts";
-export { type AppliedSeed, applySeed, parseSeed, type SeedDeps } from "./seed.ts";
+export {
+  type AppliedSeed,
+  type ApplySeedOptions,
+  applySeed,
+  linkSeed,
+  parseSeed,
+  type SeedDeps,
+} from "./seed.ts";
 export { type FirstSetupLinkDeps, SETUP_LINK_FILE, writeFirstSetupLink } from "./setup-link.ts";
 export {
   type AdminError,

@@ -87,7 +87,7 @@ describe("startServer", () => {
     try {
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 8, writable: true },
+        body: { status: "ok", schemaVersion: 9, writable: true },
       });
     } finally {
       await server.close();
@@ -100,7 +100,7 @@ describe("startServer", () => {
     try {
       expect((await getHealth(server.port)).body).toEqual({
         status: "ok",
-        schemaVersion: 8,
+        schemaVersion: 9,
         writable: true,
       });
     } finally {
@@ -121,7 +121,7 @@ describe("startServer", () => {
       try {
         expect(await getHealth(server.port)).toEqual({
           status: 503,
-          body: { status: "unhealthy", schemaVersion: 8, writable: false },
+          body: { status: "unhealthy", schemaVersion: 9, writable: false },
         });
       } finally {
         await server.close();
@@ -143,7 +143,7 @@ describe("startServer", () => {
 
     await expect(boot(migrationsDir)).rejects.toThrow(/Migration 0099_broken failed/);
     const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
-    expect(schemaVersion(db)).toBe(8);
+    expect(schemaVersion(db)).toBe(9);
     db.close();
   });
 });
@@ -474,7 +474,7 @@ describe("startServer in demo mode", () => {
       );
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 8, writable: true },
+        body: { status: "ok", schemaVersion: 9, writable: true },
       });
       // Demo mode runs no jobs, so /healthz skips the runner check.
       expect(await getHealthz(server.port)).toEqual({ status: 200, body: { ok: true } });
@@ -542,11 +542,11 @@ describe("startServer in demo mode", () => {
       JSON.stringify({
         seed: "s",
         today: "2026-07-15",
-        events: [{ type: "account.created" }],
+        events: [{ type: "budget.created" }],
         expectations: {},
       }),
     );
-    await expect(bootDemo(bad)).rejects.toThrow(/unknown event type "account.created"/);
+    await expect(bootDemo(bad)).rejects.toThrow(/unknown event type "budget.created"/);
     writeFileSync(bad, "{ nope");
     await expect(bootDemo(bad)).rejects.toThrow(/not valid JSON/);
     await expect(bootDemo(join(dir, "missing.json"))).rejects.toThrow(/ENOENT/);

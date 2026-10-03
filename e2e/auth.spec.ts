@@ -3,6 +3,7 @@
 // and the request guards. The tests build on each other, so they run in order.
 import {
   type Account,
+  partnerSessionFile,
   readSetupLink,
   saveAccount,
   saveRecoveryCodes,
@@ -116,7 +117,13 @@ test("invites the partner, who registers; then any further sign-up is refused", 
     await watchCsp(samContext, cspViolations);
     const samPage = await samContext.newPage();
     await addVirtualAuthenticator(samPage);
-    await register(samPage, partnerLink, sam);
+    const { secret, codes } = await register(samPage, partnerLink, sam);
+    saveAccount(
+      { email: sam.email, password: sam.password, totpSecret: secret, recoveryCodes: codes },
+      "partner",
+    );
+    // The lockout test below locks Sam's email, so later specs act as Sam with this session.
+    await samContext.storageState({ path: partnerSessionFile });
   } finally {
     await samContext.close();
   }
