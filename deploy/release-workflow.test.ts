@@ -22,7 +22,10 @@ interface Job {
 const here = dirname(fileURLToPath(import.meta.url));
 const workflow = parse(
   readFileSync(join(here, "..", ".github", "workflows", "release.yml"), "utf8"),
-) as { jobs: Record<string, Job> };
+) as {
+  jobs: Record<string, Job>;
+  concurrency?: { group?: string; "cancel-in-progress"?: boolean };
+};
 const jobs = workflow.jobs;
 
 const needs = (job: Job): string[] =>
@@ -125,5 +128,27 @@ describe("release.yml", () => {
       expect(tags, `${step.name} pushes outside localhost:5000`).toMatch(/^localhost:5000\//);
       expect(step.run ?? "").not.toMatch(/imagetools\s+create|docker\s+push/);
     }
+  });
+
+  it("runs one release at a time, never cancelling one (story 11.6)", () => {
+    expect(workflow.concurrency?.group).toBe("release");
+    expect(workflow.concurrency?.["cancel-in-progress"]).toBe(false);
+  });
+
+  it("tags only what release-tags.sh allows, with every tag fetched, and badges to match", () => {
+    const publish = jobs.publish ?? {};
+    const steps = publish.steps ?? [];
+    const checkout = steps.find((s) => s.uses?.startsWith("actions/checkout"));
+    expect(checkout?.with?.["fetch-depth"]).toBe(0);
+    const tag = steps.find(isTagStep);
+    expect(tag?.run).toContain(".github/scripts/release-tags.sh");
+    // Its output is captured before the loop, so a failing script fails the step.
+    expect(tag?.run).toMatch(/tags=\$\(\.github\/scripts\/release-tags\.sh/);
+    expect(tag?.run).not.toMatch(/for tag in \$\(/);
+    // No tag is hard-coded: latest and vX.Y come only from the script.
+    expect(tag?.run).not.toMatch(/:latest"|\$MAJOR_MINOR/);
+    const release = steps.find(isReleaseStep);
+    expect(release?.with?.make_latest).toBe("${{ steps.tags.outputs.latest }}");
+    expect(release?.with?.prerelease).toBe("${{ steps.tags.outputs.prerelease }}");
   });
 });

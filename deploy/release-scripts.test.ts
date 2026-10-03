@@ -19,6 +19,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SCRIPTS = join(here, "..", ".github", "scripts");
 const PREVIOUS_RELEASE = join(SCRIPTS, "previous-release.sh");
 const PREVIOUS_DB = join(SCRIPTS, "previous-db.sh");
+const RELEASE_TAGS = join(SCRIPTS, "release-tags.sh");
 const IMAGE = "ghcr.io/example/pangolin:v1.2.3";
 
 let root: string;
@@ -53,6 +54,67 @@ function git(...args: string[]): void {
   const result = spawnSync("git", args, { cwd: root, encoding: "utf8", env: gitEnv() });
   if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
 }
+
+describe("release-tags.sh", () => {
+  beforeEach(() => {
+    git("init", "-q");
+    git(
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@example.com",
+      "commit",
+      "-q",
+      "--allow-empty",
+      "-m",
+      "x",
+    );
+  });
+
+  const tag = (...names: string[]) => {
+    for (const name of names) git("tag", name);
+  };
+  const tags = (current: string) => run([RELEASE_TAGS, current], { cwd: root });
+
+  it("moves vX.Y and latest for the newest release", () => {
+    tag("v1.1.0", "v1.2.0", "v1.2.1");
+    const result = tags("v1.2.1");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toBe("v1.2.1\nv1.2\nlatest\n");
+  });
+
+  it("moves neither latest nor the newer line's vX.Y for a patch on an older line", () => {
+    tag("v1.1.4", "v1.2.0", "v1.1.5");
+    expect(tags("v1.1.5").stdout).toBe("v1.1.5\nv1.1\n");
+  });
+
+  it("moves nothing but the version tag for an older patch in its own line", () => {
+    tag("v1.2.0", "v1.2.2", "v1.2.1");
+    expect(tags("v1.2.1").stdout).toBe("v1.2.1\n");
+  });
+
+  it("orders by version, so v0.10.0 is above v0.9.9", () => {
+    tag("v0.9.9", "v0.10.0");
+    expect(tags("v0.10.0").stdout).toBe("v0.10.0\nv0.10\nlatest\n");
+    expect(tags("v0.9.9").stdout).toBe("v0.9.9\nv0.9\n");
+  });
+
+  it("gives a pre-release only its own tag, and does not let it hold back its release", () => {
+    tag("v1.2.0", "v1.3.0-rc1");
+    expect(tags("v1.3.0-rc1").stdout).toBe("v1.3.0-rc1\n");
+    tag("v1.3.0");
+    expect(tags("v1.3.0").stdout).toBe("v1.3.0\nv1.3\nlatest\n");
+  });
+
+  it("fails for a tag the repository does not have, and without one argument", () => {
+    tag("v1.0.0");
+    const result = tags("v9.9.9");
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("Tag v9.9.9 is not in the repository's v*.*.* tags");
+    expect(run([RELEASE_TAGS], { cwd: root }).status).toBe(2);
+  });
+});
 
 describe("previous-release.sh", () => {
   beforeEach(() => {
