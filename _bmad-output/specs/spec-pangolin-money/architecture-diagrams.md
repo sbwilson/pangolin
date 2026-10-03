@@ -6,7 +6,7 @@
 
 ```mermaid
 flowchart LR
-  B[Browser or phone<br/>React PWA] --> P[Reverse proxy<br/>NPM, or Caddy]
+  B[Browser or phone<br/>React PWA] --> P[Reverse proxy<br/>NPM]
   subgraph App[App container - Node]
     A[API and login<br/>Hono, better-auth]
     D[Domain services<br/>import, rules, budgets]

@@ -11,7 +11,7 @@ Pangolin Money is a self-hosted web app for two people that shows where our mone
 - Private data never leaves the server by default. No third-party aggregators, no telemetry. A cloud LLM is used only if we explicitly configure one. Outbound traffic is limited to an allowlist: public price and unit-price pages, plus any LLM endpoint we configure.
 - Built for a couple: shared and individual views, with per-person privacy for accounts and transactions (see Security model).
 - Australian by default: AUD, July–June financial year, fortnightly pay cycles, ATO tax categories, super.
-- One-command install and upgrade on Linux: Debian first, then Ubuntu and Rocky Linux. Works behind an existing reverse proxy (Nginx Proxy Manager) that handles Let's Encrypt. Encrypted backups with a restore that CI actually tests.
+- One-command install and upgrade on Linux: Debian 13 first, then Ubuntu and Rocky Linux. Works behind an existing reverse proxy (Nginx Proxy Manager) that handles Let's Encrypt. Encrypted backups with a restore that CI actually tests.
 - Web and mobile through one responsive app, installable as a PWA (progressive web app, i.e. added to the home screen). No app-store app.
 
 **Data sources in v1**
@@ -30,7 +30,7 @@ Pangolin Money is a self-hosted web app for two people that shows where our mone
 
 ## Architecture
 
-One Node process serves the API and the built frontend, runs scheduled jobs, and is the only thing that writes to SQLite. That matches SQLite's single-writer model and keeps operations to one app container behind the reverse proxy we already run (Nginx Proxy Manager). A bundled Caddy is available as an optional Compose profile for installs without a proxy.
+One Node process serves the API and the built frontend, runs scheduled jobs, and is the only thing that writes to SQLite. That matches SQLite's single-writer model and keeps operations to one app container behind the reverse proxy we already run (Nginx Proxy Manager). A bundled Caddy profile for installs without a proxy is deferred to the next version.
 
 &#91;embedded content: system architecture · one app container, one database\]
 
@@ -64,7 +64,7 @@ TypeScript end to end, strict mode, one repo. Every choice below is mainstream a
 | Tests | Vitest (unit), Playwright (end to end) | Fast; Playwright drives a real browser in CI |
 | Lint/format | Biome | One tool, like rustfmt + clippy |
 | LLM | Two provider adapters: OpenAI-compatible (Ollama, LM Studio, vLLM, OpenAI, OpenRouter) and Anthropic Messages API; optional API key; schema-constrained output | Local by default; cloud only by explicit opt-in |
-| Reverse proxy | Nginx Proxy Manager (existing); bundled Caddy as an optional Compose profile | NPM already handles Let's Encrypt; Caddy covers installs without a proxy |
+| Reverse proxy | Nginx Proxy Manager (existing); bundled Caddy as an optional Compose profile is deferred to the next version | NPM already handles Let's Encrypt; Caddy would cover installs without a proxy |
 | Backups | restic (encrypted, deduplicated) + `VACUUM INTO` snapshots | Consistent snapshot, encrypted copy to TrueNAS in append-only mode |
 | CI/CD | GitHub Actions to GHCR images; Renovate for updates | Tag-driven releases |
 
@@ -403,7 +403,7 @@ Pangolin will be public on our own domain behind Nginx Proxy Manager, so the log
 
 - NPM terminates TLS with Let's Encrypt and forwards to the app on the LAN.
 - The app trusts `X-Forwarded-*` headers only from the proxy's IP, and listens only on the internal network.
-- A Tailscale-only install remains a supported, stricter option.
+- A Tailscale-only install is a stricter option, deferred to the next version.
 
 | Threat | Mitigations |
 | --- | --- |
@@ -422,7 +422,7 @@ Pangolin will be public on our own domain behind Nginx Proxy Manager, so the log
 - **Recovery codes:** 10 one-time codes generated at enrolment and stored hashed. Using one forces enrolment of a new passkey.
 - **Partner-assisted:** the other partner, re-authenticated with their passkey, issues a one-time re-enrolment link.
   - It expires in 24 hours and is logged.
-  - The affected person is notified in the app (and by email if SMTP is configured).
+  - The affected person is notified in the app. Email notification is deferred to the next version.
   - It never reveals the other person's private accounts or hidden transaction names.
 - **Both of us locked out:** `pangolin reset-user` on the server console, which requires shell access to the VM.
 
@@ -430,7 +430,7 @@ The database file itself is protected by disk encryption, not SQLCipher. SQLCiph
 
 ## Deployment, backups and CI/CD
 
-The server runs one app container under Docker Compose (plus an optional bundled Caddy), managed by the `pangolin` command. Supported hosts: Debian 12+ first, then Ubuntu 24.04 LTS and Rocky Linux 9, on amd64 or arm64.
+The server runs one app container under Docker Compose, managed by the `pangolin` command. A bundled Caddy is deferred to the next version. Supported hosts start at Debian 13, then Ubuntu 24.04 LTS and Rocky Linux 9, on amd64 or arm64.
 
 **Host: Debian VM on Proxmox**
 
@@ -439,7 +439,7 @@ The server runs one app container under Docker Compose (plus an optional bundled
 | Resource | Minimum | Recommended |
 | --- | --- | --- |
 | Guest type | VM | VM, not LXC (better isolation, simpler disk encryption) |
-| OS | Debian 12 | Debian 13 |
+| OS | Debian 13 | Debian 13 |
 | vCPU | 1 | 2, CPU type `host` (exposes AES-NI for encryption) |
 | RAM | 1 GB | 2–4 GB |
 | System disk | 16 GB | 32 GB |
@@ -452,13 +452,12 @@ The server runs one app container under Docker Compose (plus an optional bundled
 - **Firewall** (Proxmox VM firewall or nftables):
   - Inbound: only the NPM host to the app port, and SSH from the admin network.
   - Outbound: an allowlist only (price and unit-price hosts, the LLM endpoint, TrueNAS, Debian and Docker mirrors, GHCR).
-- **Hardening:** SSH keys only; unattended-upgrades for security patches; chrony; timezone Australia/Sydney; qemu-guest-agent.
 - **Private repo:** the server pulls images from GHCR with a fine-grained, read-only token (packages: read), stored with the install's secrets.
 - **Proxmox VM backups** (vzdump or PBS) are a useful extra. If you use PBS, turn on its client-side encryption. restic stays the source of truth for data.
 
 **Install and upgrade**
 
-- `install.sh` detects the distro (apt or dnf) and installs Docker Engine from Docker's repository if it's missing. On Rocky it also sets SELinux volume labels and firewalld rules. It then asks three things: proxy mode (existing NPM, bundled Caddy, or Tailscale-only), the public hostname, and the backup server. It then:
+- `install.sh` detects the distro (apt or dnf) and installs Docker Engine from Docker's repository if it's missing. On Rocky it also sets SELinux volume labels and firewalld rules. It then asks three things: proxy mode, the public hostname, and the backup server. The existing NPM is the one proxy mode in this version; bundled Caddy and Tailscale-only are deferred to the next version. It then:
   - generates secrets (auth secret, encryption key file, restic password);
   - writes the Compose file and `.env`;
   - starts the stack and prints a one-time setup link for creating the first account. With NPM, it also prints the proxy-host settings to enter.
@@ -472,7 +471,7 @@ The server runs one app container under Docker Compose (plus an optional bundled
 
 **Backups and restore**
 
-- Nightly: a consistent snapshot (`VACUUM INTO`) plus the attachments folder go to restic. The destination is restic's REST server running as a TrueNAS app, reached over WireGuard and set to append-only. Contents are encrypted before they leave. Pruning runs on the TrueNAS side, so the app host can add backups but never delete them.
+- Nightly: a consistent snapshot (`VACUUM INTO`) plus the attachments folder go to restic. The destination is restic's REST server running as a TrueNAS app, set to append-only. Contents are encrypted before they leave. Pruning runs on the TrueNAS side, so the app host can add backups but never delete them.
 - Retention: 7 daily, 4 weekly, 12 monthly. `restic check` runs weekly.
 - Restore goes into a fresh directory, then verifies before swapping in:
   - `PRAGMA integrity_check`;
@@ -485,7 +484,8 @@ The server runs one app container under Docker Compose (plus an optional bundled
 **CI/CD (GitHub Actions)**
 
 - **Every push:** Biome lint, type-check, Vitest unit tests, migration test, then Playwright end-to-end tests against the mock data.
-  - The migration test applies all migrations to an empty database and to the previous release's database.
+  - The migration test applies all migrations to an empty database.
+  - The release workflow also migrates the database the previous release's image creates (`migrate-previous`).
 - **Tagged release:**
   1. build amd64 and arm64 images;
   2. generate a software bill of materials and run a vulnerability scan;
@@ -526,7 +526,7 @@ pangolin/
 │  ├─ mock-llm/        replays recorded OpenAI- and Anthropic-format responses
 │  ├─ mock-prices/     offline price and unit-price server
 │  └─ seed/            synthetic household generator (files + PDFs)
-├─ deploy/            compose.yaml (+ optional caddy profile), install.sh, pangolin CLI
+├─ deploy/            compose.yaml, install.sh, pangolin CLI (caddy profile deferred)
 ├─ e2e/               Playwright tests
 └─ .github/workflows/ ci.yml, release.yml, restore-test.yml
 ```
@@ -548,9 +548,9 @@ All are settled.
 | Decision | Choice |
 | --- | --- |
 | Repo | Private GitHub repo; images pulled with a read-only token |
-| Exposure | Public domain through our Nginx Proxy Manager (Let's Encrypt); Tailscale-only remains an option |
-| Host | Debian VM on Proxmox, LUKS data disk unlocked by Clevis + Tang; Ubuntu and Rocky Linux also supported |
-| Backups | restic REST server on TrueNAS, over WireGuard, append-only |
+| Exposure | Public domain through our Nginx Proxy Manager (Let's Encrypt); Tailscale-only is deferred to the next version |
+| Host | Debian 13 VM on Proxmox, LUKS data disk unlocked by Clevis + Tang; Ubuntu and Rocky Linux also supported |
+| Backups | restic REST server on TrueNAS, append-only |
 | Account recovery | Recovery codes and partner-assisted reset |
 | Savings | Balance of accounts flagged as savings (personal and shared); investments tracked separately |
 | Goal priorities | Staged allocation; a completed goal is flagged, its share rescaled, and we're prompted to review |
@@ -569,6 +569,9 @@ All are settled.
 | LLM providers | Ollama by default; any OpenAI- or Anthropic-compatible endpoint with an optional key |
 | Up | API dropped; one-off CSV history import before the account closes |
 | Name | Pangolin Money |
+| Host hardening (2026-10-03) | Outside the application. Host hardening and the network tunnel to the NAS are the operator's concern, not requirements of this app |
+| Recovery notice (2026-10-03) | In-app notice only in this version; email notification is deferred to the next version |
+| Outbound allowlist (2026-10-03) | The firewall `install.sh` generates is the only enforcement in this version; an in-app check and re-authentication to change the list are deferred to the next version |
 
 **Periods where we spend more than we earn: option A chosen**
 

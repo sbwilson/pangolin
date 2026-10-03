@@ -32,7 +32,7 @@ Both of us run our finances from Pangolin Money instead of spreadsheets, with ev
 Capability boundaries, ordered by milestone. Each milestone gate is the Done-when of the last epic in that milestone. Not in scope: everything in the spec's Non-goals, including partner settlement (v1.1). Tracer path: install → passkey login → import one CommBank OFX → see it in the privacy-aware ledger → see it in the cash-flow Sankey.
 
 - Touch point: Nginx Proxy Manager — a proxy host entry and rate limits, no code; owner: epic-platform-foundations
-- Touch point: TrueNAS restic REST server — an append-only repository reached over WireGuard; owner: epic-platform-foundations
+- Touch point: TrueNAS restic REST server — an append-only repository; owner: epic-platform-foundations
 - Touch point: Tang server — network-bound unlock for the LUKS data disk; owner: epic-platform-foundations
 - Touch point: GHCR — signed images pulled with a read-only token; owner: epic-platform-foundations
 - Touch point: CommBank NetBank — a person exports pre-FY2026 history; owner: epic-import-dedupe-transfers

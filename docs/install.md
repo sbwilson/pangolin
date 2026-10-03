@@ -5,15 +5,15 @@ existing Nginx Proxy Manager (NPM). `deploy/install.sh` does almost all of it in
 the steps before it (the VM and its encrypted data disk) are yours, because the installer never
 formats or binds disks.
 
-Debian 13 is the proven path; Debian 12 is supported. Ubuntu 24.04 and Rocky Linux 9 paths
-are written but not yet proven.
+Debian 13 is the minimum and the proven path. Ubuntu 24.04 and Rocky Linux 9 paths are written
+but not yet proven.
 
 ## 1. The VM
 
 | Resource | Minimum | Recommended |
 | --- | --- | --- |
 | Guest type | VM | VM, not LXC (better isolation, simpler disk encryption) |
-| OS | Debian 12 | Debian 13 |
+| OS | Debian 13 | Debian 13 |
 | vCPU | 1 | 2, CPU type `host` (exposes AES-NI for encryption) |
 | RAM | 1 GB | 2–4 GB |
 | System disk | 16 GB | 32 GB |
@@ -23,10 +23,7 @@ In Proxmox: create the VM with CPU type `host`, tick **QEMU Guest Agent**, and a
 disk as a second virtual disk. Install Debian with SSH only (no desktop), then:
 
 ```sh
-apt install -y qemu-guest-agent chrony unattended-upgrades
-timedatectl set-timezone Australia/Sydney
-# SSH keys only: in /etc/ssh/sshd_config set `PasswordAuthentication no`, then
-systemctl restart ssh
+apt install -y qemu-guest-agent
 ```
 
 `install.sh` checks the RAM, the free disk, AES-NI, whether it runs in LXC and whether the
@@ -279,7 +276,7 @@ tables are never touched):
   the forward path, the same packets Docker's `DOCKER-USER` chain sees.
 - **Time:** the VM itself (not its containers) may send NTP (UDP 123) to any server. NTP pool
   names rotate their addresses faster than the allowlist is re-resolved, so allowlisting them
-  would let chrony's servers drop out, and a drifting clock breaks authenticator codes.
+  would let the time servers drop out, and a drifting clock breaks authenticator codes.
 - **Ping:** the VM itself (not its containers) may ping any address, to test the network.
 - **At boot:** `pangolin-firewall.service` loads the last applied ruleset
   (`/opt/pangolin/firewall/pangolin.nft`, with the addresses resolved last time) before the

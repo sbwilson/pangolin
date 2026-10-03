@@ -118,7 +118,7 @@ references = ["spine — _bmad-output/planning-artifacts/architecture/architectu
 id = 10
 type = "story"
 title = "Backups and restore"
-description = "Adds the nightly VACUUM INTO snapshot (local lane) and restic push over WireGuard (net lane) with a manifest of row counts and per-table checksums, verified restore that swaps files and cancels pending external-effect jobs, weekly restic check, the monthly drill, and CI restore tests including a clean-host restore from the recovery bundle alone."
+description = "Adds the nightly VACUUM INTO snapshot (local lane) and restic push (net lane) with a manifest of row counts and per-table checksums, verified restore that swaps files and cancels pending external-effect jobs, and CI restore tests including a clean-host restore from the recovery bundle alone."
 verify = "CI backs up and restores the seeded database with integrity_check and manifest checks passing, a clean-host restore from only the bundle decrypts a sample blob and logs in with TOTP, and on the server a manual backup lands in the append-only repository and cannot be deleted from the VM."
 covers = ["CAP-16"]
 after = [4, 7, 8, 9]
@@ -156,13 +156,13 @@ risk = "low"
 id = 14
 type = "story"
 title = "Backup monitoring"
-description = "Adds the weekly restic check (Sundays 03:30, household time zone), the monthly restore drill (1st of the month 04:00, into a temporary directory, running 1.10's restore checks) and a warning when the last good backup is older than about 48 hours, each shown in pangolin status and on the web status page, with the check raising a review item on failure and the stale warning also reflected in readiness. Split from Backups and restore (1.10), whose description names the check and drill but whose build left them out."
-verify = "Tests show a failed restic check raises one review item and shows in pangolin status and the status page, the drill restores a seeded backup into a temporary directory and reports pass or fail on the status page, and a last good backup older than 48 hours raises the stale warning in status, the status page and readiness while a fresh one does not."
+description = "Adds the weekly restic check (Sundays 03:30, household time zone), the monthly restore drill (1st of the month 04:00, into a temporary directory, running 1.10's restore checks) and a warning when the last good backup is older than about 48 hours, each shown in pangolin status and on the web status page, with the check raising a review item on failure and the stale warning also shown as a /healthz warning that never fails readiness. Split from Backups and restore (1.10), whose description names the check and drill but whose build left them out."
+verify = "Tests show a failed restic check raises one review item and shows in pangolin status and the status page, the drill restores a seeded backup into a temporary directory and reports pass or fail on the status page, and a last good backup older than 48 hours raises the stale warning in status, the status page and the /healthz body (readiness still passes) while a fresh one does not."
 covers = ["CAP-16"]
 after = [10]
 hitl = false
 risk = "medium"
-references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Backups and restore", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-16, AD-19", "deferred — _bmad-output/implementation-artifacts/deferred-work.md, the story 1.10b entries"]
+references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Backups and restore", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-16, AD-19", "deferred — _bmad-output/implementation-artifacts/deferred-work.md, the backup check, drill and stale-warning entries"]
 
 [[entry]]
 id = 13

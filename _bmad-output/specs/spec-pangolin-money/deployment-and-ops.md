@@ -1,6 +1,6 @@
 # Deployment, backups and CI/CD
 
-The server runs one app container under Docker Compose (plus an optional bundled Caddy), managed by the `pangolin` command. Supported hosts: Debian 12+ first, then Ubuntu 24.04 LTS and Rocky Linux 9, on amd64 or arm64.
+The server runs one app container under Docker Compose, managed by the `pangolin` command. A bundled Caddy is deferred to the next version. Supported hosts start at Debian 13, then Ubuntu 24.04 LTS and Rocky Linux 9, on amd64 or arm64.
 
 ## Host: Debian VM on Proxmox
 
@@ -9,7 +9,7 @@ The server runs one app container under Docker Compose (plus an optional bundled
 | Resource | Minimum | Recommended |
 | --- | --- | --- |
 | Guest type | VM | VM, not LXC (better isolation, simpler disk encryption) |
-| OS | Debian 12 | Debian 13 |
+| OS | Debian 13 | Debian 13 |
 | vCPU | 1 | 2, CPU type `host` (exposes AES-NI for encryption) |
 | RAM | 1 GB | 2–4 GB |
 | System disk | 16 GB | 32 GB |
@@ -22,13 +22,12 @@ The server runs one app container under Docker Compose (plus an optional bundled
 - **Firewall** (Proxmox VM firewall or nftables):
   - Inbound: only the NPM host to the app port, and SSH from the admin network.
   - Outbound: an allowlist only (price and unit-price hosts, the LLM endpoint, TrueNAS, Debian and Docker mirrors, GHCR).
-- **Hardening:** SSH keys only; unattended-upgrades for security patches; chrony; timezone Australia/Sydney; qemu-guest-agent.
 - **Private repo:** the server pulls images from GHCR with a fine-grained, read-only token (packages: read), stored with the install's secrets.
 - **Proxmox VM backups** (vzdump or PBS) are a useful extra. If you use PBS, turn on its client-side encryption. restic stays the source of truth for data.
 
 ## Install and upgrade
 
-- `install.sh` detects the distro (apt or dnf) and installs Docker Engine from Docker's repository if it's missing. On Rocky it also sets SELinux volume labels and firewalld rules. It then asks three things: proxy mode (existing NPM, bundled Caddy, or Tailscale-only), the public hostname, and the backup server. It then:
+- `install.sh` detects the distro (apt or dnf) and installs Docker Engine from Docker's repository if it's missing. On Rocky it also sets SELinux volume labels and firewalld rules. It then asks three things: proxy mode, the public hostname, and the backup server. The existing NPM is the one proxy mode in this version; bundled Caddy and Tailscale-only are deferred to the next version. It then:
   - generates secrets (auth secret, encryption key file, restic password);
   - writes the Compose file and `.env`;
   - starts the stack and prints a one-time setup link for creating the first account. With NPM, it also prints the proxy-host settings to enter.
@@ -42,7 +41,7 @@ The server runs one app container under Docker Compose (plus an optional bundled
 
 ## Backups and restore
 
-- Nightly: a consistent snapshot (`VACUUM INTO`) plus the attachments folder go to restic. The destination is restic's REST server running as a TrueNAS app, reached over WireGuard and set to append-only. Contents are encrypted before they leave. Pruning runs on the TrueNAS side, so the app host can add backups but never delete them.
+- Nightly: a consistent snapshot (`VACUUM INTO`) plus the attachments folder go to restic. The destination is restic's REST server running as a TrueNAS app, set to append-only. Contents are encrypted before they leave. Pruning runs on the TrueNAS side, so the app host can add backups but never delete them.
 - Retention: 7 daily, 4 weekly, 12 monthly. `restic check` runs weekly.
 - Restore goes into a fresh directory, then verifies before swapping in:
   - `PRAGMA integrity_check`;
@@ -55,7 +54,8 @@ The server runs one app container under Docker Compose (plus an optional bundled
 ## CI/CD (GitHub Actions)
 
 - **Every push:** Biome lint, type-check, Vitest unit tests, migration test, then Playwright end-to-end tests against the mock data.
-  - The migration test applies all migrations to an empty database and to the previous release's database.
+  - The migration test applies all migrations to an empty database.
+  - The release workflow also migrates the database the previous release's image creates (`migrate-previous`).
 - **Tagged release:**
   1. build amd64 and arm64 images;
   2. generate a software bill of materials and run a vulnerability scan;

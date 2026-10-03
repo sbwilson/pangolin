@@ -72,7 +72,7 @@ A couple wants to see where their money goes, what they can save, and how they'r
   - **intent:** Partners authenticate with passkeys (password + TOTP fallback) and recover access via one-time recovery codes or partner-assisted re-enrolment, with a server-console reset for a both-locked-out scenario.
   - **success:** Tests cover login, passkey/TOTP fallback, recovery-code enrolment-forcing, and partner-assisted reset within its 24-hour expiry and audit log, without leaking the other partner's private data.
 - **CAP-16**
-  - **intent:** `install.sh` brings up the full stack in one command on Debian (then Ubuntu, Rocky Linux) behind an existing reverse proxy, bundled Caddy, or Tailscale-only, and `pangolin upgrade`/`backup`/`restore` keep it running with a tested restore path.
+  - **intent:** `install.sh` brings up the full stack in one command on Debian (then Ubuntu, Rocky Linux) behind an existing reverse proxy (NPM; bundled Caddy and Tailscale-only are deferred to the next version), and `pangolin upgrade`/`backup`/`restore` keep it running with a tested restore path.
   - **success:** CI backs up and restores a synthetic database on every release; a monthly restore drill runs automatically on the server; `pangolin upgrade` rolls back automatically on a failed health check.
 - **CAP-17**
   - **intent:** Either partner can see historical cash flow (Sankey), P&L by group or category, spending over any period, and current net worth, all summed from the splits they can see.

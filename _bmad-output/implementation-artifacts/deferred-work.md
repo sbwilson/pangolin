@@ -1,9 +1,11 @@
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-backups-and-restore-plan.md`
-  summary: Weekly `restic check` (Sundays 03:30, household time zone) reported through `pangolin status`, the web status page and a review item on failure (story 1.10b).
+  summary: Weekly `restic check` (Sundays 03:30, household time zone) reported through `pangolin status`, the web status page and a review item on failure (shipped in story 1.14).
   evidence: Split from story 1.10 at planning (answer 6b) to keep the backup and verified-restore core within size; times agreed in answer 3.
+  disposition: fixed (story 1.14)
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-backups-and-restore-plan.md`
-  summary: Monthly restore drill (1st of the month, 04:00) into a temporary directory, running the restore checks and showing the result on the status page (story 1.10b).
+  summary: Monthly restore drill (1st of the month, 04:00) into a temporary directory, running the restore checks and showing the result on the status page (shipped in story 1.14).
   evidence: Split from story 1.10 at planning (answer 6b); it reuses 1.10's restore verification.
+  disposition: fixed (story 1.14)
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-backups-and-restore-plan.md`
   summary: Decrypt a sample attachment with the escrowed app key in restore verification and the clean-host test, once epic 5 builds the attachment store.
   evidence: Answer 2b: no attachment store or app-key crypto exists yet.
@@ -14,15 +16,18 @@
   summary: Stage backups under a fixed path (or pass --parent) so restic finds a parent snapshot and does not re-read every attachment nightly.
   evidence: Review of story 1.10: staging paths differ per job, so restic's parent detection never matches; negligible until attachments exist.
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-backups-and-restore-plan.md`
-  summary: Warn in pangolin status, the status page and readiness when the last good backup is older than about 48 hours (story 1.10b, with the check and drill).
+  summary: Warn in pangolin status, the status page and readiness when the last good backup is older than about 48 hours (shipped in story 1.14, with the check and drill).
   evidence: Review of story 1.10: only a dead job raises an alert; a schedule that silently stops, or backups switched off, raises nothing.
+  disposition: fixed (story 1.14)
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-backups-and-restore-plan.md`
   summary: Test the backup handlers' idempotent re-runs (a snapshot already recorded, a push already pushed).
   evidence: Verification-gap review of story 1.10: no handler-level test re-runs after a recorded row; worst case is a duplicate snapshot or stale checksum, not a failed restore.
+  disposition: fixed (story 1.12)
 
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-release-and-upgrade-plan.md`
   summary: Make the upgrade health-check timeout configurable (currently hardcoded at 60s)
   evidence: Long database migrations can exceed 60s causing a false-positive rollback; 60s is reasonable for v1 but should become a configurable option (e.g. PANGOLIN_UPGRADE_TIMEOUT env var or --timeout flag)
+  disposition: fixed (see the 1.12 sweep entry below)
 
 ## 1.12 sweep (2026-10-01)
 
@@ -59,8 +64,8 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
   summary: Retention of finished jobs.
   evidence: A feature, not a fix; raise in a retention story.
 - disposition: still deferred
-  summary: Weekly `restic check`, monthly restore drill, stale-backup warning, attachment snapshotting and sample decrypt.
-  evidence: Already recorded above for story 1.10b and epic 5.
+  summary: Attachment snapshotting and sample decrypt.
+  evidence: Already recorded above for epic 5. The weekly `restic check`, monthly restore drill and stale-backup warning shipped in story 1.14.
 
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-backup-monitoring-plan.md`
   summary: Test the web status page's rendering of the stale warning and of failed or passed check and drill results (story 1.14).
@@ -91,3 +96,4 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-release-hygiene-plan.md`
   summary: Reconcile `deployment-and-ops.md` (CI/CD) and the spine's Migrations row, which say the previous-release migration runs on every push, with the human decision of 2026-10-03 to run it only at release.
   evidence: story 1.18 intent-alignment review; the spec text and release.yml now disagree.
+  disposition: fixed (spec reconciliation, 2026-10-03)

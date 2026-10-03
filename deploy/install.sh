@@ -347,7 +347,7 @@ detect_dns() {
 
 detect_distro() {
   os_release=$(path /etc/os-release)
-  [ -r "$os_release" ] || die "cannot read /etc/os-release. Supported: Debian 12 and 13; Ubuntu 24.04 and Rocky Linux 9 (unproven)"
+  [ -r "$os_release" ] || die "cannot read /etc/os-release. Supported: Debian 13; Ubuntu 24.04 and Rocky Linux 9 (unproven)"
   DISTRO_ID=$(file_value ID "$os_release")
   DISTRO_VERSION=$(file_value VERSION_ID "$os_release")
   DISTRO_CODENAME=$(file_value VERSION_CODENAME "$os_release")
@@ -356,11 +356,11 @@ detect_distro() {
   PROVEN=0
   SELINUX=0
   case "$DISTRO_ID:$DISTRO_VERSION" in
-    debian:12 | debian:13) PKG=apt; PROVEN=1 ;;
+    debian:13) PKG=apt; PROVEN=1 ;;
     ubuntu:24.04) PKG=apt ;;
     rocky:9 | rocky:9.*) PKG=dnf; SELINUX=1 ;;
     *)
-      die "unsupported distribution: $DISTRO_NAME. Supported: Debian 12 and 13 (the proven path); Ubuntu 24.04 and Rocky Linux 9 (written, unproven)"
+      die "unsupported distribution: $DISTRO_NAME. Supported: Debian 13 (the proven path); Ubuntu 24.04 and Rocky Linux 9 (written, unproven)"
       ;;
   esac
   say "Distribution: $DISTRO_NAME ($PKG)"

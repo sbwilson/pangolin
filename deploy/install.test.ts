@@ -769,9 +769,9 @@ describe("install.sh with Docker (a stub docker)", () => {
     writeFileSync(
       at("etc/apt/sources.list"),
       [
-        "deb http://ftp.au.debian.org/debian bookworm main",
-        "# deb http://commented.example.org/debian bookworm main",
-        "deb [signed-by=/k.asc] https://deb.debian.org/debian-security bookworm-security main",
+        "deb http://ftp.au.debian.org/debian trixie main",
+        "# deb http://commented.example.org/debian trixie main",
+        "deb [signed-by=/k.asc] https://deb.debian.org/debian-security trixie-security main",
       ].join("\n"),
     );
     writeFileSync(
@@ -788,7 +788,7 @@ describe("install.sh with Docker (a stub docker)", () => {
     // A mirror added later is allowlisted on the next run, before apt runs.
     writeFileSync(
       at("etc/apt/sources.list.d/extra.list"),
-      "deb http://mirror.aarnet.edu.au/debian bookworm main\n",
+      "deb http://mirror.aarnet.edu.au/debian trixie main\n",
     );
     const rerun = install();
     expect(rerun.status, rerun.stderr).toBe(0);
@@ -891,8 +891,28 @@ describe("install.sh, failures", () => {
     const result = install();
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/unsupported distribution: Alpine Linux v3\.20/);
-    expect(result.stderr).toMatch(/Debian 12 and 13.*Ubuntu 24\.04.*Rocky Linux 9/);
+    expect(result.stderr).toMatch(/Debian 13.*Ubuntu 24\.04.*Rocky Linux 9/);
     expect(existsSync(at("opt"))).toBe(false);
+  });
+
+  it("refuses a Debian release older than 13, the minimum", () => {
+    writeFileSync(
+      at("etc/os-release"),
+      'ID=debian\nVERSION_ID="12"\nPRETTY_NAME="Debian GNU/Linux 12"\n',
+    );
+    const result = install();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/unsupported distribution: Debian GNU\/Linux 12/);
+    expect(existsSync(at("opt"))).toBe(false);
+  });
+
+  it("treats Debian 13 as the proven path, with no unproven warning", () => {
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout + result.stderr).toMatch(
+      /Distribution: Debian GNU\/Linux 13 \(trixie\) \(apt\)/,
+    );
+    expect(result.stderr).not.toMatch(/not yet proven/);
   });
 
   it("marks Ubuntu 24.04 and Rocky 9 as unproven, and labels Rocky's mounts for SELinux", () => {

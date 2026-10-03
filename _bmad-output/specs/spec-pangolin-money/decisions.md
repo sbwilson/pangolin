@@ -5,9 +5,9 @@ All are settled.
 | Decision | Choice |
 | --- | --- |
 | Repo | Private GitHub repo; images pulled with a read-only token |
-| Exposure | Public domain through our Nginx Proxy Manager (Let's Encrypt); Tailscale-only remains an option |
-| Host | Debian VM on Proxmox, LUKS data disk unlocked by Clevis + Tang; Ubuntu and Rocky Linux also supported |
-| Backups | restic REST server on TrueNAS, over WireGuard, append-only |
+| Exposure | Public domain through our Nginx Proxy Manager (Let's Encrypt); Tailscale-only is deferred to the next version |
+| Host | Debian 13 VM on Proxmox, LUKS data disk unlocked by Clevis + Tang; Ubuntu and Rocky Linux also supported |
+| Backups | restic REST server on TrueNAS, append-only |
 | Account recovery | Recovery codes and partner-assisted reset |
 | Savings | Balance of accounts flagged as savings (personal and shared); investments tracked separately |
 | Goal priorities | Staged allocation; a completed goal is flagged, its share rescaled, and we're prompted to review |
@@ -26,6 +26,9 @@ All are settled.
 | LLM providers | Ollama by default; any OpenAI- or Anthropic-compatible endpoint with an optional key |
 | Up | API dropped; one-off CSV history import before the account closes |
 | Name | Pangolin Money |
+| Host hardening (2026-10-03) | Outside the application. Host hardening and the network tunnel to the NAS are the operator's concern, not requirements of this app |
+| Recovery notice (2026-10-03) | In-app notice only in this version; email notification is deferred to the next version |
+| Outbound allowlist (2026-10-03) | The firewall `install.sh` generates is the only enforcement in this version; an in-app check and re-authentication to change the list are deferred to the next version |
 
 ## Periods where spend exceeds income: option A chosen
 

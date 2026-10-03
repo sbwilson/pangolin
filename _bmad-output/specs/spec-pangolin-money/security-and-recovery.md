@@ -4,7 +4,7 @@ Pangolin will be public on our own domain behind Nginx Proxy Manager, so the log
 
 - NPM terminates TLS with Let's Encrypt and forwards to the app on the LAN.
 - The app trusts `X-Forwarded-*` headers only from the proxy's IP, and listens only on the internal network.
-- A Tailscale-only install remains a supported, stricter option.
+- A Tailscale-only install is a stricter option, deferred to the next version.
 
 ## Threats and mitigations
 
@@ -26,7 +26,7 @@ Pangolin will be public on our own domain behind Nginx Proxy Manager, so the log
 - **Partner-assisted:** the other partner, re-authenticated with their passkey, issues a one-time re-enrolment link.
   - It expires in 24 hours and is logged.
   - Accepted residual risk: the issuing partner holds the link and could redeem it themselves.
-  - The affected person is notified in the app (and by email if SMTP is configured).
+  - The affected person is notified in the app. Email notification is deferred to the next version.
   - It never reveals the other person's private accounts or hidden transaction names.
 - **Both of us locked out:** `pangolin reset-user` on the server console, which requires shell access to the VM.
 - **Server lost:** `install.sh` produces a recovery bundle (application key, auth secret, restic password) to store offline. CI restores onto a clean host from the bundle alone on every release.

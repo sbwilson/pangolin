@@ -20,7 +20,7 @@ We can install, log in, back up and restore with confidence before any real data
 
 ## Done when
 
-1. On a fresh Debian 12 VM, `install.sh` goes from nothing to the one-time setup link, and then to a passkey login, in one command. (M0 gate)
+1. On a fresh Debian 13 VM, `install.sh` goes from nothing to the one-time setup link, and then to a passkey login, in one command. (M0 gate)
 2. CI backs up and restores a synthetic database on every release. The restore verifies integrity_check, row counts and per-table checksums; per-account balance sums join the manifest in epic-ledger-accounts-privacy (spine AD-19). (M0 gate)
 3. Registration closes once both partners exist. Recovery codes and partner-assisted re-enrolment each restore access in a test, and the partner reset link expires after 24 hours.
 4. `pangolin upgrade` rolls back automatically when a seeded health check fails. The release image is signed with cosign, and the signature is verified before the image is pulled.
@@ -30,7 +30,7 @@ We can install, log in, back up and restore with confidence before any real data
 
 ## Boundaries
 
-Platform baseline: repo scaffold (pnpm workspace per tech-stack.md), CI/CD, deploy/ (compose, install.sh, pangolin CLI), auth and recovery, the service layer with audit_log, the job runner, the admin socket, shared/period (calendar and FY maths, spine AD-14), the seed generator skeleton and the mock servers. No finance tables beyond `person`, `household_settings` and `job`. Owns touch points NPM, TrueNAS restic, Tang and GHCR.
+Platform baseline: repo scaffold (pnpm workspace per tech-stack.md), CI/CD, deploy/ (compose, install.sh, pangolin CLI), auth and recovery, the service layer with audit_log, the job runner, the admin socket, shared/period (calendar and FY maths, spine AD-14), the seed generator skeleton and the mock servers. No finance tables. The platform tables are `person`, `household_settings`, `job`, `audit_log`, `review_item`, the better-auth `auth_*` tables, `login_attempt`, `setup_link`, `recovery_code`, `re_enrolment_link`, `recovery_bundle`, `backup_snapshot` and `backup_verification`. Owns touch points NPM, TrueNAS restic, Tang and GHCR.
 
 ## References
 

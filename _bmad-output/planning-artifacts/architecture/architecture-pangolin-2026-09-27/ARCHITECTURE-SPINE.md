@@ -137,7 +137,7 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
   - Each job kind declares a Zod payload schema (checked when enqueued and when run), a retry policy (exponential backoff, then `dead`), a lane, whether it has external effects, and whether a dead job needs a person.
   - Lanes are `llm`, `net` and `local`. Concurrency per lane is configuration; the default is `llm` = 1. Claiming is atomic with a lease.
   - Recurring schedules are defined in code. At startup the runner makes sure the next row for each exists.
-  - `local` holds the database snapshot, restore drill, detection and period close; it never calls outbound ports. `net` holds the backup push, price and unit-price fetches, logos and optional SMTP. `llm` holds model calls. Outbound calls go only to hosts on the allowlist.
+  - `local` holds the database snapshot, restore drill, detection and period close; it never calls outbound ports. `net` holds the backup push, price and unit-price fetches and logos. `llm` holds model calls. Outbound calls go only to hosts on the allowlist.
   - Logo fetches go through the egress proxy (see Outbound allowlist): one `GET` for the bare domain of a confirmed payee, once, and never for a payee visible only through private data.
 
 ### AD-9 — Async status is read from entities, not jobs
@@ -204,7 +204,7 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
 - **Prevents:** each epic writing its own fortnight, month and FY maths; tests depending on the real date; and budgets and goals disagreeing about "this fortnight".
 - **Rule:**
   - Dates are Temporal `PlainDate`, imported only from `shared/temporal`. That module uses the native global where it exists and `temporal-polyfill` otherwise. Values cross the wire only as `YYYY-MM-DD` strings.
-  - `domain` never reads the system clock; `app` injects a `Clock` in the household timezone.
+  - `domain` and `shared` never read the system clock outside tests (`tools/lint/no-system-clock.grit`). By convention `app` takes an injected `Clock` in the household timezone. The CLI, the migration runner and log timestamps read the system clock.
   - Periods are half-open `[start, end)` in code and inclusive on screen. A split belongs to the period of its transaction's `posted_on`.
   - An FY is labelled by the year it ends: FY2025 is 2024-07-01 to 2025-06-30.
   - Each `pay_anchor` has an alignment setting:
@@ -385,8 +385,8 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
 | Money and quantities | `Cents` integer (JSON number); units are `UnitsMicro` integers; prices and FX are decimal strings handled only with `decimal.js`; never a float |
 | Dates and times | Business dates `YYYY-MM-DD`; timestamps UTC ISO-8601; "today" only from `Clock` |
 | Tables | `STRICT` (CI fails if any table isn't), `foreign_keys = ON`; `snake_case`, singular; `created_at`, `updated_at`; soft delete (`deleted_at`) on user-facing records, excluded from every read and report but kept for dedupe (AD-20) |
-| Migrations | drizzle-kit generates SQL, reviewed and committed, forward-only. Our own runner applies it: `foreign_keys = OFF` outside the transaction, `BEGIN`, statements, `foreign_key_check` plus the invariant suite, `COMMIT`, `foreign_keys = ON`. FTS5 indexes are keyed on a stable integer, and any table-rebuild migration recreates its triggers and rebuilds the index. CI migrates an empty DB and the previous release's DB |
-| Health and upgrade | `/healthz` means migrations applied, database writable and the job-runner lease held. Rollback means the previous image plus the pre-upgrade snapshot; there are never down-migrations. The image is Debian slim (glibc), built for amd64 and arm64 |
+| Migrations | drizzle-kit generates SQL, reviewed and committed, forward-only. Our own runner applies it: `foreign_keys = OFF` outside the transaction, `BEGIN`, statements, `foreign_key_check` plus the invariant suite, `COMMIT`, `foreign_keys = ON`. FTS5 indexes are keyed on a stable integer, and any table-rebuild migration recreates its triggers and rebuilds the index. Every push migrates an empty DB; the release workflow also migrates the DB the previous release's image creates (`migrate-previous`) |
+| Health and upgrade | `/healthz` means migrations applied, database writable and the job runner live (ticked recently). `/api/system/health` reports status, schema version and whether the database is writable, without a session. The signed-in status routes are `/api/system/jobs`, `/api/system/backup` and `/api/system/recovery-bundle`. Rollback means the previous image plus the pre-upgrade snapshot; there are never down-migrations. The image is Debian slim (glibc), built for amd64 and arm64 |
 | Environments | Live server; local dev (Vite dev server on the same seed and mocks); CI (the release image on seed and mocks, no outbound network); demo mode (the seed, read-only) |
 | Use cases | `app/<module>/<name>.ts`; signature `(ctx: { viewer, clock, … }, input) → output`; input parsed with Zod |
 | API | Hono routes under `/api/<module>/…`, consumed through Hono's typed RPC client; bodies validated with Zod |
@@ -394,7 +394,7 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
 | Re-authentication | `Viewer.authAt` plus a window per action (default 5 minutes). Enforced in the use case for exports, provider and token changes, deletes and partner-assisted reset |
 | Audit | `actor` is `person:<id>`, `job:<kind>` or `cli:<command>`. Audit rows carry the scope of the entity they describe |
 | Web security | A nonce-based CSP. Hono inserts a per-request nonce into `index.html` for style elements, and the page shell is never precached by the service worker. No inline scripts. `img-src 'self'`. ECharts uses the canvas renderer with `richText` tooltips. An e2e test fails on any CSP violation. No raw HTML rendering of descriptions, PDF text or LLM output. `X-Forwarded-*` is trusted only from the proxy IP |
-| Outbound allowlist | One config artefact lists the allowed hosts: price and unit-price hosts, the LLM `base_url`, TrueNAS, optional SMTP and the egress proxy. Code checks it, and `install.sh` generates the firewall rules from it. Logos go only through the egress proxy, a forward proxy in the Compose stack that allows `GET` to confirmed payee domains. Changing the list needs re-authentication and prints the firewall change |
+| Outbound allowlist | One config artefact lists the allowed hosts: price and unit-price hosts, the LLM `base_url`, TrueNAS and the egress proxy. `install.sh` generates the firewall rules from it; in this version the firewall is the only enforcement. A check in code and re-authentication to change the list are deferred to the next version. Logos go only through the egress proxy, a forward proxy in the Compose stack that allows `GET` to confirmed payee domains |
 | Logging | Structured JSON; tokens, amounts and descriptions redacted by default; no third-party error tracking |
 | Config and secrets | Environment variables parsed by one Zod schema at startup; the application key is read from a key file outside the database (AD-27); LLM keys are encrypted at rest and never sent to the browser |
 | Frontend state | Server state only in TanStack Query; filters and paging in URL search params; the web app never sums money |
@@ -457,14 +457,14 @@ flowchart LR
   end
   U[Browser / phone PWA] --> NPM --> API
   VM -. boot unlock .-> TANG
-  RUN -- WireGuard --> NAS
+  RUN -- backup --> NAS
   RUN --> OLL
   RUN -- allowlist --> EXT[Yahoo Finance · issuer NAV ·<br/>QSuper / Aware unit prices]
   RUN --> EGR --> ICON[confirmed payee domains]
   VM -- pull signed image --> GHCR[GHCR]
 ```
 
-Bundled Caddy and Tailscale-only are alternatives to NPM, selected at install time.
+NPM is the one proxy mode in this version. Bundled Caddy and Tailscale-only are deferred to the next version.
 
 ### Module ownership (AD-10)
 
@@ -515,17 +515,7 @@ The full table catalogue stays in the spec's `data-model.md` until the code owns
 
 ## Pending Propagation
 
-These spine decisions contradict text in the spec or epics. Update that text before incepting the affected epic:
-
-| Where | Change |
-| --- | --- |
-| Spec `data-model.md` (Privacy enforcement), `SPEC.md` CAP-17 success, `investments-super-tax.md` (Investment property), epic 4 Done-when #2 | Remove the separate "shared/household view that excludes private accounts" (AD-3) |
-| Spec `data-model.md` (Conventions) | ULIDs are generated on the server only (AD-5) |
-| Spec `security-and-recovery.md` (Account recovery) | Record the accepted residual risk of partner-assisted reset (AD-27) |
-| Epic 3 (import) | Drop CMC Invest confirmations; they move to epic 9 (AD-10) |
-| Epic 6 (budgets and bills) | It no longer owns the period helpers; it owns pay-deposit detection and `PayCalendar` (AD-14) |
-| `tickets.toml` | Epic 7 no longer needs epic 6 for period helpers; epic 9 comes after epic 6 (AD-25) |
-| Outbound allowlist | Add the Yahoo Finance cookie/crumb handshake hosts |
+All propagation was applied by 2026-10-03.
 
 ## Deferred
 
@@ -541,3 +531,6 @@ These spine decisions contradict text in the spec or epics. Update that text bef
 | Drizzle 1.0 | Move once 1.0 final ships; migrations are committed SQL |
 | Ubuntu 26.04 and Rocky Linux 10 as hosts | Add to `install.sh` after Debian 13 is proven |
 | `node:sqlite` in place of better-sqlite3 | Revisit with Drizzle 1.0 |
+| Bundled Caddy and Tailscale-only proxy modes | Next version; NPM is the one proxy mode in this version |
+| Email notification (SMTP) | Next version; recovery notices are in-app only |
+| Allowlist check in code, re-authentication to change the list | Next version; the firewall `install.sh` generates is the only enforcement |

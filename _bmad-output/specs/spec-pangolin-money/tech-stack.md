@@ -23,13 +23,13 @@ TypeScript end to end, strict mode, one repo. Every choice below is mainstream a
 | Tests | Vitest 5 (unit), Playwright 1.63 (end to end) | Fast; Playwright drives a real browser in CI |
 | Lint/format | Biome 2 | One tool, like rustfmt + clippy |
 | LLM | Two provider adapters: OpenAI-compatible (Ollama, LM Studio, vLLM, OpenAI, OpenRouter) and Anthropic Messages API; optional API key; schema-constrained output | Local by default; cloud only by explicit opt-in |
-| Reverse proxy | Nginx Proxy Manager (existing); bundled Caddy as an optional Compose profile | NPM already handles Let's Encrypt; Caddy covers installs without a proxy |
+| Reverse proxy | Nginx Proxy Manager (existing); bundled Caddy as an optional Compose profile is deferred to the next version | NPM already handles Let's Encrypt; Caddy would cover installs without a proxy |
 | Backups | restic (encrypted, deduplicated) + `VACUUM INTO` snapshots | Consistent snapshot, encrypted copy to TrueNAS in append-only mode |
 | CI/CD | GitHub Actions to GHCR images; Renovate for updates | Tag-driven releases |
 
 ## Architecture
 
-One Node process serves the API and the built frontend, runs scheduled jobs, and is the only thing that writes to SQLite. That matches SQLite's single-writer model and keeps operations to one app container behind the reverse proxy already in use (Nginx Proxy Manager). A bundled Caddy is available as an optional Compose profile for installs without a proxy.
+One Node process serves the API and the built frontend, runs scheduled jobs, and is the only thing that writes to SQLite. That matches SQLite's single-writer model and keeps operations to one app container behind the reverse proxy already in use (Nginx Proxy Manager). A bundled Caddy profile for installs without a proxy is deferred to the next version.
 
 - **Frontend:** a React single-page app, served as static files by the same process. It is installable on phones as a PWA.
 - **Domain services:** plain TypeScript modules with no HTTP or database types in their signatures (ledger, import, rules, budgets, forecasting, tax). They are unit-tested in isolation, the same split you'd use in a Rust crate.
@@ -57,7 +57,7 @@ pangolin/
 │  ├─ mock-llm/        replays recorded OpenAI- and Anthropic-format responses
 │  ├─ mock-prices/     offline price and unit-price server
 │  └─ seed/            synthetic household generator (files + PDFs)
-├─ deploy/            compose.yaml (+ optional caddy profile), install.sh, pangolin CLI
+├─ deploy/            compose.yaml, install.sh, pangolin CLI (caddy profile deferred)
 ├─ e2e/               Playwright tests
 └─ .github/workflows/ ci.yml, release.yml, restore-test.yml
 ```
