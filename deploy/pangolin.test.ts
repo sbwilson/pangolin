@@ -8,6 +8,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -22,7 +23,6 @@ vi.setConfig({ testTimeout: 30_000 });
 const here = dirname(fileURLToPath(import.meta.url));
 const PANGOLIN = join(here, "pangolin");
 
-const STUB_VOL = "pangolin_data_stub";
 const ORIGINAL_IMAGE = "ghcr.io/sbwilson/pangolin:latest";
 const STUB_DIGEST = "sha256:1234567890123456789012345678901234567890123456789012345678901234";
 const ORIGINAL_ENV = `PANGOLIN_IMAGE=${ORIGINAL_IMAGE}\nPANGOLIN_DATA_DIR=/data\n`;
@@ -30,11 +30,17 @@ const ORIGINAL_COMPOSE = `services:\n  pangolin:\n    image: ${ORIGINAL_IMAGE}\n
 
 let root: string;
 let homeDir: string;
+// The data volume's host path, and the upgrade copies' directory in it.
+let dataDir: string;
+let copiesDir: string;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "pangolin-test-"));
   homeDir = join(root, "opt", "pangolin");
   mkdirSync(homeDir, { recursive: true });
+  dataDir = join(root, "data");
+  mkdirSync(dataDir);
+  copiesDir = join(dataDir, "upgrade-copies");
   writeFileSync(join(homeDir, "compose.yaml"), ORIGINAL_COMPOSE);
   writeFileSync(join(homeDir, ".env"), ORIGINAL_ENV);
   writeFileSync(join(homeDir, "cosign.pub"), "public key");
@@ -49,6 +55,14 @@ afterEach(() => {
 
 function at(path: string): string {
   return join(root, path);
+}
+
+/** The upgrade copies of `kind` (pre-upgrade or rolled-back) in the data volume. */
+function copies(kind: "pre-upgrade" | "rolled-back"): string[] {
+  if (!existsSync(copiesDir)) return [];
+  return readdirSync(copiesDir)
+    .filter((f) => f.startsWith(`${kind}-`))
+    .sort();
 }
 
 function dockerStubLines(): string[] {
@@ -80,7 +94,7 @@ function dockerStubLines(): string[] {
     "    ;;",
     // Volume name from Mounts (capture DATA_VOL)
     '  "inspect --format"*"Mounts"*)',
-    `    echo "${STUB_VOL}"`,
+    `    echo "${dataDir}"`,
     "    ;;",
     // cosign verify — output JSON with docker-manifest-digest
     "  *cosign*verify*)",
@@ -206,15 +220,131 @@ describe("pangolin upgrade", () => {
     expect(res.logs).toMatch(/stop[\s\S]*up -d/);
     expect(readFileSync(join(homeDir, ".env"), "utf8")).toBe(ORIGINAL_ENV);
     expect(existsSync(join(homeDir, ".env.bak"))).toBe(false);
-    expect(readdirSync(homeDir).filter((f) => f.startsWith("pre-upgrade-"))).toEqual([]);
+    expect(copies("pre-upgrade")).toEqual([]);
   });
 
-  it("creates the pre-upgrade copy 0700", () => {
+  it("creates the pre-upgrade copy 0700, in upgrade-copies/ (0700) in the data volume", () => {
     const res = runUpgrade("v2.0", { STUB_RUNNING: "1" });
     expect(res.status, res.stderr).toBe(0);
-    const dirs = readdirSync(homeDir).filter((f) => f.startsWith("pre-upgrade-"));
+    const dirs = copies("pre-upgrade");
     expect(dirs).toHaveLength(1);
-    expect(statSync(join(homeDir, dirs[0] ?? "")).mode & 0o777).toBe(0o700);
+    expect(statSync(copiesDir).mode & 0o777).toBe(0o700);
+    expect(statSync(join(copiesDir, dirs[0] ?? "")).mode & 0o777).toBe(0o700);
+    expect(readFileSync(join(copiesDir, dirs[0] ?? "", "pangolin.sqlite"), "utf8")).toBe("db\n");
+    // Nothing on the system disk beside the install.
+    expect(readdirSync(homeDir).filter((f) => /^(pre-upgrade|rolled-back)-/.test(f))).toEqual([]);
+  });
+
+  it("makes an existing upgrade-copies/ private again", () => {
+    mkdirSync(copiesDir, { mode: 0o755 });
+    chmodSync(copiesDir, 0o755);
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1" });
+    expect(res.status, res.stderr).toBe(0);
+    expect(statSync(copiesDir).mode & 0o777).toBe(0o700);
+  });
+
+  it("refuses an upgrade-copies that is a symlink, and restarts the previous stack", () => {
+    mkdirSync(at("elsewhere"));
+    chmodSync(at("elsewhere"), 0o755);
+    symlinkSync(at("elsewhere"), copiesDir);
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1" });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain("is not a directory");
+    // Never followed: the target keeps its mode and gets no copy.
+    expect(statSync(at("elsewhere")).mode & 0o777).toBe(0o755);
+    expect(readdirSync(at("elsewhere"))).toEqual([]);
+    expect(res.logs).toMatch(/stop[\s\S]*up -d/);
+    expect(readFileSync(join(homeDir, ".env"), "utf8")).toBe(ORIGINAL_ENV);
+  });
+
+  it("refuses an upgrade-copies that is a regular file", () => {
+    writeFileSync(copiesDir, "not a directory");
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1" });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain("is not a directory");
+    expect(readFileSync(copiesDir, "utf8")).toBe("not a directory");
+    expect(readFileSync(join(homeDir, ".env"), "utf8")).toBe(ORIGINAL_ENV);
+  });
+
+  it("moves no old copy and prunes nothing when the upgrade aborts at the copy", () => {
+    mkdirSync(copiesDir, { mode: 0o700 });
+    for (const name of [
+      "rolled-back-20200101000000",
+      "rolled-back-20200102000000",
+      "rolled-back-20200103000000",
+    ]) {
+      mkdirSync(join(copiesDir, name));
+    }
+    mkdirSync(join(homeDir, "pre-upgrade-20200101000000"));
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1", STUB_BACKUP_FAIL: "1" });
+    expect(res.status).toBe(1);
+    expect(copies("rolled-back")).toHaveLength(3);
+    expect(existsSync(join(homeDir, "pre-upgrade-20200101000000"))).toBe(true);
+  });
+
+  it("leaves both copies alone when the same name is already in upgrade-copies", () => {
+    const name = "rolled-back-20200101000000";
+    mkdirSync(join(copiesDir, name), { recursive: true });
+    writeFileSync(join(copiesDir, name, "pangolin.sqlite"), "already there");
+    mkdirSync(join(homeDir, name));
+    writeFileSync(join(homeDir, name, "pangolin.sqlite"), "beside the install");
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1" });
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stderr).toMatch(/warning: could not move .*rolled-back-20200101000000/);
+    expect(readFileSync(join(homeDir, name, "pangolin.sqlite"), "utf8")).toBe("beside the install");
+    expect(readdirSync(join(copiesDir, name))).toEqual(["pangolin.sqlite"]);
+    expect(readFileSync(join(copiesDir, name, "pangolin.sqlite"), "utf8")).toBe("already there");
+  });
+
+  it("moves the copies an earlier release kept beside the install, then keeps two of each", () => {
+    for (const [name, age] of [
+      ["pre-upgrade-20200101000000", 300],
+      ["pre-upgrade-20200102000000", 200],
+      ["rolled-back-20200101000000", 150],
+      ["rolled-back-20200102000000", 120],
+      ["rolled-back-20200103000000", 100],
+    ] as const) {
+      mkdirSync(join(homeDir, name), { mode: 0o700 });
+      writeFileSync(join(homeDir, name, "pangolin.sqlite"), name);
+      const when = new Date(Date.now() - age * 1000);
+      utimesSync(join(homeDir, name), when, when);
+    }
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1" });
+    expect(res.status, res.stderr).toBe(0);
+    expect(readdirSync(homeDir).filter((f) => /^(pre-upgrade|rolled-back)-/.test(f))).toEqual([]);
+    // The new copy and the newest old one; the oldest pruned.
+    const pre = copies("pre-upgrade");
+    expect(pre).toHaveLength(2);
+    expect(pre).toContain("pre-upgrade-20200102000000");
+    expect(pre).not.toContain("pre-upgrade-20200101000000");
+    expect(copies("rolled-back")).toEqual([
+      "rolled-back-20200102000000",
+      "rolled-back-20200103000000",
+    ]);
+    expect(
+      readFileSync(join(copiesDir, "rolled-back-20200103000000", "pangolin.sqlite"), "utf8"),
+    ).toBe("rolled-back-20200103000000");
+  });
+
+  it("warns and leaves an old copy where it is when it cannot be moved, with no partial copy", () => {
+    mkdirSync(join(homeDir, "rolled-back-20200101000000"), { mode: 0o700 });
+    writeFileSync(join(homeDir, "rolled-back-20200101000000", "pangolin.sqlite"), "precious");
+    mkdirSync(at("bin"), { recursive: true });
+    // A cross-disk move that dies partway: part of the copy is written, the original stays.
+    stub(at("bin"), "mv", [
+      'case "$*" in *rolled-back-20200101000000*)',
+      '  for last; do :; done; mkdir -p "$last"; echo partial > "$last/pangolin.sqlite"; exit 1 ;;',
+      "esac",
+      'exec /bin/mv "$@"',
+    ]);
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1" });
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stderr).toMatch(/warning: could not move .*rolled-back-20200101000000/);
+    expect(
+      readFileSync(join(homeDir, "rolled-back-20200101000000", "pangolin.sqlite"), "utf8"),
+    ).toBe("precious");
+    expect(readdirSync(copiesDir).filter((f) => f.startsWith(".moving-"))).toEqual([]);
+    expect(copies("rolled-back")).toEqual([]);
   });
 
   it("keeps .env 0600 through a successful upgrade, and leaves no .env.new", () => {
@@ -270,20 +400,20 @@ describe("pangolin upgrade", () => {
     const res = runUpgrade("v2.0", { STUB_RUNNING: "1", STUB_COPY_MISMATCH: "1" });
     expect(res.status).toBe(1);
     expect(res.stderr).toContain("does not match the original");
-    expect(readdirSync(homeDir).filter((f) => f.startsWith("pre-upgrade-"))).toEqual([]);
+    expect(copies("pre-upgrade")).toEqual([]);
     expect(readFileSync(join(homeDir, ".env"), "utf8")).toBe(ORIGINAL_ENV);
   });
 
   it("never reuses or removes an existing backup directory", () => {
-    mkdirSync(join(homeDir, "pre-upgrade-20260101000000"));
-    writeFileSync(join(homeDir, "pre-upgrade-20260101000000", "pangolin.sqlite"), "precious");
+    mkdirSync(join(copiesDir, "pre-upgrade-20260101000000"), { recursive: true });
+    writeFileSync(join(copiesDir, "pre-upgrade-20260101000000", "pangolin.sqlite"), "precious");
     mkdirSync(at("bin"), { recursive: true });
     stub(at("bin"), "date", ["echo 20260101000000"]);
     const res = runUpgrade("v2.0", { STUB_RUNNING: "1" });
     expect(res.status).toBe(1);
     expect(res.stderr).toContain("could not create");
     expect(
-      readFileSync(join(homeDir, "pre-upgrade-20260101000000", "pangolin.sqlite"), "utf8"),
+      readFileSync(join(copiesDir, "pre-upgrade-20260101000000", "pangolin.sqlite"), "utf8"),
     ).toBe("precious");
   });
 
@@ -466,11 +596,9 @@ describe("pangolin upgrade rollback and the new server's writes (seam S11d)", ()
     });
   }
 
-  const rolledBack = () => readdirSync(homeDir).filter((f) => f.startsWith("rolled-back-"));
+  const rolledBack = () => copies("rolled-back");
 
   it("S11d: a rollback keeps what the new server wrote during the health wait", () => {
-    const dataDir = at("data");
-    mkdirSync(dataDir);
     writeFileSync(join(dataDir, "pangolin.sqlite"), "before the upgrade\n");
     const res = rollBack(dataDir);
     expect(res.stderr).toContain("pangolin: upgrade failed during health check. rolled back");
@@ -481,27 +609,29 @@ describe("pangolin upgrade rollback and the new server's writes (seam S11d)", ()
       encoding: "utf8",
     });
     expect(kept.stdout.trim()).not.toBe("");
-    // In a 0700 rolled-back-<stamp>/ beside the pre-upgrade copy, named in the message.
+    // In a 0700 rolled-back-<stamp>/ beside the pre-upgrade copy, in the data volume's
+    // upgrade-copies/, named in the message.
     const [dir] = rolledBack();
     expect(dir).toBeDefined();
-    expect(statSync(join(homeDir, dir ?? "")).mode & 0o777).toBe(0o700);
-    expect(readFileSync(join(homeDir, dir ?? "", "pangolin.sqlite"), "utf8")).toBe(
+    expect(copies("pre-upgrade")).toHaveLength(1);
+    expect(statSync(join(copiesDir, dir ?? "")).mode & 0o777).toBe(0o700);
+    expect(readFileSync(join(copiesDir, dir ?? "", "pangolin.sqlite"), "utf8")).toBe(
       "before the upgrade\nwritten by the new server\n",
     );
-    expect(res.stderr).toContain(`is kept in ${join(homeDir, dir ?? "")}`);
+    expect(res.stderr).toContain(`is kept in ${join(copiesDir, dir ?? "")}`);
+    // The live database files are not among them, and nothing is kept on the system disk.
+    expect(readdirSync(homeDir).filter((f) => /^(pre-upgrade|rolled-back)-/.test(f))).toEqual([]);
   });
 
   it("keeps only the last two rolled-back copies", () => {
-    const dataDir = at("data");
-    mkdirSync(dataDir);
     writeFileSync(join(dataDir, "pangolin.sqlite"), "before the upgrade\n");
     for (const [name, age] of [
       ["rolled-back-20200101000000", 200],
       ["rolled-back-20200102000000", 100],
     ] as const) {
-      mkdirSync(join(homeDir, name), { mode: 0o700 });
+      mkdirSync(join(copiesDir, name), { mode: 0o700, recursive: true });
       const when = new Date(Date.now() - age * 1000);
-      utimesSync(join(homeDir, name), when, when);
+      utimesSync(join(copiesDir, name), when, when);
     }
     rollBack(dataDir);
     const left = rolledBack().sort();
@@ -511,13 +641,11 @@ describe("pangolin upgrade rollback and the new server's writes (seam S11d)", ()
   });
 
   it("leaves the live database alone when the upgraded one cannot be kept", () => {
-    const dataDir = at("data");
-    mkdirSync(dataDir);
     writeFileSync(join(dataDir, "pangolin.sqlite"), "before the upgrade\n");
     const res = rollBack(dataDir, { STUB_KEEP_FAIL: "1" });
     expect(res.status).not.toBe(0);
     expect(res.stderr).toMatch(/the live database was not touched/);
-    expect(res.stderr).toMatch(/the pre-upgrade copy is in .*pre-upgrade-\d+/);
+    expect(res.stderr).toMatch(/the pre-upgrade copy is in .*upgrade-copies\/pre-upgrade-\d+/);
     expect(readFileSync(join(dataDir, "pangolin.sqlite"), "utf8")).toContain(
       "written by the new server",
     );

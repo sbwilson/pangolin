@@ -5,8 +5,10 @@ on:
     tags: ["v*.*.*"]
 
 # One release runs at a time and a running one is never cancelled. GitHub keeps one more run
-# waiting: a third tag pushed meanwhile replaces (cancels) the waiting one, which must then be
-# pushed again. The tags each run moves do not depend on the order (release-tags.sh).
+# waiting: a third tag pushed meanwhile replaces (cancels) the waiting one. Pushing that tag
+# again fires nothing (it is already on the remote): re-run the cancelled run, or delete the tag
+# on the remote and push it again. The tags each run moves do not depend on the order
+# (release-tags.sh).
 concurrency:
   group: release
   cancel-in-progress: false
@@ -273,8 +275,13 @@ jobs:
           sudo install -m 755 /tmp/pangolin /usr/local/bin/pangolin
       - name: Upgrade to B (must succeed — B is healthy with extra migration)
         run: |
+          # An upgrade-copies/ the container's user made: the upgrade takes it back as root's, 0700.
+          sudo install -d -o 1000 -g 1000 -m 755 /srv/pangolin/upgrade-copies
           sudo PANGOLIN_HOME=/opt/pangolin pangolin upgrade v2.0.0
           sudo docker compose --project-directory /opt/pangolin ps
+          [ "$(sudo stat -c '%u %a' /srv/pangolin/upgrade-copies)" = "0 700" ] ||
+            { echo "upgrade-copies is not root's 0700"; sudo stat /srv/pangolin/upgrade-copies; exit 1; }
+          sudo sh -c 'ls -d /srv/pangolin/upgrade-copies/pre-upgrade-*'
           # B's schema applied: the sentinel table exists
           sqlite3 /srv/pangolin/pangolin.sqlite "SELECT count(*) FROM _upgrade_test_sentinel;"
       - name: Upgrade to C (must fail and roll back to B with B's schema)

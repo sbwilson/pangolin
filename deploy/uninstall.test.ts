@@ -148,6 +148,45 @@ describe("uninstall.sh", () => {
     expect(mode("opt/pangolin/secrets/.bundle-pending")).toBe(0o600);
   });
 
+  it("keeps .env's backup server with the secrets when the data is kept, root's only", () => {
+    installed();
+    writeFileSync(
+      join(root, "opt/pangolin/.env"),
+      "PANGOLIN_DATA_ROOT=/srv/pangolin\nPANGOLIN_BACKUP_REPOSITORY=rest:https://u:p@nas.lan/x\n",
+    );
+    expect(run(["--yes", "--keep-data"]).status).toBe(0);
+    expect(readdirSync(join(root, "opt/pangolin/secrets")).sort()).toEqual([
+      ".backup-repository",
+      "app-key",
+      "auth-secret",
+      "restic-password",
+    ]);
+    expect(readFileSync(join(root, "opt/pangolin/secrets/.backup-repository"), "utf8")).toBe(
+      "PANGOLIN_BACKUP_REPOSITORY=rest:https://u:p@nas.lan/x\n",
+    );
+    expect(mode("opt/pangolin/secrets/.backup-repository")).toBe(0o600);
+  });
+
+  it("removes a stale backup-server record when .env names none", () => {
+    installed();
+    writeFileSync(
+      join(root, "opt/pangolin/secrets/.backup-repository"),
+      "PANGOLIN_BACKUP_REPOSITORY=rest:https://old.lan/x\n",
+    );
+    expect(run(["--yes", "--keep-data"]).status).toBe(0);
+    expectOnlySecretsKept();
+  });
+
+  it("leaves no backup-server record with --delete-data", () => {
+    installed();
+    writeFileSync(
+      join(root, "opt/pangolin/.env"),
+      "PANGOLIN_DATA_ROOT=/srv/pangolin\nPANGOLIN_BACKUP_REPOSITORY=rest:https://nas.lan/x\n",
+    );
+    expect(run(["--yes", "--delete-data"]).status).toBe(0);
+    expect(exists("opt/pangolin")).toBe(false);
+  });
+
   it("removes the whole install directory when the data is kept but there are no secrets", () => {
     installed("/srv/pangolin", false);
     const { status, out } = run(["--yes", "--keep-data"]);

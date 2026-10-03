@@ -416,6 +416,10 @@ settings() {
   BACKUP=$ARG_BACKUP
   if [ "$ARG_BACKUP_SET" -eq 0 ]; then
     default=$(existing PANGOLIN_BACKUP_REPOSITORY)
+    # A reinstall over kept data has no .env: the server uninstall.sh recorded is the default.
+    if [ ! -f "$(env_file)" ] && [ -f "$(kept_backup_record)" ]; then
+      default=$(file_value PANGOLIN_BACKUP_REPOSITORY "$(kept_backup_record)")
+    fi
     while :; do
       BACKUP=$(ask "Backup server, a restic REST URL (e.g. rest:https://nas.lan:8000/pangolin; empty to skip)" "$default")
       [ -z "$BACKUP" ] && break
@@ -581,10 +585,20 @@ settle_all() {
   fi
   # A backup server set or changed on this run, on an install that has a .env, means a new
   # bundle (write_bundle), so the one the user stores carries RESTIC_REPOSITORY. Compared before
-  # write_env touches .env. Without a .env, a first install's new secrets already write one.
+  # write_env touches .env. Without a .env, a first install's new secrets already write one; but
+  # a reinstall over the secrets uninstall.sh kept (no .env, every secret there) generates none,
+  # and the bundle the user has does not name this backup server: that is a change too.
   if [ -f "$(env_file)" ] && [ -n "$BACKUP" ] &&
     [ "$BACKUP" != "$(existing PANGOLIN_BACKUP_REPOSITORY)" ]; then
     BACKUP_CHANGED=1
+  # uninstall.sh records the backup server it removed with .env (kept_backup_record); a
+  # reinstall with that same one is no change. Without a record, nothing says which server the
+  # bundle names, so a new one is written.
+  elif [ ! -f "$(env_file)" ] && [ -n "$BACKUP" ] && kept_secrets; then
+    if [ ! -f "$(kept_backup_record)" ] ||
+      [ "$BACKUP" != "$(file_value PANGOLIN_BACKUP_REPOSITORY "$(kept_backup_record)")" ]; then
+      BACKUP_CHANGED=1
+    fi
   fi
   settle TANG_URL PANGOLIN_TANG_URL
   previous_data_root=$(existing PANGOLIN_DATA_ROOT)
@@ -772,6 +786,20 @@ prepare_dirs() {
 # has_secret FILE: FILE holds something besides whitespace (a blank secret is a missing one).
 has_secret() {
   [ -s "$1" ] && grep -q '[^[:space:]]' "$1"
+}
+
+# kept_secrets: every secret is already in secrets/ (an earlier install's, such as those
+# uninstall.sh keeps), so this run generates none.
+kept_secrets() {
+  for name in auth-secret app-key restic-password; do
+    has_secret "$(path "$INSTALL_DIR/secrets")/$name" || return 1
+  done
+}
+
+# The .env line PANGOLIN_BACKUP_REPOSITORY=... that uninstall.sh keeps with the secrets when it
+# removes .env. Read once, by settle_all on a reinstall; write_env removes it.
+kept_backup_record() {
+  path "$INSTALL_DIR/secrets/.backup-repository"
 }
 
 # New secrets over an existing database would silently break it: TOTP sign-in, the restic
@@ -1008,6 +1036,8 @@ write_env() {
     env_add PANGOLIN_DATA_MOUNT_MODE "rw,Z"
     env_add PANGOLIN_SECRETS_MOUNT_MODE "ro,Z"
   fi
+  # .env holds the backup server now: uninstall.sh's record of the old one has done its job.
+  rm -f "$(kept_backup_record)"
   if [ -n "$ENV_ADDED" ]; then say "Added:$ENV_ADDED"; else say "Nothing to add; every key was already set"; fi
   if [ "$BACKUP_OFF" -eq 1 ]; then
     if [ "$NO_DOCKER" -eq 1 ]; then
@@ -1371,10 +1401,14 @@ write_files() {
   chmod 0644 "$install_dir/compose.yaml.new"
   mv "$install_dir/compose.yaml.new" "$install_dir/compose.yaml"
 
-  write_allowlist
+  # render.sh before write_allowlist: on a re-run its reload (apply_allowlist_now) runs the
+  # render.sh this run installs, not the previous release's. The units stay below: that reload
+  # does not daemon-reload, so systemd keeps the loaded ones until install_firewall does.
+  cp "$SUPPORT/firewall/render.sh" "$install_dir/firewall/render.sh.new"
+  chmod 0755 "$install_dir/firewall/render.sh.new"
+  mv "$install_dir/firewall/render.sh.new" "$install_dir/firewall/render.sh"
 
-  cp "$SUPPORT/firewall/render.sh" "$install_dir/firewall/render.sh"
-  chmod 0755 "$install_dir/firewall/render.sh"
+  write_allowlist
 
   # The admin CLI on the host: `pangolin status`, `pangolin reset-user` (run in the container).
   cli=$SUPPORT/pangolin

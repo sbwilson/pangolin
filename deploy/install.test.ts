@@ -454,6 +454,46 @@ describe("the pangolin command", () => {
 });
 
 describe("install.sh, re-run", () => {
+  // Retrospective F7: write_allowlist's reload (apply_allowlist_now, which runs the installed
+  // firewall/render.sh through pangolin-allowlist.service) ran before write_files copied the new
+  // render.sh, so it ran the previous release's. --root skips that reload, so this runs
+  // install.sh's own write_files with write_allowlist replaced by one that records which
+  // render.sh is in place when it runs.
+  it("installs the new render.sh before write_allowlist can reload the firewall", () => {
+    const script = readFileSync(INSTALL, "utf8");
+    const writeFiles = script.match(/^write_files\(\) \{\n[\s\S]*?^\}\n/m)?.[0];
+    expect(writeFiles).toBeDefined();
+    mkdirSync(at("opt/pangolin/firewall"), { recursive: true });
+    writeFileSync(at("opt/pangolin/firewall/render.sh"), "# the previous release's render.sh\n");
+    const harness = [
+      `ROOT='${root}'`,
+      "INSTALL_DIR=/opt/pangolin",
+      `SUPPORT='${here}'`,
+      "PINNED=",
+      "set -eu",
+      'path() { printf \'%s%s\' "$ROOT" "$1"; }',
+      "step() { :; }",
+      "say() { :; }",
+      "warn() { :; }",
+      "write_data_dropin() { :; }",
+      "write_allowlist() {",
+      '  if cmp -s "$SUPPORT/firewall/render.sh" "$(path "$INSTALL_DIR/firewall/render.sh")"; then',
+      "    echo reload-runs-the-new-render.sh",
+      "  else",
+      "    echo reload-runs-the-old-render.sh",
+      "  fi",
+      "}",
+      writeFiles ?? "",
+      "write_files",
+    ].join("\n");
+    const result = run("sh", ["-c", harness]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("reload-runs-the-new-render.sh");
+    expect(read("opt/pangolin/firewall/render.sh")).toBe(readFileSync(RENDER, "utf8"));
+    expect(mode("opt/pangolin/firewall/render.sh")).toBe(0o755);
+    expect(existsSync(at("opt/pangolin/firewall/render.sh.new"))).toBe(false);
+  });
+
   it("keeps the secrets and the operator's .env edits, and only adds missing keys", () => {
     expect(install().status).toBe(0);
     const before = secrets();
@@ -1178,6 +1218,78 @@ describe("install.sh, secrets over an existing database", () => {
     expect(secretModes()).toEqual(modes);
     expect(bundles()).toEqual([]);
     expect(read("srv/pangolin/pangolin.sqlite")).toBe("household");
+  });
+
+  // Retrospective F1: uninstall.sh removes .env, and the kept secrets mean none are generated, so
+  // a reinstall with another backup server wrote no bundle naming it.
+  const uninstallKeepingData = (...extra: string[]) => {
+    expect(install(...extra).status).toBe(0);
+    database();
+    for (const bundle of bundles()) rmSync(at(`root/${bundle}`));
+    const removed = run("sh", [UNINSTALL, "--root", root, "--non-interactive"]);
+    expect(removed.status, removed.stderr).toBe(0);
+    expect(existsSync(at("opt/pangolin/.env"))).toBe(false);
+  };
+  const bundleText = () => {
+    const [bundle] = bundles();
+    return bundle === undefined ? "" : read(`root/${bundle}`);
+  };
+  const withoutBackupServer = (args: readonly string[]) =>
+    args.filter((arg, i) => arg !== "--backup-server" && args[i - 1] !== "--backup-server");
+
+  it("writes a bundle naming the new backup server on a reinstall over the kept data", () => {
+    uninstallKeepingData();
+    // uninstall.sh kept the old server beside the secrets, root's only.
+    expect(read("opt/pangolin/secrets/.backup-repository")).toBe(
+      "PANGOLIN_BACKUP_REPOSITORY=rest:https://nas.lan:8000/pangolin\n",
+    );
+    expect(mode("opt/pangolin/secrets/.backup-repository")).toBe(0o600);
+    const before = secrets();
+    const result = install("--backup-server", "rest:https://restic.example.net/pangolin");
+    expect(result.status, result.stderr).toBe(0);
+    expect(secrets()).toEqual(before);
+    expect(bundles()).toHaveLength(1);
+    const id = read("opt/pangolin/.env").match(/^PANGOLIN_RECOVERY_BUNDLE_ID=(.+)$/m)?.[1];
+    expect(id).toBeDefined();
+    expect(bundleText()).toContain(`Bundle id: ${id}\n`);
+    expect(bundleText()).toContain("RESTIC_REPOSITORY=rest:https://restic.example.net/pangolin\n");
+    expect(bundleText()).toContain(`PANGOLIN_APP_KEY=${before["app-key"].trim()}\n`);
+    expect(result.stdout).toContain("Rewritten to include the backup repository");
+    expect(result.stdout).not.toContain("the bundle you already have");
+    // Its job done once .env holds the server.
+    expect(existsSync(at("opt/pangolin/secrets/.backup-repository"))).toBe(false);
+  });
+
+  it("writes a bundle on a reinstall over kept data when nothing records the old backup server", () => {
+    uninstallKeepingData();
+    // As an uninstall.sh from before the record leaves it.
+    rmSync(at("opt/pangolin/secrets/.backup-repository"));
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    expect(bundles()).toHaveLength(1);
+    expect(bundleText()).toContain("RESTIC_REPOSITORY=rest:https://nas.lan:8000/pangolin\n");
+    expect(result.stdout).not.toContain("the bundle you already have");
+  });
+
+  it("writes no bundle on a reinstall over kept data with no backup server", () => {
+    uninstallKeepingData("--backup-server", "");
+    expect(existsSync(at("opt/pangolin/secrets/.backup-repository"))).toBe(false);
+    const result = run("sh", [INSTALL, "--root", root, ...withoutBackupServer(ANSWERS)]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(bundles()).toEqual([]);
+    expect(read("opt/pangolin/.env")).not.toContain("PANGOLIN_BACKUP_REPOSITORY=");
+    expect(existsSync(at("opt/pangolin/secrets/.backup-repository"))).toBe(false);
+  });
+
+  it("keeps the recorded backup server as the default on a reinstall that does not give one", () => {
+    uninstallKeepingData();
+    const result = run("sh", [INSTALL, "--root", root, ...withoutBackupServer(ANSWERS)]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(bundles()).toEqual([]);
+    expect(read("opt/pangolin/.env")).toContain(
+      "PANGOLIN_BACKUP_REPOSITORY=rest:https://nas.lan:8000/pangolin\n",
+    );
+    expect(existsSync(at("opt/pangolin/secrets/.backup-repository"))).toBe(false);
   });
 
   it("generates the secrets as before when the data root holds no database", () => {
