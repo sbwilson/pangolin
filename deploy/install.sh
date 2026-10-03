@@ -9,7 +9,8 @@
 #   --proxy npm|caddy|tailscale   proxy mode; only npm (an existing Nginx Proxy Manager) today
 #   --hostname NAME               public host name; the app is served at https://NAME
 #   --backup-server URL           restic REST URL, e.g. rest:https://nas.lan:8000/pangolin, of an
-#                                 append-only rest-server: nightly backups go there (allowlisted)
+#                                 append-only rest-server: nightly backups go there (allowlisted);
+#                                 an empty value ("") turns backups off
 #   --npm-host IP                 the NPM host: the only address that may reach the app port
 #   --admin-network CIDR          the network SSH is allowed from, e.g. 192.168.1.0/24
 #   --tang-url URL                the Tang server that unlocks the data disk, e.g. http://tang.lan
@@ -78,6 +79,9 @@ BUNDLE_PATH=
 BUNDLE_ID=
 NEW_BUNDLE_ID=0
 BACKUP_CHANGED=0
+# An explicit --backup-server "": backups off. OLD_BACKUP is the repository .env held before.
+BACKUP_OFF=0
+OLD_BACKUP=
 # .env keys this run replaces because a flag asked for a new value (--image, --build, --data-root).
 REPLACE=
 
@@ -423,7 +427,10 @@ settings() {
   if [ -n "$BACKUP" ] && [ -z "$(url_entry "$BACKUP")" ]; then
     die "not a restic REST URL: use rest:https://host:port/path (or rest:http://...)"
   fi
-  [ -n "$BACKUP" ] || warn "no backup server set: add PANGOLIN_BACKUP_REPOSITORY to .env and its host to allowlist.conf before enabling backups"
+  if [ -z "$BACKUP" ] && [ "$ARG_BACKUP_SET" -eq 1 ]; then
+    BACKUP_OFF=1
+  fi
+  [ -n "$BACKUP" ] || [ "$BACKUP_OFF" -eq 1 ] || warn "no backup server set: add PANGOLIN_BACKUP_REPOSITORY to .env and its host to allowlist.conf before enabling backups"
 
   TANG_URL=$ARG_TANG
   if [ "$ARG_TANG_SET" -eq 0 ]; then
@@ -561,7 +568,13 @@ settle_all() {
     settle DNS_SERVERS PANGOLIN_DNS_SERVERS
   fi
   # A backup server asked for (--backup-server, or typed at the prompt) replaces the one in .env.
-  if [ -n "$BACKUP" ]; then
+  # An explicit --backup-server "" blanks it (the key stays, empty: the server reads that as not
+  # configured), and write_files drops the old repository's allowlist entry. That is not a change
+  # that writes a bundle: the bundle's RESTIC_REPOSITORY still opens the old backups.
+  if [ "$BACKUP_OFF" -eq 1 ]; then
+    OLD_BACKUP=$(existing PANGOLIN_BACKUP_REPOSITORY)
+    if [ -n "$OLD_BACKUP" ]; then REPLACE="$REPLACE PANGOLIN_BACKUP_REPOSITORY"; fi
+  elif [ -n "$BACKUP" ]; then
     settle BACKUP PANGOLIN_BACKUP_REPOSITORY replace
   else
     settle BACKUP PANGOLIN_BACKUP_REPOSITORY
@@ -996,6 +1009,13 @@ write_env() {
     env_add PANGOLIN_SECRETS_MOUNT_MODE "ro,Z"
   fi
   if [ -n "$ENV_ADDED" ]; then say "Added:$ENV_ADDED"; else say "Nothing to add; every key was already set"; fi
+  if [ "$BACKUP_OFF" -eq 1 ]; then
+    if [ "$NO_DOCKER" -eq 1 ]; then
+      say "Backups are off in .env (--backup-server \"\"): the server stops scheduling them once the stack restarts (not done with --no-docker)"
+    else
+      say "Backups are off in .env (--backup-server \"\"): the server stops scheduling them when this run restarts the stack"
+    fi
+  fi
   trusted=$(existing PANGOLIN_TRUSTED_PROXIES)
   if [ "$trusted" != "$NPM_HOST" ]; then
     warn "PANGOLIN_TRUSTED_PROXIES=$trusted differs from PANGOLIN_NPM_HOST=$NPM_HOST in .env: client addresses from NPM are not believed unless it lists the NPM host"
@@ -1028,6 +1048,32 @@ allowlist_add() {
   printf '\n# %s (added by install.sh)\n' "$allowlist_comment" >>"$allowlist_file"
   for entry in $missing; do printf '%s\n' "$entry" >>"$allowlist_file"; done
   say "Added to allowlist.conf:$missing"
+}
+
+# allowlist_remove FILE COMMENT ENTRY: drops ENTRY where it sits directly under a COMMENT line
+# (install.sh's own), with that comment and the blank line before it. A line equal to ENTRY that
+# is not under COMMENT is the operator's: it stays, and so says. True when it removed any.
+allowlist_remove() {
+  grep -Fqx "$3" "$1" || return 1
+  awk -v entry="$3" -v comment="$2" '
+    { line[NR] = $0 }
+    END {
+      for (i = 2; i <= NR; i++) {
+        if (line[i] != entry || index(line[i - 1], comment) != 1) continue
+        drop[i] = 1
+        drop[i - 1] = 1
+        if (i > 2 && line[i - 2] == "") drop[i - 2] = 1
+      }
+      for (i = 1; i <= NR; i++) if (!drop[i]) print line[i]
+    }' "$1" >"$1.new"
+  if cmp -s "$1" "$1.new"; then
+    rm -f "$1.new"
+    say "Kept $3 in allowlist.conf: install.sh did not write it there"
+    return 1
+  fi
+  chmod 0644 "$1.new"
+  mv "$1.new" "$1"
+  say "Removed from allowlist.conf: $3"
 }
 
 # On a re-run the firewall is already on: an allowlist change must be applied before the step
@@ -1259,6 +1305,13 @@ write_files() {
   tang_entry=$(url_entry "$TANG_URL")
   if [ -f "$allowlist" ]; then
     say "Kept the existing allowlist.conf"
+    # Backups turned off: the entry install.sh added for the old repository goes (unless the Tang
+    # server shares it); any line the operator wrote stays.
+    entry=$(url_entry "$OLD_BACKUP")
+    if [ "$BACKUP_OFF" -eq 1 ] && [ -n "$entry" ] && [ "$entry" != "$tang_entry" ] &&
+      allowlist_remove "$allowlist" "# Backup server (restic REST)" "$entry"; then
+      apply_allowlist_now
+    fi
     entry=$(url_entry "$BACKUP")
     if [ -n "$entry" ] && ! grep -Fqx "$entry" "$allowlist"; then
       allowlist_add "$allowlist" "Backup server (restic REST)" "$entry" || true
