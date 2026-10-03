@@ -597,13 +597,12 @@ describe("install.sh, re-run", () => {
     expect(bundles()).toHaveLength(1);
   });
 
-  // Seam S11e (spike "Check the suspected seams"): real. A re-run of install.sh from a checkout
-  // (or the --build clone) copies its own compose.yaml and pangolin command over the ones a later
-  // `pangolin upgrade` installed from the new image, while .env keeps that image's digest. The
-  // chosen fix: while .env pins an image by digest (only `pangolin upgrade` writes one) and this
-  // run does not replace the image, take compose.yaml and the command from that image, as a lone
-  // script already does, so they always match the image that runs. The fix story turns this on.
-  it.fails("S11e: takes compose.yaml and the pangolin command from the image .env pins", () => {
+  // Seam S11e (spike "Check the suspected seams"), fixed by story 11.9. A re-run of install.sh
+  // from a checkout (or the --build clone) used to copy its own compose.yaml and pangolin command
+  // over the ones a later `pangolin upgrade` installed from the new image, while .env kept that
+  // image's digest. While .env pins an image by digest and the run does not replace the image,
+  // they now come from that image, as a lone script already does.
+  it("S11e: takes compose.yaml and the pangolin command from the image .env pins", () => {
     expect(install().status).toBe(0);
     // As `pangolin upgrade` leaves it: the new image's digest pinned in .env.
     const digest = `ghcr.io/sbwilson/pangolin@sha256:${"1".repeat(64)}`;
@@ -641,6 +640,59 @@ describe("install.sh, re-run", () => {
     expect(dockerLog()).toContain(`create ${digest}`);
     expect(read("opt/pangolin/compose.yaml")).toBe("# compose.yaml from the pinned image\n");
     expect(read("usr/local/bin/pangolin")).toContain("# pangolin from the pinned image");
+    expect(result.stdout).toContain(
+      `Taking compose.yaml and the pangolin command from the pinned image ${digest}`,
+    );
+  });
+
+  it("keeps the checkout's files for a tag-pinned image, and warns when the pinned image is unreadable", () => {
+    expect(installWithDocker([]).status).toBe(0);
+    const checkoutCompose = read("opt/pangolin/compose.yaml");
+    // Tag-pinned (as install.sh writes it): the image is not read.
+    const tagged = installWithDocker([]);
+    expect(tagged.status, tagged.stderr).toBe(0);
+    expect(tagged.stdout).not.toContain("from the pinned image");
+    expect(dockerLog()).not.toMatch(/^create .*@sha256:/m);
+    expect(read("opt/pangolin/compose.yaml")).toBe(checkoutCompose);
+    // Digest-pinned, but the image cannot be read: a warning, and the checkout's files.
+    const digest = `ghcr.io/sbwilson/pangolin@sha256:${"2".repeat(64)}`;
+    writeFileSync(
+      at("opt/pangolin/.env"),
+      read("opt/pangolin/.env").replace(/^PANGOLIN_IMAGE=.*$/m, `PANGOLIN_IMAGE=${digest}`),
+    );
+    const env = stubEnv({});
+    const bin = at("bin");
+    writeFileSync(join(bin, "docker-base"), read("bin/docker"));
+    chmodSync(join(bin, "docker-base"), 0o755);
+    writeFileSync(
+      join(bin, "docker"),
+      [
+        "#!/bin/sh",
+        `[ "$1" = create ] && { echo "$*" >> "${at("docker.log")}"; exit 1; }`,
+        `exec "${join(bin, "docker-base")}" "$@"`,
+        "",
+      ].join("\n"),
+    );
+    chmodSync(join(bin, "docker"), 0o755);
+    const args = ANSWERS.filter((arg) => arg !== "--no-docker");
+    const unreadable = run("sh", [INSTALL, "--root", root, ...args], env);
+    expect(unreadable.status, unreadable.stderr).toBe(0);
+    expect(unreadable.stderr).toContain(`could not read the pinned image ${digest}`);
+    expect(dockerLog()).toContain(`create ${digest}`);
+    expect(read("opt/pangolin/compose.yaml")).toBe(checkoutCompose);
+  });
+
+  it("never reads the pinned image with --no-docker", () => {
+    expect(install().status).toBe(0);
+    const digest = `ghcr.io/sbwilson/pangolin@sha256:${"3".repeat(64)}`;
+    writeFileSync(
+      at("opt/pangolin/.env"),
+      read("opt/pangolin/.env").replace(/^PANGOLIN_IMAGE=.*$/m, `PANGOLIN_IMAGE=${digest}`),
+    );
+    const noDocker = install();
+    expect(noDocker.status, noDocker.stderr).toBe(0);
+    expect(noDocker.stdout).not.toContain("from the pinned image");
+    expect(noDocker.stderr).not.toContain("pinned image");
   });
 
   // Seam S11f (spike "Check the suspected seams"): real. `--backup-server ""` is taken as "no
