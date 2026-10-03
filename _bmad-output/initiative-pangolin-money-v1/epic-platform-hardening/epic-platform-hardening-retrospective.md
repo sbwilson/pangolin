@@ -95,7 +95,7 @@ Runtime behaviour was **not exercised end to end by this retrospective**; nothin
 **Dev-VM run (2026-10-04, `pang-dev`, by the user):**
 - Release v0.1.2 (`845a24a`, run 37149617209) passed every gate: `publish` tagged `v0.1.2`, `v0.1` and `latest` and the release is Latest; `migrate-previous` migrated v0.1.1's database (8 → 8; integrity, manifest, schema ok); `upgrade-test` asserted `upgrade-copies/` is `0 700`.
 - `sudo pangolin upgrade v0.1.2` succeeded. The installed command was the old `pangolin:local` one, so the pre-upgrade copy went to `/opt/pangolin` (F9 seen on a real host); the upgrade installed the v0.1.2 command. The user moved both old copies (one still 0755, from before story 1.15) into `/srv/pangolin/upgrade-copies/` by hand: root, 0700.
-- Uninstall keeping the data, then reinstall: works; the same passkey signs in, and `sudo pangolin backup` pushed a new snapshot (`c8f431a0…`) with the kept restic password. As documented, the reinstall gave the existing bundle a new id, so the storage warning returned until it is confirmed. TOTP was not exercised.
+- Uninstall keeping the data, then reinstall: works; the same passkey signs in, and `sudo pangolin backup` pushed a new snapshot (`c8f431a0…`) with the kept restic password. As documented, the reinstall gave the existing bundle a new id, so the storage warning returned until it is confirmed., and TOTP sign-in works with the kept auth secret.
 - `pangolin status` on v0.1.2 shows the pending-jobs list (backlog story 4). One dead `backup-push` from 2026-10-02 17:01 predates the reinstall; the user confirmed it was a mistyped restic server URI at the time, not a defect.
 - Not exercised anywhere: 11.1 uninstall-then-reinstall on a real host; 11.4's `nft add element` against real nftables and a real resolver change; 11.8's rollback with real containers; 11.6's tag rules on a real release (the latest tag, v0.1.1, predates the epic).
 
@@ -141,7 +141,7 @@ Items 2, 4 and 10 are for the human; 1, 3, 5–9 are proposed remediation for th
 
 | Done when | Status | Evidence |
 |---|---|---|
-| 1. Uninstall keeping data, then install.sh, keeps TOTP and restic working; refuses new secrets over a database | Met (TOTP not exercised) | Tests show identical secret files and the refusal (`check_secrets_for_database`, `install.sh:781`); working TOTP and restic need a real host. F1 and F12 are gaps on the same path. |
+| 1. Uninstall keeping data, then install.sh, keeps TOTP and restic working; refuses new secrets over a database | Met | Tests show identical secret files and the refusal (`check_secrets_for_database`, `install.sh:781`); working TOTP and restic need a real host. F1 and F12 are gaps on the same path. |
 | 2. A resolver change: re-render restores egress; no empty ruleset saved | Met in tests | Stub `nft`/`getent` modelling the firewall (11.4 loop 1); never run against real nftables |
 | 3. Interrupted first install shows the bundle notice; bundle rewritten when backups are added; data-root change warns, no stale drop-in | Met in tests | 11.3 (a real interruption in tests), 11.5 |
 | 4. An older-line patch does not move `latest`; two release runs never publish at once | Met in tests, with a documented limit | `release-tags.sh` tests, `release.yml` concurrency; GitHub cancels a third waiting run (11.6 triage) |
