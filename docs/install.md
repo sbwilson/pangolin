@@ -390,10 +390,12 @@ sudo pangolin --help
 
 - **`status`** prints the release, the schema version against the one the build expects,
   readiness (`ok`, or the failing checks as `/healthz` names them), how many jobs are
-  pending, running and dead, with each dead job's kind and time, and the last backup (its time
-  and restic snapshot ID, "none yet", or "not configured"). While the recovery bundle is not
-  confirmed it adds `Warning:   recovery bundle not confirmed stored safely (run sudo pangolin
-  confirm-bundle)`. It exits 0 when ready, 1 when not (a warning never changes this), and 3
+  pending, running and dead, the next ten pending jobs (kind and due time, soonest first), the
+  running jobs (kind and lease end, at most ten), each dead job's kind and time, and the last
+  backup (its time and restic snapshot ID, "none yet", or "not configured"). While the
+  recovery bundle is not confirmed it adds
+  `Warning:   recovery bundle not confirmed stored safely (run sudo pangolin confirm-bundle)`.
+  It exits 0 when ready, 1 when not (a warning never changes this), and 3
   with "Pangolin is not running" when the server is down (it then opens nothing).
 - **`confirm-bundle`** records that the recovery bundle whose id is in `.env` is stored safely
   offline, which ends the warning ([section 7](#7-the-recovery-bundle)); it is audited as

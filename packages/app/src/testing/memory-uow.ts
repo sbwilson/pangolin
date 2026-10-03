@@ -165,6 +165,30 @@ function jobRepo(working: MemoryState, check: () => void): JobRepo {
         .slice(0, limit)
         .map((job) => ({ kind: job.kind, failedAt: job.finishedAt ?? "" }));
     },
+    listPending: (limit) => {
+      check();
+      return working.jobs
+        .filter((job) => job.status === "pending")
+        .sort((a, b) => {
+          const x = `${a.runAt}|${a.id}`;
+          const y = `${b.runAt}|${b.id}`;
+          return x < y ? -1 : x > y ? 1 : 0;
+        })
+        .slice(0, limit)
+        .map((job) => ({ kind: job.kind, runAt: job.runAt }));
+    },
+    listRunning: (limit) => {
+      check();
+      return working.jobs
+        .filter((job) => job.status === "running")
+        .sort((a, b) => {
+          const x = `${a.leaseExpiresAt}|${a.id}`;
+          const y = `${b.leaseExpiresAt}|${b.id}`;
+          return x < y ? -1 : x > y ? 1 : 0;
+        })
+        .slice(0, limit)
+        .map((job) => ({ kind: job.kind, leaseExpiresAt: job.leaseExpiresAt ?? "" }));
+    },
     countByStatus: () => {
       check();
       const counts = { pending: 0, running: 0, done: 0, dead: 0 };
@@ -670,6 +694,8 @@ export function memoryUnitOfWork(
         },
         jobs: {
           listDead: jobRepo(uow.state, check).listDead,
+          listPending: jobRepo(uow.state, check).listPending,
+          listRunning: jobRepo(uow.state, check).listRunning,
           countByStatus: jobRepo(uow.state, check).countByStatus,
           find: jobRepo(uow.state, check).find,
           firstCreatedAt: jobRepo(uow.state, check).firstCreatedAt,

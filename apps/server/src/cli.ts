@@ -132,6 +132,22 @@ function printStatus(io: CliIo, status: StatusResult): void {
     );
   }
   io.out(`Jobs:      ${jobs.pending} pending, ${jobs.running} running, ${jobs.dead} dead`);
+  if (status.pendingJobs.length > 0) {
+    const shown = status.pendingJobs.length;
+    io.out(
+      jobs.pending > shown
+        ? `Pending jobs (next ${shown} of ${jobs.pending}):`
+        : "Pending jobs (soonest first):",
+    );
+    for (const job of status.pendingJobs) io.out(`  ${job.runAt}  ${job.kind}`);
+  }
+  if (status.runningJobs.length > 0) {
+    const shown = status.runningJobs.length;
+    io.out(jobs.running > shown ? `Running jobs (${shown} of ${jobs.running}):` : "Running jobs:");
+    for (const job of status.runningJobs) {
+      io.out(`  ${job.leaseExpiresAt}  ${job.kind}  (lease until)`);
+    }
+  }
   const { backup } = status;
   if (!backup.configured) {
     io.out("Backups:   not configured (PANGOLIN_BACKUP_REPOSITORY is empty)");

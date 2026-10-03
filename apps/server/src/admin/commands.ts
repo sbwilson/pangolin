@@ -17,13 +17,17 @@ import {
   type JobCounts,
   jobCounts,
   listLogins,
+  type PendingJob,
+  pendingJobs,
   type ReadinessOutput,
   type RunnerLiveness,
+  type RunningJob,
   readiness,
   recoveryBundleConfirmed,
   reEnrolmentUrl,
   requestBackup,
   resetUser,
+  runningJobs,
   type SystemHealthPort,
   type TokenPort,
   type UnitOfWork,
@@ -80,6 +84,10 @@ export interface StatusResult {
   readonly jobs: JobCounts;
   /** Dead jobs by kind and failure time only, newest first (AD-9). */
   readonly deadJobs: readonly DeadJob[];
+  /** Pending jobs by kind and due time only, soonest first, at most 10 (AD-9). */
+  readonly pendingJobs: readonly PendingJob[];
+  /** Running jobs by kind and lease end only, soonest first, at most 10 (AD-9). */
+  readonly runningJobs: readonly RunningJob[];
   readonly backup: BackupStatus;
 }
 
@@ -154,6 +162,8 @@ export function statusCommand(deps: AdminDeps, args: unknown = {}): StatusResult
     ),
     jobs: jobCounts(ctx),
     deadJobs: deadJobs(ctx),
+    pendingJobs: pendingJobs(ctx),
+    runningJobs: runningJobs(ctx),
     // Staleness is a warning: it never makes the status (or its exit code) fail.
     backup: backupStatus(ctx, deps.backupConfigured),
   };

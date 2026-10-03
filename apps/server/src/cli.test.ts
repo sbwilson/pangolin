@@ -153,7 +153,52 @@ describe("pangolin (the admin CLI)", () => {
     const schema = loadMigrations(packageMigrationsDir).length;
     expect(result.out).toContain(`Schema:    ${schema} (this build expects ${schema})`);
     expect(result.out).toMatch(/Readiness: ok/);
-    expect(result.out).toMatch(/Jobs: +\d+ pending, \d+ running, 0 dead/);
+    expect(result.out).toMatch(/Jobs: +0 pending, 0 running, 0 dead/);
+    // No jobs: no lists, not even a header.
+    expect(result.out).not.toMatch(/Pending jobs|Running jobs|Dead jobs/);
+  });
+
+  it("status lists the next pending jobs and the running ones, kind and time only", async () => {
+    await boot();
+    withDb((db) => {
+      const insert = db.prepare(
+        `INSERT INTO job (id, kind, lane, payload, status, attempts, max_attempts, run_at,
+           lease_owner, lease_expires_at, created_at, updated_at)
+         VALUES (?, ?, 'local', '{"secret":1}', ?, 0, 1, ?, ?, ?, ?, ?)`,
+      );
+      const created = "2026-09-27T00:00:00.000Z";
+      for (let i = 0; i < 12; i++) {
+        const runAt = `2099-01-01T00:00:${String(11 - i).padStart(2, "0")}.000Z`;
+        const id = `01J00000000000000000000${String(i).padStart(3, "0")}`;
+        insert.run(id, "test-pending", "pending", runAt, null, null, created, created);
+      }
+      insert.run(
+        "01J00000000000000000000100",
+        "test-running",
+        "running",
+        created,
+        "elsewhere",
+        "2099-01-01T00:05:00.000Z",
+        created,
+        created,
+      );
+    });
+    const result = await cli(["status"]);
+    expect(result.code).toBe(EXIT_OK);
+    const lines = result.out.split("\n");
+    const jobsAt = lines.findIndex((line) => line.startsWith("Jobs:"));
+    expect(lines[jobsAt]).toMatch(/Jobs: +12 pending, 1 running, 0 dead/);
+    expect(lines.slice(jobsAt + 1, jobsAt + 14)).toEqual([
+      "Pending jobs (next 10 of 12):",
+      ...Array.from(
+        { length: 10 },
+        (_, i) => `  2099-01-01T00:00:${String(i).padStart(2, "0")}.000Z  test-pending`,
+      ),
+      "Running jobs:",
+      "  2099-01-01T00:05:00.000Z  test-running  (lease until)",
+    ]);
+    expect(result.out).not.toContain("2099-01-01T00:00:10.000Z");
+    expect(result.out).not.toMatch(/secret|elsewhere|01J0000/);
   });
 
   it("status on a server that is not ready shows the failing checks and dead jobs, exit 1", async () => {

@@ -26,6 +26,42 @@ export function deadJobs(ctx: JobStatusContext, input: DeadJobsInput = {}): Dead
     .map((row) => ({ kind: row.kind, failedAt: row.failedAt }));
 }
 
+/** A pending job: its kind and when it is due, never its payload or ID (AD-9). */
+export interface PendingJob {
+  readonly kind: string;
+  readonly runAt: string;
+}
+
+/** A running job: its kind and when its lease ends, never its payload or ID (AD-9). */
+export interface RunningJob {
+  readonly kind: string;
+  readonly leaseExpiresAt: string;
+}
+
+export const QUEUED_JOBS_LIMIT = 10;
+
+export const pendingJobsInput = z.object({}).strict();
+export type PendingJobsInput = z.input<typeof pendingJobsInput>;
+
+/** `system.pendingJobs`: pending jobs, soonest due first, at most 10, for `pangolin status`. */
+export function pendingJobs(ctx: JobStatusContext, input: PendingJobsInput = {}): PendingJob[] {
+  parseInput(pendingJobsInput, input);
+  return ctx.uow
+    .read((repos) => repos.jobs.listPending(QUEUED_JOBS_LIMIT))
+    .map((row) => ({ kind: row.kind, runAt: row.runAt }));
+}
+
+export const runningJobsInput = z.object({}).strict();
+export type RunningJobsInput = z.input<typeof runningJobsInput>;
+
+/** `system.runningJobs`: running jobs, soonest lease end first, at most 10. */
+export function runningJobs(ctx: JobStatusContext, input: RunningJobsInput = {}): RunningJob[] {
+  parseInput(runningJobsInput, input);
+  return ctx.uow
+    .read((repos) => repos.jobs.listRunning(QUEUED_JOBS_LIMIT))
+    .map((row) => ({ kind: row.kind, leaseExpiresAt: row.leaseExpiresAt }));
+}
+
 /** How many jobs wait, run and have died: counts only, never a kind or payload (AD-9). */
 export interface JobCounts {
   readonly pending: number;

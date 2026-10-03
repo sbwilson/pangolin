@@ -12,7 +12,9 @@ import {
   type JobRow,
   jobCounts,
   listReviewItems,
+  pendingJobs,
   renewJobLease,
+  runningJobs,
   type UseCaseContext,
   write,
 } from "@pangolin/app";
@@ -237,6 +239,33 @@ describe("job repository on SQLite", () => {
     expect(jobCounts(ctx)).toEqual({ pending: 1, running: 1, dead: 0 });
   });
 
+  it("lists pending jobs soonest first and running jobs by lease end, kind and time only", () => {
+    const at = (seconds: number) => now.add({ seconds });
+    write(ctx, (tx) => enqueueJob(tx, ctx, flaky, { n: 1 }, { runAt: at(30) }));
+    write(ctx, (tx) => enqueueJob(tx, ctx, flaky, { n: 2 }, { runAt: at(10) }));
+    const due = enqueue(3);
+    const uow = createUnitOfWork(db);
+    expect(uow.read((repos) => repos.jobs.listRunning(10))).toEqual([]);
+    expect(uow.read((repos) => repos.jobs.listPending(2))).toEqual([
+      { kind: "test-flaky", runAt: "2026-09-27T00:00:00.000Z" },
+      { kind: "test-flaky", runAt: "2026-09-27T00:00:10.000Z" },
+    ]);
+    expect(claim("a").id).toBe(due);
+    expect(pendingJobs(ctx)).toEqual([
+      { kind: "test-flaky", runAt: "2026-09-27T00:00:10.000Z" },
+      { kind: "test-flaky", runAt: "2026-09-27T00:00:30.000Z" },
+    ]);
+    advance(30_000);
+    claim("b");
+    expect(runningJobs(ctx)).toEqual([
+      { kind: "test-flaky", leaseExpiresAt: "2026-09-27T00:01:00.000Z" },
+      { kind: "test-flaky", leaseExpiresAt: "2026-09-27T00:01:30.000Z" },
+    ]);
+    expect(uow.read((repos) => repos.jobs.listRunning(1))).toEqual([
+      { kind: "test-flaky", leaseExpiresAt: "2026-09-27T00:01:00.000Z" },
+    ]);
+  });
+
   it("finds a job by ID, and cancels the live jobs of given kinds whoever holds them", () => {
     const waiting = enqueue(1);
     const held = enqueue(2);
@@ -275,6 +304,8 @@ describe("job repository on SQLite", () => {
   it("refuses repository calls after the transaction ended", () => {
     const tx = createUnitOfWork(db).transaction((repos) => repos);
     expect(() => tx.jobs.listDead(1)).toThrow(/outside its transaction/);
+    expect(() => tx.jobs.listPending(1)).toThrow(/outside its transaction/);
+    expect(() => tx.jobs.listRunning(1)).toThrow(/outside its transaction/);
     expect(() => tx.jobs.countByStatus()).toThrow(/outside its transaction/);
     expect(() => tx.reviewItems.listOpenFor(ctx.viewer)).toThrow(/outside its transaction/);
   });

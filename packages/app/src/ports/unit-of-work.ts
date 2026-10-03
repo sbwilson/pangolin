@@ -82,6 +82,18 @@ export interface DeadJobRow {
   readonly failedAt: string;
 }
 
+/** A pending job as `pangolin status` shows it: kind and due time only (AD-9). */
+export interface PendingJobRow {
+  readonly kind: string;
+  readonly runAt: string;
+}
+
+/** A running job as `pangolin status` shows it: kind and lease end only (AD-9). */
+export interface RunningJobRow {
+  readonly kind: string;
+  readonly leaseExpiresAt: string;
+}
+
 /**
  * Job bookkeeping. Every method that changes a claimed job checks `owner` against
  * `lease_owner` and returns false, changing nothing, when this runner no longer holds it.
@@ -104,6 +116,10 @@ export interface JobRepo {
   markDead(id: Id<"Job">, owner: string, now: string, error: string): boolean;
   /** Dead jobs, newest failure first. */
   listDead(limit: number): DeadJobRow[];
+  /** Pending jobs, soonest `runAt` first, then by ID. */
+  listPending(limit: number): PendingJobRow[];
+  /** Running jobs, soonest lease end first, then by ID. */
+  listRunning(limit: number): RunningJobRow[];
   /** How many jobs have each status; a status with none is 0. */
   countByStatus(): Readonly<Record<JobStatus, number>>;
   /** The job with `id`, if any. Its `lastError` is for the server only. */
@@ -413,7 +429,10 @@ export interface ReadRepos {
   readonly loginAttempts: Pick<LoginAttemptRepo, "listSince">;
   readonly recoveryCodes: Pick<RecoveryCodeRepo, "counts">;
   readonly reEnrolmentLinks: Pick<ReEnrolmentLinkRepo, "findByTokenHash" | "findById">;
-  readonly jobs: Pick<JobRepo, "listDead" | "countByStatus" | "find" | "firstCreatedAt">;
+  readonly jobs: Pick<
+    JobRepo,
+    "listDead" | "listPending" | "listRunning" | "countByStatus" | "find" | "firstCreatedAt"
+  >;
   readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
   readonly backups: Pick<BackupSnapshotRepo, "find" | "latestPushed">;
   readonly backupVerifications: Pick<BackupVerificationRepo, "latest">;
