@@ -130,7 +130,7 @@ sudo sh deploy/install.sh --non-interactive \
 | `--npm-host IP` | The NPM host's IPv4 address; also becomes `PANGOLIN_TRUSTED_PROXIES` |
 | `--admin-network CIDR` | Where SSH is allowed from |
 | `--ghcr-token-file FILE` / `--ghcr-token TOKEN` | A GHCR read-only token for `docker login ghcr.io` (a file keeps it out of the process list). It is kept in `secrets/ghcr-token`, and `docker login` also stores it in `/root/.docker/config.json` |
-| `--dns IP[,IP]` | The resolvers DNS is allowed to (default: from `/etc/resolv.conf`) |
+| `--dns IP[,IP]` | The resolvers DNS is allowed to (default: from `/etc/resolv.conf`); on a re-run it replaces `PANGOLIN_DNS_SERVERS` in `.env`. The firewall also allows the VM's current resolvers (see [§8](#8-the-firewall)) |
 | `--data-root DIR` | The data directory on the encrypted disk (default `/srv/pangolin`); on a re-run it replaces `PANGOLIN_DATA_ROOT` in `.env` |
 | `--http-port PORT` | The VM port NPM forwards to (default 3000) |
 | `--image REF` | The image (default `ghcr.io/sbwilson/pangolin:latest`); on a re-run it replaces `PANGOLIN_IMAGE` in `.env`. A local image (no `/`, like `pangolin:local`) is never pulled: it must exist |
@@ -182,7 +182,8 @@ Re-running is safe and is how you apply changes: it never regenerates an existin
 every value you changed in `.env` (it only adds keys that are missing, and warns when a flag
 asks for something different from what `.env` holds), keeps your `allowlist.conf` (adding the
 Tang server back if it is missing), and then restarts the stack. The exceptions are `--image`,
-`--build` and `--data-root`: asked for explicitly, they replace their `.env` value and say so.
+`--build`, `--data-root`, `--backup-server` and `--dns`: asked for explicitly, they replace their
+`.env` value and say so.
 To change any other setting, edit `/opt/pangolin/.env` and re-run.
 
 ## 5. Nginx Proxy Manager
@@ -281,7 +282,8 @@ tables are never touched):
 - **Inbound:** the app port from the NPM host only, SSH from the admin network only (ping too).
   Everything else is dropped.
 - **Outbound, for the VM and its containers alike:** only the hosts in `allowlist.conf`, plus
-  DNS to the resolvers in `.env` (`PANGOLIN_DNS_SERVERS`). Containers' traffic is filtered on
+  DNS (port 53) to the resolvers in `.env` (`PANGOLIN_DNS_SERVERS`) and to the VM's current
+  resolvers (below). Containers' traffic is filtered on
   the forward path, the same packets Docker's `DOCKER-USER` chain sees.
 - **Time:** the VM itself (not its containers) may send NTP (UDP 123) to any server. NTP pool
   names rotate their addresses faster than the allowlist is re-resolved, so allowlisting them
@@ -296,6 +298,37 @@ tables are never touched):
 - Host names are resolved into nftables sets, refreshed every 15 minutes by
   `pangolin-allowlist.timer`. A host whose addresses change faster than that (some CDNs) can
   fail now and then; allowlist an address range instead if it matters.
+
+**When the VM's DNS resolvers change** (a new DHCP lease, a router swap), the VM's own firewall
+follows them by itself within 15 minutes (with the Proxmox firewall enabled, only once you have
+re-pasted its rules; see below): every re-render first adds the VM's current nameservers to the
+DNS sets of whatever `inet pangolin` ruleset is in force, including a fail-closed one loaded at
+boot, so the new resolver can answer, and then renders a ruleset that allows them. The VM's
+nameservers are those in `/etc/resolv.conf` and, when it lists systemd-resolved's `127.0.0.53`
+stub, those in `/run/systemd/resolve/resolv.conf`. Loopback, unspecified, IPv4-mapped,
+link-local (`fe80::/10`) and zone-scoped addresses are never added; with only loopback resolvers
+(dnsmasq or unbound on the VM), a warning says DNS follows `.env` only. The widened DNS (port 53
+only) applies to the containers as well as the VM. A resolver added this way that is not in
+`.env` is named in a warning in `journalctl -u pangolin-allowlist.service`. The fail-closed
+ruleset that `render.sh boot` builds itself holds only the resolvers in `.env`. To allow other
+resolvers, or replace stale ones in `.env`, re-run `install.sh --dns IP[,IP...]`.
+
+If no host name in the allowlist resolves at all, `render.sh apply` refuses to load or save the
+new ruleset: the one in force and the saved one stay (with only the DNS additions above), the run
+fails (`systemctl status pangolin-allowlist.service`, `journalctl -u
+pangolin-allowlist.service`), and the message names every resolver it tried: "no allowlist host
+resolved: the DNS resolvers tried, in .env (…) and the host's (…), may have changed, or upstream
+DNS may be down; re-run install.sh --dns IP[,IP...]". The installer shows that message and stops
+before (re)starting the stack: on a first install nothing runs yet, and on a re-run the stack
+keeps running on its previous settings. A run in which only some names fail applies as before,
+with those hosts blocked and a warning for each.
+
+The Proxmox host's rules are pasted by hand, so they do not follow a resolver change: with the
+Proxmox firewall enabled, its old DNS rules block the new resolver whatever the VM allows, so
+paste the new `/opt/pangolin/proxmox-firewall.txt` into the VM's Proxmox firewall first. If the
+last re-render was refused, `sudo /opt/pangolin/firewall/render.sh --no-resolve proxmox` prints
+rules with the new resolvers that need no DNS (host names left out); paste the full file once a
+re-render succeeds.
 
 The default allowlist covers the Debian mirrors (and every mirror in this VM's apt sources, which
 each run adds if missing), Docker, GHCR, your backup server, your Tang

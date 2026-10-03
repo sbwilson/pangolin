@@ -498,6 +498,53 @@ describe("install.sh, re-run", () => {
     expect(read("opt/pangolin/allowlist.conf")).toContain("restic.example.net:443\n");
   });
 
+  it("replaces PANGOLIN_DNS_SERVERS for --dns, and renders the firewall with it", () => {
+    expect(install().status).toBe(0);
+    expect(read("opt/pangolin/.env")).toContain("PANGOLIN_DNS_SERVERS=192.168.1.1\n");
+    const result = install("--dns", "10.0.0.9");
+    expect(result.status, result.stderr).toBe(0);
+    const env = read("opt/pangolin/.env");
+    expect(env).toContain("PANGOLIN_DNS_SERVERS=10.0.0.9\n");
+    expect(env.match(/^PANGOLIN_DNS_SERVERS=/gm)).toHaveLength(1);
+    expect(result.stdout).toMatch(/Replacing PANGOLIN_DNS_SERVERS in \.env/);
+    expect(result.stderr).not.toMatch(/kept PANGOLIN_DNS_SERVERS/);
+    expect(read("opt/pangolin/firewall/pangolin.nft")).toMatch(
+      /set dns4 \{[^}]*elements = \{ 10\.0\.0\.9 \}/,
+    );
+  });
+
+  it("renders a staged install's firewall with the host resolvers under --root", () => {
+    writeFileSync(at("etc/resolv.conf"), "nameserver 10.0.0.9\n");
+    expect(install().status).toBe(0);
+    expect(read("opt/pangolin/firewall/pangolin.nft")).toMatch(
+      /set dns4 \{[^}]*elements = \{ 10\.0\.0\.9, 192\.168\.1\.1 \}/,
+    );
+    expect(read("opt/pangolin/proxmox-firewall.txt")).toContain(
+      "OUT ACCEPT -dest 10.0.0.9 -p udp -dport 53 # DNS",
+    );
+
+    // Behind systemd-resolved's stub, its upstream file under the root is read instead.
+    writeFileSync(at("etc/resolv.conf"), "nameserver 127.0.0.53\n");
+    mkdirSync(at("run/systemd/resolve"), { recursive: true });
+    writeFileSync(at("run/systemd/resolve/resolv.conf"), "nameserver 10.0.0.7\n");
+    const result = run("sh", [INSTALL, "--root", root, "--non-interactive", "--no-docker"]);
+    expect(result.status, result.stderr).toBe(0);
+    const ruleset = read("opt/pangolin/firewall/pangolin.nft");
+    expect(ruleset).toMatch(/set dns4 \{[^}]*elements = \{ 10\.0\.0\.7, 192\.168\.1\.1 \}/);
+    expect(ruleset).not.toContain("127.0.0.53");
+    expect(read("opt/pangolin/proxmox-firewall.txt")).toContain(
+      "OUT ACCEPT -dest 10.0.0.7 -p tcp -dport 53 # DNS",
+    );
+  });
+
+  it("keeps PANGOLIN_DNS_SERVERS on a plain re-run", () => {
+    expect(install().status).toBe(0);
+    const result = run("sh", [INSTALL, "--root", root, "--non-interactive", "--no-docker"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(read("opt/pangolin/.env")).toContain("PANGOLIN_DNS_SERVERS=192.168.1.1\n");
+    expect(result.stdout).not.toMatch(/Replacing PANGOLIN_DNS_SERVERS/);
+  });
+
   it("replaces PANGOLIN_IMAGE when --image is given, and says so", () => {
     expect(install().status).toBe(0);
     const result = install("--image", "ghcr.io/sbwilson/pangolin:1.2.3");
@@ -1357,6 +1404,89 @@ describe("install.sh, failures", () => {
 });
 
 describe("firewall/render.sh", () => {
+  /**
+   * Runs render.sh with stubs on PATH that model the firewall. `nft -f FILE` "loads" FILE: it is
+   * appended to `nft.log` (every call fails when `STUB_NFT_FAIL=1`,
+   * `add` alone when `STUB_NFT_ADD_FAIL=1`; each call is logged to `nft-calls.log`), and clears what `nft add element`
+   * added since, which is logged to `nft-add.log` one `SET ADDRESS` per line; `nft list table`
+   * succeeds once something is loaded. `getent` answers for `*.good.example` names only, and
+   * only when DNS gets through: with nothing loaded it always does; with a ruleset loaded, the
+   * resolver this host uses (`STUB_RESOLVER`, else the fixture resolver file's first nameserver,
+   * else .env's 192.168.1.1) must be in the last loaded `dns4` set or added since. `id` reports
+   * root. The host's resolver files are the fixtures `resolv.conf` and `resolved.conf` (absent
+   * unless a test writes them), never this machine's.
+   */
+  function render(args: readonly string[], env: Record<string, string> = {}): Run {
+    const bin = at("render-bin");
+    mkdirSync(bin, { recursive: true });
+    const nftLog = at("nft.log");
+    const addLog = at("nft-add.log");
+    writeFileSync(
+      join(bin, "getent"),
+      [
+        "#!/bin/sh",
+        "resolver=$STUB_RESOLVER",
+        'if [ -z "$resolver" ]; then',
+        "  conf=$PANGOLIN_RESOLV_CONF",
+        '  if grep -q \'^nameserver 127.0.0.53\' "$conf" 2>/dev/null && [ -r "$PANGOLIN_RESOLVED_CONF" ]; then',
+        "    conf=$PANGOLIN_RESOLVED_CONF",
+        "  fi",
+        '  resolver=$(awk \'$1 == "nameserver" { print $2; exit }\' "$conf" 2>/dev/null)',
+        "fi",
+        '[ -n "$resolver" ] || resolver=192.168.1.1',
+        `if [ -s "${nftLog}" ]; then`,
+        "  allowed=0",
+        `  line=$(grep 'set dns4 {' "${nftLog}" | tail -n 1)`,
+        '  case "$line" in *" $resolver,"* | *" $resolver }"*) allowed=1 ;; esac',
+        `  grep -qxF "dns4 $resolver" "${addLog}" 2>/dev/null && allowed=1`,
+        '  [ "$allowed" = 1 ] || exit 2',
+        "fi",
+        'case "$2" in',
+        '  *.good.example) [ "$1" = ahostsv4 ] && echo "203.0.113.5     STREAM $2"; exit 0 ;;',
+        "esac",
+        "exit 2",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(join(bin, "id"), "#!/bin/sh\necho 0\n");
+    writeFileSync(
+      join(bin, "nft"),
+      [
+        "#!/bin/sh",
+        `echo "$*" >> "${at("nft-calls.log")}"`,
+        '[ "$STUB_NFT_FAIL" = 1 ] && exit 1',
+        'case "$1" in',
+        `  -f) cat "$2" >> "${nftLog}"; rm -f "${addLog}" ;;`,
+        `  list) [ -s "${nftLog}" ] ;;`,
+        "  add)",
+        `    [ -s "${nftLog}" ] || exit 1`,
+        '    [ "$STUB_NFT_ADD_FAIL" = 1 ] && exit 1',
+        "    set=$5",
+        `    for address in $(printf '%s\\n' "$6" | tr -d '{},'); do echo "$set $address" >> "${addLog}"; done`,
+        "    ;;",
+        "  *) exit 1 ;;",
+        "esac",
+        "",
+      ].join("\n"),
+    );
+    for (const name of ["getent", "id", "nft"]) chmodSync(join(bin, name), 0o755);
+    return run("sh", [RENDER, ...args], {
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      PANGOLIN_RESOLV_CONF: at("resolv.conf"),
+      PANGOLIN_RESOLVED_CONF: at("resolved.conf"),
+      STUB_NFT_FAIL: "0",
+      STUB_NFT_ADD_FAIL: "0",
+      STUB_RESOLVER: "",
+      ...env,
+    });
+  }
+
+  /** The last ruleset the stub `nft` loaded. */
+  function lastLoaded(): string {
+    const log = read("nft.log");
+    return log.slice(log.lastIndexOf("#!/usr/sbin/nft -f"));
+  }
+
   function fixture(allowlist: string) {
     writeFileSync(
       at("env"),
@@ -1384,7 +1514,7 @@ describe("firewall/render.sh", () => {
   ].join("\n");
 
   it("renders the nftables ruleset from the allowlist and .env", () => {
-    const result = run("sh", [RENDER, ...fixture(ALLOWLIST), "ruleset"]);
+    const result = render([...fixture(ALLOWLIST), "ruleset"]);
     expect(result.status, result.stderr).toBe(0);
     const ruleset = result.stdout;
     expect(ruleset).toContain("delete table inet pangolin");
@@ -1413,7 +1543,7 @@ describe("firewall/render.sh", () => {
   });
 
   it("renders the Proxmox rules with the same addresses", () => {
-    const result = run("sh", [RENDER, ...fixture(ALLOWLIST), "proxmox"]);
+    const result = render([...fixture(ALLOWLIST), "proxmox"]);
     expect(result.status, result.stderr).toBe(0);
     const lines = result.stdout.split("\n");
     expect(lines).toContain("policy_in: DROP");
@@ -1440,7 +1570,7 @@ describe("firewall/render.sh", () => {
       "::::",
       "1::2::3",
     ];
-    const result = run("sh", [RENDER, ...fixture(`${bad.join("\n")}\n10.9.9.9:443\n`), "ruleset"]);
+    const result = render([...fixture(`${bad.join("\n")}\n10.9.9.9:443\n`), "ruleset"]);
     expect(result.status, result.stderr).toBe(0);
     for (const entry of bad) expect(result.stderr).toContain(`: ${entry}\n`);
     expect(result.stderr.match(/skipped, not a/g)).toHaveLength(bad.length);
@@ -1452,7 +1582,7 @@ describe("firewall/render.sh", () => {
   it("prints a fail-closed fallback ruleset that needs no allowlist", () => {
     const args = fixture("10.9.9.9:443\n");
     rmSync(at("allowlist.conf"));
-    const result = run("sh", [RENDER, ...args, "fallback"]);
+    const result = render([...args, "fallback"]);
     expect(result.status, result.stderr).toBe(0);
     const ruleset = result.stdout;
     expect(ruleset).toContain("FAIL-CLOSED");
@@ -1466,17 +1596,277 @@ describe("firewall/render.sh", () => {
     expect(ruleset).not.toContain("10.9.9.9");
   });
 
-  it("lists a host name it could not resolve, and blocks it", () => {
-    const result = run("sh", [RENDER, ...fixture("nothing.invalid:443\n"), "ruleset"]);
-    expect(result.status).toBe(0);
+  it("lists a host name it could not resolve, and blocks it, when another one resolves", () => {
+    const result = render([...fixture("nothing.invalid:443\napi.good.example:443\n"), "ruleset"]);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("# did not resolve: nothing.invalid:443");
-    expect(result.stdout).not.toMatch(/set ports4 \{[^}]*elements/);
+    expect(result.stderr).toMatch(/nothing\.invalid did not resolve; it is blocked until it does/);
+    expect(result.stdout).toMatch(/set ports4 \{[^}]*elements = \{ 203\.0\.113\.5 \. 443 \}/);
+    expect(result.stdout).not.toContain("nothing.invalid:443 }");
+  });
+
+  describe("the host's current resolvers", () => {
+    it("allows DNS to them as well as to the resolvers in .env", () => {
+      writeFileSync(
+        at("resolv.conf"),
+        "search lan\nnameserver 10.0.0.9\nnameserver 2001:db8::99\n",
+      );
+      const result = render([...fixture("10.9.9.9:443\n"), "ruleset"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toMatch(/set dns4 \{[^}]*elements = \{ 10\.0\.0\.9, 192\.168\.1\.1 \}/);
+      expect(result.stdout).toMatch(/set dns6 \{[^}]*elements = \{ 2001:db8::53, 2001:db8::99 \}/);
+      const proxmox = render([...fixture("10.9.9.9:443\n"), "proxmox"]).stdout.split("\n");
+      expect(proxmox).toContain("OUT ACCEPT -dest 10.0.0.9 -p udp -dport 53 # DNS");
+      expect(proxmox).toContain("OUT ACCEPT -dest 10.0.0.9 -p tcp -dport 53 # DNS");
+      expect(proxmox).toContain("OUT ACCEPT -dest 192.168.1.1 -p udp -dport 53 # DNS");
+    });
+
+    it("reads systemd-resolved's upstream file behind the stub, and never adds a local address", () => {
+      writeFileSync(at("resolv.conf"), "nameserver 127.0.0.53\noptions edns0\n");
+      writeFileSync(
+        at("resolved.conf"),
+        [
+          "nameserver 10.0.0.9",
+          "nameserver 127.0.0.1",
+          "nameserver ::1",
+          "nameserver fe80::1",
+          "nameserver FE80::2",
+          "nameserver fe90::1",
+          "nameserver FEBF::3",
+          "nameserver 2001:db8::7%eth0",
+          "nameserver 10.0.0.0/8",
+          "nameserver not-an-ip",
+          "nameserver 0.0.0.0",
+          "nameserver ::",
+          "nameserver ::ffff:10.0.0.8",
+          "nameserver ::FFFF:a00:7",
+          "nameserver 2001:DB8::53",
+          "",
+        ].join("\n"),
+      );
+      const result = render([...fixture("10.9.9.9:443\n"), "ruleset"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toMatch(/set dns4 \{[^}]*elements = \{ 10\.0\.0\.9, 192\.168\.1\.1 \}/);
+      // .env's 2001:db8::53 written in capitals is the same resolver: added once, no warning.
+      expect(result.stdout).toMatch(/set dns6 \{[^}]*elements = \{ 2001:db8::53 \}/);
+      expect(result.stdout).not.toMatch(
+        /127\.0\.0\.|fe80|fe90|febf|10\.0\.0\.0\/8|not-an-ip|0\.0\.0\.0|ffff|10\.0\.0\.8|[{ ]::[,} ]/i,
+      );
+      expect(result.stderr.match(/DNS also allowed to the host's resolver/g)).toHaveLength(1);
+      expect(result.stderr).toMatch(
+        /warning: DNS also allowed to the host's resolver 10\.0\.0\.9, which is not in PANGOLIN_DNS_SERVERS/,
+      );
+      expect(result.stderr).toMatch(/skipped the host resolver 10\.0\.0\.0\/8: not an IP address/);
+      expect(result.stderr).toMatch(/skipped the host resolver not-an-ip: not an IP address/);
+    });
+
+    it("adds a resolver listed twice, or in two spellings, once", () => {
+      writeFileSync(
+        at("resolv.conf"),
+        "nameserver 10.0.0.9\nnameserver 10.0.0.9\nnameserver 2001:db8::99\nnameserver 2001:DB8::99\n",
+      );
+      const result = render([...fixture("10.9.9.9:443\n"), "ruleset"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toMatch(/set dns4 \{[^}]*elements = \{ 10\.0\.0\.9, 192\.168\.1\.1 \}/);
+      expect(result.stdout).toMatch(/set dns6 \{[^}]*elements = \{ 2001:db8::53, 2001:db8::99 \}/);
+      expect(result.stderr.match(/DNS also allowed to the host's resolver/g)).toHaveLength(2);
+    });
+
+    it("takes real nameservers listed beside the stub, and the stub's upstream ones", () => {
+      writeFileSync(at("resolv.conf"), "nameserver 10.0.0.5\n  nameserver 127.0.0.53\n");
+      writeFileSync(at("resolved.conf"), "nameserver 10.0.0.7\n");
+      const result = render([...fixture("10.9.9.9:443\n"), "ruleset"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toMatch(
+        /set dns4 \{[^}]*elements = \{ 10\.0\.0\.5, 10\.0\.0\.7, 192\.168\.1\.1 \}/,
+      );
+      expect(result.stdout).not.toContain("127.0.0.53");
+    });
+
+    it("adds nothing, and says DNS follows .env only, behind the stub with no upstream file", () => {
+      writeFileSync(at("resolv.conf"), "nameserver 127.0.0.53\n");
+      const result = render([...fixture("10.9.9.9:443\n"), "ruleset"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toMatch(/set dns4 \{[^}]*elements = \{ 192\.168\.1\.1 \}/);
+      expect(
+        result.stderr.match(
+          /no host resolver found in .*: DNS is allowed to the resolvers in \.env only/g,
+        ),
+      ).toHaveLength(1);
+    });
+
+    it.skipIf(uid === 0)(
+      "adds nothing behind the stub when the upstream file is unreadable",
+      () => {
+        writeFileSync(at("resolv.conf"), "nameserver 127.0.0.53\n");
+        writeFileSync(at("resolved.conf"), "nameserver 10.0.0.7\n");
+        chmodSync(at("resolved.conf"), 0o000);
+        const result = render([...fixture("10.9.9.9:443\n"), "ruleset"]);
+        chmodSync(at("resolved.conf"), 0o644);
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stdout).not.toContain("10.0.0.7");
+        expect(result.stderr).toMatch(/no host resolver found/);
+      },
+    );
+
+    it("says DNS follows .env only when the host has only loopback resolvers", () => {
+      writeFileSync(at("resolv.conf"), "nameserver 127.0.0.1\nnameserver 127.0.0.54\n");
+      const result = render([...fixture("10.9.9.9:443\n"), "ruleset"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toMatch(/set dns4 \{[^}]*elements = \{ 192\.168\.1\.1 \}/);
+      expect(result.stderr).toMatch(/no host resolver found/);
+    });
+
+    it("only warns when the live DNS sets cannot be widened, and goes on", () => {
+      const args = ["--home", root, ...fixture("api.good.example:443\n")];
+      mkdirSync(at("firewall"));
+      expect(render([...args, "apply"]).status).toBe(0);
+      const result = render([...args, "apply"], { STUB_NFT_ADD_FAIL: "1" });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stderr).toMatch(/warning: could not add 192\.168\.1\.1 to the live dns4 set/);
+      expect(lastLoaded()).toMatch(/set ports4 \{[^}]*elements = \{ 203\.0\.113\.5 \. 443 \}/);
+    });
+
+    it("never calls nft for ruleset, proxmox or fallback", () => {
+      writeFileSync(at("resolv.conf"), "nameserver 10.0.0.9\n");
+      const args = fixture("api.good.example:443\n");
+      for (const command of ["ruleset", "proxmox", "fallback"]) {
+        expect(render([...args, command]).status).toBe(0);
+      }
+      expect(existsSync(at("nft-calls.log"))).toBe(false);
+    });
+
+    it("leaves the fail-closed fallback to the resolvers in .env", () => {
+      writeFileSync(at("resolv.conf"), "nameserver 10.0.0.9\n");
+      const result = render([...fixture("10.9.9.9:443\n"), "fallback"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toMatch(/set dns4 \{[^}]*elements = \{ 192\.168\.1\.1 \}/);
+      expect(result.stdout).not.toContain("10.0.0.9");
+    });
+
+    it("follows a resolver change on the next apply, with no operator action", () => {
+      const args = ["--home", root, ...fixture("api.good.example:443\n")];
+      mkdirSync(at("firewall"));
+      writeFileSync(at("resolv.conf"), "nameserver 192.168.1.1\n");
+      expect(render([...args, "apply"]).status).toBe(0);
+      expect(lastLoaded()).toMatch(/set dns4 \{[^}]*elements = \{ 192\.168\.1\.1 \}/);
+
+      // The host's resolver changes; .env does not. The ruleset in force blocks the new one.
+      writeFileSync(at("resolv.conf"), "nameserver 10.0.0.9\n");
+      const getent = run(join(at("render-bin"), "getent"), ["ahostsv4", "api.good.example"], {
+        PANGOLIN_RESOLV_CONF: at("resolv.conf"),
+        PANGOLIN_RESOLVED_CONF: at("resolved.conf"),
+        STUB_RESOLVER: "",
+      });
+      expect(getent.status).toBe(2);
+
+      const result = render([...args, "apply"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stderr).toMatch(/DNS also allowed to the host's resolver 10\.0\.0\.9/);
+      const loaded = lastLoaded();
+      expect(loaded).toMatch(/set dns4 \{[^}]*elements = \{ 10\.0\.0\.9, 192\.168\.1\.1 \}/);
+      expect(loaded).toMatch(/set ports4 \{[^}]*elements = \{ 203\.0\.113\.5 \. 443 \}/);
+      expect(read("firewall/pangolin.nft")).toBe(loaded);
+      expect(read("proxmox-firewall.txt")).toContain(
+        "OUT ACCEPT -dest 10.0.0.9 -p udp -dport 53 # DNS",
+      );
+    });
+
+    it("follows a --dns change in .env the same way", () => {
+      const args = ["--home", root, ...fixture("api.good.example:443\n")];
+      mkdirSync(at("firewall"));
+      expect(render([...args, "apply"]).status).toBe(0);
+
+      // The host now uses a resolver its resolv.conf does not show: stuck until .env names it.
+      const moved = { STUB_RESOLVER: "10.0.0.9" };
+      const stuck = render([...args, "apply"], moved);
+      expect(stuck.status).not.toBe(0);
+      expect(stuck.stderr).toMatch(/no allowlist host resolved/);
+
+      // What install.sh --dns 10.0.0.9 writes (its own test checks it does).
+      writeFileSync(
+        at("env"),
+        read("env").replace(/^PANGOLIN_DNS_SERVERS=.*$/m, "PANGOLIN_DNS_SERVERS=10.0.0.9"),
+      );
+      const result = render([...args, "apply"], moved);
+      expect(result.status, result.stderr).toBe(0);
+      const loaded = lastLoaded();
+      expect(loaded).toMatch(/set dns4 \{[^}]*elements = \{ 10\.0\.0\.9 \}/);
+      expect(loaded).toMatch(/set ports4 \{[^}]*elements = \{ 203\.0\.113\.5 \. 443 \}/);
+      expect(read("firewall/pangolin.nft")).toBe(loaded);
+    });
+  });
+
+  describe("an allowlist in which no host name resolved", () => {
+    const GUIDANCE =
+      "no allowlist host resolved: the DNS resolvers tried, in .env (192.168.1.1,2001:db8::53), may have changed, or upstream DNS may be down; re-run install.sh --dns IP[,IP...]";
+
+    it("refuses to print the ruleset", () => {
+      const result = render([...fixture("nothing.invalid:443\n10.9.9.9:443\n"), "ruleset"]);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(GUIDANCE);
+      expect(result.stdout).not.toContain("table inet pangolin");
+    });
+
+    it("refuses to load or save it on apply, keeping the last good one", () => {
+      const args = ["--home", root, ...fixture("api.good.example:443\n")];
+      mkdirSync(at("firewall"));
+      expect(render([...args, "apply"]).status).toBe(0);
+      const saved = read("firewall/pangolin.nft");
+      const proxmox = read("proxmox-firewall.txt");
+      const loaded = read("nft.log");
+
+      writeFileSync(at("resolv.conf"), "nameserver 10.0.0.9\n");
+      writeFileSync(at("allowlist.conf"), "a.invalid:443\nb.invalid\n10.9.9.9:443\n");
+      const result = render([...args, "apply"]);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(
+        "no allowlist host resolved: the DNS resolvers tried, in .env (192.168.1.1,2001:db8::53) and the host's (10.0.0.9), may have changed, or upstream DNS may be down; re-run install.sh --dns IP[,IP...]",
+      );
+      expect(result.stderr).toMatch(/nothing loaded or saved/);
+      expect(read("nft.log")).toBe(loaded);
+      expect(read("firewall/pangolin.nft")).toBe(saved);
+      expect(read("proxmox-firewall.txt")).toBe(proxmox);
+      expect(readdirSync(at("firewall"))).toEqual(["pangolin.nft"]);
+      // The DNS widening stays, so the next run can resolve.
+      expect(read("nft-add.log").split("\n")).toEqual(
+        expect.arrayContaining(["dns4 10.0.0.9", "dns4 192.168.1.1", "dns6 2001:db8::53"]),
+      );
+    });
+
+    it("refuses to print the Proxmox rules", () => {
+      const result = render([...fixture("nothing.invalid:443\n10.9.9.9:443\n"), "proxmox"]);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(GUIDANCE);
+      expect(result.stdout).not.toContain("[RULES]");
+    });
+
+    it("refuses on a first apply too, saving nothing", () => {
+      const args = ["--home", root, ...fixture("nothing.invalid:443\n")];
+      const result = render([...args, "apply"]);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(GUIDANCE);
+      expect(existsSync(at("firewall/pangolin.nft"))).toBe(false);
+      expect(existsSync(at("proxmox-firewall.txt"))).toBe(false);
+    });
+
+    it("still applies an allowlist with only addresses", () => {
+      const args = ["--home", root, ...fixture("10.9.9.9:443\n")];
+      const result = render([...args, "apply"]);
+      expect(result.status, result.stderr).toBe(0);
+      expect(read("firewall/pangolin.nft")).toContain("10.9.9.9 . 443");
+    });
+
+    it("does not count names left unresolved on purpose (--no-resolve)", () => {
+      const result = render(["--no-resolve", ...fixture("nothing.invalid:443\n"), "ruleset"]);
+      expect(result.status, result.stderr).toBe(0);
+    });
   });
 
   it("refuses an .env without the NPM host", () => {
     const args = fixture("10.0.0.1\n");
     writeFileSync(at("env"), "PANGOLIN_ADMIN_NETWORK=192.168.1.0/24\n");
-    const result = run("sh", [RENDER, ...args, "ruleset"]);
+    const result = render([...args, "ruleset"]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/PANGOLIN_NPM_HOST is not set/);
   });

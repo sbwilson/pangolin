@@ -17,7 +17,8 @@
 #   --ghcr-token-file FILE        a GHCR read-only token (packages: read) for a private image
 #   --ghcr-token TOKEN            the same, inline (visible in the process list; prefer a file)
 #   --ghcr-user NAME              the GHCR user name (default: the image's owner)
-#   --dns IP[,IP...]              the DNS resolvers to allow (default: from /etc/resolv.conf)
+#   --dns IP[,IP...]              the DNS resolvers to allow (default: from /etc/resolv.conf);
+#                                 replaces PANGOLIN_DNS_SERVERS in an existing .env
 #   --data-root DIR               the data directory, on the encrypted disk (default /srv/pangolin);
 #                                 replaces PANGOLIN_DATA_ROOT in an existing .env
 #   --http-port PORT              the host port NPM forwards to (default 3000)
@@ -334,15 +335,20 @@ existing() {
   file_value "$1" "$(env_file)"
 }
 
-# The resolvers in resolv.conf, skipping loopback stubs, comma-separated.
+# The resolvers in resolv.conf (plus, when it lists systemd-resolved's 127.0.0.53 stub, those in
+# its upstream file), comma-separated, lower case, each once. firewall/render.sh's host_resolvers
+# reads them the same way on every re-render; keep the two in step.
 detect_dns() {
-  dns_file=/etc/resolv.conf
-  if grep -Eq '^nameserver[[:space:]]+127\.0\.0\.53' "$dns_file" 2>/dev/null &&
-    [ -r /run/systemd/resolve/resolv.conf ]; then
-    dns_file=/run/systemd/resolve/resolv.conf
+  set -- /etc/resolv.conf
+  if grep -Eq '^[[:space:]]*nameserver[[:space:]]+127\.0\.0\.53([[:space:]]|$)' /etc/resolv.conf 2>/dev/null; then
+    set -- /etc/resolv.conf /run/systemd/resolve/resolv.conf
   fi
-  # Skips loopback, link-local and zone-scoped (`%`) resolvers, which nftables cannot match.
-  awk '$1 == "nameserver" && $2 !~ /^127\./ && $2 != "::1" && $2 !~ /%/ && tolower($2) !~ /^fe80:/ { print $2 }' "$dns_file" 2>/dev/null |
+  # Skips loopback, unspecified, IPv4-mapped, link-local (fe80::/10) and zone-scoped (`%`)
+  # resolvers; nftables cannot match the last two.
+  for dns_file in "$@"; do
+    [ -r "$dns_file" ] && cat "$dns_file"
+  done 2>/dev/null |
+    awk '$1 == "nameserver" { a = tolower($2); if (a !~ /^127\./ && a != "::1" && a != "0.0.0.0" && a != "::" && a !~ /^::ffff:/ && a !~ /%/ && a !~ /^fe[89ab][0-9a-f]:/ && !seen[a]++) print a }' |
     paste -sd, - || true
 }
 
@@ -547,7 +553,13 @@ settle_all() {
   settle ADMIN_NETWORK PANGOLIN_ADMIN_NETWORK
   settle SSH_PORT PANGOLIN_SSH_PORT
   settle HTTP_PORT PANGOLIN_HTTP_PORT
-  settle DNS_SERVERS PANGOLIN_DNS_SERVERS
+  # Resolvers asked for with --dns replace the ones in .env: the way to repair a firewall whose
+  # stored resolvers went stale.
+  if [ -n "$ARG_DNS" ]; then
+    settle DNS_SERVERS PANGOLIN_DNS_SERVERS replace
+  else
+    settle DNS_SERVERS PANGOLIN_DNS_SERVERS
+  fi
   # A backup server asked for (--backup-server, or typed at the prompt) replaces the one in .env.
   if [ -n "$BACKUP" ]; then
     settle BACKUP PANGOLIN_BACKUP_REPOSITORY replace
@@ -926,8 +938,8 @@ write_env() {
     (
       umask 077
       printf '%s\n' "# Pangolin Money settings, read by compose.yaml and the container." \
-        "# install.sh only adds missing keys (and replaces PANGOLIN_IMAGE / PANGOLIN_DATA_ROOT when" \
-        "# --image, --build, --data-root or --backup-server asks it to): your edits are kept. Secrets live in secrets/." >"$env"
+        "# install.sh only adds missing keys (and replaces a key when --image, --build, --data-root," \
+        "# --backup-server or --dns asks it to): your edits are kept. Secrets live in secrets/." >"$env"
     )
   fi
   chmod 0600 "$env"
@@ -939,6 +951,7 @@ write_env() {
       PANGOLIN_IMAGE) env_replace "$key" "$IMAGE" ;;
       PANGOLIN_DATA_ROOT) env_replace "$key" "$DATA_ROOT" ;;
       PANGOLIN_BACKUP_REPOSITORY) env_replace "$key" "$BACKUP" ;;
+      PANGOLIN_DNS_SERVERS) env_replace "$key" "$DNS_SERVERS" ;;
     esac
     say "Replaced $key in .env"
   done
@@ -1011,10 +1024,15 @@ allowlist_add() {
 
 # On a re-run the firewall is already on: an allowlist change must be applied before the step
 # that needs it. (A first install turns the firewall on only after writing allowlist.conf.)
+# `apply_allowlist_now early`, before write_env has stored a new --dns, only warns when the reload
+# fails: stale resolvers in .env can make it refuse, and the firewall step applies it again.
 apply_allowlist_now() {
   if ! staging && systemctl is-active --quiet pangolin-allowlist.timer 2>/dev/null; then
-    systemctl start pangolin-allowlist.service ||
-      die "the firewall did not reload: see 'journalctl -u pangolin-allowlist.service'"
+    if ! systemctl start pangolin-allowlist.service; then
+      [ "${1:-}" = early ] ||
+        die "the firewall did not reload: see 'journalctl -u pangolin-allowlist.service'"
+      warn "the firewall did not reload yet (see 'journalctl -u pangolin-allowlist.service'); it is applied again after .env is written"
+    fi
   fi
 }
 
@@ -1049,7 +1067,8 @@ allow_package_mirrors() {
   [ -f "$allowlist" ] || return 0
   # shellcheck disable=SC2046 # one entry per word
   if allowlist_add "$allowlist" "apt mirrors this VM uses" $(apt_mirror_entries); then
-    apply_allowlist_now
+    # Runs before write_env: a --dns repair is not in .env yet.
+    apply_allowlist_now early
   fi
 }
 
@@ -1283,9 +1302,11 @@ install_firewall() {
   render=$(path "$INSTALL_DIR/firewall/render.sh")
   if staging; then
     # Nothing is loaded and names are not resolved: the saved ruleset the early unit would load
-    # holds no allowlisted addresses yet.
-    sh "$render" --home "$(path "$INSTALL_DIR")" --no-resolve ruleset >"$(path "$INSTALL_DIR/firewall/pangolin.nft")"
-    sh "$render" --home "$(path "$INSTALL_DIR")" --no-resolve proxmox >"$(path "$INSTALL_DIR/proxmox-firewall.txt")"
+    # holds no allowlisted addresses yet. The host's resolvers are read under --root too.
+    PANGOLIN_RESOLV_CONF=$(path /etc/resolv.conf) PANGOLIN_RESOLVED_CONF=$(path /run/systemd/resolve/resolv.conf) \
+      sh "$render" --home "$(path "$INSTALL_DIR")" --no-resolve ruleset >"$(path "$INSTALL_DIR/firewall/pangolin.nft")"
+    PANGOLIN_RESOLV_CONF=$(path /etc/resolv.conf) PANGOLIN_RESOLVED_CONF=$(path /run/systemd/resolve/resolv.conf) \
+      sh "$render" --home "$(path "$INSTALL_DIR")" --no-resolve proxmox >"$(path "$INSTALL_DIR/proxmox-firewall.txt")"
     enable_unit pangolin-firewall.service sysinit.target
     enable_unit pangolin-allowlist.service multi-user.target
     enable_unit pangolin-allowlist.timer timers.target
@@ -1309,13 +1330,26 @@ install_firewall() {
   enable_unit pangolin-allowlist.timer timers.target
   # Resolves the allowlist, loads the ruleset and saves it as firewall/pangolin.nft ...
   applied=1
+  before=$(systemctl show -p InvocationID --value pangolin-allowlist.service 2>/dev/null || true)
   systemctl start pangolin-allowlist.service || applied=0
   # ... which pangolin-firewall.service loads early at every boot, before the network and Docker
   # (falling back to a fail-closed ruleset when the saved file is missing or does not load).
   enable_unit pangolin-firewall.service sysinit.target
   if [ "$applied" -eq 0 ]; then
+    # render.sh's own reason (such as no allowlist host resolving, with the --dns fix), from
+    # this run of the unit only (none when it never started), the refusal first.
+    journalctl --sync 2>/dev/null || true
+    invocation=$(systemctl show -p InvocationID --value pangolin-allowlist.service 2>/dev/null || true)
+    if [ -n "$invocation" ] && [ "$invocation" != "$before" ]; then
+      lines=$(journalctl -q --no-pager -o cat "_SYSTEMD_INVOCATION_ID=$invocation" 2>/dev/null |
+        grep '^render\.sh:' || true)
+      if [ -n "$lines" ]; then
+        printf '%s\n' "$lines" | grep 'no allowlist host resolved' >&2 || true
+        printf '%s\n' "$lines" | grep -v 'no allowlist host resolved' | tail -n 20 >&2 || true
+      fi
+    fi
     systemctl start pangolin-firewall.service || true
-    die "the firewall did not load (a fail-closed ruleset is in place): see 'journalctl -u pangolin-allowlist.service'"
+    die "the firewall ruleset was not applied (the previous ruleset, or on a first install a fail-closed one, is in place): see 'journalctl -u pangolin-allowlist.service'"
   fi
   systemctl start pangolin-firewall.service
   systemctl start pangolin-allowlist.timer
