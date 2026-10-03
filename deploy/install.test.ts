@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parse } from "yaml";
 
 // Each test spawns install.sh (a shell script calling many tools) two or more times; under a
 // loaded CI runner that can exceed the default 5 s, which is a timeout, not a failure.
@@ -527,6 +528,65 @@ describe("install.sh, re-run", () => {
     for (const bundle of bundles()) rmSync(at(`root/${bundle}`));
     expect(install("--bundle").status).toBe(0);
     expect(bundles()).toHaveLength(1);
+  });
+
+  // Seam S11e (spike "Check the suspected seams"): real. A re-run of install.sh from a checkout
+  // (or the --build clone) copies its own compose.yaml and pangolin command over the ones a later
+  // `pangolin upgrade` installed from the new image, while .env keeps that image's digest. The
+  // chosen fix: while .env pins an image by digest (only `pangolin upgrade` writes one) and this
+  // run does not replace the image, take compose.yaml and the command from that image, as a lone
+  // script already does, so they always match the image that runs. The fix story turns this on.
+  it.fails("S11e: takes compose.yaml and the pangolin command from the image .env pins", () => {
+    expect(install().status).toBe(0);
+    // As `pangolin upgrade` leaves it: the new image's digest pinned in .env.
+    const digest = `ghcr.io/sbwilson/pangolin@sha256:${"1".repeat(64)}`;
+    writeFileSync(
+      at("opt/pangolin/.env"),
+      read("opt/pangolin/.env").replace(/^PANGOLIN_IMAGE=.*$/m, `PANGOLIN_IMAGE=${digest}`),
+    );
+    // The stub docker, plus an image whose /app/deploy carries marked compose.yaml and command.
+    const env = stubEnv({});
+    const bin = at("bin");
+    writeFileSync(join(bin, "docker-base"), read("bin/docker"));
+    chmodSync(join(bin, "docker-base"), 0o755);
+    writeFileSync(
+      join(bin, "docker"),
+      [
+        "#!/bin/sh",
+        'case "$1" in',
+        `  create) echo "$*" >> "${at("docker.log")}"; echo stub-container; exit 0 ;;`,
+        "  cp)",
+        `    echo "$*" >> "${at("docker.log")}"`,
+        `    cp -R "${here}" "$3"`,
+        `    echo "# compose.yaml from the pinned image" > "$3/compose.yaml"`,
+        `    printf '#!/bin/sh\n# pangolin from the pinned image\n' > "$3/pangolin"`,
+        "    exit 0 ;;",
+        "esac",
+        `exec "${join(bin, "docker-base")}" "$@"`,
+        "",
+      ].join("\n"),
+    );
+    chmodSync(join(bin, "docker"), 0o755);
+    const args = ANSWERS.filter((arg) => arg !== "--no-docker");
+    const result = run("sh", [INSTALL, "--root", root, ...args], env);
+    expect(result.status, result.stderr).toBe(0);
+    expect(read("opt/pangolin/.env")).toContain(`PANGOLIN_IMAGE=${digest}\n`);
+    expect(dockerLog()).toContain(`create ${digest}`);
+    expect(read("opt/pangolin/compose.yaml")).toBe("# compose.yaml from the pinned image\n");
+    expect(read("usr/local/bin/pangolin")).toContain("# pangolin from the pinned image");
+  });
+
+  // Seam S11f (spike "Check the suspected seams"): real. `--backup-server ""` is taken as "no
+  // answer": the existing PANGOLIN_BACKUP_REPOSITORY is kept (with a warning to edit .env), so
+  // the flag cannot turn backups off. The fix story turns this test on.
+  it.fails('S11f: --backup-server "" turns backups off in .env', () => {
+    expect(install().status).toBe(0);
+    expect(read("opt/pangolin/.env")).toContain(
+      "PANGOLIN_BACKUP_REPOSITORY=rest:https://nas.lan:8000/pangolin\n",
+    );
+    const result = install("--backup-server", "");
+    expect(result.status, result.stderr).toBe(0);
+    expect(read("opt/pangolin/.env")).not.toMatch(/^PANGOLIN_BACKUP_REPOSITORY=\S/m);
   });
 });
 
@@ -1208,5 +1268,53 @@ describe("firewall/render.sh", () => {
     const result = run("sh", [RENDER, ...args, "ruleset"]);
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/PANGOLIN_NPM_HOST is not set/);
+  });
+});
+
+// Seam S11c (spike "Check the suspected seams"): real but harmless. deploy/compose.yaml sets no
+// stop_grace_period, so `compose stop` kills the app after Docker's default 10 s, the same 10 s
+// the job runner waits for running handlers before the HTTP server and database close. In the
+// spike's run a handler that ignored its abort signal got SIGKILL at 10.02 s, before the database
+// closed; WAL kept every committed row and integrity_check passed, and the job was left running
+// for its lease to expire. The fix story turns this test on: the grace outlasts the runner's stop.
+/** A Compose duration (`1m30s`, `20s`, `1.5h`, `500ms`, or a bare number of seconds) in ms. */
+function composeDurationMs(value: string | number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "number") return value * 1000;
+  if (/^\d+(\.\d+)?$/.test(value)) return Number(value) * 1000;
+  const unit: Record<string, number> = {
+    h: 3_600_000,
+    m: 60_000,
+    s: 1000,
+    ms: 1,
+    us: 1e-3,
+    ns: 1e-6,
+  };
+  const parts = [...value.matchAll(/(\d+(?:\.\d+)?)(h|ms|m|s|us|ns)/g)];
+  if (parts.length === 0 || parts.map((part) => part[0]).join("") !== value) return undefined;
+  return parts.reduce((sum, part) => sum + Number(part[1]) * (unit[part[2] ?? ""] ?? 0), 0);
+}
+
+describe("compose.yaml stop grace (deploy/ and the repository root)", () => {
+  it("parses Compose durations", () => {
+    expect(composeDurationMs("1m30s")).toBe(90_000);
+    expect(composeDurationMs("20s")).toBe(20_000);
+    expect(composeDurationMs("1m")).toBe(60_000);
+    expect(composeDurationMs("500ms")).toBe(500);
+    expect(composeDurationMs(30)).toBe(30_000);
+    expect(composeDurationMs("15")).toBe(15_000);
+    expect(composeDurationMs("soon")).toBeUndefined();
+  });
+
+  it.fails.each([
+    ["deploy/compose.yaml", join(here, "compose.yaml")],
+    ["compose.yaml", join(here, "..", "compose.yaml")],
+  ])("S11c: %s gives the app longer to stop than the job runner's 10 s wait", (_name, file) => {
+    const compose = parse(readFileSync(file, "utf8")) as {
+      services: { pangolin: { stop_grace_period?: string | number } };
+    };
+    // Unset, Docker waits 10 s.
+    const grace = composeDurationMs(compose.services.pangolin.stop_grace_period) ?? 10_000;
+    expect(grace).toBeGreaterThan(10_000);
   });
 });

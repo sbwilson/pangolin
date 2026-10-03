@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { defaultAuthConfig } from "../config.ts";
 import { Browser, createHarness, type Harness } from "../testing/auth-harness.ts";
 import { secretOf, totp } from "../testing/totp.ts";
 import { cookieSettings } from "./auth.ts";
@@ -442,6 +443,46 @@ describe("passkey sign-in and the lockout", () => {
       // The count restarted at the passkey sign-in: four more wrong passwords, then the lock.
       for (let i = 0; i < 4; i++) expect(await wrong()).toBe(401);
       expect(await wrong()).toBe(429);
+    } finally {
+      hh.close();
+    }
+  });
+});
+
+// Seam S11a (spike "Check the suspected seams"): real. The lockout is check-then-act across the
+// scrypt hash: the before-hook reads the attempts, better-auth hashes the password (async scrypt,
+// off the event loop), and only the after-hook records the failure, so concurrent sign-ins all
+// pass the check before any failure is recorded. In the spike's run all 20 concurrent wrong
+// passwords were evaluated (401), and a right one sent last in the same burst signed in (200);
+// with the production per-client limit (10 a minute) one client still got 10. The fix story
+// turns this test on.
+describe("concurrent sign-ins and the lockout (seam S11a)", () => {
+  it.fails("S11a: evaluates at most maxFailures of a concurrent burst, and refuses a right password in it", {
+    timeout: 20_000,
+  }, async () => {
+    // The harness runs with this lockout, so the limit is read from its auth config.
+    const { lockout } = defaultAuthConfig("/unused");
+    const hh = createHarness({ lockout });
+    try {
+      const b = new Browser(hh.app);
+      expect((await signUp(b, hh.firstLink(), alex, "Alex")).status).toBe(201);
+      // 19 wrong passwords, then the right one, all at once.
+      const statuses = await Promise.all(
+        Array.from({ length: 20 }, (_, i) =>
+          new Browser(hh.app)
+            .request("/api/auth/sign-in/email", {
+              body: { email: alex.email, password: i === 19 ? alex.password : "wrong password!!" },
+            })
+            .then((res) => res.status),
+        ),
+      );
+      // Each is refused: 401 for a password evaluated, 429 once the email is locked.
+      expect(statuses.filter((status) => status !== 401 && status !== 429)).toEqual([]);
+      expect(statuses.filter((status) => status === 401).length).toBeLessThanOrEqual(
+        lockout.maxFailures,
+      );
+      // The right password, sent after more than maxFailures wrong ones, is refused.
+      expect(statuses[19]).toBe(429);
     } finally {
       hh.close();
     }
