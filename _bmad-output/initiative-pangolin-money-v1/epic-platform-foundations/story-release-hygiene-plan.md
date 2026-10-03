@@ -3,7 +3,7 @@ title: 'Release hygiene'
 type: 'chore'
 ticket: '18'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: '3b3718f70db2ffd2df6e1cd02f04660cf5580fba'
 route: 'full'
 route_source: 'auto'
