@@ -3,7 +3,7 @@ title: 'Check the suspected seams'
 type: 'chore'
 ticket: '2'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: '4da7f54615af370b5c43eb0352fad491a35e5828'
 route: 'full'
 route_source: 'auto'
