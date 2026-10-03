@@ -19,6 +19,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
+import { stub } from "./test-helpers.ts";
 
 // Each test spawns install.sh (a shell script calling many tools) two or more times; under a
 // loaded CI runner that can exceed the default 5 s, which is a timeout, not a failure.
@@ -96,38 +97,26 @@ function installWithDocker(extra: readonly string[], env: Record<string, string>
 function stubEnv(env: Record<string, string>): Record<string, string> {
   const bin = at("bin");
   mkdirSync(bin, { recursive: true });
-  writeFileSync(
-    join(bin, "git"),
-    [
-      "#!/bin/sh",
-      `echo "$*" >> "${at("git.log")}"`,
-      'case "$*" in',
-      '  clone*) for last; do :; done; mkdir -p "$last/.git" ;;',
-      "  *rev-parse*) echo abc1234 ;;",
-      "esac",
-      "exit 0",
-      "",
-    ].join("\n"),
-  );
-  chmodSync(join(bin, "git"), 0o755);
-  writeFileSync(
-    join(bin, "docker"),
-    [
-      "#!/bin/sh",
-      `echo "$*" >> "${at("docker.log")}"`,
-      'case "$*" in',
-      `  login*) [ "$(cat)" = good-token ] || exit 1; touch "${at("logged-in")}" ;;`,
-      `  pull*) [ "$STUB_PULL_DENIED" = 1 ] && [ ! -f "${at("logged-in")}" ] && { echo "denied" >&2; exit 1; } ;;`,
-      '  "image inspect"*) [ "$STUB_IMAGE_MISSING" = 1 ] && exit 1 ;;',
-      '  *" ps -q"*) echo stub-container-id ;;',
-      '  inspect*) echo "$STUB_HEALTH" ;;',
-      '  *" logs "*) echo "STUB-LOG-MARKER: migration failed" ;;',
-      "esac",
-      "exit 0",
-      "",
-    ].join("\n"),
-  );
-  chmodSync(join(bin, "docker"), 0o755);
+  stub(bin, "git", [
+    `echo "$*" >> "${at("git.log")}"`,
+    'case "$*" in',
+    '  clone*) for last; do :; done; mkdir -p "$last/.git" ;;',
+    "  *rev-parse*) echo abc1234 ;;",
+    "esac",
+    "exit 0",
+  ]);
+  stub(bin, "docker", [
+    `echo "$*" >> "${at("docker.log")}"`,
+    'case "$*" in',
+    `  login*) [ "$(cat)" = good-token ] || exit 1; touch "${at("logged-in")}" ;;`,
+    `  pull*) [ "$STUB_PULL_DENIED" = 1 ] && [ ! -f "${at("logged-in")}" ] && { echo "denied" >&2; exit 1; } ;;`,
+    '  "image inspect"*) [ "$STUB_IMAGE_MISSING" = 1 ] && exit 1 ;;',
+    '  *" ps -q"*) echo stub-container-id ;;',
+    '  inspect*) echo "$STUB_HEALTH" ;;',
+    '  *" logs "*) echo "STUB-LOG-MARKER: migration failed" ;;',
+    "esac",
+    "exit 0",
+  ]);
   return {
     PATH: `${bin}:${process.env.PATH ?? ""}`,
     PANGOLIN_INSTALL_STUB_DOCKER: "1",
@@ -169,6 +158,35 @@ const uid = process.getuid?.() ?? 0;
 const at = (path: string) => join(root, path);
 const mode = (path: string) => statSync(at(path)).mode & 0o777;
 const read = (path: string) => readFileSync(at(path), "utf8");
+
+/**
+ * Pins .env's PANGOLIN_IMAGE by digest, as `pangolin upgrade` leaves it: the digest is `digit`
+ * 64 times. Returns the image reference. Throws when .env has no PANGOLIN_IMAGE line.
+ */
+function pinDigest(digit: number): string {
+  const digest = `ghcr.io/sbwilson/pangolin@sha256:${String(digit).repeat(64)}`;
+  const env = read("opt/pangolin/.env");
+  const line = /^PANGOLIN_IMAGE=.*$/m;
+  if (!line.test(env)) throw new Error("pinDigest: .env has no PANGOLIN_IMAGE line");
+  writeFileSync(at("opt/pangolin/.env"), env.replace(line, `PANGOLIN_IMAGE=${digest}`));
+  return digest;
+}
+
+/**
+ * Wraps the stub docker `stubEnv` wrote: a copy (mode and all) is kept as `docker-base`, and the
+ * new `docker` runs `lines` first, then hands every call they do not end to `docker-base`.
+ * Call it once per `stubEnv`: a second call would save the wrapper as `docker-base`, which would
+ * then exec itself forever, so it throws when `docker-base` already exists.
+ */
+function wrapDocker(lines: readonly string[]): void {
+  const bin = at("bin");
+  if (existsSync(join(bin, "docker-base"))) {
+    throw new Error("wrapDocker: docker is already wrapped; call stubEnv first");
+  }
+  copyFileSync(join(bin, "docker"), join(bin, "docker-base"));
+  stub(bin, "docker", [...lines, `exec "${join(bin, "docker-base")}" "$@"`]);
+}
+
 const bundles = () =>
   existsSync(at("root"))
     ? readdirSync(at("root")).filter((name) => name.startsWith("pangolin-recovery-bundle-"))
@@ -326,25 +344,19 @@ describe("the pangolin command", () => {
     writeFileSync(join(home, ".env"), "", { mode: 0o600 });
     const bin = at("bin");
     mkdirSync(bin, { recursive: true });
-    writeFileSync(
-      join(bin, "docker"),
-      [
-        "#!/bin/sh",
-        `echo "$*" >> "${at("docker.log")}"`,
-        'case "$*" in',
-        '  *" ps "*)',
-        `    [ "${stack}" = broken ] && { echo "Cannot connect to the Docker daemon" >&2; exit 1; }`,
-        `    [ "${stack}" = running ] && echo stub-container-id ;;`,
-        // runExit -1: the run is interrupted (SIGTERM to the wrapper, the stub's parent).
-        runExit === -1
-          ? `  *" run "*) kill -TERM $PPID; exit 143 ;;`
-          : `  *" run "*) exit ${runExit} ;;`,
-        "esac",
-        "exit 0",
-        "",
-      ].join("\n"),
-    );
-    chmodSync(join(bin, "docker"), 0o755);
+    stub(bin, "docker", [
+      `echo "$*" >> "${at("docker.log")}"`,
+      'case "$*" in',
+      '  *" ps "*)',
+      `    [ "${stack}" = broken ] && { echo "Cannot connect to the Docker daemon" >&2; exit 1; }`,
+      `    [ "${stack}" = running ] && echo stub-container-id ;;`,
+      // runExit -1: the run is interrupted (SIGTERM to the wrapper, the stub's parent).
+      runExit === -1
+        ? `  *" run "*) kill -TERM $PPID; exit 143 ;;`
+        : `  *" run "*) exit ${runExit} ;;`,
+      "esac",
+      "exit 0",
+    ]);
     return run("sh", [WRAPPER, ...args], {
       PATH: `${bin}:${process.env.PATH ?? ""}`,
       PANGOLIN_HOME: home,
@@ -605,34 +617,20 @@ describe("install.sh, re-run", () => {
   it("S11e: takes compose.yaml and the pangolin command from the image .env pins", () => {
     expect(install().status).toBe(0);
     // As `pangolin upgrade` leaves it: the new image's digest pinned in .env.
-    const digest = `ghcr.io/sbwilson/pangolin@sha256:${"1".repeat(64)}`;
-    writeFileSync(
-      at("opt/pangolin/.env"),
-      read("opt/pangolin/.env").replace(/^PANGOLIN_IMAGE=.*$/m, `PANGOLIN_IMAGE=${digest}`),
-    );
+    const digest = pinDigest(1);
     // The stub docker, plus an image whose /app/deploy carries marked compose.yaml and command.
     const env = stubEnv({});
-    const bin = at("bin");
-    writeFileSync(join(bin, "docker-base"), read("bin/docker"));
-    chmodSync(join(bin, "docker-base"), 0o755);
-    writeFileSync(
-      join(bin, "docker"),
-      [
-        "#!/bin/sh",
-        'case "$1" in',
-        `  create) echo "$*" >> "${at("docker.log")}"; echo stub-container; exit 0 ;;`,
-        "  cp)",
-        `    echo "$*" >> "${at("docker.log")}"`,
-        `    cp -R "${here}" "$3"`,
-        `    echo "# compose.yaml from the pinned image" > "$3/compose.yaml"`,
-        `    printf '#!/bin/sh\n# pangolin from the pinned image\n' > "$3/pangolin"`,
-        "    exit 0 ;;",
-        "esac",
-        `exec "${join(bin, "docker-base")}" "$@"`,
-        "",
-      ].join("\n"),
-    );
-    chmodSync(join(bin, "docker"), 0o755);
+    wrapDocker([
+      'case "$1" in',
+      `  create) echo "$*" >> "${at("docker.log")}"; echo stub-container; exit 0 ;;`,
+      "  cp)",
+      `    echo "$*" >> "${at("docker.log")}"`,
+      `    cp -R "${here}" "$3"`,
+      `    echo "# compose.yaml from the pinned image" > "$3/compose.yaml"`,
+      `    printf '#!/bin/sh\n# pangolin from the pinned image\n' > "$3/pangolin"`,
+      "    exit 0 ;;",
+      "esac",
+    ]);
     const args = ANSWERS.filter((arg) => arg !== "--no-docker");
     const result = run("sh", [INSTALL, "--root", root, ...args], env);
     expect(result.status, result.stderr).toBe(0);
@@ -655,25 +653,9 @@ describe("install.sh, re-run", () => {
     expect(dockerLog()).not.toMatch(/^create .*@sha256:/m);
     expect(read("opt/pangolin/compose.yaml")).toBe(checkoutCompose);
     // Digest-pinned, but the image cannot be read: a warning, and the checkout's files.
-    const digest = `ghcr.io/sbwilson/pangolin@sha256:${"2".repeat(64)}`;
-    writeFileSync(
-      at("opt/pangolin/.env"),
-      read("opt/pangolin/.env").replace(/^PANGOLIN_IMAGE=.*$/m, `PANGOLIN_IMAGE=${digest}`),
-    );
+    const digest = pinDigest(2);
     const env = stubEnv({});
-    const bin = at("bin");
-    writeFileSync(join(bin, "docker-base"), read("bin/docker"));
-    chmodSync(join(bin, "docker-base"), 0o755);
-    writeFileSync(
-      join(bin, "docker"),
-      [
-        "#!/bin/sh",
-        `[ "$1" = create ] && { echo "$*" >> "${at("docker.log")}"; exit 1; }`,
-        `exec "${join(bin, "docker-base")}" "$@"`,
-        "",
-      ].join("\n"),
-    );
-    chmodSync(join(bin, "docker"), 0o755);
+    wrapDocker([`[ "$1" = create ] && { echo "$*" >> "${at("docker.log")}"; exit 1; }`]);
     const args = ANSWERS.filter((arg) => arg !== "--no-docker");
     const unreadable = run("sh", [INSTALL, "--root", root, ...args], env);
     expect(unreadable.status, unreadable.stderr).toBe(0);
@@ -684,11 +666,7 @@ describe("install.sh, re-run", () => {
 
   it("never reads the pinned image with --no-docker", () => {
     expect(install().status).toBe(0);
-    const digest = `ghcr.io/sbwilson/pangolin@sha256:${"3".repeat(64)}`;
-    writeFileSync(
-      at("opt/pangolin/.env"),
-      read("opt/pangolin/.env").replace(/^PANGOLIN_IMAGE=.*$/m, `PANGOLIN_IMAGE=${digest}`),
-    );
+    pinDigest(3);
     const noDocker = install();
     expect(noDocker.status, noDocker.stderr).toBe(0);
     expect(noDocker.stdout).not.toContain("from the pinned image");
@@ -1609,55 +1587,44 @@ describe("firewall/render.sh", () => {
     mkdirSync(bin, { recursive: true });
     const nftLog = at("nft.log");
     const addLog = at("nft-add.log");
-    writeFileSync(
-      join(bin, "getent"),
-      [
-        "#!/bin/sh",
-        "resolver=$STUB_RESOLVER",
-        'if [ -z "$resolver" ]; then',
-        "  conf=$PANGOLIN_RESOLV_CONF",
-        '  if grep -q \'^nameserver 127.0.0.53\' "$conf" 2>/dev/null && [ -r "$PANGOLIN_RESOLVED_CONF" ]; then',
-        "    conf=$PANGOLIN_RESOLVED_CONF",
-        "  fi",
-        '  resolver=$(awk \'$1 == "nameserver" { print $2; exit }\' "$conf" 2>/dev/null)',
-        "fi",
-        '[ -n "$resolver" ] || resolver=192.168.1.1',
-        `if [ -s "${nftLog}" ]; then`,
-        "  allowed=0",
-        `  line=$(grep 'set dns4 {' "${nftLog}" | tail -n 1)`,
-        '  case "$line" in *" $resolver,"* | *" $resolver }"*) allowed=1 ;; esac',
-        `  grep -qxF "dns4 $resolver" "${addLog}" 2>/dev/null && allowed=1`,
-        '  [ "$allowed" = 1 ] || exit 2',
-        "fi",
-        'case "$2" in',
-        '  *.good.example) [ "$1" = ahostsv4 ] && echo "203.0.113.5     STREAM $2"; exit 0 ;;',
-        "esac",
-        "exit 2",
-        "",
-      ].join("\n"),
-    );
-    writeFileSync(join(bin, "id"), "#!/bin/sh\necho 0\n");
-    writeFileSync(
-      join(bin, "nft"),
-      [
-        "#!/bin/sh",
-        `echo "$*" >> "${at("nft-calls.log")}"`,
-        '[ "$STUB_NFT_FAIL" = 1 ] && exit 1',
-        'case "$1" in',
-        `  -f) cat "$2" >> "${nftLog}"; rm -f "${addLog}" ;;`,
-        `  list) [ -s "${nftLog}" ] ;;`,
-        "  add)",
-        `    [ -s "${nftLog}" ] || exit 1`,
-        '    [ "$STUB_NFT_ADD_FAIL" = 1 ] && exit 1',
-        "    set=$5",
-        `    for address in $(printf '%s\\n' "$6" | tr -d '{},'); do echo "$set $address" >> "${addLog}"; done`,
-        "    ;;",
-        "  *) exit 1 ;;",
-        "esac",
-        "",
-      ].join("\n"),
-    );
-    for (const name of ["getent", "id", "nft"]) chmodSync(join(bin, name), 0o755);
+    stub(bin, "getent", [
+      "resolver=$STUB_RESOLVER",
+      'if [ -z "$resolver" ]; then',
+      "  conf=$PANGOLIN_RESOLV_CONF",
+      '  if grep -q \'^nameserver 127.0.0.53\' "$conf" 2>/dev/null && [ -r "$PANGOLIN_RESOLVED_CONF" ]; then',
+      "    conf=$PANGOLIN_RESOLVED_CONF",
+      "  fi",
+      '  resolver=$(awk \'$1 == "nameserver" { print $2; exit }\' "$conf" 2>/dev/null)',
+      "fi",
+      '[ -n "$resolver" ] || resolver=192.168.1.1',
+      `if [ -s "${nftLog}" ]; then`,
+      "  allowed=0",
+      `  line=$(grep 'set dns4 {' "${nftLog}" | tail -n 1)`,
+      '  case "$line" in *" $resolver,"* | *" $resolver }"*) allowed=1 ;; esac',
+      `  grep -qxF "dns4 $resolver" "${addLog}" 2>/dev/null && allowed=1`,
+      '  [ "$allowed" = 1 ] || exit 2',
+      "fi",
+      'case "$2" in',
+      '  *.good.example) [ "$1" = ahostsv4 ] && echo "203.0.113.5     STREAM $2"; exit 0 ;;',
+      "esac",
+      "exit 2",
+    ]);
+    stub(bin, "id", ["echo 0"]);
+    stub(bin, "nft", [
+      `echo "$*" >> "${at("nft-calls.log")}"`,
+      '[ "$STUB_NFT_FAIL" = 1 ] && exit 1',
+      'case "$1" in',
+      `  -f) cat "$2" >> "${nftLog}"; rm -f "${addLog}" ;;`,
+      `  list) [ -s "${nftLog}" ] ;;`,
+      "  add)",
+      `    [ -s "${nftLog}" ] || exit 1`,
+      '    [ "$STUB_NFT_ADD_FAIL" = 1 ] && exit 1',
+      "    set=$5",
+      `    for address in $(printf '%s\\n' "$6" | tr -d '{},'); do echo "$set $address" >> "${addLog}"; done`,
+      "    ;;",
+      "  *) exit 1 ;;",
+      "esac",
+    ]);
     return run("sh", [RENDER, ...args], {
       PATH: `${bin}:${process.env.PATH ?? ""}`,
       PANGOLIN_RESOLV_CONF: at("resolv.conf"),

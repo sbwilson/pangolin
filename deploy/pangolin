@@ -116,6 +116,7 @@ if [ "${1:-}" = upgrade ]; then
     rc=$?
     if [ "$STOPPED" = 1 ] && [ "$rc" -ne 0 ]; then
       printf 'pangolin: upgrade interrupted; restarting the previous stack\n' >&2
+      rm -f "$HOME_DIR/.env.new"
       [ -f "$HOME_DIR/.env.bak" ] && mv "$HOME_DIR/.env.bak" "$HOME_DIR/.env"
       [ -f "$HOME_DIR/compose.yaml.bak" ] && mv "$HOME_DIR/compose.yaml.bak" "$HOME_DIR/compose.yaml"
       [ -f "$HOME_DIR/pangolin.bak" ] && mv "$HOME_DIR/pangolin.bak" /usr/local/bin/pangolin
@@ -145,7 +146,11 @@ if [ "${1:-}" = upgrade ]; then
   ls -1dt "$HOME_DIR"/pre-upgrade-* 2>/dev/null | tail -n +3 | xargs -r rm -rf
 
   cp -p "$HOME_DIR/.env" "$HOME_DIR/.env.bak" && chmod 600 "$HOME_DIR/.env.bak"
-  sed -i "s|^PANGOLIN_IMAGE=.*|PANGOLIN_IMAGE=$TARGET_REF|" "$HOME_DIR/.env"
+  # Not `sed -i` (GNU's only): the new .env is written beside it, into a copy that keeps its mode
+  # and owner (0600, root), then moved over it.
+  cp -p "$HOME_DIR/.env" "$HOME_DIR/.env.new"
+  sed "s|^PANGOLIN_IMAGE=.*|PANGOLIN_IMAGE=$TARGET_REF|" "$HOME_DIR/.env" >"$HOME_DIR/.env.new"
+  mv "$HOME_DIR/.env.new" "$HOME_DIR/.env"
   cp "$HOME_DIR/compose.yaml" "$HOME_DIR/compose.yaml.bak"
   cp "$HOME_DIR/staging/compose.yaml" "$HOME_DIR/compose.yaml"
   cp /usr/local/bin/pangolin "$HOME_DIR/pangolin.bak"
@@ -175,6 +180,7 @@ if [ "${1:-}" = upgrade ]; then
   if [ $UPGRADE_OK -eq 1 ]; then
     STOPPED=0
     rm -f "$HOME_DIR"/.env.bak "$HOME_DIR"/compose.yaml.bak "$HOME_DIR"/pangolin.bak "$HOME_DIR"/*.bak.stale "$HOME_DIR"/.env.bak.stale
+    rm -f "$HOME_DIR/.env.new"
     printf 'Upgrade to %s successful. Old image was %s.\n' "$TAG" "$CURRENT_IMAGE"
     exit 0
   else

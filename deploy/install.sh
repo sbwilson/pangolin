@@ -569,8 +569,8 @@ settle_all() {
   fi
   # A backup server asked for (--backup-server, or typed at the prompt) replaces the one in .env.
   # An explicit --backup-server "" blanks it (the key stays, empty: the server reads that as not
-  # configured), and write_files drops the old repository's allowlist entry. That is not a change
-  # that writes a bundle: the bundle's RESTIC_REPOSITORY still opens the old backups.
+  # configured), and write_allowlist drops the old repository's allowlist entry. That is not a
+  # change that writes a bundle: the bundle's RESTIC_REPOSITORY still opens the old backups.
   if [ "$BACKUP_OFF" -eq 1 ]; then
     OLD_BACKUP=$(existing PANGOLIN_BACKUP_REPOSITORY)
     if [ -n "$OLD_BACKUP" ]; then REPLACE="$REPLACE PANGOLIN_BACKUP_REPOSITORY"; fi
@@ -1034,6 +1034,10 @@ compose() {
 # Docker Hub for the base image, and npm for pnpm and the dependencies.
 BUILD_HOSTS="github.com:443 release-assets.githubusercontent.com:443 objects.githubusercontent.com:443 registry.npmjs.org:443 registry-1.docker.io:443 auth.docker.io:443 production.cloudflare.docker.com:443 production.cloudfront.docker.com:443"
 
+# The comment above the backup server's allowlist entry: allowlist_remove finds what
+# allowlist_add (or a fresh allowlist.conf) wrote under it.
+BACKUP_ALLOWLIST_LABEL="Backup server (restic REST)"
+
 # allowlist_add FILE COMMENT ENTRY...: appends the entries FILE lacks, under COMMENT. True when it
 # added any.
 allowlist_add() {
@@ -1050,12 +1054,13 @@ allowlist_add() {
   say "Added to allowlist.conf:$missing"
 }
 
-# allowlist_remove FILE COMMENT ENTRY: drops ENTRY where it sits directly under a COMMENT line
-# (install.sh's own), with that comment and the blank line before it. A line equal to ENTRY that
-# is not under COMMENT is the operator's: it stays, and so says. True when it removed any.
+# allowlist_remove FILE COMMENT ENTRY: drops ENTRY where it sits directly under a line starting
+# "# COMMENT" (install.sh's own, as allowlist_add writes it), with that line and the blank line
+# before it. A line equal to ENTRY that is not under it is the operator's: it stays, and so says.
+# True when it removed any.
 allowlist_remove() {
   grep -Fqx "$3" "$1" || return 1
-  awk -v entry="$3" -v comment="$2" '
+  awk -v entry="$3" -v comment="# $2" '
     { line[NR] = $0 }
     END {
       for (i = 2; i <= NR; i++) {
@@ -1293,15 +1298,10 @@ distro_allowlist() {
   esac
 }
 
-write_files() {
-  step "Writing compose.yaml, the allowlist and the firewall"
-  install_dir=$(path "$INSTALL_DIR")
-  cp "${PINNED:-$SUPPORT}/compose.yaml" "$install_dir/compose.yaml.new"
-  cp "$SUPPORT/cosign.pub" "$install_dir/cosign.pub"
-  chmod 0644 "$install_dir/compose.yaml.new"
-  mv "$install_dir/compose.yaml.new" "$install_dir/compose.yaml"
-
-  allowlist=$install_dir/allowlist.conf
+# allowlist.conf: written fresh on a first install; on a re-run the operator's file is kept and
+# only install.sh's own entries (backup server, Tang server) are added or dropped.
+write_allowlist() {
+  allowlist=$(path "$INSTALL_DIR/allowlist.conf")
   tang_entry=$(url_entry "$TANG_URL")
   if [ -f "$allowlist" ]; then
     say "Kept the existing allowlist.conf"
@@ -1309,12 +1309,12 @@ write_files() {
     # server shares it); any line the operator wrote stays.
     entry=$(url_entry "$OLD_BACKUP")
     if [ "$BACKUP_OFF" -eq 1 ] && [ -n "$entry" ] && [ "$entry" != "$tang_entry" ] &&
-      allowlist_remove "$allowlist" "# Backup server (restic REST)" "$entry"; then
+      allowlist_remove "$allowlist" "$BACKUP_ALLOWLIST_LABEL" "$entry"; then
       apply_allowlist_now
     fi
     entry=$(url_entry "$BACKUP")
     if [ -n "$entry" ] && ! grep -Fqx "$entry" "$allowlist"; then
-      allowlist_add "$allowlist" "Backup server (restic REST)" "$entry" || true
+      allowlist_add "$allowlist" "$BACKUP_ALLOWLIST_LABEL" "$entry" || true
       apply_allowlist_now
     fi
     # Without Tang the data disk does not unlock at boot, so its entry is added back.
@@ -1327,7 +1327,7 @@ write_files() {
       cat "$SUPPORT/allowlist.conf.default"
       distro_allowlist
       entry=$(url_entry "$BACKUP")
-      if [ -n "$entry" ]; then printf '%s\n' "" "# Backup server (restic REST)" "$entry"; fi
+      if [ -n "$entry" ]; then printf '%s\n' "" "# $BACKUP_ALLOWLIST_LABEL" "$entry"; fi
       if [ -n "$tang_entry" ]; then
         printf '%s\n' "" "# Tang server: unlocks the data disk" "$tang_entry"
       fi
@@ -1341,6 +1341,37 @@ write_files() {
     mv "$allowlist.new" "$allowlist"
     say "Wrote allowlist.conf"
   fi
+}
+
+write_data_dropin() {
+  units=$(path /etc/systemd/system)
+  # Docker (and so the app) must not start without the encrypted data disk mounted: otherwise
+  # it would create a fresh database and setup link on the empty system-disk directory.
+  if data_root_is_mount; then
+    mkdir -p "$units/docker.service.d"
+    printf '%s\n' "# Written by Pangolin Money's install.sh: Docker waits for the data disk." \
+      "[Unit]" "RequiresMountsFor=$DATA_ROOT" >"$units/docker.service.d/pangolin-data.conf"
+    chmod 0644 "$units/docker.service.d/pangolin-data.conf"
+  elif [ -f "$units/docker.service.d/pangolin-data.conf" ] &&
+    ! grep -qx "RequiresMountsFor=$DATA_ROOT" "$units/docker.service.d/pangolin-data.conf"; then
+    # Left by an earlier run for another data root that was a mount point: it would hold Docker
+    # at boot waiting for that disk. One for this data root stays, even while its disk is not
+    # mounted, so Docker never starts the app on the empty system-disk directory.
+    rm -f "$units/docker.service.d/pangolin-data.conf"
+    rmdir "$units/docker.service.d" 2>/dev/null || true
+    say "Removed the Docker drop-in that waited for the previous data disk"
+  fi
+}
+
+write_files() {
+  step "Writing compose.yaml, the allowlist and the firewall"
+  install_dir=$(path "$INSTALL_DIR")
+  cp "${PINNED:-$SUPPORT}/compose.yaml" "$install_dir/compose.yaml.new"
+  cp "$SUPPORT/cosign.pub" "$install_dir/cosign.pub"
+  chmod 0644 "$install_dir/compose.yaml.new"
+  mv "$install_dir/compose.yaml.new" "$install_dir/compose.yaml"
+
+  write_allowlist
 
   cp "$SUPPORT/firewall/render.sh" "$install_dir/firewall/render.sh"
   chmod 0755 "$install_dir/firewall/render.sh"
@@ -1365,22 +1396,7 @@ write_files() {
     chmod 0644 "$units/$unit"
   done
 
-  # Docker (and so the app) must not start without the encrypted data disk mounted: otherwise
-  # it would create a fresh database and setup link on the empty system-disk directory.
-  if data_root_is_mount; then
-    mkdir -p "$units/docker.service.d"
-    printf '%s\n' "# Written by Pangolin Money's install.sh: Docker waits for the data disk." \
-      "[Unit]" "RequiresMountsFor=$DATA_ROOT" >"$units/docker.service.d/pangolin-data.conf"
-    chmod 0644 "$units/docker.service.d/pangolin-data.conf"
-  elif [ -f "$units/docker.service.d/pangolin-data.conf" ] &&
-    ! grep -qx "RequiresMountsFor=$DATA_ROOT" "$units/docker.service.d/pangolin-data.conf"; then
-    # Left by an earlier run for another data root that was a mount point: it would hold Docker
-    # at boot waiting for that disk. One for this data root stays, even while its disk is not
-    # mounted, so Docker never starts the app on the empty system-disk directory.
-    rm -f "$units/docker.service.d/pangolin-data.conf"
-    rmdir "$units/docker.service.d" 2>/dev/null || true
-    say "Removed the Docker drop-in that waited for the previous data disk"
-  fi
+  write_data_dropin
 }
 
 # enable_unit UNIT TARGET: `systemctl enable`, or under --root the symlink it would create.
@@ -1399,10 +1415,13 @@ install_firewall() {
   if staging; then
     # Nothing is loaded and names are not resolved: the saved ruleset the early unit would load
     # holds no allowlisted addresses yet. The host's resolvers are read under --root too.
-    PANGOLIN_RESOLV_CONF=$(path /etc/resolv.conf) PANGOLIN_RESOLVED_CONF=$(path /run/systemd/resolve/resolv.conf) \
+    (
+      PANGOLIN_RESOLV_CONF=$(path /etc/resolv.conf)
+      PANGOLIN_RESOLVED_CONF=$(path /run/systemd/resolve/resolv.conf)
+      export PANGOLIN_RESOLV_CONF PANGOLIN_RESOLVED_CONF
       sh "$render" --home "$(path "$INSTALL_DIR")" --no-resolve ruleset >"$(path "$INSTALL_DIR/firewall/pangolin.nft")"
-    PANGOLIN_RESOLV_CONF=$(path /etc/resolv.conf) PANGOLIN_RESOLVED_CONF=$(path /run/systemd/resolve/resolv.conf) \
       sh "$render" --home "$(path "$INSTALL_DIR")" --no-resolve proxmox >"$(path "$INSTALL_DIR/proxmox-firewall.txt")"
+    )
     enable_unit pangolin-firewall.service sysinit.target
     enable_unit pangolin-allowlist.service multi-user.target
     enable_unit pangolin-allowlist.timer timers.target
@@ -1413,7 +1432,6 @@ install_firewall() {
     # Unproven: firewalld keeps its own table, which must also accept this traffic.
     family=ipv4
     firewall-cmd --quiet --permanent --add-rich-rule="rule family=$family source address=$NPM_HOST port port=$HTTP_PORT protocol=tcp accept"
-    family=ipv4
     if is_ipv6 "${ADMIN_NETWORK%/*}"; then family=ipv6; fi
     firewall-cmd --quiet --permanent --add-rich-rule="rule family=$family source address=$ADMIN_NETWORK port port=$SSH_PORT protocol=tcp accept"
     firewall-cmd --quiet --reload
