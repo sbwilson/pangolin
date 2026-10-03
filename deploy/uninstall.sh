@@ -218,7 +218,8 @@ remove_data() {
 
 # Removes the install directory. When a data directory is kept, the three secrets its database
 # needs stay in secrets/ (contents, modes and owners as they are), and a reinstall reuses them;
-# anything else there (the GHCR token) goes. KEPT_SECRETS=1 when it kept them.
+# so does install.sh's .bundle-pending mark, so a reinstall still writes the bundle an
+# interrupted install never wrote. Anything else there (the GHCR token) goes. KEPT_SECRETS=1 when it kept them.
 remove_install_dir() {
   install_dir=$(path "$INSTALL_DIR")
   KEPT_SECRETS=0
@@ -226,7 +227,7 @@ remove_install_dir() {
     step "Removing $INSTALL_DIR, except the secrets the data needs"
     find "$install_dir" -mindepth 1 -maxdepth 1 ! -name secrets -exec rm -rf {} +
     find "$install_dir/secrets" -mindepth 1 -maxdepth 1 ! -name auth-secret ! -name app-key \
-      ! -name restic-password -exec rm -rf {} +
+      ! -name restic-password ! -name .bundle-pending -exec rm -rf {} +
     KEPT_SECRETS=1
   else
     step "Removing $INSTALL_DIR"

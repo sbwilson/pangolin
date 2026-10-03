@@ -73,7 +73,7 @@ const exists = (p: string) => existsSync(join(root, p));
 const mode = (p: string) => statSync(join(root, p)).mode & 0o777;
 
 // The three secrets are still there, with their contents and modes, and nothing else of
-// /opt/pangolin is.
+// /opt/pangolin is (the fixture has no .bundle-pending mark; a test below keeps one).
 function expectOnlySecretsKept(): void {
   expect(readdirSync(join(root, "opt/pangolin"))).toEqual(["secrets"]);
   expect(mode("opt/pangolin/secrets")).toBe(0o700);
@@ -131,6 +131,21 @@ describe("uninstall.sh", () => {
     expect(run(["--yes", "--keep-data"]).status).toBe(0);
     expect(exists("srv/pangolin/pangolin.sqlite")).toBe(true);
     expectOnlySecretsKept();
+  });
+
+  it("keeps install.sh's pending-bundle mark with the secrets when the data is kept", () => {
+    installed();
+    const mark = join(root, "opt/pangolin/secrets/.bundle-pending");
+    writeFileSync(mark, "");
+    chmodSync(mark, 0o600);
+    expect(run(["--yes", "--keep-data"]).status).toBe(0);
+    expect(readdirSync(join(root, "opt/pangolin/secrets")).sort()).toEqual([
+      ".bundle-pending",
+      "app-key",
+      "auth-secret",
+      "restic-password",
+    ]);
+    expect(mode("opt/pangolin/secrets/.bundle-pending")).toBe(0o600);
   });
 
   it("removes the whole install directory when the data is kept but there are no secrets", () => {
