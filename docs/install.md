@@ -78,7 +78,9 @@ Docker drop-in (`/etc/systemd/system/docker.service.d/pangolin-data.conf`,
 `RequiresMountsFor=/srv/pangolin`). If the disk does not unlock (the `nofail` mount lets the VM
 boot anyway), Docker does not start, rather than starting the app on the empty directory of the
 system disk, where it would create a fresh, unencrypted database and a new setup link. If the
-data root is not a mount point, the installer warns instead.
+data root is not a mount point, the installer warns instead. A drop-in left by an earlier run
+for another data root is removed; one for this data root stays even while its disk is not
+mounted, so Docker keeps waiting for it.
 
 The alternative, ZFS native encryption on the Proxmox pool, needs a passphrase after every
 host reboot. If you use Proxmox Backup Server, turn on its client-side encryption.
@@ -131,7 +133,7 @@ sudo sh deploy/install.sh --non-interactive \
 | `--admin-network CIDR` | Where SSH is allowed from |
 | `--ghcr-token-file FILE` / `--ghcr-token TOKEN` | A GHCR read-only token for `docker login ghcr.io` (a file keeps it out of the process list). It is kept in `secrets/ghcr-token`, and `docker login` also stores it in `/root/.docker/config.json` |
 | `--dns IP[,IP]` | The resolvers DNS is allowed to (default: from `/etc/resolv.conf`); on a re-run it replaces `PANGOLIN_DNS_SERVERS` in `.env`. The firewall also allows the VM's current resolvers (see [§8](#8-the-firewall)) |
-| `--data-root DIR` | The data directory on the encrypted disk (default `/srv/pangolin`); on a re-run it replaces `PANGOLIN_DATA_ROOT` in `.env` |
+| `--data-root DIR` | The data directory on the encrypted disk (default `/srv/pangolin`); on a re-run it replaces `PANGOLIN_DATA_ROOT` in `.env`. It does not move the data: when the old directory holds the database and the new one does not, the installer warns that the app will start on an empty database there. The Docker drop-in that waits for the data disk follows the new directory, and the old one is removed when the new directory is not a mount point |
 | `--http-port PORT` | The VM port NPM forwards to (default 3000) |
 | `--image REF` | The image (default `ghcr.io/sbwilson/pangolin:latest`); on a re-run it replaces `PANGOLIN_IMAGE` in `.env`. A local image (no `/`, like `pangolin:local`) is never pulled: it must exist |
 | `--build [--ref REF] [--repo URL]` | Build `pangolin:local` on the VM from the repository instead (its default branch, or `--ref`), and set `PANGOLIN_IMAGE` to it. It adds the build hosts (GitHub, npm, Docker Hub) to `allowlist.conf`, which also lets `git pull` work in the clone |

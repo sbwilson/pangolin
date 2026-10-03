@@ -568,6 +568,26 @@ describe("install.sh, re-run", () => {
     expect(result.stdout).toContain("Preparing /opt/pangolin and /srv/other");
     expect(result.stderr).toMatch(/data root \/srv\/other is NOT on a dm-crypt/);
     expect(mode("srv/other")).toBe(0o700);
+    // No database was left behind, so there is nothing to warn about.
+    expect(result.stderr).not.toMatch(/holds the household database/);
+  });
+
+  it("warns when a changed data root leaves the household database behind", () => {
+    expect(install().status).toBe(0);
+    writeFileSync(at("srv/pangolin/pangolin.sqlite"), "household");
+    const result = install("--data-root", "/srv/other");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toMatch(
+      /data root moves from \/srv\/pangolin, which holds the household database, to \/srv\/other, which has none/,
+    );
+    // A new data root that already holds a database is not warned about.
+    writeFileSync(at("srv/other/pangolin.sqlite"), "household");
+    const back = install("--data-root", "/srv/pangolin");
+    expect(back.status, back.stderr).toBe(0);
+    expect(back.stdout).toMatch(
+      /Replacing PANGOLIN_DATA_ROOT in \.env: \/srv\/other -> \/srv\/pangolin/,
+    );
+    expect(back.stderr).not.toMatch(/holds the household database/);
   });
 
   it("writes the bundle again with --bundle", () => {
@@ -1108,6 +1128,49 @@ describe("install.sh, boot safety", () => {
     expect(plain.status).toBe(0);
     expect(existsSync(at("etc/systemd/system/docker.service.d"))).toBe(false);
     expect(plain.stderr).toMatch(/is not a mount point/);
+  });
+
+  it("removes the drop-in for a data root that is no longer a mount point", () => {
+    const mounted = run("sh", [INSTALL, "--root", root, ...ANSWERS], {
+      PANGOLIN_INSTALL_STUB_MOUNTPOINT: "1",
+    });
+    expect(mounted.status, mounted.stderr).toBe(0);
+    const moved = run("sh", [INSTALL, "--root", root, ...ANSWERS, "--data-root", "/srv/other"], {
+      PANGOLIN_INSTALL_STUB_MOUNTPOINT: "0",
+    });
+    expect(moved.status, moved.stderr).toBe(0);
+    expect(existsSync(at("etc/systemd/system/docker.service.d"))).toBe(false);
+    expect(moved.stdout).toContain("Removed the Docker drop-in");
+  });
+
+  it("keeps the drop-in for the same data root while its disk is not mounted", () => {
+    expect(
+      run("sh", [INSTALL, "--root", root, ...ANSWERS], { PANGOLIN_INSTALL_STUB_MOUNTPOINT: "1" })
+        .status,
+    ).toBe(0);
+    const unmounted = run("sh", [INSTALL, "--root", root, ...ANSWERS], {
+      PANGOLIN_INSTALL_STUB_MOUNTPOINT: "0",
+    });
+    expect(unmounted.status, unmounted.stderr).toBe(0);
+    expect(read("etc/systemd/system/docker.service.d/pangolin-data.conf")).toContain(
+      "RequiresMountsFor=/srv/pangolin",
+    );
+    expect(unmounted.stdout).not.toContain("Removed the Docker drop-in");
+  });
+
+  it("rewrites the drop-in for a new data root that is a mount point, leaving one", () => {
+    const env = { PANGOLIN_INSTALL_STUB_MOUNTPOINT: "1" };
+    expect(run("sh", [INSTALL, "--root", root, ...ANSWERS], env).status).toBe(0);
+    const moved = run(
+      "sh",
+      [INSTALL, "--root", root, ...ANSWERS, "--data-root", "/srv/other"],
+      env,
+    );
+    expect(moved.status, moved.stderr).toBe(0);
+    expect(readdirSync(at("etc/systemd/system/docker.service.d"))).toEqual(["pangolin-data.conf"]);
+    const dropIn = read("etc/systemd/system/docker.service.d/pangolin-data.conf");
+    expect(dropIn).toContain("RequiresMountsFor=/srv/other");
+    expect(dropIn).not.toContain("/srv/pangolin");
   });
 });
 
