@@ -142,6 +142,8 @@ export function createUnitOfWork(db: Db): UnitOfWork {
             },
             jobs: {
               listDead: repos.jobs.listDead,
+              listPending: repos.jobs.listPending,
+              listRunning: repos.jobs.listRunning,
               countByStatus: repos.jobs.countByStatus,
               find: repos.jobs.find,
               firstCreatedAt: repos.jobs.firstCreatedAt,

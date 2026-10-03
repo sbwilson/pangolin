@@ -1,6 +1,6 @@
 import type { JobLane, JobRepo, JobRow, JobStatus } from "@pangolin/app";
 import type { Id } from "@pangolin/shared";
-import { and, count, desc, eq, inArray, min, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, min, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { job } from "./schema/job.ts";
 
@@ -133,6 +133,30 @@ export function createJobRepo(orm: Orm, check: () => void): JobRepo {
         .all();
       // The job_finished CHECK guarantees a dead job has finished_at.
       return rows.map((row) => ({ kind: row.kind, failedAt: row.failedAt ?? "" }));
+    },
+
+    listPending: (limit) => {
+      check();
+      return orm
+        .select({ kind: job.kind, runAt: job.runAt })
+        .from(job)
+        .where(eq(job.status, "pending"))
+        .orderBy(asc(job.runAt), asc(job.id))
+        .limit(limit)
+        .all();
+    },
+
+    listRunning: (limit) => {
+      check();
+      const rows = orm
+        .select({ kind: job.kind, leaseExpiresAt: job.leaseExpiresAt })
+        .from(job)
+        .where(eq(job.status, "running"))
+        .orderBy(asc(job.leaseExpiresAt), asc(job.id))
+        .limit(limit)
+        .all();
+      // A running job always holds a lease, so lease_expires_at is set.
+      return rows.map((row) => ({ kind: row.kind, leaseExpiresAt: row.leaseExpiresAt ?? "" }));
     },
 
     countByStatus: () => {

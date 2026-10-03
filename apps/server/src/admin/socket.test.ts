@@ -125,6 +125,8 @@ describe("the admin socket", () => {
       readiness: { ok: true },
       jobs: { pending: 0, running: 0, dead: 0 },
       deadJobs: [],
+      pendingJobs: [],
+      runningJobs: [],
       backup: { configured: false, last: null, stale: false, check: null, drill: null },
     });
     // The client removed its proof; the server consumed it.
@@ -132,6 +134,48 @@ describe("the admin socket", () => {
     expect(log).toHaveBeenCalledWith("info", "admin command", { command: "status", ok: true });
     // status is a read: no audit row.
     expect(db.prepare("SELECT count(*) FROM audit_log").pluck().get()).toBe(0);
+  });
+
+  it("answers status with pending and running jobs by kind and time only", async () => {
+    db.prepare(
+      `INSERT INTO job (id, kind, lane, payload, status, attempts, max_attempts, run_at,
+         lease_owner, lease_expires_at, last_error, created_at, updated_at)
+       VALUES (?, ?, 'local', '{"secret":1}', ?, 0, 1, ?, ?, ?, 'secret error', ?, ?)`,
+    ).run(
+      "01J00000000000000000000001",
+      "test-pending",
+      "pending",
+      "2099-01-01T00:00:00.000Z",
+      null,
+      null,
+      "2026-09-27T00:00:00.000Z",
+      "2026-09-27T00:00:00.000Z",
+    );
+    db.prepare(
+      `INSERT INTO job (id, kind, lane, payload, status, attempts, max_attempts, run_at,
+         lease_owner, lease_expires_at, last_error, created_at, updated_at)
+       VALUES (?, ?, 'local', '{"secret":1}', ?, 1, 1, ?, ?, ?, 'secret error', ?, ?)`,
+    ).run(
+      "01J00000000000000000000002",
+      "test-running",
+      "running",
+      "2026-09-27T00:00:00.000Z",
+      "runner",
+      "2099-01-01T00:01:00.000Z",
+      "2026-09-27T00:00:00.000Z",
+      "2026-09-27T00:00:00.000Z",
+    );
+    await listen();
+    const response = await callAdmin(sockPath, "status");
+    const result = (response as { result: StatusResult }).result;
+    expect(result.jobs).toEqual({ pending: 1, running: 1, dead: 0 });
+    expect(result.pendingJobs).toEqual([
+      { kind: "test-pending", runAt: "2099-01-01T00:00:00.000Z" },
+    ]);
+    expect(result.runningJobs).toEqual([
+      { kind: "test-running", leaseExpiresAt: "2099-01-01T00:01:00.000Z" },
+    ]);
+    expect(JSON.stringify(result)).not.toMatch(/secret|01J0000/);
   });
 
   it("reports failing readiness checks", async () => {
