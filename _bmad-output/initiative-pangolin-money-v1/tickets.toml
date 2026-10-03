@@ -9,9 +9,16 @@ covers = ["CAP-16", "CAP-15"]
 [[epic]]
 id = 2
 slug = "epic-ledger-accounts-privacy"
-title = "Ledger, accounts and privacy"
+title = "Ledger core and privacy"
 covers = ["CAP-3", "CAP-18", "CAP-14"]
 after = [{ epic = 1, needs = "schema and migration tooling, auth sessions, service layer with audit_log, seed generator" }]
+
+[[epic]]
+id = 12
+slug = "epic-ledger-workspace"
+title = "Ledger workspace"
+covers = ["CAP-18", "CAP-3", "CAP-14"]
+after = [{ epic = 2, needs = "the accounts, classify and ledger modules and API, the privacy core and the seeded ledger" }]
 
 [[epic]]
 id = 11
@@ -24,7 +31,7 @@ after = [{ epic = 1, needs = "install.sh, uninstall.sh, the firewall render and 
 id = 3
 slug = "epic-import-dedupe-transfers"
 title = "Import, dedupe and transfer matching"
-covers = ["CAP-1", "CAP-2"]
+covers = ["CAP-1", "CAP-2", "CAP-18"]
 after = [{ epic = 2, needs = "account, transaction, split and transfer_group tables with visibleAccounts()/redact()" }]
 
 [[epic]]

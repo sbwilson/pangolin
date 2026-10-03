@@ -40,3 +40,4 @@ Tax reports, attachments and receipts, activities, and the property view. The ap
 ## Notes
 
 - Decision: the cross-epic contracts this epic adopts are settled in the architecture spine (final, 2026-09-27); see References.
+- Handoff (2026-10-04, epic 2 inception): split.property_id is created nullable with no foreign key by epic-ledger-accounts-privacy; this epic adds the property table and the foreign key.

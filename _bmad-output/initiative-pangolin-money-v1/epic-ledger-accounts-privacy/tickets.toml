@@ -1,0 +1,144 @@
+# tickets.toml — the epic's agreed children. Table order is build order; `id` is permanent and not an order.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Tracer bullet: one account's transactions, seen per viewer"
+description = "The thinnest path through every layer: a migration for account, account_owner, transaction and split (core columns), visibleAccounts(viewer) and visibleTxn(viewer) in db with the private-account rule only, accounts.createAccount and ledger.createTransaction use cases with audit, GET /api/ledger/transactions, a minimal web list page, a seed module with one shared and one private account per partner, and the e2e seeding hook: the admin seed command links the seed's two people to the signed-up logins and the e2e harness runs it after sign-up."
+verify = "An e2e test signed in as each partner sees the shared account's transactions and only their own private account's."
+covers = ["CAP-3", "CAP-18"]
+after = ["epic-platform-foundations"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Ledger and classification schema"
+description = "Adds the rest of the tables and columns this epic owns (institution, balance_snapshot, transfer_group, split_tag, the remaining transaction and split columns including deleted_at, the AD-20 unique keys, category_group, category, tag, activity, payee with logo_attachment_id nullable and no foreign key until the attachment epic, payee_alias with AD-18 scope, tax_category, property_id nullable with no foreign key), adds review_item's account_id foreign key, and creates every repository, port and memory unit-of-work stub the accounts, classify and ledger modules will fill, so entries 4 and 5 add only use cases and routes."
+verify = "Migration, STRICT and repository tests pass; the memory unit of work mirrors every new repository."
+covers = ["CAP-3", "CAP-14", "CAP-18"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Privacy core: hidden names, redact and the read rule"
+description = "Makes visibleTxn null payee, description and logo for the partner while name_hidden_until is in the future on a shared-account transaction, exclude soft-deleted rows, and render a transfer whose counterpart sits in a private account as 'Transfer from <owner>' (the projection entry 7's transfer groups rely on); adds redact() at the app boundary for API responses, exports, audit reads and review items; a missing-viewer-throws test per scoped table; the rule that nothing reads account or transaction except through visibleAccounts()/visibleTxn(); composes visibleAccounts into visibleReviewItems, and has the ledger and accounts use cases set audit_log.account_id so audit reads can be scoped (AD-3)."
+verify = "Per-table missing-viewer tests pass; the rule fails on a deliberate direct read; a hidden name is hidden only while name_hidden_until is after today (AD-4) and shows on that date; deleted rows never appear; ledger and accounts use cases set audit_log.account_id."
+covers = ["CAP-3"]
+after = [2]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Accounts module"
+description = "Institutions; accounts create, edit and close with currency equal to the household base currency; owners and shares, a private account having one owner; accounts.setPrivacy refusing while any split is shared (AD-7); poolOf and the payer rule (AD-26); balance snapshots; and balanceAsOf for the cash account types (transaction, savings, offset, credit_card, home_loan), whose balance SQL lives in db, excludes soft-deleted transactions, so the backup manifest (entry 9) uses the same query; API routes."
+verify = "Use-case tests on real SQLite for each rule; API tests show a partner's private account is NotFound for reads and writes."
+covers = ["CAP-3", "CAP-14"]
+after = [3]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Classify module"
+description = "Category groups and categories with CRUD and the default categories from categorisation.md; tags; payees and aliases with AD-18 scope (owner-only from a private account, else shared, names unique per scope, the origin account never serialised); activities; tax categories; API routes. Promotion of a scoped row to shared is epic-import-dedupe-transfers."
+verify = "Use-case tests for scope and uniqueness; a private-scoped payee is NotFound to the partner."
+covers = ["CAP-18", "CAP-14"]
+after = [3]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Ledger: transactions"
+description = "Creates and edits transactions, each created with a single split for its full amount, with a fingerprint scheme for manual entries so the AD-20 unique key never blocks them, soft delete behind re-authentication (deleted rows still count for dedupe), and ledger keeping transaction.needs_review from open review items (AD-17); API routes."
+verify = "Use-case and API tests for create, edit and delete, the manual fingerprint and needs_review."
+covers = ["CAP-18", "CAP-3"]
+after = [4, 5]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 13
+type = "story"
+title = "Ledger: splits, provenance, beneficiary and tags"
+description = "Replaces a transaction's splits with the sum invariant and a server-returned remaining amount; setSplitField with provenance (user > rule > payee > activity > llm), storage chosen in the plan, touching no suggestions until epic-import-dedupe-transfers; a beneficiary on every split, forced to the owner in a private account (AD-7); tags on splits; API routes."
+verify = "Use-case and API tests for the sum invariant, the remaining amount, provenance precedence, the private-account beneficiary rule and tagging."
+covers = ["CAP-18", "CAP-14"]
+after = [6]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Ledger: hidden names and transfer groups"
+description = "Hide and unhide a shared-account transaction's name (any owner, at most 12 months from hiding, re-hiding restarts the clock still capped at 12 months, notes stay visible); manual transfer groups linking transactions, shown as 'Transfer from <owner>' through entry 3's visibleTxn projection when the counterpart is in a private account; API routes."
+verify = "Use-case and API tests for hiding limits per viewer and for transfer groups across a private counterpart."
+covers = ["CAP-3", "CAP-18"]
+after = [13]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Seed the ledger"
+description = "Seed modules for institutions, accounts (shared, each partner's private, a joint one), categories, payees, tags and a few hundred transactions with splits, beneficiaries, some shared-account names hidden and a transfer group with a private counterpart, committed through the use cases with source seed (AD-15), loaded by entry 1's admin seed command, which refuses on a database that already holds ledger rows."
+verify = "The e2e harness sees the seeded ledger as both partners; the command refuses a second load."
+covers = ["CAP-18"]
+after = [7]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Backup manifest: per-account balances"
+description = "Manifest format 2 adds, per account under the system viewer, the transaction count, the sum of amount_cents and balanceAsOf for the cash types (null for the others until the investment and property epics), using entry 4's balance SQL in db; the count includes soft-deleted rows, the sum and balance exclude them; restores verify format 2's per-account figures and still read format 1 (spine AD-19)."
+verify = "Manifest tests; a restore of a format-1 snapshot still verifies."
+covers = ["CAP-16"]
+after = [4]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Server-side privacy suite"
+description = "For every API route (derived from the Hono app's route list) and for review items through visibleReviewItems and redact(): partner B's responses are byte-identical when only partner A's private data changes; every private-account ID is NotFound for reads and writes; hidden names lift after 12 months on the test clock. Search, export and the audit-log API join it in epic-ledger-workspace."
+verify = "The suite runs in CI, covers every route the app registers, and fails on a deliberate leak."
+covers = ["CAP-3"]
+after = [8]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Refactor sweep"
+description = "Cleans up what this epic's build records and deferred review findings name; scope is set when it starts, cleanup only."
+verify = "Lint, types and the full suite stay green, and each change traces to a build record or deferred finding of this epic."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 13, 7, 8, 9, 10]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 12
+type = "story"
+title = "Release and deploy"
+description = "Cut a release and pangolin upgrade the home server; CI green on the tag."
+verify = "The release run is green on its tag and the home server runs it."
+covers = ["CAP-16"]
+after = [11]
+hitl = true
+risk = "low"
