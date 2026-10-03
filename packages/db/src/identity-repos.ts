@@ -13,7 +13,7 @@ import type {
   UserRepo,
 } from "@pangolin/app";
 import type { Id } from "@pangolin/shared";
-import { and, asc, count, eq, gt, gte, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, isNull, lt, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { authAccount, authPasskey, authSession, authTwoFactor, authUser } from "./schema/auth.ts";
 import { loginAttempt } from "./schema/login-attempt.ts";
@@ -157,6 +157,18 @@ export function createLoginAttemptRepo(orm: Orm, check: () => void): LoginAttemp
     deleteBefore: (before) => {
       check();
       orm.delete(loginAttempt).where(lt(loginAttempt.at, before)).run();
+    },
+    deleteNewestFailure: (email) => {
+      check();
+      const newest = orm
+        .select({ id: loginAttempt.id })
+        .from(loginAttempt)
+        .where(and(eq(loginAttempt.email, email), eq(loginAttempt.ok, false)))
+        .orderBy(desc(loginAttempt.at), desc(loginAttempt.id))
+        .limit(1)
+        .get();
+      if (newest !== undefined)
+        orm.delete(loginAttempt).where(eq(loginAttempt.id, newest.id)).run();
     },
   };
 }

@@ -378,6 +378,8 @@ export interface LoginAttemptRepo {
   listSince(email: string, since: string): LoginAttemptRow[];
   /** Deletes every attempt (any email) before `before`. */
   deleteBefore(before: string): void;
+  /** Deletes the newest failed attempt for `email`, if any (a provisional failure released). */
+  deleteNewestFailure(email: string): void;
 }
 
 export interface AuditRepo {

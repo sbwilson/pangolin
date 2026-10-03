@@ -8,6 +8,8 @@ import {
   type LockoutPolicy,
   lockedUntil,
   recordLoginAttempt,
+  releaseLoginAttempt,
+  reserveLoginAttempt,
 } from "./lockout.ts";
 
 function setup() {
@@ -98,5 +100,73 @@ describe("identity lockout", () => {
   it("rejects an empty email with Validation", () => {
     const { ctx } = setup();
     expect(refusal(() => assertLoginAllowed(ctx, { email: " " }))?.code).toBe("Validation");
+  });
+});
+
+describe("identity lockout reservations", () => {
+  it("reserve counts the attempt as a failure up front, and refuses the 6th while writing nothing", () => {
+    const { ctx, uow } = setup();
+    for (let i = 0; i < 5; i++) {
+      expect(
+        refusal(() => reserveLoginAttempt(ctx, { email: "Alex@Example.com" })),
+      ).toBeUndefined();
+    }
+    expect(uow.state.loginAttempts).toHaveLength(5);
+    expect(uow.state.loginAttempts.every((a) => a.email === email && !a.ok)).toBe(true);
+    const error = refusal(() => reserveLoginAttempt(ctx, { email }));
+    expect(error).toMatchObject({ code: "RateLimited", details: { retryAfterSeconds: 900 } });
+    expect(uow.state.loginAttempts).toHaveLength(5);
+    expect(refusal(() => assertLoginAllowed(ctx, { email }))?.code).toBe("RateLimited");
+  });
+
+  it("release removes the email's newest failure only", () => {
+    const { ctx, uow, clock } = setup();
+    recordLoginAttempt(ctx, { email, ok: false });
+    clock.advance(1000);
+    recordLoginAttempt(ctx, { email, ok: true });
+    clock.advance(1000);
+    reserveLoginAttempt(ctx, { email });
+    reserveLoginAttempt(ctx, { email: "sam@example.com" });
+    releaseLoginAttempt(ctx, { email: "ALEX@example.com" });
+    expect(uow.state.loginAttempts).toEqual([
+      { email, at: "2026-09-27T00:00:00.000Z", ok: false },
+      { email, at: "2026-09-27T00:00:01.000Z", ok: true },
+      { email: "sam@example.com", at: "2026-09-27T00:00:02.000Z", ok: false },
+    ]);
+    // Only failures go: the success stays, and a release with none left is a no-op.
+    releaseLoginAttempt(ctx, { email });
+    releaseLoginAttempt(ctx, { email });
+    expect(uow.state.loginAttempts).toEqual([
+      { email, at: "2026-09-27T00:00:01.000Z", ok: true },
+      { email: "sam@example.com", at: "2026-09-27T00:00:02.000Z", ok: false },
+    ]);
+  });
+
+  it("released reservations count as neither: five reserved and released never lock", () => {
+    const { ctx } = setup();
+    for (let i = 0; i < 10; i++) {
+      reserveLoginAttempt(ctx, { email });
+      releaseLoginAttempt(ctx, { email });
+    }
+    expect(refusal(() => reserveLoginAttempt(ctx, { email }))).toBeUndefined();
+  });
+
+  it("a success after reservations ends the count, as with recorded failures", () => {
+    const { ctx } = setup();
+    for (let i = 0; i < 4; i++) reserveLoginAttempt(ctx, { email });
+    recordLoginAttempt(ctx, { email, ok: true });
+    for (let i = 0; i < 4; i++) reserveLoginAttempt(ctx, { email });
+    expect(refusal(() => reserveLoginAttempt(ctx, { email }))).toBeUndefined();
+    expect(refusal(() => reserveLoginAttempt(ctx, { email }))?.code).toBe("RateLimited");
+  });
+
+  it("reserve prunes attempts too old to matter, and rejects an empty email", () => {
+    const { ctx, uow, clock } = setup();
+    recordLoginAttempt(ctx, { email: "sam@example.com", ok: false });
+    clock.advance(30 * 60_000 + 1);
+    reserveLoginAttempt(ctx, { email });
+    expect(uow.state.loginAttempts).toEqual([{ email, at: "2026-09-27T00:30:00.001Z", ok: false }]);
+    expect(refusal(() => reserveLoginAttempt(ctx, { email: " " }))?.code).toBe("Validation");
+    expect(refusal(() => releaseLoginAttempt(ctx, { email: " " }))?.code).toBe("Validation");
   });
 });
