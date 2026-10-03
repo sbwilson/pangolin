@@ -97,3 +97,9 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
   summary: Reconcile `deployment-and-ops.md` (CI/CD) and the spine's Migrations row, which say the previous-release migration runs on every push, with the human decision of 2026-10-03 to run it only at release.
   evidence: story 1.18 intent-alignment review; the spec text and release.yml now disagree.
   disposition: fixed (spec reconciliation, 2026-10-03)
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/story-dns-drift-recovery-plan.md`
+  summary: Test install.sh printing render.sh's journal lines when pangolin-allowlist.service fails on a real (non-`--root`) install.
+  evidence: the install tests all run under `--root`, which skips that branch; it needs systemctl and journalctl stubs (story 11.4 review).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/story-dns-drift-recovery-plan.md`
+  summary: Alert the operator when the allowlist timer keeps refusing (an OnFailure hook, a status file or a `pangolin status` warning), so a stale ruleset does not persist silently.
+  evidence: story 11.4 makes an all-unresolved render refuse and keep the last good ruleset; a failed oneshot unit is visible only in systemctl and the journal.

@@ -16,6 +16,13 @@
 #   boot       load the saved DIR/firewall/pangolin.nft (no DNS needed), or the fail-closed
 #              ruleset when it is missing or does not load; needs root
 #
+# DNS is allowed to the resolvers in .env (PANGOLIN_DNS_SERVERS) and, except in the fail-closed
+# ruleset, to the host's current resolvers (/etc/resolv.conf, or systemd-resolved's upstream
+# /run/systemd/resolve/resolv.conf behind its 127.0.0.53 stub), so a resolver change is followed
+# on the next re-render: apply adds them to the live ruleset's DNS sets before it resolves any
+# name. ruleset, proxmox and apply refuse an allowlist in which no host name resolved: apply then
+# keeps the ruleset in force and the saved one, and exits non-zero.
+#
 # Only the `inet pangolin` table is replaced; Docker's own tables are never touched. Its
 # forward chain sees the same forwarded traffic as Docker's DOCKER-USER chain, so containers
 # get the host's egress allowlist, and published ports admit only the NPM host.
@@ -26,6 +33,9 @@ ENV_FILE=
 ALLOWLIST=
 RESOLVE=1
 COMMAND=
+# The host's resolver files; overridable for tests.
+RESOLV_CONF=${PANGOLIN_RESOLV_CONF:-/etc/resolv.conf}
+RESOLVED_CONF=${PANGOLIN_RESOLVED_CONF:-/run/systemd/resolve/resolv.conf}
 
 die() {
   printf 'render.sh: %s\n' "$*" >&2
@@ -173,9 +183,77 @@ trap 'exit 130' INT TERM
 # Proxmox rules: one line per (address, port or "any", source entry).
 : >"$WORK/pve"
 
-for address in $DNS_SERVERS; do
+# The host's current resolvers, as install.sh's detect_dns finds them (render.sh runs alone from
+# the timer and cannot source install.sh; keep the two in step): the nameservers in resolv.conf
+# and, when it lists systemd-resolved's 127.0.0.53 stub, those in its upstream file too.
+# Loopback, unspecified (0.0.0.0, ::), IPv4-mapped (::ffff:), link-local (fe80::/10) and
+# zone-scoped (`%`) resolvers are skipped (nftables cannot match the last two), and anything but
+# a single address is skipped with a warning. Printed in lower case, each once.
+host_resolvers() {
+  set -- "$RESOLV_CONF"
+  if grep -Eq '^[[:space:]]*nameserver[[:space:]]+127\.0\.0\.53([[:space:]]|$)' "$RESOLV_CONF" 2>/dev/null; then
+    set -- "$RESOLV_CONF" "$RESOLVED_CONF"
+  fi
+  for file in "$@"; do
+    [ -r "$file" ] && cat "$file"
+  done 2>/dev/null |
+    awk '$1 == "nameserver" { a = tolower($2); if (a !~ /^127\./ && a != "::1" && a != "0.0.0.0" && a != "::" && a !~ /^::ffff:/ && a !~ /%/ && a !~ /^fe[89ab][0-9a-f]:/ && !seen[a]++) print a }' |
+    while read -r resolver; do
+      if is_ipv4_address "$resolver" || is_ipv6_address "$resolver"; then
+        echo "$resolver"
+      else
+        warn "skipped the host resolver $resolver: not an IP address"
+      fi
+    done
+}
+
+# Every resolver DNS is allowed to, each once: .env's, then (outside the fail-closed ruleset)
+# the host's current ones. A host resolver not in .env widens DNS egress beyond it, so it is
+# named in a warning (the timer's journal) as well as in the ruleset's notes.
+ALL_DNS=$(printf '%s\n' "$DNS_SERVERS" | tr 'A-F' 'a-f')
+# The host's resolvers this run added beyond .env, comma-separated.
+HOST_DNS=
+case "$COMMAND" in
+  fallback | boot-fallback) ;;
+  *)
+    found=$(host_resolvers)
+    # Only loopback resolvers (dnsmasq, unbound, 127.0.0.54) or no file: nothing to follow.
+    [ -n "$found" ] || warn "no host resolver found in $RESOLV_CONF (only loopback ones, or none): DNS is allowed to the resolvers in .env only"
+    for resolver in $found; do
+      case " $(printf '%s' "$ALL_DNS" | tr '\n' ' ') " in
+        *" $resolver "*) ;;
+        *)
+          ALL_DNS="$ALL_DNS $resolver"
+          HOST_DNS="${HOST_DNS:+$HOST_DNS,}$resolver"
+          warn "DNS also allowed to the host's resolver $resolver, which is not in PANGOLIN_DNS_SERVERS in .env"
+          echo "DNS also allowed to the host's resolver $resolver" >>"$WORK/notes"
+          ;;
+      esac
+    done
+    ;;
+esac
+
+for address in $ALL_DNS; do
   if is_ipv4 "$address"; then echo "$address" >>"$WORK/dns4"; else echo "$address" >>"$WORK/dns6"; fi
 done
+
+# apply: names are looked up through the ruleset in force, which allows DNS only to the resolvers
+# it was built with. Every resolver this run allows is first added to its live DNS sets (a
+# widening limited to port 53 to resolvers .env or the host names), so a changed resolver can
+# answer. When the table is not loaded yet (a first install), there is nothing to widen. The
+# additions stay even if this run then refuses, so the next one can resolve.
+if [ "$COMMAND" = apply ]; then
+  [ "$(id -u)" -eq 0 ] || die "apply needs root"
+  command -v nft >/dev/null 2>&1 || die "nft is not installed"
+  if nft list table inet pangolin >/dev/null 2>&1; then
+    for family in 4 6; do
+      [ -s "$WORK/dns$family" ] || continue
+      live=$(sort -u "$WORK/dns$family" | paste -sd, - | sed 's/,/, /g')
+      nft add element inet pangolin "dns$family" "{ $live }" ||
+        warn "could not add $live to the live dns$family set"
+    done
+  fi
+fi
 
 # Resolves a host name to its IPv4 then IPv6 addresses, one per line, "4 addr" or "6 addr".
 resolve() {
@@ -195,6 +273,9 @@ add_address() {
 }
 
 LINE_NO=0
+# Host-name entries looked up, and how many of them resolved.
+NAMES=0
+RESOLVED=0
 # The fail-closed ruleset (fallback, boot-fallback) reads no allowlist: its sets stay empty.
 case "$COMMAND" in
   fallback | boot-fallback)
@@ -230,12 +311,14 @@ while IFS= read -r raw || [ -n "$raw" ]; do
       echo "not resolved (--no-resolve): $entry" >>"$WORK/notes"
       continue
     fi
+    NAMES=$((NAMES + 1))
     answers=$(resolve "$host")
     if [ -z "$answers" ]; then
       warn "$ALLOWLIST:$LINE_NO: $host did not resolve; it is blocked until it does"
       echo "did not resolve: $entry" >>"$WORK/notes"
       continue
     fi
+    RESOLVED=$((RESOLVED + 1))
     printf '%s\n' "$answers" | while read -r family address; do
       add_address "$family" "$address" "$port" "$entry"
     done
@@ -243,6 +326,20 @@ while IFS= read -r raw || [ -n "$raw" ]; do
     warn "$ALLOWLIST:$LINE_NO: skipped, not a host name or address: $entry"
   fi
 done <"$ALLOW_INPUT"
+
+# Every host name failing at once is almost always DNS itself (most often resolvers that changed
+# under the ones in .env), not the hosts: a ruleset rendered now would drop all egress, so none
+# is printed, loaded or saved, and the one in force stays.
+if [ "$NAMES" -gt 0 ] && [ "$RESOLVED" -eq 0 ]; then
+  case "$COMMAND" in
+    ruleset | proxmox | apply)
+      [ "$COMMAND" != apply ] || warn "nothing loaded or saved: the ruleset in force (and $SAVED, if any) stays"
+      tried="in .env ($(env_value PANGOLIN_DNS_SERVERS))"
+      [ -z "$HOST_DNS" ] || tried="$tried and the host's ($HOST_DNS)"
+      die "no allowlist host resolved: the DNS resolvers tried, $tried, may have changed, or upstream DNS may be down; re-run install.sh --dns IP[,IP...]"
+      ;;
+  esac
+fi
 
 # `elements = { a, b }` for a set file's unique lines, or nothing for an empty file.
 elements() {
@@ -374,7 +471,7 @@ policy_out: DROP
 IN ACCEPT -source $NPM_HOST -p tcp -dport $APP_PORT # NPM to the app
 IN ACCEPT -source $ADMIN_NETWORK -p tcp -dport $SSH_PORT # SSH from the admin network
 EOF
-  for address in $DNS_SERVERS; do
+  for address in $ALL_DNS; do
     echo "OUT ACCEPT -dest $address -p udp -dport 53 # DNS"
     echo "OUT ACCEPT -dest $address -p tcp -dport 53 # DNS"
   done
@@ -400,8 +497,6 @@ case "$COMMAND" in
     printf 'render.sh: loaded the fail-closed ruleset\n'
     ;;
   apply)
-    [ "$(id -u)" -eq 0 ] || die "apply needs root"
-    command -v nft >/dev/null 2>&1 || die "nft is not installed"
     mkdir -p "$HOME_DIR/firewall"
     render_ruleset >"$WORK/pangolin.nft"
     # Checked and loaded as one transaction: on any error the old ruleset stays.
