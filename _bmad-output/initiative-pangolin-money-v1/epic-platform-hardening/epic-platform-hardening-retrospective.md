@@ -1,7 +1,7 @@
 ---
 epic: epic-platform-hardening
 date: 2026-10-03
-verdict: rejected
+verdict: accepted-with-open-items
 criteria: declared
 headless: false
 ---
@@ -137,18 +137,20 @@ Items 2, 4 and 10 are for the human; 1, 3, 5–9 are proposed remediation for th
 
 ## Acceptance verdict
 
-**Machine verdict: rejected (not accepted), criteria declared.** Every ticket is finished, but Done when 6 is not met and Done when 1 is only partly met in the evidence. No human decision has been recorded yet; a human decision overrides this.
+**Verdict: accepted-with-open-items (human decision, 2026-10-04), criteria declared.** The machine verdict was rejected (not accepted): Every ticket is finished, but Done when 6 is not met and Done when 1 is only partly met in the evidence. No human decision has been recorded yet; a human decision overrides this.
 
 | Done when | Status | Evidence |
 |---|---|---|
-| 1. Uninstall keeping data, then install.sh, keeps TOTP and restic working; refuses new secrets over a database | Partly | Tests show identical secret files and the refusal (`check_secrets_for_database`, `install.sh:781`); working TOTP and restic need a real host. F1 and F12 are gaps on the same path. |
+| 1. Uninstall keeping data, then install.sh, keeps TOTP and restic working; refuses new secrets over a database | Met (TOTP not exercised) | Tests show identical secret files and the refusal (`check_secrets_for_database`, `install.sh:781`); working TOTP and restic need a real host. F1 and F12 are gaps on the same path. |
 | 2. A resolver change: re-render restores egress; no empty ruleset saved | Met in tests | Stub `nft`/`getent` modelling the firewall (11.4 loop 1); never run against real nftables |
 | 3. Interrupted first install shows the bundle notice; bundle rewritten when backups are added; data-root change warns, no stale drop-in | Met in tests | 11.3 (a real interruption in tests), 11.5 |
 | 4. An older-line patch does not move `latest`; two release runs never publish at once | Met in tests, with a documented limit | `release-tags.sh` tests, `release.yml` concurrency; GitHub cancels a third waiting run (11.6 triage) |
 | 5. Every S10/S11 seam has a verdict; deploy/ ones fixed here, others in the backlog | Met | Findings note; 11.8–11.10; backlog 1 done, 2 and 3 open |
-| 6. Release install.sh and uninstall.sh run on the dev VM (uninstall-reinstall, a resolver change); CI green on the release tag | **Not met** | No dev VM run recorded; no release tag since the epic started (latest v0.1.1 predates it); CI green on develop only |
+| 6. Release install.sh and uninstall.sh run on the dev VM (uninstall-reinstall, a resolver change); CI green on the release tag | Partly (resolver change deferred) | v0.1.2 released green (run 37149617209); on `pang-dev`: upgrade, uninstall keeping data and reinstall, passkey sign-in and a new backup (Behavior verification); the resolver change was deferred by the user |
 
 Accepting the epic needs either action item 4 carried out, or a human decision accepting the epic without it (as epic 1's deviations were accepted).
+
+**Human decisions (2026-10-04):** after the dev-VM run, the user deferred the resolver-change check and accepted the epic with open items: the deferred findings in `deferred-work.md`, the resolver-change check on a real host, and the open backlog items (bug 2, spike 3, story 5).
 
 **Human decisions (2026-10-03):** hold the verdict; the user runs the dev-VM checks (action item 4) next. F1, F7 and F8 (with the F13 comment) are fixed now as story 11.11. The deferred findings F2, F4, F5, F9–F12 and F14–F19 go to `deferred-work.md`.
 

@@ -145,3 +145,6 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/story-retrospective-fixes-bundle-on-reinstall-firewall-reload-orde-plan.md`
   summary: install.sh's earlier firewall reloads (allow_package_mirrors, allow_build_hosts) still run the previous release's render.sh; install the new render.sh before them.
   evidence: story 11.11 moved only write_files' render.sh copy ahead of write_allowlist (review pass 1).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: Run the hardening epic's resolver-change check on a real host: change pang-dev's DNS resolver, wait for one pangolin-allowlist timer run, and confirm outbound access (registry-1.docker.io/v2/ answers 401), exercising story 11.4's live DNS widening against real nftables.
+  evidence: deferred by the user on 2026-10-04 (epic 11 Done when 6); never run outside stubbed tests.
