@@ -574,7 +574,15 @@ settle_all() {
     BACKUP_CHANGED=1
   fi
   settle TANG_URL PANGOLIN_TANG_URL
+  previous_data_root=$(existing PANGOLIN_DATA_ROOT)
   settle DATA_ROOT PANGOLIN_DATA_ROOT replace
+  # A changed data root starts the app on whatever is there: say so when the household's
+  # database stays behind in the old one.
+  if [ -n "$previous_data_root" ] && [ "$previous_data_root" != "$DATA_ROOT" ] &&
+    [ -e "$(path "$previous_data_root/pangolin.sqlite")" ] &&
+    [ ! -e "$(path "$DATA_ROOT/pangolin.sqlite")" ]; then
+    warn "the data root moves from $previous_data_root, which holds the household database, to $DATA_ROOT, which has none: the app will start there on an empty database, with a new setup link. To keep the household afterwards: stop the stack (docker compose --project-directory $INSTALL_DIR down), replace the contents of $DATA_ROOT with those of $previous_data_root, then start it again (docker compose --project-directory $INSTALL_DIR up -d)"
+  fi
   settle IMAGE PANGOLIN_IMAGE replace
   PUBLIC_HOST=${PUBLIC_URL#https://}
   PUBLIC_HOST=${PUBLIC_HOST#http://}
@@ -1284,6 +1292,14 @@ write_files() {
     printf '%s\n' "# Written by Pangolin Money's install.sh: Docker waits for the data disk." \
       "[Unit]" "RequiresMountsFor=$DATA_ROOT" >"$units/docker.service.d/pangolin-data.conf"
     chmod 0644 "$units/docker.service.d/pangolin-data.conf"
+  elif [ -f "$units/docker.service.d/pangolin-data.conf" ] &&
+    ! grep -qx "RequiresMountsFor=$DATA_ROOT" "$units/docker.service.d/pangolin-data.conf"; then
+    # Left by an earlier run for another data root that was a mount point: it would hold Docker
+    # at boot waiting for that disk. One for this data root stays, even while its disk is not
+    # mounted, so Docker never starts the app on the empty system-disk directory.
+    rm -f "$units/docker.service.d/pangolin-data.conf"
+    rmdir "$units/docker.service.d" 2>/dev/null || true
+    say "Removed the Docker drop-in that waited for the previous data disk"
   fi
 }
 
