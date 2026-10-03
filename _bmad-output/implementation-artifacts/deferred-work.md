@@ -103,3 +103,27 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/story-dns-drift-recovery-plan.md`
   summary: Alert the operator when the allowlist timer keeps refusing (an OnFailure hook, a status file or a `pangolin status` warning), so a stale ruleset does not persist silently.
   evidence: story 11.4 makes an all-unresolved render refuse and keep the last good ruleset; a failed oneshot unit is visible only in systemctl and the journal.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: (F2) Turning backups off while DNS is stale dies with the generic "the firewall did not reload": the removal's reload should be `apply_allowlist_now early` so install_firewall shows render.sh's reason.
+  evidence: deploy/install.sh write_allowlist calls apply_allowlist_now without early; install_firewall alone surfaces render.sh's refusal (retro F2).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: (F4) A bundle written in the same run as --backup-server "" (with --bundle or a pending mark) omits RESTIC_REPOSITORY; write the old repository, marked as holding past backups.
+  evidence: deploy/install.sh write_bundle prints RESTIC_REPOSITORY only from BACKUP, empty when BACKUP_OFF=1 (retro F4).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: (F5) After --data-root moves, uninstall knows only the new root and can delete the secrets the old root's database still needs; record the previous data root for uninstall to check.
+  evidence: deploy/uninstall.sh reads PANGOLIN_DATA_ROOT only; install.sh leaves the database in the old root with a warning (retro F5).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: (F9) A re-run on a digest-pinned install replaces a newer checkout's pangolin CLI with the pinned image's older one, losing CLI fixes until the next upgrade; take only compose.yaml from the image, or warn when the pinned CLI is older.
+  evidence: deploy/install.sh write_files installs ${PINNED}/pangolin when present (story 11.9; retro F9).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: (F10) Changing the backup server from A to B leaves A's allowlist entry; remove the old entry on any change, not only when backups are turned off.
+  evidence: deploy/install.sh write_allowlist removes the old entry only when BACKUP_OFF=1 (retro F10).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: (F11) After --backup-server "", every later re-run warns "no backup server set"; treat a present but empty PANGOLIN_BACKUP_REPOSITORY as a deliberate off.
+  evidence: deploy/install.sh settings warns whenever BACKUP is empty (retro F11).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: (F12) With the LUKS data disk not mounted on a rebuilt host and the secrets missing, install.sh sees no database and generates new secrets; refuse when the data root is expected to be a mount point and is not.
+  evidence: check_secrets_for_database looks only for pangolin.sqlite (deploy/install.sh; retro F12).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
+  summary: (F14) Small edge cases: a rollback with no pangolin.sqlite* leaves an empty kept directory yet names it; a CIDR in PANGOLIN_DNS_SERVERS makes the live nft add element batch fail; the "backups are off" wording keys on --no-docker rather than run_stack under --root.
+  evidence: deploy/pangolin rollback keep step; render.sh live DNS widening; install.sh write_env message (retro F14).

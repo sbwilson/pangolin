@@ -119,3 +119,16 @@ covers = []
 after = [1, 2, 3, 4, 5, 6, 8, 9, 10]
 hitl = false
 risk = "low"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Retrospective fixes: bundle on reinstall, firewall reload order, database copies on the data disk"
+description = "Makes a reinstall over kept data with a changed backup server write a recovery bundle (F1), copies the new render.sh before write_allowlist reloads the firewall (F7), keeps pangolin upgrade's pre-upgrade and rolled-back database copies on the data root instead of /opt/pangolin (F8), and corrects the release.yml comment about re-pushing a cancelled tag (F13)."
+verify = "Tests show a kept-data reinstall with a new backup server writes a bundle with the new RESTIC_REPOSITORY, the firewall reload in write_allowlist runs the new render.sh, and pangolin upgrade's copies land under the data root with existing ones under /opt/pangolin moved there."
+covers = ["H1", "H3", "H6"]
+after = [7]
+hitl = false
+risk = "high"
+references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md, findings F1, F7, F8 and F13"]
+
