@@ -8,6 +8,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -396,12 +397,12 @@ describe("pangolin upgrade", () => {
   });
 });
 
-// Seam S11d (spike "Check the suspected seams"): real. The rollback replaces the live database
-// with the pre-upgrade copy (`rm -f /data/pangolin.sqlite*`, then the copy), so anything the new
-// server wrote while the upgrade waited for it to turn healthy (a person's edit through NPM, a
-// job's record) is gone, kept nowhere. This stub runs the script's own `sh -c` steps against real
-// directories (/data and /backup mapped to host paths), and the new server "writes" when it
-// starts. The fix story turns this test on.
+// Seam S11d (spike "Check the suspected seams"), fixed by story 11.8. The rollback used to replace
+// the live database with the pre-upgrade copy (`rm -f /data/pangolin.sqlite*`, then the copy), so
+// anything the new server wrote while the upgrade waited for it to turn healthy was lost. It now
+// keeps that database in a 0700 rolled-back-<stamp>/ first. This stub runs the script's own
+// `sh -c` steps against real directories (/data and /backup mapped to host paths), and the new
+// server "writes" when it starts.
 describe("pangolin upgrade rollback and the new server's writes (seam S11d)", () => {
   function realStub(dataDir: string): Record<string, string> {
     const bin = at("bin");
@@ -442,6 +443,8 @@ describe("pangolin upgrade rollback and the new server's writes (seam S11d)", ()
         '      [ "$prev" = -c ] && cmd=$a',
         "      prev=$a",
         "    done",
+        // STUB_KEEP_FAIL makes the rollback's keep-aside copy fail.
+        '    case "$cmd" in "for f in /data/pangolin.sqlite"*) [ -z "$STUB_KEEP_FAIL" ] || exit 1 ;; esac',
         '    cmd=$(printf "%s" "$cmd" | sed -e "s|/data|$data|g" -e "s|/backup|$backup|g")',
         '    exec sh -c "$cmd" ;;',
         "esac",
@@ -465,10 +468,7 @@ describe("pangolin upgrade rollback and the new server's writes (seam S11d)", ()
     return { ...process.env, PATH: `${bin}:${process.env.PATH}`, PANGOLIN_HOME: homeDir };
   }
 
-  it.fails("S11d: a rollback keeps what the new server wrote during the health wait", () => {
-    const dataDir = at("data");
-    mkdirSync(dataDir);
-    writeFileSync(join(dataDir, "pangolin.sqlite"), "before the upgrade\n");
+  function rollBack(dataDir: string, extra: Record<string, string> = {}) {
     const script = at("pangolin.sh");
     writeFileSync(
       script,
@@ -478,11 +478,19 @@ describe("pangolin upgrade rollback and the new server's writes (seam S11d)", ()
       ),
     );
     chmodSync(script, 0o755);
-    const res = spawnSync(script, ["upgrade", "v2.0"], {
+    return spawnSync(script, ["upgrade", "v2.0"], {
       encoding: "utf8",
-      env: { ...realStub(dataDir), PANGOLIN_UPGRADE_TIMEOUT: "3" },
+      env: { ...realStub(dataDir), PANGOLIN_UPGRADE_TIMEOUT: "3", ...extra },
     });
-    // A prefix: the fix names the kept directory after it.
+  }
+
+  const rolledBack = () => readdirSync(homeDir).filter((f) => f.startsWith("rolled-back-"));
+
+  it("S11d: a rollback keeps what the new server wrote during the health wait", () => {
+    const dataDir = at("data");
+    mkdirSync(dataDir);
+    writeFileSync(join(dataDir, "pangolin.sqlite"), "before the upgrade\n");
+    const res = rollBack(dataDir);
     expect(res.stderr).toContain("pangolin: upgrade failed during health check. rolled back");
     expect(readFileSync(at("cmd.log"), "utf8")).toContain("new-server-wrote");
     expect(readFileSync(join(dataDir, "pangolin.sqlite"), "utf8")).toBe("before the upgrade\n");
@@ -491,5 +499,52 @@ describe("pangolin upgrade rollback and the new server's writes (seam S11d)", ()
       encoding: "utf8",
     });
     expect(kept.stdout.trim()).not.toBe("");
+    // In a 0700 rolled-back-<stamp>/ beside the pre-upgrade copy, named in the message.
+    const [dir] = rolledBack();
+    expect(dir).toBeDefined();
+    expect(statSync(join(homeDir, dir ?? "")).mode & 0o777).toBe(0o700);
+    expect(readFileSync(join(homeDir, dir ?? "", "pangolin.sqlite"), "utf8")).toBe(
+      "before the upgrade\nwritten by the new server\n",
+    );
+    expect(res.stderr).toContain(`is kept in ${join(homeDir, dir ?? "")}`);
+  });
+
+  it("keeps only the last two rolled-back copies", () => {
+    const dataDir = at("data");
+    mkdirSync(dataDir);
+    writeFileSync(join(dataDir, "pangolin.sqlite"), "before the upgrade\n");
+    for (const [name, age] of [
+      ["rolled-back-20200101000000", 200],
+      ["rolled-back-20200102000000", 100],
+    ] as const) {
+      mkdirSync(join(homeDir, name), { mode: 0o700 });
+      const when = new Date(Date.now() - age * 1000);
+      utimesSync(join(homeDir, name), when, when);
+    }
+    rollBack(dataDir);
+    const left = rolledBack().sort();
+    expect(left).toHaveLength(2);
+    expect(left).toContain("rolled-back-20200102000000");
+    expect(left).not.toContain("rolled-back-20200101000000");
+  });
+
+  it("leaves the live database alone when the upgraded one cannot be kept", () => {
+    const dataDir = at("data");
+    mkdirSync(dataDir);
+    writeFileSync(join(dataDir, "pangolin.sqlite"), "before the upgrade\n");
+    const res = rollBack(dataDir, { STUB_KEEP_FAIL: "1" });
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toMatch(/the live database was not touched/);
+    expect(res.stderr).toMatch(/the pre-upgrade copy is in .*pre-upgrade-\d+/);
+    expect(readFileSync(join(dataDir, "pangolin.sqlite"), "utf8")).toContain(
+      "written by the new server",
+    );
+    // No empty rolled-back directory is left to crowd out a real kept copy when pruning.
+    expect(rolledBack()).toEqual([]);
+    // The exit trap brings the previous stack back: its .env, and compose up after the failure.
+    expect(readFileSync(join(homeDir, ".env"), "utf8")).toContain(ORIGINAL_IMAGE);
+    expect(existsSync(join(homeDir, ".env.bak"))).toBe(false);
+    const log = readFileSync(at("cmd.log"), "utf8").trim().split("\n");
+    expect(log.at(-1)).toMatch(/compose .* up -d pangolin$/);
   });
 });

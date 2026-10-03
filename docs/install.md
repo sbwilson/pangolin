@@ -585,7 +585,7 @@ This verifies the signature of the `v1.2.0` image from GitHub using the public k
 
 The wait is 60 seconds by default. A release with a long migration can need more: set `PANGOLIN_UPGRADE_TIMEOUT` to a positive whole number of seconds, for example `sudo PANGOLIN_UPGRADE_TIMEOUT=180 pangolin upgrade v1.2.0`. The health check is polled every 3 seconds, so the wait rounds up to a multiple of 3. A value that is not a positive whole number is refused before anything is stopped.
 
-If the new image fails to become healthy within that time (e.g. bad migrations), the script automatically rolls back to your previous container image, `.env` file, and database copy, leaving a `system.upgrade-failed` review item in the inbox.
+If the new image fails to become healthy within that time (e.g. bad migrations), the script automatically rolls back to your previous container image, `.env` file, and database copy, leaving a `system.upgrade-failed` review item in the inbox. Anything the new server wrote while it was being checked is not lost: before restoring the copy, the rollback copies the database the new server used into `/opt/pangolin/rolled-back-<time>/` (0700, the last two kept) and names that directory in its message. If it cannot keep that copy, it stops before restoring: the previous stack is started again on the live database (the one the new server used, possibly already migrated), and the message names the pre-upgrade copy in `/opt/pangolin/pre-upgrade-<time>/` for a manual restore (`pangolin restore` or copying it back with the stack stopped).
 
 ### Release process
 

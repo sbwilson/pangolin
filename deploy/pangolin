@@ -183,6 +183,16 @@ if [ "${1:-}" = upgrade ]; then
     # the exit trap puts the old files back and restarts it.
     # Warn but proceed: if stop fails the container may already be dead; restore anyway.
     compose stop pangolin > /dev/null 2>&1 || printf 'pangolin: warning: stop failed during rollback\n' >&2
+    # What the upgraded server wrote during the health wait goes aside first, never deleted:
+    # a 0700 rolled-back-<stamp>/ beside the pre-upgrade copy. If it cannot be kept, the live
+    # database stays as it is and the exit trap restarts the previous stack.
+    ROLLED_DIR="$HOME_DIR/rolled-back-$STAMP"
+    (umask 077 && mkdir "$ROLLED_DIR") && chmod 700 "$ROLLED_DIR" || die "could not create $ROLLED_DIR, so the rollback stopped before restoring: the live database was not touched. The previous stack is started again on it (the database the upgraded server used); the pre-upgrade copy is in $BACKUP_DIR"
+    docker run --rm -v "${DATA_VOL}":/data:ro -v "$ROLLED_DIR":/backup \
+      --user 0 --entrypoint sh "$CURRENT_IMAGE" -c 'for f in /data/pangolin.sqlite*; do [ -e "$f" ] || continue; cp -a "$f" /backup/ || exit 1; done' \
+      || { rm -rf "$ROLLED_DIR"; die "could not keep the upgraded database aside, so the rollback stopped before restoring: the live database was not touched. The previous stack is started again on it (the database the upgraded server used); the pre-upgrade copy is in $BACKUP_DIR"; }
+    # Keep only the last two rolled-back copies, as with the pre-upgrade ones.
+    ls -1dt "$HOME_DIR"/rolled-back-* 2>/dev/null | tail -n +3 | xargs -r rm -rf
     # DATA_VOL was captured before the upgrade started; reuse it for restore
     docker run --rm -v "${DATA_VOL}":/data -v "$BACKUP_DIR":/backup:ro \
       --user 0 --entrypoint sh "$CURRENT_IMAGE" -c '[ -s /backup/pangolin.sqlite ] && rm -f /data/pangolin.sqlite* && cp -a /backup/pangolin.sqlite* /data/' \
@@ -194,7 +204,7 @@ if [ "${1:-}" = upgrade ]; then
     docker run --rm -v "${DATA_VOL}":/data --user 0 --entrypoint sh "$CURRENT_IMAGE" -c 'printf "{}" > /data/upgrade-failed.json'
     compose up -d pangolin > /dev/null || die "could not start previous stack after rollback"
     STOPPED=0
-    die "upgrade failed during health check. rolled back."
+    die "upgrade failed during health check. rolled back. The database the upgraded server used (with anything written during the health check) is kept in $ROLLED_DIR"
   fi
 fi
 
