@@ -92,6 +92,11 @@ Runtime behaviour was **not exercised end to end by this retrospective**; nothin
 
 - CI on develop is green through `64ac5e6` (run 37121966575), including the container and end-to-end jobs. Those do not exercise uninstall/reinstall, a resolver change, a rollback or a release.
 - On `pang-dev`, during the epic: the confirm-bundle flow (story 1.17) was run by the user and `/healthz` returned `{"ok":true}`; the Docker Hub CloudFront allowlist issue was diagnosed and fixed live. Neither is a hardening story's behaviour.
+**Dev-VM run (2026-10-04, `pang-dev`, by the user):**
+- Release v0.1.2 (`845a24a`, run 37149617209) passed every gate: `publish` tagged `v0.1.2`, `v0.1` and `latest` and the release is Latest; `migrate-previous` migrated v0.1.1's database (8 → 8; integrity, manifest, schema ok); `upgrade-test` asserted `upgrade-copies/` is `0 700`.
+- `sudo pangolin upgrade v0.1.2` succeeded. The installed command was the old `pangolin:local` one, so the pre-upgrade copy went to `/opt/pangolin` (F9 seen on a real host); the upgrade installed the v0.1.2 command. The user moved both old copies (one still 0755, from before story 1.15) into `/srv/pangolin/upgrade-copies/` by hand: root, 0700.
+- Uninstall keeping the data, then reinstall: works; the same passkey signs in, and `sudo pangolin backup` pushed a new snapshot (`c8f431a0…`) with the kept restic password. As documented, the reinstall gave the existing bundle a new id, so the storage warning returned until it is confirmed. TOTP was not exercised.
+- `pangolin status` on v0.1.2 shows the pending-jobs list (backlog story 4). One dead `backup-push` from 2026-10-02 17:01 predates the reinstall; the user confirmed it was a mistyped restic server URI at the time, not a defect.
 - Not exercised anywhere: 11.1 uninstall-then-reinstall on a real host; 11.4's `nft add element` against real nftables and a real resolver change; 11.8's rollback with real containers; 11.6's tag rules on a real release (the latest tag, v0.1.1, predates the epic).
 
 ## Previous-retro follow-through
