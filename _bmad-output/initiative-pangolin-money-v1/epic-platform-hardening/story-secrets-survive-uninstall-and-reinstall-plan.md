@@ -3,7 +3,7 @@ title: 'Secrets survive uninstall and reinstall'
 type: 'bugfix'
 ticket: '1'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: 'ef58194756b7325333aad88bb2acaffcb8732e27'
 route: 'full'
 route_source: 'auto'
