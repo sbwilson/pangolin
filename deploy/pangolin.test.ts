@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { stub } from "./test-helpers.ts";
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -50,9 +51,8 @@ function at(path: string): string {
   return join(root, path);
 }
 
-function buildDockerStub(extraCases: string[] = []): string {
+function dockerStubLines(): string[] {
   return [
-    "#!/bin/sh",
     `echo "docker $*" >> "${at("cmd.log")}"`,
     'case "$*" in',
     '  "compose "*ps*pangolin*)',
@@ -127,19 +127,13 @@ function buildDockerStub(extraCases: string[] = []): string {
     "    ;;",
     "esac",
     "exit 0",
-    "",
-    ...extraCases,
-  ].join("\n");
+  ];
 }
 
-function stubEnv(
-  env: Record<string, string> = {},
-  extraCases: string[] = [],
-): Record<string, string> {
+function stubEnv(env: Record<string, string> = {}): Record<string, string> {
   const bin = at("bin");
   mkdirSync(bin, { recursive: true });
-  writeFileSync(join(bin, "docker"), buildDockerStub(extraCases));
-  chmodSync(join(bin, "docker"), 0o755);
+  stub(bin, "docker", dockerStubLines());
 
   return {
     ...process.env,
@@ -223,6 +217,14 @@ describe("pangolin upgrade", () => {
     expect(statSync(join(homeDir, dirs[0] ?? "")).mode & 0o777).toBe(0o700);
   });
 
+  it("keeps .env 0600 through a successful upgrade, and leaves no .env.new", () => {
+    chmodSync(join(homeDir, ".env"), 0o600);
+    const res = runUpgrade("v2.0", { STUB_RUNNING: "1" });
+    expect(res.status, res.stderr).toBe(0);
+    expect(statSync(join(homeDir, ".env")).mode & 0o777).toBe(0o600);
+    expect(existsSync(join(homeDir, ".env.new"))).toBe(false);
+  });
+
   it("keeps .env.bak private while the upgrade runs", () => {
     chmodSync(join(homeDir, ".env"), 0o644);
     const res = runUpgrade("v2.0", { STUB_RUNNING: "1", STUB_HEALTH_AFTER: "unhealthy" });
@@ -273,12 +275,10 @@ describe("pangolin upgrade", () => {
   });
 
   it("never reuses or removes an existing backup directory", () => {
-    const clock = "#!/bin/sh\necho 20260101000000\n";
     mkdirSync(join(homeDir, "pre-upgrade-20260101000000"));
     writeFileSync(join(homeDir, "pre-upgrade-20260101000000", "pangolin.sqlite"), "precious");
     mkdirSync(at("bin"), { recursive: true });
-    writeFileSync(at("bin/date"), clock);
-    chmodSync(at("bin/date"), 0o755);
+    stub(at("bin"), "date", ["echo 20260101000000"]);
     const res = runUpgrade("v2.0", { STUB_RUNNING: "1" });
     expect(res.status).toBe(1);
     expect(res.stderr).toContain("could not create");
@@ -407,64 +407,46 @@ describe("pangolin upgrade rollback and the new server's writes (seam S11d)", ()
   function realStub(dataDir: string): Record<string, string> {
     const bin = at("bin");
     mkdirSync(bin, { recursive: true });
-    writeFileSync(
-      join(bin, "docker"),
-      [
-        "#!/bin/sh",
-        `echo "docker $*" >> "${at("cmd.log")}"`,
-        // `compose --project-directory DIR -f FILE <subcommand> ...`: match the subcommand by
-        // its position, never by a substring a temporary path could contain.
-        'if [ "$1" = compose ]; then',
-        '  case "$6" in',
-        "    ps) echo container-id ;;",
-        // The new server starts and writes before its health check fails.
-        "    up)",
-        `      [ -f "${homeDir}/.env.bak" ] && echo "written by the new server" >> "${dataDir}/pangolin.sqlite" && echo new-server-wrote >> "${at("cmd.log")}" ;;`,
-        "  esac",
-        "  exit 0",
-        "fi",
-        'case "$*" in',
-        '  "inspect --format {{if .State.Health}}"*)',
-        `    if [ -f "${homeDir}/.env.bak" ]; then echo unhealthy; else echo healthy; fi ;;`,
-        `  "inspect --format {{.Config.Image}} container-id") echo "${ORIGINAL_IMAGE}" ;;`,
-        `  "inspect --format"*RepoDigests*) echo "ghcr.io/sbwilson/pangolin@${STUB_DIGEST}" ;;`,
-        `  "inspect --format"*Mounts*) echo "${dataDir}" ;;`,
-        "  *cosign*verify*) ;;",
-        '  *"cp /app/deploy"*)',
-        `    printf '%s' "${ORIGINAL_COMPOSE}" > "${homeDir}/staging/compose.yaml"`,
-        `    echo "# bin" > "${homeDir}/staging/pangolin" ;;`,
-        // A one-off `run ... -v X:/data -v Y:/backup ... -c CMD`: run CMD here, on X and Y.
-        "  run*)",
-        "    data=; backup=; cmd=; prev=",
-        '    for a in "$@"; do',
-        '      if [ "$prev" = -v ]; then',
-        '        case "$a" in *:/data*) data=$(echo "$a" | sed "s|:/data.*||") ;; *:/backup*) backup=$(echo "$a" | sed "s|:/backup.*||") ;; esac',
-        "      fi",
-        '      [ "$prev" = -c ] && cmd=$a',
-        "      prev=$a",
-        "    done",
-        // STUB_KEEP_FAIL makes the rollback's keep-aside copy fail.
-        '    case "$cmd" in "for f in /data/pangolin.sqlite"*) [ -z "$STUB_KEEP_FAIL" ] || exit 1 ;; esac',
-        '    cmd=$(printf "%s" "$cmd" | sed -e "s|/data|$data|g" -e "s|/backup|$backup|g")',
-        '    exec sh -c "$cmd" ;;',
-        "esac",
-        "exit 0",
-        "",
-      ].join("\n"),
-    );
-    chmodSync(join(bin, "docker"), 0o755);
-    // The script's `sed -i` is GNU's; on macOS give it BSD sed's empty suffix.
-    writeFileSync(
-      join(bin, "sed"),
-      [
-        "#!/bin/sh",
-        'for real in /usr/bin/sed /bin/sed; do [ -x "$real" ] && break; done',
-        'if [ "$1" = -i ] && [ "$(uname)" = Darwin ]; then shift; exec "$real" -i "" "$@"; fi',
-        'exec "$real" "$@"',
-        "",
-      ].join("\n"),
-    );
-    chmodSync(join(bin, "sed"), 0o755);
+    stub(bin, "docker", [
+      `echo "docker $*" >> "${at("cmd.log")}"`,
+      // `compose --project-directory DIR -f FILE <subcommand> ...`: match the subcommand by
+      // its position, never by a substring a temporary path could contain.
+      'if [ "$1" = compose ]; then',
+      '  case "$6" in',
+      "    ps) echo container-id ;;",
+      // The new server starts and writes before its health check fails.
+      "    up)",
+      `      [ -f "${homeDir}/.env.bak" ] && echo "written by the new server" >> "${dataDir}/pangolin.sqlite" && echo new-server-wrote >> "${at("cmd.log")}" ;;`,
+      "  esac",
+      "  exit 0",
+      "fi",
+      'case "$*" in',
+      '  "inspect --format {{if .State.Health}}"*)',
+      `    if [ -f "${homeDir}/.env.bak" ]; then echo unhealthy; else echo healthy; fi ;;`,
+      `  "inspect --format {{.Config.Image}} container-id") echo "${ORIGINAL_IMAGE}" ;;`,
+      `  "inspect --format"*RepoDigests*) echo "ghcr.io/sbwilson/pangolin@${STUB_DIGEST}" ;;`,
+      `  "inspect --format"*Mounts*) echo "${dataDir}" ;;`,
+      "  *cosign*verify*) ;;",
+      '  *"cp /app/deploy"*)',
+      `    printf '%s' "${ORIGINAL_COMPOSE}" > "${homeDir}/staging/compose.yaml"`,
+      `    echo "# bin" > "${homeDir}/staging/pangolin" ;;`,
+      // A one-off `run ... -v X:/data -v Y:/backup ... -c CMD`: run CMD here, on X and Y.
+      "  run*)",
+      "    data=; backup=; cmd=; prev=",
+      '    for a in "$@"; do',
+      '      if [ "$prev" = -v ]; then',
+      '        case "$a" in *:/data*) data=$(echo "$a" | sed "s|:/data.*||") ;; *:/backup*) backup=$(echo "$a" | sed "s|:/backup.*||") ;; esac',
+      "      fi",
+      '      [ "$prev" = -c ] && cmd=$a',
+      "      prev=$a",
+      "    done",
+      // STUB_KEEP_FAIL makes the rollback's keep-aside copy fail.
+      '    case "$cmd" in "for f in /data/pangolin.sqlite"*) [ -z "$STUB_KEEP_FAIL" ] || exit 1 ;; esac',
+      '    cmd=$(printf "%s" "$cmd" | sed -e "s|/data|$data|g" -e "s|/backup|$backup|g")',
+      '    exec sh -c "$cmd" ;;',
+      "esac",
+      "exit 0",
+    ]);
     return { ...process.env, PATH: `${bin}:${process.env.PATH}`, PANGOLIN_HOME: homeDir };
   }
 

@@ -63,7 +63,9 @@ export type AssertLoginAllowedInput = z.input<typeof loginAttemptInput>;
 
 /**
  * `identity.assertLoginAllowed`: throws `RateLimited` while the email is locked out, so even the
- * right password or code is refused. Runs before better-auth sees the attempt. Writes nothing.
+ * right password or code is refused. A read-only check that writes nothing: the sign-in hooks do
+ * not call it, but use `reserveLoginAttempt`, which checks and counts the attempt in one
+ * transaction.
  */
 export function assertLoginAllowed(
   ctx: LockoutContext,

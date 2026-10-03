@@ -1,19 +1,12 @@
 // The release workflow's migrate-previous helpers (story 1.18): finding the previous release
 // and creating the database its image makes on first boot.
 import { spawnSync } from "node:child_process";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { stub } from "./test-helpers.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SCRIPTS = join(here, "..", ".github", "scripts");
@@ -55,20 +48,25 @@ function git(...args: string[]): void {
   if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
 }
 
+/** A repository in `root` with one empty commit, for tags to point at. */
+function initRepo(): void {
+  git("init", "-q");
+  git(
+    "-c",
+    "user.name=t",
+    "-c",
+    "user.email=t@example.com",
+    "commit",
+    "-q",
+    "--allow-empty",
+    "-m",
+    "x",
+  );
+}
+
 describe("release-tags.sh", () => {
   beforeEach(() => {
-    git("init", "-q");
-    git(
-      "-c",
-      "user.name=t",
-      "-c",
-      "user.email=t@example.com",
-      "commit",
-      "-q",
-      "--allow-empty",
-      "-m",
-      "x",
-    );
+    initRepo();
   });
 
   const tag = (...names: string[]) => {
@@ -118,18 +116,7 @@ describe("release-tags.sh", () => {
 
 describe("previous-release.sh", () => {
   beforeEach(() => {
-    git("init", "-q");
-    git(
-      "-c",
-      "user.name=t",
-      "-c",
-      "user.email=t@example.com",
-      "commit",
-      "-q",
-      "--allow-empty",
-      "-m",
-      "x",
-    );
+    initRepo();
   });
 
   const tag = (...names: string[]) => {
@@ -192,18 +179,14 @@ describe("previous-db.sh (stub docker, curl and sudo)", () => {
   let dockerLog: string;
   let curlCount: string;
 
-  function stub(name: string, lines: string[]): void {
-    const file = join(root, "bin", name);
-    writeFileSync(file, ["#!/bin/sh", ...lines, ""].join("\n"));
-    chmodSync(file, 0o755);
-  }
+  const binStub = (name: string, lines: string[]) => stub(join(root, "bin"), name, lines);
 
   beforeEach(() => {
     mkdirSync(join(root, "bin"));
     data = join(root, "data");
     dockerLog = join(root, "docker.log");
     curlCount = join(root, "curl.count");
-    stub("docker", [
+    binStub("docker", [
       `echo "$*" >> "${dockerLog}"`,
       'case "$1" in',
       '  pull) [ "$STUB_PULL_FAILS" = 1 ] && { echo "manifest unknown" >&2; exit 1; } ;;',
@@ -221,13 +204,13 @@ describe("previous-db.sh (stub docker, curl and sudo)", () => {
       "exit 0",
     ]);
     // Healthy from the STUB_HEALTHY_AFTER-th poll on (0: never).
-    stub("curl", [
+    binStub("curl", [
       `n=$(($(cat "${curlCount}" 2>/dev/null || echo 0) + 1))`,
       `echo "$n" > "${curlCount}"`,
       '[ "$STUB_HEALTHY_AFTER" -gt 0 ] && [ "$n" -ge "$STUB_HEALTHY_AFTER" ] && exit 0',
       "exit 22",
     ]);
-    stub("sudo", [`echo "sudo $*" >> "${dockerLog}"`, "exit 0"]);
+    binStub("sudo", [`echo "sudo $*" >> "${dockerLog}"`, "exit 0"]);
   });
 
   const previousDb = (env: Record<string, string>, args: readonly string[] = [IMAGE, data]) =>
