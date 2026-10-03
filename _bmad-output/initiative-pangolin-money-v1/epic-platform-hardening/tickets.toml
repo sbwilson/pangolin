@@ -74,12 +74,48 @@ risk = "low"
 references = ["deferred — _bmad-output/implementation-artifacts/deferred-work.md, the release concurrency entry from story 1.18"]
 
 [[entry]]
+id = 8
+type = "story"
+title = "Rollback keeps the upgraded database aside"
+description = "Makes the pangolin upgrade rollback move the database it replaces into a 0700 rolled-back-<stamp>/ beside the pre-upgrade copy instead of deleting it, names it in the rollback message, and keeps only the last two rolled-back-* directories, so writes made during the health wait can be recovered."
+verify = "The it.fails S11d test in deploy/pangolin.test.ts is turned into it and passes, a test shows a third rollback prunes the oldest rolled-back-* directory, and the existing rollback tests still pass in CI."
+covers = ["H6"]
+after = [2]
+hitl = false
+risk = "medium"
+references = ["findings — _bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/spike-check-the-suspected-seams-findings.md, section 5 (S11d)"]
+
+[[entry]]
+id = 9
+type = "story"
+title = "Re-run takes its files from the pinned image"
+description = "Makes an install.sh re-run that does not replace the image (no --image or --build) take compose.yaml and the pangolin command from the image .env pins by digest, as a lone script does, so the installed files always match the image that runs."
+verify = "The it.fails S11e test in deploy/install.test.ts is turned into it and passes, and a re-run with a tag-pinned image, --image or --build still writes the checkout's files."
+covers = ["H6"]
+after = [2]
+hitl = false
+risk = "medium"
+references = ["findings — _bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/spike-check-the-suspected-seams-findings.md, section 6 (S11e) and its chosen approach"]
+
+[[entry]]
+id = 10
+type = "story"
+title = "An empty --backup-server turns backups off, and the stop grace outlasts the runner"
+description = "Makes an explicit install.sh --backup-server \"\" blank PANGOLIN_BACKUP_REPOSITORY, remove the backup host install.sh added to allowlist.conf, re-apply the allowlist and print one line saying backups are off; and sets stop_grace_period (about 20s) on the pangolin service in deploy/compose.yaml and the root compose.yaml so a stop lets the runner's 10 s wait end before Docker kills the app."
+verify = "The it.fails S11f test and both S11c cases in deploy/install.test.ts are turned into it and pass, a new test shows the backup host gone from allowlist.conf and the backups-off line printed, and a re-run with no flag keeps the stored value."
+covers = ["H6"]
+after = [2]
+hitl = false
+risk = "low"
+references = ["findings — _bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/spike-check-the-suspected-seams-findings.md, sections 4 (S11c) and 7 (S11f)"]
+
+[[entry]]
 id = 7
 type = "story"
 title = "Refactor sweep"
 description = "Cleans up what this epic's build records and deferred review findings name; scope is set when it starts, cleanup only."
 verify = "Lint, types and the full test suite stay green, and each change traces to a build record or deferred finding of this epic."
 covers = []
-after = [1, 2, 3, 4, 5, 6]
+after = [1, 2, 3, 4, 5, 6, 8, 9, 10]
 hitl = false
 risk = "low"

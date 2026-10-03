@@ -1,7 +1,7 @@
 ---
 title: 'Check the suspected seams: findings'
 type: 'spike-findings'
-ticket: '2'
+spike: '11.2'
 plan: spike-check-the-suspected-seams-plan.md
 baseline_revision: '4da7f54615af370b5c43eb0352fad491a35e5828'
 run_on: 'macOS 27 (arm64), Node 22, 2026-10-03; no Docker, no VM'

@@ -58,3 +58,4 @@ Source: the epic 1 retrospective findings (References). Each line maps to CAP-16
 - Decision (2026-10-03): the install hardening finding is split three ways (entries 3, 4 and 5) to keep each to one session. There is no tracer bullet: every entry hardens a path that already exists.
 - Decision (2026-10-03): reconciling the ops spec and the spine with the release-only migration check is left to the spec reconciliation chore, not this epic.
 - Waits on epic 1 because: it hardens epic 1's install, uninstall, firewall and release workflow.
+- Decision (2026-10-03): spike 11.2 found S11d, S11e and S11f real and S11c real but harmless; entries 8, 9 and 10 fix them before the refactor sweep, with S11c folded into S11f's entry (10). The app-code seams S10 and S11a, and the unverified drill stall, are backlog tickets 1 to 3.
