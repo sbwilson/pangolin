@@ -917,7 +917,7 @@ compose() {
 # What building on this VM reaches: the repository (also for a later git pull in the clone) and
 # the release downloads it redirects to (the restic binary),
 # Docker Hub for the base image, and npm for pnpm and the dependencies.
-BUILD_HOSTS="github.com:443 release-assets.githubusercontent.com:443 objects.githubusercontent.com:443 registry.npmjs.org:443 registry-1.docker.io:443 auth.docker.io:443 production.cloudflare.docker.com:443"
+BUILD_HOSTS="github.com:443 release-assets.githubusercontent.com:443 objects.githubusercontent.com:443 registry.npmjs.org:443 registry-1.docker.io:443 auth.docker.io:443 production.cloudflare.docker.com:443 production.cloudfront.docker.com:443"
 
 # allowlist_add FILE COMMENT ENTRY...: appends the entries FILE lacks, under COMMENT. True when it
 # added any.

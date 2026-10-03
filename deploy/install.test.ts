@@ -738,6 +738,7 @@ describe("install.sh with Docker (a stub docker)", () => {
     "registry-1.docker.io:443",
     "auth.docker.io:443",
     "production.cloudflare.docker.com:443",
+    "production.cloudfront.docker.com:443",
   ];
 
   it("allowlists the build hosts with --build, on a first install and on a re-run", () => {
