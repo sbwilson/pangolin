@@ -3,7 +3,7 @@ title: 'Re-run takes its files from the pinned image'
 type: 'bugfix'
 ticket: '9'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: 'ed3d69aea47eeb3b3293abf5ae5ae95f8c4aa0e6'
 route: 'oneshot'
 route_source: 'auto'

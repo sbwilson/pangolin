@@ -3,7 +3,7 @@ title: 'Refactor sweep (platform hardening)'
 type: 'refactor'
 ticket: '7'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: '0c970275eea5355737b1b59a61f5bf0598eff85d'
 route: 'full'
 route_source: 'auto'

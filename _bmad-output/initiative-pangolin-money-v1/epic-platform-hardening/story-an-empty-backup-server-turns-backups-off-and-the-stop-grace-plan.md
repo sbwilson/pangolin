@@ -3,7 +3,7 @@ title: 'An empty --backup-server turns backups off, and the stop grace outlasts 
 type: 'bugfix'
 ticket: '10'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: '4843b1a523c8f90b91fc6aa75c02f541edb3a631'
 route: 'oneshot'
 route_source: 'auto'

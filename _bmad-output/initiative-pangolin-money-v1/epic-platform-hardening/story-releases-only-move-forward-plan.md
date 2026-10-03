@@ -3,7 +3,7 @@ title: 'Releases only move forward'
 type: 'bugfix'
 ticket: '6'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: '7078a5d1aaa75be5ca3d208898da2666560a4550'
 route: 'oneshot'
 route_source: 'auto'

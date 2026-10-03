@@ -3,7 +3,7 @@ title: 'pangolin status lists pending and running jobs'
 type: 'feature'
 ticket: '4'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: '040326f9922745af91046ee172eb08c15345c256'
 route: 'oneshot'
 route_source: 'auto'

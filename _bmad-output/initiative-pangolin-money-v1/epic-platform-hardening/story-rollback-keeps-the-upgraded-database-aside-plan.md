@@ -3,7 +3,7 @@ title: 'Rollback keeps the upgraded database aside'
 type: 'bugfix'
 ticket: '8'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: '4c82d199b854f2854ff989fda264b25fd04cca15'
 route: 'oneshot'
 route_source: 'auto'
