@@ -142,3 +142,6 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md`
   summary: (F19) Load install.sh --dns resolvers into the live firewall before apt-get update and the image pull.
   evidence: install.sh main runs install_packages and obtain_image before install_firewall (retro F19).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/story-retrospective-fixes-bundle-on-reinstall-firewall-reload-orde-plan.md`
+  summary: install.sh's earlier firewall reloads (allow_package_mirrors, allow_build_hosts) still run the previous release's render.sh; install the new render.sh before them.
+  evidence: story 11.11 moved only write_files' render.sh copy ahead of write_allowlist (review pass 1).

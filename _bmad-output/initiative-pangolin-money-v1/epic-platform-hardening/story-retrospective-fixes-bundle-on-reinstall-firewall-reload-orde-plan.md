@@ -3,12 +3,13 @@ title: 'Retrospective fixes: bundle on reinstall, firewall reload order, databas
 type: 'bugfix'
 ticket: '11'
 created: '2026-10-03'
-status: 'draft'
+status: 'built'
+baseline_revision: '5c2dbc92ba5158edc16e43f9d6aae11c062e5172'
 route: 'full'
 route_source: 'auto'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'thorough'
+review_source: 'auto'
+lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 0
 context: []
 ---
@@ -53,19 +54,48 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `deploy/install.sh` -- F1 backup change on a kept-data reinstall; F7 render.sh before the allowlist reload
-- [ ] `deploy/pangolin` -- F8 copies under the data root, old ones moved
-- [ ] `.github/workflows/release.yml` -- F13 comment
-- [ ] tests and `docs/install.md` -- every matrix row
+- [x] `deploy/install.sh` -- F1 backup change on a kept-data reinstall; F7 render.sh before the allowlist reload
+- [x] `deploy/pangolin` -- F8 copies under the data root, old ones moved
+- [x] `.github/workflows/release.yml` -- F13 comment
+- [x] tests and `docs/install.md` -- every matrix row
 
 **Acceptance Criteria:**
 - Given the full deploy test suite, when it runs, then the existing upgrade, rollback and S11d tests pass with the new paths, and the new tests cover each matrix row.
 
 ## Implementation Notes
 
+- F1: `settle_all` sets `BACKUP_CHANGED=1` when there is no `.env`, every secret is kept (`kept_secrets`) and `BACKUP` is non-empty, unless uninstall.sh's record names the same server (see the change log). `write_env`'s id-only branch already skips on `BACKUP_CHANGED=1`, so the "bundle you already have" message does not appear.
+- F7: `write_files` installs `render.sh` (via `render.sh.new` + `mv`) before `write_allowlist`. The unit copies stay after it: `apply_allowlist_now` only runs `systemctl start pangolin-allowlist.service` with no `daemon-reload`, so copying new unit files earlier would change nothing but make systemd warn that the loaded unit changed on disk; the unit's `ExecStart` path is fixed. The earlier reloads (`allow_package_mirrors`, `allow_build_hosts`, before `locate_support`) still run the installed render.sh; out of scope.
+- F8: `deploy/pangolin` creates `$DATA_VOL/upgrade-copies` (refused if it is a symlink or not a directory, before anything is stopped), `chmod 700`, `chown 0:0` as root only (as install.sh's `own`), moves old `/opt/pangolin/{pre-upgrade,rolled-back}-*` there (an existing name or a failed `mv` warns and leaves it), prunes rolled-back copies to two right after the move, and pre-upgrade ones after the new copy as before. Nothing in `apps/server` lists the data root (only `backup/` and its staging dir), and the copy/hash/restore commands glob `pangolin.sqlite*` only.
+- F8 review fixes: `upgrade-copies/` is set up only after `compose stop` and re-checked (not a symlink, a directory, root's when running as root) before creating each copy, before each move, before each prune, and in the rollback after its stop; old copies are moved and both kinds pruned only after the new pre-upgrade copy is verified; moves go through `.moving-<name>` (a failed move removes the partial copy, keeps the original; the prune globs never match `.moving-*`). The CI `upgrade-test` pre-creates `upgrade-copies` as 1000:1000 0755 and asserts `0 700` after the upgrade.
+- F1 review fix: the backup-server prompt (and the non-interactive default) uses uninstall.sh's record when there is no `.env`.
+- F13: comment fixed in `release.yml`; the matching sentence in `docs/install.md` §10 now says the same.
+
 ## Plan Change Log
 
+- 2026-10-03: the frozen intent asks for no bundle on a kept-data reinstall with the *same* backup server, but with `.env` removed nothing recorded the old server, and the existing "reinstalls on the data and secrets uninstall.sh kept" test passes the same `--backup-server`. To honour both rows, `uninstall.sh` now keeps `.env`'s `PANGOLIN_BACKUP_REPOSITORY=` line as `secrets/.backup-repository` (0600, in the 0700 secrets dir; the URL may hold credentials) when it keeps the secrets; `install.sh` compares against it (no record: treated as a change) and `write_env` removes it once `.env` holds the server. `deploy/uninstall.sh`, `deploy/uninstall.test.ts` and the uninstall paragraph of `docs/install.md` were touched for this.
+
 ## Review Triage Log
+
+Pass 1 (thorough; blind-hunter, edge-case-hunter, verification-gap, intent-alignment): high 1, medium 3, low 5, false 1, rejected low 2, deferred 1, accepted 2.
+
+| Verdict | Route | Finding and evidence |
+|---|---|---|
+| high | patch (done) | `upgrade-copies/` sits in the data root the container user owns; its checks, chmod/chown, moves and prunes ran while the container was up (and after the new server ran during the health wait), so a swapped-in symlink would be followed by root's `mkdir`, `mv` and `rm -rf`. Now done only after `compose stop`, with a re-check before each use. |
+| medium | patch (done) | Old copies were moved and rolled-back copies pruned before the upgrade proved it could proceed; an aborted upgrade still deleted copies. Now after the new copy is verified. |
+| medium | patch (done) | A partial cross-disk move could leave a copy that blocks later moves and counts toward "keep two"; now moved through a `.moving-` temp name. |
+| medium | patch (done) | On a kept-data reinstall the interactive prompt defaulted to nothing, so Enter dropped the kept backup server; it now defaults to the record, for `--non-interactive` runs too, so a kept-data reinstall without `--backup-server` keeps the recorded server and writes no bundle. |
+| low | patch (done) | Tests: the name-collision branch; the symlink test could not fail; a regular file at `upgrade-copies`; no prune on an early abort; no partial move left. |
+| low | patch (done) | Tests: the record removed when no server is given, a stale record removed by uninstall, none left with `--delete-data`. |
+| low | patch (done) | Nothing checked the `chown 0:0`; the CI `upgrade-test` now pre-creates a container-owned `upgrade-copies/` and asserts `0 700`. |
+| low | patch (done) | Docs: a cross-disk move only unlinks the old copies' blocks; the copies' data-disk space; `upgrade-copies/` and uninstall. |
+| low | patch (done) | F13 docs sentence aligned with the comment. |
+| false | rejected | The same-server reinstall with a record is untested: the existing story-11.1 test reinstalls with the same server and, with uninstall now writing the record, asserts no bundle. |
+| low | rejected | The F7 test extracts `write_files` by regex and may break on unrelated edits: it fails loudly, never silently. |
+| low | rejected | The new `render.sh` runs under the previous release's loaded units until `install_firewall`: the reload does not re-read unit files; commented. |
+| accepted | accept | A same-server reinstall after a pre-11.11 uninstall (no record) writes a bundle: nothing records the old server; documented. |
+| accepted | accept | The `uninstall.sh` record (`secrets/.backup-repository`, 0600) goes beyond the plan's Code Map: the only way to meet the matrix's "same server, no bundle" row once `.env` is gone (Plan Change Log). |
+| defer | defer | `allow_package_mirrors` and `allow_build_hosts` still reload the firewall with the previous release's `render.sh` before `write_files` copies the new one. |
 
 ## Verification
 

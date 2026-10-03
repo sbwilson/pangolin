@@ -100,6 +100,61 @@ if [ "${1:-}" = upgrade ]; then
   DATA_VOL=$(docker inspect --format '{{ range .Mounts }}{{ if eq .Destination "/data" }}{{ .Source }}{{ end }}{{ end }}' "$id" 2>/dev/null || true)
   [ -n "$DATA_VOL" ] || die "could not determine the data directory"
 
+  # The pre-upgrade and rolled-back copies of the database live in the data volume (the
+  # encrypted data disk), in upgrade-copies/: root's, 0700, which the container user cannot read,
+  # apart from backup/ and the live database files. The container user owns the data root, so it
+  # is set up only once the stack is stopped, and checked again right before every use: never a
+  # symlink (root would follow it), always a directory, root's when this runs as root.
+  COPIES_DIR="$DATA_VOL/upgrade-copies"
+  copies_dir_ok() {
+    [ ! -L "$COPIES_DIR" ] && [ -d "$COPIES_DIR" ] || return 1
+    [ "$(id -u)" -ne 0 ] || [ "$(ls -ldn "$COPIES_DIR" | awk '{ print $3 }')" = 0 ]
+  }
+  check_copies_dir() {
+    copies_dir_ok || die "$COPIES_DIR is not a directory of root's (a symlink, or replaced): move it aside, then upgrade again"
+  }
+  prepare_copies_dir() {
+    if [ -L "$COPIES_DIR" ] || { [ -e "$COPIES_DIR" ] && [ ! -d "$COPIES_DIR" ]; }; then
+      die "$COPIES_DIR is not a directory: move it aside, then upgrade again"
+    fi
+    if [ ! -d "$COPIES_DIR" ]; then
+      (umask 077 && mkdir "$COPIES_DIR") || die "could not create $COPIES_DIR"
+    fi
+    # Root's: as root only, as install.sh's chowns (a test run as a normal user skips it).
+    if [ "$(id -u)" -eq 0 ]; then
+      chown 0:0 "$COPIES_DIR" || die "could not make $COPIES_DIR root's"
+    fi
+    chmod 700 "$COPIES_DIR" || die "could not make $COPIES_DIR private (0700)"
+    check_copies_dir
+  }
+  # keep_two KIND: the last two KIND-<stamp> copies stay. `.moving-*` (a move in progress) never
+  # matches the glob.
+  keep_two() {
+    check_copies_dir
+    ls -1dt "$COPIES_DIR/$1"-* 2>/dev/null | tail -n +3 | xargs -r rm -rf
+  }
+  # Copies an earlier release kept beside the install, on the system disk, move into
+  # upgrade-copies/: through .moving-<name>, renamed into place once whole. One that cannot be
+  # moved stays where it is, never deleted, and a partial move is removed.
+  move_old_copies() {
+    for old in "$HOME_DIR"/pre-upgrade-* "$HOME_DIR"/rolled-back-*; do
+      [ -d "$old" ] || continue
+      name=${old##*/}
+      check_copies_dir
+      if [ -e "$COPIES_DIR/$name" ] || [ -e "$COPIES_DIR/.moving-$name" ]; then
+        printf 'pangolin: warning: could not move %s into %s (%s is already there); it stays where it is\n' "$old" "$COPIES_DIR" "$name" >&2
+        continue
+      fi
+      if ! mv "$old" "$COPIES_DIR/.moving-$name"; then
+        # The original is only removed once copied whole: the partial copy goes.
+        [ -d "$old" ] && rm -rf "$COPIES_DIR/.moving-$name"
+        printf 'pangolin: warning: could not move %s into %s; it stays where it is\n' "$old" "$COPIES_DIR" >&2
+      elif ! mv "$COPIES_DIR/.moving-$name" "$COPIES_DIR/$name"; then
+        printf 'pangolin: warning: %s was moved to %s but not renamed to %s\n' "$old" "$COPIES_DIR/.moving-$name" "$name" >&2
+      fi
+    done
+  }
+
   # Backup files left by an earlier upgrade must never be restored over this install, but they
   # may be the only good copy after a crash mid-upgrade: set them aside as .bak.stale (one
   # generation, dropped by the next successful upgrade) instead of deleting them.
@@ -127,8 +182,10 @@ if [ "${1:-}" = upgrade ]; then
   printf 'Stopping stack for upgrade...\n'
   compose stop pangolin > /dev/null || die "could not stop stack"
 
+  prepare_copies_dir
   STAMP=$(date +%Y%m%d%H%M%S)
-  BACKUP_DIR="$HOME_DIR/pre-upgrade-$STAMP"
+  BACKUP_DIR="$COPIES_DIR/pre-upgrade-$STAMP"
+  check_copies_dir
   # No -p: an existing directory (two upgrades in one second) is never reused or removed.
   (umask 077 && mkdir "$BACKUP_DIR") && chmod 700 "$BACKUP_DIR" || die "could not create $BACKUP_DIR"
   # Copy DB files from the volume into a host-side directory (stack is stopped). A failed or empty
@@ -142,8 +199,10 @@ if [ "${1:-}" = upgrade ]; then
   docker run --rm -v "${DATA_VOL}":/data:ro -v "$BACKUP_DIR":/backup:ro \
     --user 0 --entrypoint sh "$CURRENT_IMAGE" -c 'cd /data && for f in pangolin.sqlite*; do [ "$(sha256sum < "$f")" = "$(sha256sum < "/backup/$f")" ] || exit 1; done' \
     || { rm -rf "$BACKUP_DIR"; die "the database copy does not match the original; upgrade aborted, nothing was changed"; }
-  # Prune: keep only the last two pre-upgrade backups
-  ls -1dt "$HOME_DIR"/pre-upgrade-* 2>/dev/null | tail -n +3 | xargs -r rm -rf
+  # Only now that this upgrade's copy is good: move the old copies in, then keep two of each.
+  move_old_copies
+  keep_two pre-upgrade
+  keep_two rolled-back
 
   cp -p "$HOME_DIR/.env" "$HOME_DIR/.env.bak" && chmod 600 "$HOME_DIR/.env.bak"
   # Not `sed -i` (GNU's only): the new .env is written beside it, into a copy that keeps its mode
@@ -190,15 +249,16 @@ if [ "${1:-}" = upgrade ]; then
     # Warn but proceed: if stop fails the container may already be dead; restore anyway.
     compose stop pangolin > /dev/null 2>&1 || printf 'pangolin: warning: stop failed during rollback\n' >&2
     # What the upgraded server wrote during the health wait goes aside first, never deleted:
-    # a 0700 rolled-back-<stamp>/ beside the pre-upgrade copy. If it cannot be kept, the live
+    # a 0700 rolled-back-<stamp>/ beside the pre-upgrade copy, in upgrade-copies/. If it cannot be kept, the live
     # database stays as it is and the exit trap restarts the previous stack.
-    ROLLED_DIR="$HOME_DIR/rolled-back-$STAMP"
+    ROLLED_DIR="$COPIES_DIR/rolled-back-$STAMP"
+    copies_dir_ok || die "$COPIES_DIR is not a directory of root's (a symlink, or replaced), so the rollback stopped before restoring: the live database was not touched. The previous stack is started again on it (the database the upgraded server used)"
     (umask 077 && mkdir "$ROLLED_DIR") && chmod 700 "$ROLLED_DIR" || die "could not create $ROLLED_DIR, so the rollback stopped before restoring: the live database was not touched. The previous stack is started again on it (the database the upgraded server used); the pre-upgrade copy is in $BACKUP_DIR"
     docker run --rm -v "${DATA_VOL}":/data:ro -v "$ROLLED_DIR":/backup \
       --user 0 --entrypoint sh "$CURRENT_IMAGE" -c 'for f in /data/pangolin.sqlite*; do [ -e "$f" ] || continue; cp -a "$f" /backup/ || exit 1; done' \
       || { rm -rf "$ROLLED_DIR"; die "could not keep the upgraded database aside, so the rollback stopped before restoring: the live database was not touched. The previous stack is started again on it (the database the upgraded server used); the pre-upgrade copy is in $BACKUP_DIR"; }
     # Keep only the last two rolled-back copies, as with the pre-upgrade ones.
-    ls -1dt "$HOME_DIR"/rolled-back-* 2>/dev/null | tail -n +3 | xargs -r rm -rf
+    keep_two rolled-back
     # DATA_VOL was captured before the upgrade started; reuse it for restore
     docker run --rm -v "${DATA_VOL}":/data -v "$BACKUP_DIR":/backup:ro \
       --user 0 --entrypoint sh "$CURRENT_IMAGE" -c '[ -s /backup/pangolin.sqlite ] && rm -f /data/pangolin.sqlite* && cp -a /backup/pangolin.sqlite* /data/' \

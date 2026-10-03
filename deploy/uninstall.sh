@@ -220,14 +220,23 @@ remove_data() {
 # needs stay in secrets/ (contents, modes and owners as they are), and a reinstall reuses them;
 # so does install.sh's .bundle-pending mark, so a reinstall still writes the bundle an
 # interrupted install never wrote. Anything else there (the GHCR token) goes. KEPT_SECRETS=1 when it kept them.
+# The backup server in .env stays too, as secrets/.backup-repository (its .env line, root's
+# 0600: the URL may hold credentials), so a reinstall with another one knows the bundle the
+# user has names the old one, and writes a new bundle.
 remove_install_dir() {
   install_dir=$(path "$INSTALL_DIR")
   KEPT_SECRETS=0
   if [ "$DATA_ACTION" = keep ] && [ "$DATA_EXISTS" -eq 1 ] && [ -d "$install_dir/secrets" ]; then
     step "Removing $INSTALL_DIR, except the secrets the data needs"
+    rm -f "$install_dir/secrets/.backup-repository"
+    if [ -r "$install_dir/.env" ] &&
+      grep -q '^[[:space:]]*PANGOLIN_BACKUP_REPOSITORY=' "$install_dir/.env"; then
+      (umask 077 && grep '^[[:space:]]*PANGOLIN_BACKUP_REPOSITORY=' "$install_dir/.env" |
+        tail -n 1 >"$install_dir/secrets/.backup-repository")
+    fi
     find "$install_dir" -mindepth 1 -maxdepth 1 ! -name secrets -exec rm -rf {} +
     find "$install_dir/secrets" -mindepth 1 -maxdepth 1 ! -name auth-secret ! -name app-key \
-      ! -name restic-password ! -name .bundle-pending -exec rm -rf {} +
+      ! -name restic-password ! -name .bundle-pending ! -name .backup-repository -exec rm -rf {} +
     KEPT_SECRETS=1
   else
     step "Removing $INSTALL_DIR"
