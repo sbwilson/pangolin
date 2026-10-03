@@ -728,6 +728,44 @@ prepare_dirs() {
   own "$data_dir"
 }
 
+# has_secret FILE: FILE holds something besides whitespace (a blank secret is a missing one).
+has_secret() {
+  [ -s "$1" ] && grep -q '[^[:space:]]' "$1"
+}
+
+# New secrets over an existing database would silently break it: TOTP sign-in, the restic
+# repository and attachments all depend on the old ones. So when the data root already holds a
+# database, every secret must already be there. main runs this once DATA_ROOT is settled and
+# before anything is installed, created or written; it stops naming the missing ones.
+check_secrets_for_database() {
+  [ -e "$(path "$DATA_ROOT/pangolin.sqlite")" ] || return 0
+  secrets=$(path "$INSTALL_DIR/secrets")
+  missing=
+  for name in auth-secret app-key restic-password; do
+    has_secret "$secrets/$name" || missing="$missing $name"
+  done
+  [ -n "$missing" ] || return 0
+  printf 'install.sh: %s\n' \
+    "the data root $DATA_ROOT already holds a database, but these secrets are missing or empty" \
+    "  in $INSTALL_DIR/secrets:$missing" \
+    "New secrets would lock the household out of that database (sign-in codes, backups and" \
+    "attachments all need the old ones), so nothing was changed. Either:" \
+    "  - put the old secrets back from the recovery bundle, one value per file, then re-run" \
+    "    install.sh:" \
+    "      PANGOLIN_AUTH_SECRET -> $INSTALL_DIR/secrets/auth-secret" \
+    "      PANGOLIN_APP_KEY     -> $INSTALL_DIR/secrets/app-key" \
+    "      RESTIC_PASSWORD      -> $INSTALL_DIR/secrets/restic-password" \
+    "    e.g.  sudo mkdir -p -m 0700 $INSTALL_DIR/secrets" \
+    "          sudo tee $INSTALL_DIR/secrets/auth-secret > /dev/null" \
+    "          (paste the value, Enter, then Ctrl-D: it stays out of your shell history)" \
+    "    install.sh sets their modes and owners on the re-run." \
+    "  - or, for a fresh install, move everything in $DATA_ROOT aside (keep it until you are sure" \
+    "    you no longer need it) and re-run install.sh. That generates a new restic password, so" \
+    "    the old backup repository can no longer be used: give it a new repository path with" \
+    "    --backup-server." >&2
+  exit 1
+}
+
 # 32 random bytes, base64 (url-safe and unpadded with `url`).
 random_secret() {
   if [ "${1:-}" = url ]; then
@@ -742,7 +780,7 @@ generate_secrets() {
   secrets=$(path "$INSTALL_DIR/secrets")
   for name in auth-secret app-key restic-password; do
     file=$secrets/$name
-    if [ -s "$file" ]; then
+    if has_secret "$file"; then
       say "Kept the existing secret $name"
     else
       case "$name" in
@@ -1383,6 +1421,7 @@ main() {
   settings
   settle_all
   check_host
+  check_secrets_for_database
   check_ssh_session
   allow_package_mirrors
   install_packages

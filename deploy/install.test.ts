@@ -284,7 +284,8 @@ describe("install.sh, fresh install", () => {
   });
 
   it("says an account exists when the server has run and removed the setup link", () => {
-    mkdirSync(at("srv/pangolin"), { recursive: true });
+    // A first install writes the secrets the database needs; a re-run finds the database.
+    expect(install().status).toBe(0);
     writeFileSync(at("srv/pangolin/pangolin.sqlite"), "");
     const result = install();
     expect(result.status, result.stderr).toBe(0);
@@ -621,6 +622,129 @@ describe("install.sh, recovery bundle id", () => {
     expect(bundles()).toEqual([]);
     expect(result.stdout).toMatch(/Added:.*PANGOLIN_RECOVERY_BUNDLE_ID/);
     expect(result.stdout).toContain("sudo pangolin confirm-bundle");
+  });
+});
+
+describe("install.sh, secrets over an existing database", () => {
+  const UNINSTALL = join(here, "uninstall.sh");
+  // What the server leaves in the data root once it has run.
+  const database = () => writeFileSync(at("srv/pangolin/pangolin.sqlite"), "household");
+  const secretModes = () =>
+    Object.fromEntries(SECRET_NAMES.map((name) => [name, mode(`opt/pangolin/secrets/${name}`)]));
+
+  // Each damage, and what the refused run must leave app-key as (null: absent).
+  it.each([
+    ["missing", (file: string) => rmSync(at(file)), null],
+    ["empty", (file: string) => writeFileSync(at(file), ""), ""],
+    ["blank (whitespace only)", (file: string) => writeFileSync(at(file), " \n"), " \n"],
+  ] as const)(
+    "refuses a %s secret before writing any, naming it and the way back",
+    (_, damage, after) => {
+      expect(install().status).toBe(0);
+      database();
+      for (const bundle of bundles()) rmSync(at(`root/${bundle}`));
+      const before = secrets();
+      const modes = secretModes();
+      damage("opt/pangolin/secrets/app-key");
+
+      const result = install();
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("the data root /srv/pangolin already holds a database");
+      expect(result.stderr).toMatch(/missing or empty\n.*: app-key\n/);
+      expect(result.stderr).toContain("PANGOLIN_AUTH_SECRET -> /opt/pangolin/secrets/auth-secret");
+      expect(result.stderr).toContain("PANGOLIN_APP_KEY     -> /opt/pangolin/secrets/app-key");
+      expect(result.stderr).toContain(
+        "RESTIC_PASSWORD      -> /opt/pangolin/secrets/restic-password",
+      );
+      expect(result.stderr).toContain("move everything in /srv/pangolin aside");
+      expect(result.stderr).toContain("sudo mkdir -p -m 0700 /opt/pangolin/secrets");
+      expect(result.stderr).toContain("sudo tee /opt/pangolin/secrets/auth-secret > /dev/null");
+      expect(result.stderr).toContain("new repository path");
+      expect(result.stdout).not.toContain("Generated the secret");
+      // No secret written (app-key exactly as damaged, no half-written file), the others
+      // untouched, no bundle.
+      const left = readdirSync(at("opt/pangolin/secrets"));
+      expect(left.filter((name) => name.endsWith(".new"))).toEqual([]);
+      if (after === null) expect(left).not.toContain("app-key");
+      else expect(read("opt/pangolin/secrets/app-key")).toBe(after);
+      expect(read("opt/pangolin/secrets/auth-secret")).toBe(before["auth-secret"]);
+      expect(read("opt/pangolin/secrets/restic-password")).toBe(before["restic-password"]);
+      expect(mode("opt/pangolin/secrets/auth-secret")).toBe(modes["auth-secret"]);
+      expect(mode("opt/pangolin/secrets/restic-password")).toBe(modes["restic-password"]);
+      expect(bundles()).toEqual([]);
+
+      // Put back from the recovery bundle, a plain re-run (no flag) keeps them all.
+      writeFileSync(at("opt/pangolin/secrets/app-key"), before["app-key"]);
+      const again = install();
+      expect(again.status, again.stderr).toBe(0);
+      expect(secrets()).toEqual(before);
+      expect(secretModes()).toEqual(modes);
+      expect(bundles()).toEqual([]);
+    },
+  );
+
+  it("names every missing secret, and creates nothing when /opt/pangolin is gone", () => {
+    // Only the data root, as on a host the data disk was moved to.
+    mkdirSync(at("srv/pangolin"), { recursive: true });
+    database();
+    const result = install();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(": auth-secret app-key restic-password\n");
+    expect(result.stdout).not.toContain("Preparing");
+    expect(existsSync(at("opt/pangolin"))).toBe(false);
+    expect(existsSync(at("etc/systemd"))).toBe(false);
+    expect(bundles()).toEqual([]);
+    expect(readdirSync(at("srv/pangolin"))).toEqual(["pangolin.sqlite"]);
+  });
+
+  it("refuses before touching an install directory that lost its secrets", () => {
+    expect(install().status).toBe(0);
+    database();
+    rmSync(at("opt/pangolin/secrets"), { recursive: true });
+    rmSync(at("opt/pangolin/firewall"), { recursive: true });
+    const env = read("opt/pangolin/.env");
+    expect(install().status).toBe(1);
+    // prepare_dirs never ran: neither directory it creates is back.
+    expect(existsSync(at("opt/pangolin/secrets"))).toBe(false);
+    expect(existsSync(at("opt/pangolin/firewall"))).toBe(false);
+    expect(read("opt/pangolin/.env")).toBe(env);
+  });
+
+  it("keeps every secret over an existing database, and writes no bundle", () => {
+    expect(install().status).toBe(0);
+    database();
+    for (const bundle of bundles()) rmSync(at(`root/${bundle}`));
+    const before = secrets();
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    expect(secrets()).toEqual(before);
+    expect(bundles()).toEqual([]);
+  });
+
+  it("reinstalls on the data and secrets uninstall.sh kept, with the same secrets", () => {
+    expect(install().status).toBe(0);
+    database();
+    for (const bundle of bundles()) rmSync(at(`root/${bundle}`));
+    const before = secrets();
+    const modes = secretModes();
+    const removed = run("sh", [UNINSTALL, "--root", root, "--non-interactive"]);
+    expect(removed.status, removed.stderr).toBe(0);
+    expect(existsSync(at("opt/pangolin/.env"))).toBe(false);
+
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    expect(secrets()).toEqual(before);
+    expect(secretModes()).toEqual(modes);
+    expect(bundles()).toEqual([]);
+    expect(read("srv/pangolin/pangolin.sqlite")).toBe("household");
+  });
+
+  it("generates the secrets as before when the data root holds no database", () => {
+    mkdirSync(at("srv/pangolin/backup"), { recursive: true });
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Generated the secret auth-secret");
+    expect(bundles()).toHaveLength(1);
   });
 });
 

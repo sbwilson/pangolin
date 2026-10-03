@@ -459,6 +459,38 @@ this on every push: it backs up the end-to-end household to an append-only rest-
 `restic forget` is refused, restores into the running stack, restores onto a fresh volume using
 only the bundle's values, and signs in with the saved password and TOTP code.
 
+**Secrets missing over a kept database.** When the data root already holds a database
+(`pangolin.sqlite`) but any of the three secrets in `/opt/pangolin/secrets` is missing or blank,
+for example after moving the data disk to a new host or deleting `/opt/pangolin` by hand,
+`install.sh` stops before writing any secret or starting anything: new secrets would lock the
+household out of that database. It names the missing secrets and the data root. Put the old
+values back from the recovery bundle, one per file, and run `install.sh` again (no flag needed;
+it sets their modes and owners on that run):
+
+| Bundle line            | File                                    |
+|------------------------|-----------------------------------------|
+| `PANGOLIN_AUTH_SECRET` | `/opt/pangolin/secrets/auth-secret`     |
+| `PANGOLIN_APP_KEY`     | `/opt/pangolin/secrets/app-key`         |
+| `RESTIC_PASSWORD`      | `/opt/pangolin/secrets/restic-password` |
+
+```sh
+sudo mkdir -p -m 0700 /opt/pangolin/secrets
+# For each file: paste the value, press Enter, then Ctrl-D. Typed this way, the value stays out
+# of your shell history.
+sudo tee /opt/pangolin/secrets/auth-secret > /dev/null
+sudo tee /opt/pangolin/secrets/app-key > /dev/null
+sudo tee /opt/pangolin/secrets/restic-password > /dev/null
+```
+
+Once the install is back, `sudo sh install.sh --bundle` writes a new recovery bundle from the
+secrets in place, if you need a fresh copy.
+
+Or, to start again with an empty household, move everything in the data root aside (keep it
+until you are sure you do not need it) and run `install.sh` again. There is no flag that writes
+new secrets over a database. A fresh install gets a new restic password, so the old append-only
+backup repository can no longer be used: point the new install at a new repository path
+(`--backup-server rest:https://nas.lan:8000/pangolin-2`, say).
+
 Decrypting restored attachments with the application key arrives with the attachment store
 (epic 5). The weekly `restic check` and a monthly restore drill come in a later release.
 
@@ -529,7 +561,7 @@ The release workflow publishes nothing until every gate has passed. The `image` 
 
 ## 12. Uninstalling
 
-`uninstall.sh` (attached to each release beside `install.sh`) reverses the install: it stops the stack, removes the firewall rules and units, the `pangolin` command, the container images and `/opt/pangolin`. Run it as root:
+`uninstall.sh` (attached to each release beside `install.sh`) reverses the install: it stops the stack, removes the firewall rules and units, the `pangolin` command, the container images and `/opt/pangolin` (except its secrets when the data is kept, below). Run it as root:
 
 ```sh
 curl -fsSL -o uninstall.sh https://github.com/sbwilson/pangolin/releases/download/<tag>/uninstall.sh
@@ -537,5 +569,9 @@ sudo sh uninstall.sh
 ```
 
 It asks before removing anything, then separately asks whether to delete the data directory (`/srv/pangolin`, or the `PANGOLIN_DATA_ROOT` in `.env`): the household database and attachments. Answer `y`, then type the directory back to confirm. Take a `pangolin backup` first if you might want the data. Any other answer keeps it. `--keep-data` and `--delete-data` answer for you, `--yes` skips the first question, and `--non-interactive` never prompts (and keeps the data unless `--delete-data` is given).
+
+When it keeps an existing data directory, it also keeps the three secrets in `/opt/pangolin/secrets` (the auth secret, the application key and the restic password, with their modes and owners) and says so: the kept database cannot be signed in to, backed up to its repository or have its attachments read without them. Everything else in `/opt/pangolin` goes, the GHCR token included. A later `install.sh` finds them and reuses them: it generates no new secret, writes no bundle, and starts on the old database. Deleting the data directory deletes the secrets too (the prompt says so), and with no data directory there is nothing to keep them for, so they go.
+
+`.env` goes with `/opt/pangolin`, so a reinstall no longer knows a custom data directory: when the kept one is not `/srv/pangolin`, reinstall with `--data-root <that directory>` (uninstall's last message names it). Without it, `install.sh` starts an empty household on `/srv/pangolin`, using the kept secrets.
 
 It does not touch Docker or its apt source, the recovery bundle in `/root`, the backup server's repository (append-only, so the VM cannot delete it), the Nginx Proxy Manager host, or any Tang binding or LUKS key slot. Remove those yourself if they were only for Pangolin.
