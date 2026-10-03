@@ -395,3 +395,101 @@ describe("pangolin upgrade", () => {
     expect(res.stderr).toContain("refusing to upgrade: stack is not running");
   });
 });
+
+// Seam S11d (spike "Check the suspected seams"): real. The rollback replaces the live database
+// with the pre-upgrade copy (`rm -f /data/pangolin.sqlite*`, then the copy), so anything the new
+// server wrote while the upgrade waited for it to turn healthy (a person's edit through NPM, a
+// job's record) is gone, kept nowhere. This stub runs the script's own `sh -c` steps against real
+// directories (/data and /backup mapped to host paths), and the new server "writes" when it
+// starts. The fix story turns this test on.
+describe("pangolin upgrade rollback and the new server's writes (seam S11d)", () => {
+  function realStub(dataDir: string): Record<string, string> {
+    const bin = at("bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      join(bin, "docker"),
+      [
+        "#!/bin/sh",
+        `echo "docker $*" >> "${at("cmd.log")}"`,
+        // `compose --project-directory DIR -f FILE <subcommand> ...`: match the subcommand by
+        // its position, never by a substring a temporary path could contain.
+        'if [ "$1" = compose ]; then',
+        '  case "$6" in',
+        "    ps) echo container-id ;;",
+        // The new server starts and writes before its health check fails.
+        "    up)",
+        `      [ -f "${homeDir}/.env.bak" ] && echo "written by the new server" >> "${dataDir}/pangolin.sqlite" && echo new-server-wrote >> "${at("cmd.log")}" ;;`,
+        "  esac",
+        "  exit 0",
+        "fi",
+        'case "$*" in',
+        '  "inspect --format {{if .State.Health}}"*)',
+        `    if [ -f "${homeDir}/.env.bak" ]; then echo unhealthy; else echo healthy; fi ;;`,
+        `  "inspect --format {{.Config.Image}} container-id") echo "${ORIGINAL_IMAGE}" ;;`,
+        `  "inspect --format"*RepoDigests*) echo "ghcr.io/sbwilson/pangolin@${STUB_DIGEST}" ;;`,
+        `  "inspect --format"*Mounts*) echo "${dataDir}" ;;`,
+        "  *cosign*verify*) ;;",
+        '  *"cp /app/deploy"*)',
+        `    printf '%s' "${ORIGINAL_COMPOSE}" > "${homeDir}/staging/compose.yaml"`,
+        `    echo "# bin" > "${homeDir}/staging/pangolin" ;;`,
+        // A one-off `run ... -v X:/data -v Y:/backup ... -c CMD`: run CMD here, on X and Y.
+        "  run*)",
+        "    data=; backup=; cmd=; prev=",
+        '    for a in "$@"; do',
+        '      if [ "$prev" = -v ]; then',
+        '        case "$a" in *:/data*) data=$(echo "$a" | sed "s|:/data.*||") ;; *:/backup*) backup=$(echo "$a" | sed "s|:/backup.*||") ;; esac',
+        "      fi",
+        '      [ "$prev" = -c ] && cmd=$a',
+        "      prev=$a",
+        "    done",
+        '    cmd=$(printf "%s" "$cmd" | sed -e "s|/data|$data|g" -e "s|/backup|$backup|g")',
+        '    exec sh -c "$cmd" ;;',
+        "esac",
+        "exit 0",
+        "",
+      ].join("\n"),
+    );
+    chmodSync(join(bin, "docker"), 0o755);
+    // The script's `sed -i` is GNU's; on macOS give it BSD sed's empty suffix.
+    writeFileSync(
+      join(bin, "sed"),
+      [
+        "#!/bin/sh",
+        'for real in /usr/bin/sed /bin/sed; do [ -x "$real" ] && break; done',
+        'if [ "$1" = -i ] && [ "$(uname)" = Darwin ]; then shift; exec "$real" -i "" "$@"; fi',
+        'exec "$real" "$@"',
+        "",
+      ].join("\n"),
+    );
+    chmodSync(join(bin, "sed"), 0o755);
+    return { ...process.env, PATH: `${bin}:${process.env.PATH}`, PANGOLIN_HOME: homeDir };
+  }
+
+  it.fails("S11d: a rollback keeps what the new server wrote during the health wait", () => {
+    const dataDir = at("data");
+    mkdirSync(dataDir);
+    writeFileSync(join(dataDir, "pangolin.sqlite"), "before the upgrade\n");
+    const script = at("pangolin.sh");
+    writeFileSync(
+      script,
+      readFileSync(PANGOLIN, "utf8").replace(
+        /\/usr\/local\/bin/g,
+        join(root, "usr", "local", "bin"),
+      ),
+    );
+    chmodSync(script, 0o755);
+    const res = spawnSync(script, ["upgrade", "v2.0"], {
+      encoding: "utf8",
+      env: { ...realStub(dataDir), PANGOLIN_UPGRADE_TIMEOUT: "3" },
+    });
+    // A prefix: the fix names the kept directory after it.
+    expect(res.stderr).toContain("pangolin: upgrade failed during health check. rolled back");
+    expect(readFileSync(at("cmd.log"), "utf8")).toContain("new-server-wrote");
+    expect(readFileSync(join(dataDir, "pangolin.sqlite"), "utf8")).toBe("before the upgrade\n");
+    // Not lost: kept in the data directory or beside the install for the operator to recover.
+    const kept = spawnSync("grep", ["-rl", "written by the new server", dataDir, homeDir], {
+      encoding: "utf8",
+    });
+    expect(kept.stdout.trim()).not.toBe("");
+  });
+});

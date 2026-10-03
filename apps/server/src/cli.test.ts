@@ -564,6 +564,34 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
     expect(withDb((db) => db.prepare("SELECT COUNT(*) FROM person").pluck().get())).toBe(1);
   });
 
+  // Seam S10 (spike "Check the suspected seams"): real. After a restore, `status` prints the
+  // restore's own time as "last at" (the push time the restore records), while staleness is
+  // judged on the snapshot's `takenAt`. Restoring a snapshot older than 48 hours prints a
+  // "last at" of just now beside the stale warning. The fix story turns this test on.
+  it.fails("S10: status after a restore prints the snapshot's takenAt as last at", async () => {
+    backup = stubRestic(join(dir, "stub")).config;
+    await boot();
+    expect((await cli(["backup"])).code).toBe(EXIT_OK);
+    await stop();
+    const restored = await cli(["restore", "--keep-credentials"]);
+    expect(restored.code).toBe(EXIT_OK);
+    const snapshot = /Swapped in snapshot ([0-9a-f]{64})/.exec(restored.out)?.[1];
+    expect(snapshot).toBeDefined();
+    // As if the restored snapshot had been taken five days ago (the server runs on the real clock).
+    const takenAt = new Date(Date.now() - 5 * 24 * 60 * 60_000).toISOString();
+    const updated = withDb(
+      (db) =>
+        db
+          .prepare("UPDATE backup_snapshot SET taken_at = ? WHERE restic_snapshot_id = ?")
+          .run(takenAt, snapshot).changes,
+    );
+    expect(updated).toBe(1);
+    await boot();
+    const out = (await cli(["status"])).out;
+    expect(out).toContain("Warning:   no good backup in the last 48 hours");
+    expect(out).toMatch(new RegExp(`^Backups:   last at ${takenAt}, snapshot ${snapshot}$`, "m"));
+  });
+
   it("restore of a snapshot that fails a check exits 1 naming it, and swaps nothing", async () => {
     const stub = stubRestic(join(dir, "stub"));
     backup = stub.config;

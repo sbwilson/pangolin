@@ -516,6 +516,71 @@ describe("runner", () => {
     await r.tick();
     expect(jobs()[1]).toMatchObject({ status: "pending" });
   });
+
+  // Seam S11b (spike "Check the suspected seams"): real but harmless. A synchronous step longer
+  // than the lease (the drill's `integrity_check`) blocks the event loop, so no renewal runs and
+  // the row's lease expires mid-step. But no runner can claim it meanwhile: in-process runners
+  // cannot tick while the loop is blocked, the handler's completion runs in microtasks before
+  // any timer, renewal and completion match the owner (not the expiry), and the data-directory
+  // lock keeps any other process's runner off the database.
+  /**
+   * Runner A claims a job whose handler awaits (the restic fetch), then blocks synchronously
+   * while the clock passes two leases (the check); runner B, another owner, polls every 5 ms.
+   * `yieldAfter` adds an await after the block, and `startA` whether A's own timer runs.
+   */
+  async function blockPastLease(options: { yieldAfter: boolean; startA: boolean }) {
+    let expiredMidStep = false;
+    const runnerA = runner(
+      [
+        jobHandler(echo, async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10)); // the restic fetch
+          // The synchronous check: the clock passes two leases while the loop is blocked.
+          advance(2 * LEASE);
+          const until = Date.parse(String(jobs()[0]?.lease_expires_at));
+          expiredMidStep = until < now.epochMilliseconds;
+          const end = Date.now() + 100;
+          while (Date.now() < end) {
+            // Busy: no timers run, as during a long integrity_check.
+          }
+          if (options.yieldAfter) await new Promise((resolve) => setTimeout(resolve, 30));
+        }),
+      ],
+      { owner: "a", pollMs: 5 },
+    );
+    const bRan: number[] = [];
+    const runnerB = runner([jobHandler(echo, async (_ctx, input) => void bRan.push(input.n))], {
+      owner: "b",
+      pollMs: 5,
+    });
+    enqueue();
+    const running = runnerA.tick();
+    if (options.startA) runnerA.start();
+    runnerB.start();
+    await running;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await runnerB.stop();
+    await runnerA.stop();
+    return { expiredMidStep, bRan };
+  }
+
+  it("S11b: a synchronous step past the lease still completes as the same attempt", async () => {
+    const { expiredMidStep, bRan } = await blockPastLease({ yieldAfter: false, startA: true });
+    expect(expiredMidStep).toBe(true);
+    expect(bRan).toEqual([]);
+    expect(jobs()[0]).toMatchObject({ status: "done", attempts: 1, lease_owner: null });
+    expect(logs.map((entry) => entry.msg)).not.toContain(
+      "job finished after its lease was lost; completion rejected",
+    );
+    expect(logs.map((entry) => entry.msg)).not.toContain("job lease lost while its handler runs");
+  });
+
+  // The control for S11b: the same setup with an await after the block and only B's timer
+  // running, so B does claim the expired job. It shows B polls, and the test above can see a claim.
+  it("S11b control: an await after the block, with only B ticking, lets B claim it", async () => {
+    const { expiredMidStep, bRan } = await blockPastLease({ yieldAfter: true, startA: false });
+    expect(expiredMidStep).toBe(true);
+    expect(bRan).toEqual([1]);
+  });
 });
 
 describe("runner schedules", () => {
