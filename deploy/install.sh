@@ -76,6 +76,7 @@ GENERATED=0
 BUNDLE_PATH=
 BUNDLE_ID=
 NEW_BUNDLE_ID=0
+BACKUP_CHANGED=0
 # .env keys this run replaces because a flag asked for a new value (--image, --build, --data-root).
 REPLACE=
 
@@ -553,6 +554,13 @@ settle_all() {
   else
     settle BACKUP PANGOLIN_BACKUP_REPOSITORY
   fi
+  # A backup server set or changed on this run, on an install that has a .env, means a new
+  # bundle (write_bundle), so the one the user stores carries RESTIC_REPOSITORY. Compared before
+  # write_env touches .env. Without a .env, a first install's new secrets already write one.
+  if [ -f "$(env_file)" ] && [ -n "$BACKUP" ] &&
+    [ "$BACKUP" != "$(existing PANGOLIN_BACKUP_REPOSITORY)" ]; then
+    BACKUP_CHANGED=1
+  fi
   settle TANG_URL PANGOLIN_TANG_URL
   settle DATA_ROOT PANGOLIN_DATA_ROOT replace
   settle IMAGE PANGOLIN_IMAGE replace
@@ -783,6 +791,10 @@ generate_secrets() {
     if has_secret "$file"; then
       say "Kept the existing secret $name"
     else
+      # Pending until write_bundle has put a bundle for these secrets in place, so a re-run after
+      # an interrupted install still writes one. Made before the secret, so no new secret is
+      # ever without it.
+      mark_bundle_pending
       case "$name" in
         app-key) (umask 077 && random_secret >"$file.new") ;;
         *) (umask 077 && random_secret url >"$file.new") ;;
@@ -801,6 +813,17 @@ generate_secrets() {
     esac
   done
   if [ -n "$TOKEN_SOURCE" ]; then store_token; fi
+}
+
+# The mark that a recovery bundle is due and not yet in place (new secrets, --bundle, a backup
+# server change): while it exists, every run writes the bundle. Root's only, beside the secrets.
+pending_mark() {
+  path "$INSTALL_DIR/secrets/.bundle-pending"
+}
+
+mark_bundle_pending() {
+  (umask 077 && : >"$(pending_mark)")
+  chmod 0600 "$(pending_mark)"
 }
 
 # Stores the GHCR token from --ghcr-token-file, --ghcr-token or the prompt (TOKEN_SOURCE).
@@ -824,9 +847,16 @@ new_bundle_id() {
 }
 
 # Every bundle written gets a new id in .env (PANGOLIN_RECOVERY_BUNDLE_ID, printed in the bundle
-# too), so the server warns until that bundle's safe storage is confirmed (AD-27).
+# too), so the server warns until that bundle's safe storage is confirmed (AD-27). A bundle is
+# written when secrets were generated (this run, or a run that died before its bundle: the
+# pending mark), when asked for with --bundle, or when the backup server was set or changed.
 write_bundle() {
-  if [ "$GENERATED" -eq 0 ] && [ "$BUNDLE" -eq 0 ]; then return 0; fi
+  if [ "$GENERATED" -eq 0 ] && [ "$BUNDLE" -eq 0 ] && [ "$BACKUP_CHANGED" -eq 0 ] &&
+    [ ! -e "$(pending_mark)" ]; then
+    return 0
+  fi
+  # Until the bundle is in place, so a run that dies before then is retried by the next.
+  mark_bundle_pending
   secrets=$(path "$INSTALL_DIR/secrets")
   mkdir -p "$(path /root)"
   BUNDLE_PATH=/root/pangolin-recovery-bundle-$(date +%Y-%m-%d).txt
@@ -861,6 +891,7 @@ write_bundle() {
   chmod 0600 "$(env_file)"
   mv "$bundle.new" "$bundle"
   chmod 0600 "$bundle"
+  rm -f "$(pending_mark)"
   say "Recovery bundle id $BUNDLE_ID set in .env (PANGOLIN_RECOVERY_BUNDLE_ID)"
 }
 
@@ -900,6 +931,9 @@ write_env() {
     )
   fi
   chmod 0600 "$env"
+  # The new backup server is about to be saved: mark its bundle due first, or a run that dies
+  # before write_bundle leaves .env current and the bundle never written.
+  if [ "$BACKUP_CHANGED" -eq 1 ]; then mark_bundle_pending; fi
   for key in $REPLACE; do
     case "$key" in
       PANGOLIN_IMAGE) env_replace "$key" "$IMAGE" ;;
@@ -924,8 +958,10 @@ write_env() {
   if [ -n "$TANG_URL" ]; then env_add PANGOLIN_TANG_URL "$TANG_URL"; fi
   # An install from before bundle ids (story 1.17), or with an empty one, gets an id now, so the
   # server warns until the bundle it already has is confirmed stored safely; no bundle is
-  # written for it. When this run writes a bundle, write_bundle sets the id instead.
-  if [ -z "$(existing PANGOLIN_RECOVERY_BUNDLE_ID)" ] && [ "$GENERATED" -eq 0 ] && [ "$BUNDLE" -eq 0 ]; then
+  # written for it. When this run writes a bundle (new secrets, a pending mark, --bundle or a
+  # backup server set or changed), write_bundle sets the id instead.
+  if [ -z "$(existing PANGOLIN_RECOVERY_BUNDLE_ID)" ] && [ "$GENERATED" -eq 0 ] && [ "$BUNDLE" -eq 0 ] &&
+    [ ! -e "$(pending_mark)" ] && [ "$BACKUP_CHANGED" -eq 0 ]; then
     if env_has PANGOLIN_RECOVERY_BUNDLE_ID; then
       env_replace PANGOLIN_RECOVERY_BUNDLE_ID "$(new_bundle_id)"
       ENV_ADDED="$ENV_ADDED PANGOLIN_RECOVERY_BUNDLE_ID"
@@ -1361,12 +1397,16 @@ summary() {
 
   if [ -n "$BUNDLE_PATH" ]; then
     step "Recovery bundle"
+    if [ "$BACKUP_CHANGED" -eq 1 ]; then
+      say "  Rewritten to include the backup repository ($BACKUP): store this one in place of the old."
+    fi
     printf '%s\n' \
       "  $BUNDLE_PATH" \
       "  holds the application key, auth secret and restic password: everything a restore onto a" \
       "  new host needs. Store it offline now (a password manager, or printed and locked away)," \
       "  then delete it: shred -u $BUNDLE_PATH" \
-      "  It is written again only with: install.sh --bundle" \
+      "  It is written again with install.sh --bundle, when the backup server changes, or on the" \
+      "  next run if this one stops before the bundle is in place" \
       "  Its id is $BUNDLE_ID. Once it is stored safely, run: sudo pangolin confirm-bundle" \
       "  (pangolin status warns until you do)"
   elif [ "$NEW_BUNDLE_ID" -eq 1 ]; then

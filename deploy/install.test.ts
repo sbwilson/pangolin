@@ -685,6 +685,217 @@ describe("install.sh, recovery bundle id", () => {
   });
 });
 
+describe("install.sh, a bundle that survives an interrupted install", () => {
+  const BUNDLE_ID = /^PANGOLIN_RECOVERY_BUNDLE_ID=(\d{8}T\d{6}Z-[0-9a-f]{4})$/m;
+  const bundleId = (): string | undefined => read("opt/pangolin/.env").match(BUNDLE_ID)?.[1];
+  const bundleText = () => {
+    const [bundle] = bundles();
+    return bundle === undefined ? "" : read(`root/${bundle}`);
+  };
+  const PENDING = "opt/pangolin/secrets/.bundle-pending";
+  const removeBundles = () => {
+    for (const bundle of bundles()) rmSync(at(`root/${bundle}`));
+  };
+  const dropBundleId = () =>
+    writeFileSync(
+      at("opt/pangolin/.env"),
+      read("opt/pangolin/.env").replace(/^PANGOLIN_RECOVERY_BUNDLE_ID=.*\n/m, ""),
+    );
+  // The acceptance criterion: .env names the bundle last written, and that bundle says so.
+  const expectIdMatchesBundle = () => {
+    const id = bundleId();
+    expect(id).toBeDefined();
+    expect(read("opt/pangolin/.env").match(/^PANGOLIN_RECOVERY_BUNDLE_ID=/gm)).toHaveLength(1);
+    expect(bundles()).toHaveLength(1);
+    expect(bundleText()).toContain(`Bundle id: ${id}\n`);
+    return id;
+  };
+
+  it("writes the bundle on the re-run after a first install that died before writing it", () => {
+    // /root as a file: write_bundle fails after the secrets and .env are written.
+    writeFileSync(at("root"), "not a directory");
+    const died = install();
+    expect(died.status).not.toBe(0);
+    expect(died.stdout).toContain("Generated the secret auth-secret");
+    expect(existsSync(at(PENDING))).toBe(true);
+    expect(mode(PENDING)).toBe(0o600);
+    expect(statSync(at(PENDING)).uid).toBe(uid);
+    expect(bundleId()).toBeUndefined();
+    const before = secrets();
+
+    rmSync(at("root"));
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    expect(secrets()).toEqual(before);
+    const id = expectIdMatchesBundle();
+    expect(result.stdout).toContain(`Its id is ${id}`);
+    expect(result.stdout).not.toContain("now tracks whether its recovery bundle");
+    expect(result.stdout).not.toContain("the bundle you already have");
+    expect(result.stdout).not.toMatch(/Added:.*PANGOLIN_RECOVERY_BUNDLE_ID/);
+    expect(existsSync(at(PENDING))).toBe(false);
+    for (const name of SECRET_NAMES) expect(bundleText()).toContain(before[name].trim());
+
+    // Bundled now: a plain re-run writes nothing.
+    removeBundles();
+    const again = install();
+    expect(again.status, again.stderr).toBe(0);
+    expect(bundles()).toEqual([]);
+    expect(bundleId()).toBe(id);
+  });
+
+  it("writes the bundle while the pending mark is there, instead of only adding an id", () => {
+    expect(install().status).toBe(0);
+    const first = bundleId();
+    removeBundles();
+    dropBundleId();
+    writeFileSync(at(PENDING), "");
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    const id = expectIdMatchesBundle();
+    expect(id).not.toBe(first);
+    expect(result.stdout).toContain(`Its id is ${id}`);
+    expect(result.stdout).not.toContain("now tracks whether its recovery bundle");
+    expect(existsSync(at(PENDING))).toBe(false);
+  });
+
+  it("leaves no pending mark after an uninterrupted first install; a re-run writes nothing", () => {
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    expectIdMatchesBundle();
+    expect(existsSync(at(PENDING))).toBe(false);
+    removeBundles();
+    expect(install().status).toBe(0);
+    expect(bundles()).toEqual([]);
+  });
+
+  it("writes a new bundle with RESTIC_REPOSITORY when a backup server is added later", () => {
+    expect(install("--backup-server", "").status).toBe(0);
+    const first = bundleId();
+    expect(bundleText()).not.toContain("RESTIC_REPOSITORY=");
+    removeBundles();
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    const id = expectIdMatchesBundle();
+    expect(id).not.toBe(first);
+    expect(bundleText()).toContain("RESTIC_REPOSITORY=rest:https://nas.lan:8000/pangolin\n");
+    expect(result.stdout).toContain(`Its id is ${id}`);
+    expect(result.stdout).toContain("Rewritten to include the backup repository");
+  });
+
+  it("writes a new bundle with the new repository when the backup server changes", () => {
+    expect(install().status).toBe(0);
+    const first = bundleId();
+    removeBundles();
+    const result = install("--backup-server", "rest:https://restic.example.net/pangolin");
+    expect(result.status, result.stderr).toBe(0);
+    const id = expectIdMatchesBundle();
+    expect(id).not.toBe(first);
+    expect(bundleText()).toContain("RESTIC_REPOSITORY=rest:https://restic.example.net/pangolin\n");
+    expect(bundleText()).not.toContain("nas.lan");
+    expect(result.stdout).toContain("Rewritten to include the backup repository");
+  });
+
+  it("writes no bundle when the backup server is unchanged or not given", () => {
+    expect(install().status).toBe(0);
+    const id = bundleId();
+    removeBundles();
+    const same = install();
+    expect(same.status, same.stderr).toBe(0);
+    expect(bundles()).toEqual([]);
+    expect(same.stdout).not.toContain("Rewritten to include the backup repository");
+    const bare = run("sh", [INSTALL, "--root", root, "--non-interactive", "--no-docker"]);
+    expect(bare.status, bare.stderr).toBe(0);
+    expect(bundles()).toEqual([]);
+    expect(bare.stdout).not.toContain("Rewritten to include the backup repository");
+    expect(bundleId()).toBe(id);
+    expect(existsSync(at(PENDING))).toBe(false);
+  });
+
+  it('takes --backup-server "" on an install with a repository as no backup change', () => {
+    expect(install().status).toBe(0);
+    removeBundles();
+    const result = install("--backup-server", "");
+    expect(result.status, result.stderr).toBe(0);
+    expect(bundles()).toEqual([]);
+    expect(existsSync(at(PENDING))).toBe(false);
+  });
+
+  it("retries the bundle for a backup change whose run died before writing it", () => {
+    expect(install().status).toBe(0);
+    const first = bundleId();
+    rmSync(at("root"), { recursive: true });
+    writeFileSync(at("root"), "not a directory");
+    const died = install("--backup-server", "rest:https://restic.example.net/pangolin");
+    expect(died.status).not.toBe(0);
+    expect(read("opt/pangolin/.env")).toContain(
+      "PANGOLIN_BACKUP_REPOSITORY=rest:https://restic.example.net/pangolin\n",
+    );
+    expect(existsSync(at(PENDING))).toBe(true);
+
+    rmSync(at("root"));
+    const result = run("sh", [INSTALL, "--root", root, "--non-interactive", "--no-docker"]);
+    expect(result.status, result.stderr).toBe(0);
+    const id = expectIdMatchesBundle();
+    expect(id).not.toBe(first);
+    expect(bundleText()).toContain("RESTIC_REPOSITORY=rest:https://restic.example.net/pangolin\n");
+    expect(existsSync(at(PENDING))).toBe(false);
+  });
+
+  it("says the bundle includes the backup repository for --bundle with a changed server", () => {
+    expect(install().status).toBe(0);
+    removeBundles();
+    const result = install(
+      "--bundle",
+      "--backup-server",
+      "rest:https://restic.example.net/pangolin",
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expectIdMatchesBundle();
+    expect(bundleText()).toContain("RESTIC_REPOSITORY=rest:https://restic.example.net/pangolin\n");
+    expect(result.stdout).toContain("Rewritten to include the backup repository");
+  });
+
+  it("writes a bundle, not just an id, for an install with no id and a changed backup server", () => {
+    expect(install().status).toBe(0);
+    removeBundles();
+    dropBundleId();
+    const result = install("--backup-server", "rest:https://restic.example.net/pangolin");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).not.toMatch(/Added:.*PANGOLIN_RECOVERY_BUNDLE_ID/);
+    expect(result.stdout).not.toContain("now tracks whether its recovery bundle");
+    expectIdMatchesBundle();
+  });
+
+  it("marks the bundle pending when a later run regenerates a secret", () => {
+    expect(install().status).toBe(0);
+    rmSync(at("opt/pangolin/secrets/app-key"));
+    rmSync(at("root"), { recursive: true });
+    writeFileSync(at("root"), "not a directory");
+    const died = install();
+    expect(died.status).not.toBe(0);
+    expect(died.stdout).toContain("Generated the secret app-key");
+    expect(existsSync(at(PENDING))).toBe(true);
+    expect(mode(PENDING)).toBe(0o600);
+
+    rmSync(at("root"));
+    expect(install().status).toBe(0);
+    expectIdMatchesBundle();
+    expect(bundleText()).toContain(`PANGOLIN_APP_KEY=${secrets()["app-key"].trim()}\n`);
+    expect(existsSync(at(PENDING))).toBe(false);
+  });
+
+  it("only adds an id to a pre-existing install with no mark and no backup change", () => {
+    expect(install().status).toBe(0);
+    removeBundles();
+    dropBundleId();
+    const result = install();
+    expect(result.status, result.stderr).toBe(0);
+    expect(bundleId()).toBeDefined();
+    expect(bundles()).toEqual([]);
+    expect(result.stdout).toContain("now tracks whether its recovery bundle");
+  });
+});
+
 describe("install.sh, secrets over an existing database", () => {
   const UNINSTALL = join(here, "uninstall.sh");
   // What the server leaves in the data root once it has run.

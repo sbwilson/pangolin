@@ -125,7 +125,7 @@ sudo sh deploy/install.sh --non-interactive \
 | --- | --- |
 | `--proxy npm` | Proxy mode. Only `npm` works today; `caddy` and `tailscale` answer "not yet supported" and change nothing |
 | `--hostname NAME` | The public host name; the app is served at `https://NAME` |
-| `--backup-server URL` | A restic REST URL (stored in `.env` and allowlisted) |
+| `--backup-server URL` | A restic REST URL (stored in `.env` and allowlisted). Set or changed on a re-run, it writes a new recovery bundle (new id) that includes it as `RESTIC_REPOSITORY` |
 | `--tang-url URL` | The Tang server that unlocks the data disk (stored in `.env` and allowlisted) |
 | `--npm-host IP` | The NPM host's IPv4 address; also becomes `PANGOLIN_TRUSTED_PROXIES` |
 | `--admin-network CIDR` | Where SSH is allowed from |
@@ -168,7 +168,7 @@ What it does, in order:
 | `/srv/pangolin/` | 0700 | The database and attachments (the container's `/data`) |
 | `/srv/pangolin/backup/` | | Backup staging (`staging/<id>/`: a snapshot waiting to be pushed, removed once pushed) and restic's cache (`cache/`) |
 | `/srv/pangolin/pangolin.lock` | | An empty lock file: the server (or `pangolin reset-user` on a stopped stack) holds a lock on it so only one process writes the database. It holds no data and may be left out of backups; never delete it while anything runs |
-| `/root/pangolin-recovery-bundle-<date>.txt` | 0600 | The recovery bundle (first install, or `--bundle`) |
+| `/root/pangolin-recovery-bundle-<date>.txt` | 0600 | The recovery bundle (first install, `--bundle`, a backup server set or changed, or the next run after one of those stopped before the bundle was in place) |
 | `/usr/local/bin/pangolin` | 0755 | The admin command (see [Administration](#9-administration)) |
 
 The container runs as a non-root user with a read-only root filesystem, no capabilities and
@@ -241,6 +241,14 @@ away), then delete it:
 shred -u /root/pangolin-recovery-bundle-*.txt
 ```
 
+Whenever a bundle is due (secrets generated, `--bundle`, or a backup server set or changed),
+`install.sh` first sets a marker beside the secrets (`/opt/pangolin/secrets/.bundle-pending`,
+root's only) and removes it only once the bundle is in place, so if the run stops in between,
+the next run of `install.sh` writes the bundle (and its id). `uninstall.sh` keeps the marker
+with the secrets when it keeps the data. An install interrupted before installers had this
+marker gets its bundle with `install.sh --bundle`. So does a backup server added by editing
+`.env` by hand, so that the bundle carries `RESTIC_REPOSITORY`.
+
 Every bundle has an id, printed at its top (`Bundle id: 20261003T010203Z-a1b2`) and kept in
 `/opt/pangolin/.env` as `PANGOLIN_RECOVERY_BUNDLE_ID`. The id is not a secret, and the bundle
 itself never reaches the server. Until you confirm the bundle with that id is stored safely,
@@ -256,8 +264,9 @@ sudo pangolin confirm-bundle
 It needs the server running: on a stopped stack it says "Pangolin is not running" and exits 3.
 
 The confirmation is recorded in the database and audited as `cli:confirm-bundle`. A new bundle
-(`--bundle`, or a secret that had to be generated again) gets a new id, so the warning comes
-back until you confirm that one. An install from before bundle ids gets an id the next time you
+(`--bundle`, a secret that had to be generated again, or a backup server set or changed, so the
+bundle carries `RESTIC_REPOSITORY`) gets a new id, so the warning comes back until you confirm
+that one. An install from before bundle ids gets an id the next time you
 re-run `install.sh` (no bundle is written; `pangolin upgrade` does not add one), and then warns
 until you confirm the bundle you already have. Restoring a backup taken before your last
 confirmation brings the warning back; confirm again.
