@@ -3,7 +3,7 @@ title: 'DNS drift recovery'
 type: 'bugfix'
 ticket: '4'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: 'dcb9b71eaca3c89d60c77da60f3517b2905aace6'
 route: 'full'
 route_source: 'auto'

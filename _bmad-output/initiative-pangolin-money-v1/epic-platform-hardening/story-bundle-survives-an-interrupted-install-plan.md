@@ -3,7 +3,7 @@ title: 'Bundle survives an interrupted install'
 type: 'bugfix'
 ticket: '3'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: '44f6f1edeb5944c5847f0a441a826c0b1fa0164c'
 route: 'full'
 route_source: 'auto'

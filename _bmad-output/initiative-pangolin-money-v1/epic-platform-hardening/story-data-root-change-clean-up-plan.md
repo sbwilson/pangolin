@@ -3,7 +3,7 @@ title: 'Data-root change clean-up'
 type: 'bugfix'
 ticket: '5'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: 'fa1fc018e998ca17e8952ce9ca07f7467c50ba2b'
 route: 'oneshot'
 route_source: 'auto'

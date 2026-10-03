@@ -3,7 +3,7 @@ title: 'Lockout holds under concurrent sign-ins'
 type: 'bugfix'
 ticket: '1'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: 'cf6498dc81a41b23941bde0f8126febe319b2a03'
 route: 'full'
 route_source: 'auto'
