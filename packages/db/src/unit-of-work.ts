@@ -13,6 +13,7 @@ import {
   createUserRepo,
 } from "./identity-repos.ts";
 import { createJobRepo } from "./job-repo.ts";
+import { createAccountRepo, createTransactionRepo } from "./ledger-repos.ts";
 import type { Db } from "./open.ts";
 import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
@@ -87,6 +88,8 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     },
     jobs: createJobRepo(orm, () => guard(scope)),
     reviewItems: createReviewItemRepo(orm, () => guard(scope)),
+    accounts: createAccountRepo(orm, () => guard(scope)),
+    transactions: createTransactionRepo(orm, () => guard(scope)),
     backups: createBackupSnapshotRepo(orm, () => guard(scope)),
     backupVerifications: createBackupVerificationRepo(orm, () => guard(scope)),
     recoveryBundle: createRecoveryBundleRepo(orm, () => guard(scope)),
@@ -149,6 +152,12 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               firstCreatedAt: repos.jobs.firstCreatedAt,
             },
             reviewItems: { listOpenFor: repos.reviewItems.listOpenFor },
+            accounts: {
+              findVisible: repos.accounts.findVisible,
+              owners: repos.accounts.owners,
+              any: repos.accounts.any,
+            },
+            transactions: { listVisible: repos.transactions.listVisible },
             backups: { find: repos.backups.find, latestPushed: repos.backups.latestPushed },
             backupVerifications: { latest: repos.backupVerifications.latest },
             recoveryBundle: { get: repos.recoveryBundle.get },

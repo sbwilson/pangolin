@@ -10,6 +10,7 @@ import {
   fetchMe,
   fetchNotices,
   fetchRecoveryBundle,
+  fetchTransactions,
   invitePartner,
   type Me,
   type Notice,
@@ -306,11 +307,58 @@ function Notices() {
   );
 }
 
+const MONEY = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" });
+
+/** The transactions the signed-in person may see: shared accounts and their own private ones. */
+function LedgerView({ onBack }: { onBack: () => void }) {
+  const ledger = useQuery({
+    queryKey: ["ledger", "transactions"],
+    queryFn: fetchTransactions,
+    retry: false,
+  });
+  return (
+    <section aria-labelledby="ledger">
+      <h2 id="ledger">Transactions</h2>
+      {ledger.isPending ? <p>Loading…</p> : null}
+      {ledger.isError ? <p role="alert">Transactions unavailable</p> : null}
+      {ledger.data === undefined ? null : ledger.data.length === 0 ? (
+        <p>No transactions yet</p>
+      ) : (
+        <table aria-labelledby="ledger">
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Description</th>
+              <th scope="col">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ledger.data.map((txn) => (
+              <tr key={txn.id}>
+                <td>
+                  <time dateTime={txn.postedOn}>{txn.postedOn}</time>
+                </td>
+                <td>{txn.descriptionRaw}</td>
+                <td>{MONEY.format(txn.amountCents / 100)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <button type="button" onClick={onBack}>
+        Back
+      </button>
+    </section>
+  );
+}
+
 function Home({
   me,
   onSignOut,
   onChanged,
+  onLedger,
 }: {
+  onLedger: () => void;
   me: Me;
   onSignOut: () => void;
   onChanged: () => void;
@@ -322,6 +370,9 @@ function Home({
         {me.demo ? " (demo)" : null}
       </p>
       <Notices />
+      <button type="button" onClick={onLedger}>
+        Transactions
+      </button>
       <HealthStatus />
       <LastBackup />
       <RecoveryBundle />
@@ -439,8 +490,17 @@ export function App() {
   } else if (!me.data.demo && !me.data.recoveryCodes.issued) {
     // Enrolment has just completed (for the first time, or again after a reset).
     body = <InitialRecoveryCodes onDone={refresh} />;
+  } else if (path === "/ledger") {
+    body = <LedgerView onBack={() => navigate("/")} />;
   } else {
-    body = <Home me={me.data} onSignOut={signOut} onChanged={refresh} />;
+    body = (
+      <Home
+        me={me.data}
+        onSignOut={signOut}
+        onChanged={refresh}
+        onLedger={() => navigate("/ledger")}
+      />
+    );
   }
 
   return (

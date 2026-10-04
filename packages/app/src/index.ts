@@ -1,5 +1,10 @@
 // The package root. `systemViewer` is deliberately absent: it is exported only from
 // `@pangolin/app/system-viewer`, which lint bans outside `apps/server/src/{jobs,admin}` (AD-6).
+export {
+  type CreateAccountInput,
+  createAccount,
+  createAccountInput,
+} from "./accounts/create-account.ts";
 export { fixedClock, fixedClockAt, systemClock } from "./clock.ts";
 export type { UseCaseContext } from "./context.ts";
 export {
@@ -150,6 +155,17 @@ export {
   type Schedule,
   scheduleKey,
 } from "./jobs/registry.ts";
+export {
+  type CreateTransactionInput,
+  createTransaction,
+  createTransactionInput,
+} from "./ledger/create-transaction.ts";
+export {
+  type LedgerTransaction,
+  type ListTransactionsInput,
+  listTransactions,
+  listTransactionsInput,
+} from "./ledger/list-transactions.ts";
 export type { Clock } from "./ports/clock.ts";
 export type { SystemHealthPort } from "./ports/system-health.ts";
 export type { CodeHasher, TokenPort } from "./ports/tokens.ts";
@@ -192,6 +208,17 @@ export type {
   UnitOfWork,
   UserEnrolment,
   UserRepo,
+} from "./ports/unit-of-work.ts";
+export {
+  ACCOUNT_TYPES,
+  type AccountOwnerRow,
+  type AccountRepo,
+  type AccountRow,
+  type AccountType,
+  type SplitRow,
+  type TransactionRepo,
+  type TransactionRow,
+  type TransactionWithSplits,
 } from "./ports/unit-of-work.ts";
 export {
   BACKUP_CHECK_JOB,

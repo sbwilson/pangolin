@@ -1,6 +1,7 @@
 // The admin commands (story 1.9, AD-16): the fixed set the admin socket accepts, and the stopped
 // stack's `reset-user`. Each runs `app` use cases as `systemViewer("cli:<command>")`; no command
 // reads or writes a repository itself, and there is no generic query, export or eval command.
+import { readFileSync } from "node:fs";
 import {
   AppError,
   type BackupProgress,
@@ -35,6 +36,7 @@ import {
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import { z } from "zod";
+import { linkSeed } from "./seed.ts";
 
 export const ADMIN_COMMANDS = [
   "status",
@@ -42,6 +44,7 @@ export const ADMIN_COMMANDS = [
   "backup",
   "backup-status",
   "confirm-bundle",
+  "seed",
 ] as const;
 export type AdminCommand = (typeof ADMIN_COMMANDS)[number];
 
@@ -67,6 +70,8 @@ export interface AdminDeps {
    * there is nothing to confirm and `confirm-bundle` refuses.
    */
   readonly bundleId?: string;
+  /** The seed file the `seed` command reads (`dist/demo-seed.json`); undefined: it refuses. */
+  readonly seedFile?: string;
 }
 
 /** What `reset-user` needs: enough to run on a stopped stack, without the runner. */
@@ -231,6 +236,33 @@ export function resetUserCommand(deps: ResetUserDeps, args: unknown = {}): Reset
   };
 }
 
+/** What `seed` answers: how much it added. */
+export interface SeedResult {
+  readonly accounts: number;
+  readonly events: number;
+}
+
+const seedArgs = z.object({}).strict();
+
+/**
+ * `seed`: loads the seed's accounts and transactions onto the signed-up people: the seed's
+ * `person-a` and `person-b` become the first two logins, by sign-up order. For the e2e run and
+ * dev installs; it needs both partners signed up and an empty ledger, and takes no path (it
+ * reads the build's `demo-seed.json`).
+ */
+export function seedCommand(deps: AdminDeps, args: unknown = {}): SeedResult {
+  parseArgs(seedArgs, args);
+  if (deps.seedFile === undefined) throw new AppError("Validation", "There is no seed file");
+  let seedJson: string;
+  try {
+    seedJson = readFileSync(deps.seedFile, "utf8");
+  } catch {
+    throw new AppError("Validation", "The seed file could not be read");
+  }
+  const { accounts, events } = linkSeed(deps.uow, deps, seedJson);
+  return { accounts, events };
+}
+
 export function isAdminCommand(command: string): command is AdminCommand {
   return (ADMIN_COMMANDS as readonly string[]).includes(command);
 }
@@ -249,5 +281,7 @@ export function runAdminCommand(deps: AdminDeps, command: string, args: unknown)
       return backupStatusCommand(deps, args);
     case "confirm-bundle":
       return confirmBundleCommand(deps, args);
+    case "seed":
+      return seedCommand(deps, args);
   }
 }

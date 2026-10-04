@@ -1,7 +1,13 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AppError, createIdGenerator, systemClock } from "@pangolin/app";
+import {
+  AppError,
+  createIdGenerator,
+  listTransactions,
+  personViewer,
+  systemClock,
+} from "@pangolin/app";
 import {
   createUnitOfWork,
   type Db,
@@ -12,7 +18,8 @@ import {
 } from "@pangolin/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { generateSeedFile } from "../../scripts/demo-seed.ts";
-import { applySeed, parseSeed } from "./seed.ts";
+import { type AdminDeps, seedCommand } from "./commands.ts";
+import { applySeed, linkSeed, parseSeed } from "./seed.ts";
 
 let seedDir: string;
 let seedJson: string;
@@ -95,10 +102,34 @@ describe("applySeed", () => {
       entity: string;
       action: string;
     }[];
-    // The default settings already match the seed, so only the people are written.
-    expect(audit).toHaveLength(count("person") as number);
-    for (const row of audit)
-      expect(row).toEqual({ actor: "cli:seed", entity: "person", action: "create" });
+    // The default settings already match the seed, so only people, accounts and transactions.
+    const entities = (entity: string) => audit.filter((row) => row.entity === entity);
+    expect(entities("person")).toHaveLength(count("person") as number);
+    expect(entities("account")).toHaveLength(count("account") as number);
+    expect(entities("transaction")).toHaveLength(count('"transaction"') as number);
+    expect(audit).toHaveLength(
+      (count("person") as number) +
+        (count("account") as number) +
+        (count('"transaction"') as number),
+    );
+    for (const row of audit) {
+      expect(row).toMatchObject({ actor: "cli:seed", action: "create" });
+    }
+  });
+
+  it("applies the seed's accounts: one shared and one private per person, owners attached", () => {
+    applySeed(createUnitOfWork(db), deps(), seedJson);
+    const rows = db
+      .prepare(
+        `SELECT a.name, a.is_private, group_concat(o.person_id) AS owners, count(*) AS n
+         FROM account a JOIN account_owner o ON o.account_id = a.id GROUP BY a.id ORDER BY a.name`,
+      )
+      .all() as { name: string; is_private: number; owners: string; n: number }[];
+    expect(rows.map((r) => [r.name, r.is_private, r.n])).toEqual([
+      ["Joint everyday", 0, 2],
+      ["Person A private", 1, 1],
+      ["Person B private", 1, 1],
+    ]);
   });
 
   it("audits a settings change too", () => {
@@ -140,10 +171,10 @@ describe("applySeed", () => {
   });
 
   it("rejects an unknown event type, naming it, after valid events and before any write", () => {
-    const events = [...seed.events, { type: "account.created", module: "accounts", key: "x" }];
+    const events = [...seed.events, { type: "budget.created", module: "budgets", key: "x" }];
     const error = rejection(() => applySeed(createUnitOfWork(db), deps(), withEvents(events)));
     expect(error.message).toContain(
-      `events.${seed.events.length}: unknown event type "account.created"`,
+      `events.${seed.events.length}: unknown event type "budget.created"`,
     );
     expect([count("person"), count("audit_log")]).toEqual([0, 0]);
   });
@@ -160,5 +191,112 @@ describe("applySeed", () => {
   it("rejects unknown fields on an event", () => {
     const [first] = seed.events;
     expect(() => parseSeed(withEvents([{ ...first, extra: 1 }]))).toThrow(/events\.0/);
+  });
+});
+
+describe("linkSeed", () => {
+  /** A person with a login, as sign-up leaves them; `n` orders them by creation time. */
+  function signUp(n: number, name: string): string {
+    const id = `01J000000000000000000000${n}A`;
+    db.prepare(
+      `INSERT INTO auth_user (id, name, email, email_verified, two_factor_enabled, created_at, updated_at)
+       VALUES (?, ?, ?, 0, 1, 'x', 'x')`,
+    ).run(`user-${n}`, name, `${name}@example.com`);
+    db.prepare(
+      `INSERT INTO person (id, user_id, display_name, colour, created_at, updated_at)
+       VALUES (?, ?, ?, '#2563eb', ?, ?)`,
+    ).run(id, `user-${n}`, name, `2026-09-0${n}T00:00:00.000Z`, `2026-09-0${n}T00:00:00.000Z`);
+    return id;
+  }
+
+  it("attaches the seed's accounts to the signed-up people by sign-up order, creating nobody", () => {
+    const alex = signUp(1, "Alex");
+    const sam = signUp(2, "Sam");
+    const result = linkSeed(createUnitOfWork(db), deps(), seedJson);
+    expect(result).toMatchObject({ accounts: 3, people: { "person-a": alex, "person-b": sam } });
+    expect(count("person")).toBe(2);
+    const owners = db
+      .prepare(
+        `SELECT a.name, o.person_id FROM account a JOIN account_owner o ON o.account_id = a.id
+         WHERE a.is_private = 1 ORDER BY a.name`,
+      )
+      .all();
+    expect(owners).toEqual([
+      { name: "Person A private", person_id: alex },
+      { name: "Person B private", person_id: sam },
+    ]);
+    const as = (id: string) => ({
+      viewer: personViewer(id as never, systemClock("UTC").now()),
+      clock: systemClock("UTC"),
+      newId: createIdGenerator(),
+      uow: createUnitOfWork(db),
+    });
+    const seen = (id: string) => listTransactions(as(id)).map((t) => t.descriptionRaw);
+    expect(seen(alex).some((d) => d.startsWith("Joint:"))).toBe(true);
+    expect(seen(alex).some((d) => d.startsWith("Person A private:"))).toBe(true);
+    expect(seen(alex).some((d) => d.startsWith("Person B private:"))).toBe(false);
+    expect(seen(sam).some((d) => d.startsWith("Person B private:"))).toBe(true);
+    expect(seen(sam).some((d) => d.startsWith("Person A private:"))).toBe(false);
+  });
+
+  it("leaves the household settings alone", () => {
+    signUp(1, "Alex");
+    signUp(2, "Sam");
+    // Differs from the seed's timezone, so applying the seed's settings event would change it.
+    db.prepare("UPDATE household_settings SET timezone = 'Australia/Perth'").run();
+    const before = db.prepare("SELECT * FROM household_settings").get();
+    linkSeed(createUnitOfWork(db), deps(), seedJson);
+    expect(db.prepare("SELECT * FROM household_settings").get()).toEqual(before);
+    expect(db.prepare("SELECT timezone FROM household_settings").pluck().get()).toBe(
+      "Australia/Perth",
+    );
+  });
+
+  it("asks for both partners to sign up first, writing nothing", () => {
+    signUp(1, "Alex");
+    expect(() => linkSeed(createUnitOfWork(db), deps(), seedJson)).toThrow(/sign up both partners/);
+    expect(count("account")).toBe(0);
+  });
+
+  it("refuses a ledger that has an account but no transactions, writing nothing", () => {
+    signUp(1, "Alex");
+    signUp(2, "Sam");
+    db.prepare(
+      "INSERT INTO account (id, name, type, currency, is_private, created_at, updated_at) VALUES ('01J0000000000000000000009A','x','other','AUD',0,'t','t')",
+    ).run();
+    const error = rejection(() => linkSeed(createUnitOfWork(db), deps(), seedJson));
+    expect(error.code).toBe("Conflict");
+    expect(count("account")).toBe(1);
+  });
+
+  it("refuses a second run on a ledger that already has transactions", () => {
+    signUp(1, "Alex");
+    signUp(2, "Sam");
+    linkSeed(createUnitOfWork(db), deps(), seedJson);
+    const error = rejection(() => linkSeed(createUnitOfWork(db), deps(), seedJson));
+    expect(error.code).toBe("Conflict");
+    expect(count("account")).toBe(3);
+  });
+});
+
+describe("seedCommand", () => {
+  const adminDeps = (seedFile?: string) =>
+    ({
+      uow: createUnitOfWork(db),
+      ...deps(),
+      ...(seedFile === undefined ? {} : { seedFile }),
+    }) as AdminDeps;
+
+  it("refuses without a readable seed file", () => {
+    expect(() => seedCommand(adminDeps())).toThrow(/no seed file/);
+    expect(() => seedCommand(adminDeps(join(seedDir, "missing.json")))).toThrow(
+      /could not be read/,
+    );
+  });
+
+  it("takes no arguments", () => {
+    expect(() => seedCommand(adminDeps(join(seedDir, "seed.json")), { path: "x" })).toThrow(
+      /Invalid arguments/,
+    );
   });
 });

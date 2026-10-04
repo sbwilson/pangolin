@@ -218,6 +218,98 @@ export interface ReviewItemRepo {
   listOpenFor(viewer: Viewer): ReviewItemRow[];
 }
 
+/** The kinds of account (`account.type`). */
+export const ACCOUNT_TYPES = [
+  "transaction",
+  "savings",
+  "offset",
+  "credit_card",
+  "home_loan",
+  "brokerage",
+  "super",
+  "property",
+  "vehicle",
+  "other",
+] as const;
+export type AccountType = (typeof ACCOUNT_TYPES)[number];
+
+/** `account`: any balance we track. A private account is seen only by its owner (AD-3). */
+export interface AccountRow {
+  readonly id: Id<"Account">;
+  readonly name: string;
+  readonly type: AccountType;
+  /** ISO 4217 code; v1 requires it to match the base currency. */
+  readonly currency: string;
+  readonly isPrivate: boolean;
+  /** UTC ISO-8601 timestamp. */
+  readonly createdAt: string;
+  /** UTC ISO-8601 timestamp. */
+  readonly updatedAt: string;
+}
+
+/** `account_owner`: one owner of an account and their share in basis points. */
+export interface AccountOwnerRow {
+  readonly accountId: Id<"Account">;
+  readonly personId: Id<"Person">;
+  readonly shareBp: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface AccountRepo {
+  /** Inserts the account and its owners. */
+  insert(row: AccountRow, owners: readonly AccountOwnerRow[]): void;
+  /**
+   * The account `viewer` may see, or undefined when it does not exist or is another person's
+   * private account (the two are indistinguishable). Throws when given no viewer.
+   */
+  findVisible(viewer: Viewer, id: string): AccountRow | undefined;
+  /** Whether any account exists (deleted ones included). */
+  any(): boolean;
+  /** The owners of an account, by person ID. */
+  owners(accountId: string): AccountOwnerRow[];
+}
+
+/** `transaction`: one bank line. */
+export interface TransactionRow {
+  readonly id: Id<"Transaction">;
+  readonly accountId: Id<"Account">;
+  /** `YYYY-MM-DD`. */
+  readonly postedOn: string;
+  /** Signed integer minor units. */
+  readonly amountCents: number;
+  readonly descriptionRaw: string;
+  readonly status: "pending" | "posted";
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** `split`: where part of a transaction's money went. */
+export interface SplitRow {
+  readonly id: Id<"Split">;
+  readonly transactionId: Id<"Transaction">;
+  readonly amountCents: number;
+  /** `shared` or a person ID. A private account's splits carry its owner. */
+  readonly beneficiary: string;
+  readonly memo: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** A transaction with its splits, as a read returns it. */
+export interface TransactionWithSplits extends TransactionRow {
+  readonly splits: readonly SplitRow[];
+}
+
+export interface TransactionRepo {
+  insert(row: TransactionRow, splits: readonly SplitRow[]): void;
+  /**
+   * The transactions `viewer` may see (those of public accounts and of their own private ones),
+   * newest first, with their splits. Throws when given no viewer.
+   */
+  listVisible(viewer: Viewer): TransactionWithSplits[];
+}
+
 /**
  * `recovery_bundle`: the recovery bundle the household confirmed it stored safely (story 1.17).
  * Only its id, never a secret.
@@ -415,6 +507,8 @@ export interface TxRepos {
   readonly audit: AuditRepo;
   readonly jobs: JobRepo;
   readonly reviewItems: ReviewItemRepo;
+  readonly accounts: AccountRepo;
+  readonly transactions: TransactionRepo;
   readonly backups: BackupSnapshotRepo;
   readonly backupVerifications: BackupVerificationRepo;
   readonly recoveryBundle: RecoveryBundleRepo;
@@ -434,6 +528,8 @@ export interface ReadRepos {
     "listDead" | "listPending" | "listRunning" | "countByStatus" | "find" | "firstCreatedAt"
   >;
   readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
+  readonly accounts: Pick<AccountRepo, "findVisible" | "owners" | "any">;
+  readonly transactions: Pick<TransactionRepo, "listVisible">;
   readonly backups: Pick<BackupSnapshotRepo, "find" | "latestPushed">;
   readonly backupVerifications: Pick<BackupVerificationRepo, "latest">;
   readonly recoveryBundle: Pick<RecoveryBundleRepo, "get">;
