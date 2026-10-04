@@ -199,3 +199,15 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-web-stack-router-with-url-search-params-table-and-virtual-li-plan.md`
   summary: Extract the RootLayout gate precedence into a pure `selectGate(me, pathname)` with node unit tests, normalise trailing slashes on /setup and /recover, and memoise the session context; decide whether unknown paths should redirect or show Home.
   evidence: RootLayout.tsx compares exact pathnames in an if-chain and only e2e covers the gates (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-classify-module-plan.md`
+  summary: Decide cross-scope cascades: deleting a shared payee soft-deletes the owner's scoped aliases, and deleting a category clears scoped payees' defaults, both without the owner seeing it.
+  evidence: softDeleteForPayee and clearDefaultCategory ignore scope (review pass 1, medium).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-classify-module-plan.md`
+  summary: Give soft-deleted categories, tags and activities a read path by id so transaction and report views can still show their names, and decide whether deleting a tag or activity referenced by splits is allowed.
+  evidence: classify repos `find`/`list` are live-only; deleteTag and deleteActivity have no in-use rule (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-classify-module-plan.md`
+  summary: Harden classify inputs: linear-time or safe-regex alias matching, case-insensitive names, no-op updates skipping audit, name uniqueness by (scope, name) query with UNIQUE mapped to Conflict, typed error in `scopeFor`, defaults seeding inside the seed transaction, and the tax-category labels and RENTAL code from a source.
+  evidence: payees.ts requirePatternValid, scope.ts, admin/seed.ts, defaults.ts (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-classify-module-plan.md`
+  summary: Tidy classify routes and test parity: nest aliases under a distinct prefix, one no-store middleware for /api/classify, GET by id for groups, categories and tax categories, memory-mirror payee update order and activity date CHECK, HTTP tests for partner by-id on aliases and activities.
+  evidence: apps/server/src/http/app.ts classify block and memory-uow.ts (review pass 1, low).

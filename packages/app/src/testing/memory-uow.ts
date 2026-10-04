@@ -913,6 +913,18 @@ function auditRepo(working: MemoryState, check: () => void, failAudit: () => boo
   };
 }
 
+function assertGroupKind(kind: string): void {
+  if (!["income", "expense", "transfer"].includes(kind)) {
+    throw new Error("CHECK constraint failed: category_group_kind");
+  }
+}
+
+function assertMatchKind(kind: string): void {
+  if (!["exact", "contains", "prefix", "regex"].includes(kind)) {
+    throw new Error("CHECK constraint failed: payee_alias_match_kind");
+  }
+}
+
 const uniqueViolation = (what: string) => new Error(`UNIQUE constraint failed: ${what}`);
 
 /** Throws SQLite's foreign key error unless `id` is null or among `rows`. */
@@ -1047,7 +1059,25 @@ function categoryGroupRepo(working: MemoryState, check: () => void): CategoryGro
       if (working.categoryGroups.some((g) => g.name === row.name)) {
         throw uniqueViolation("category_group.name");
       }
+      assertGroupKind(row.kind);
       working.categoryGroups.push(row);
+    },
+    update: (row) => {
+      check();
+      const at = working.categoryGroups.findIndex((g) => g.id === row.id);
+      const before = working.categoryGroups[at];
+      if (before === undefined) throw new Error(`Category group ${row.id} not found`);
+      if (working.categoryGroups.some((g) => g.id !== row.id && g.name === row.name)) {
+        throw uniqueViolation("category_group.name");
+      }
+      assertGroupKind(row.kind);
+      working.categoryGroups[at] = {
+        ...before,
+        name: row.name,
+        kind: row.kind,
+        sort: row.sort,
+        updatedAt: row.updatedAt,
+      };
     },
     find: (viewer, id) => {
       requireViewer(viewer);
@@ -1074,6 +1104,23 @@ function categoryRepo(working: MemoryState, check: () => void): CategoryRepo {
         throw uniqueViolation("category.group_id, category.name");
       }
       working.categories.push(row);
+    },
+    update: (row) => {
+      check();
+      const at = working.categories.findIndex((c) => c.id === row.id && !working.deleted.has(c.id));
+      const before = working.categories[at];
+      if (before === undefined) throw new Error(`Category ${row.id} not found`);
+      references(working.categoryGroups, row.groupId, "category.group_id");
+      if (live().some((c) => c.id !== row.id && c.groupId === row.groupId && c.name === row.name)) {
+        throw uniqueViolation("category.group_id, category.name");
+      }
+      working.categories[at] = {
+        ...before,
+        groupId: row.groupId,
+        name: row.name,
+        isFixedCost: row.isFixedCost,
+        updatedAt: row.updatedAt,
+      };
     },
     find: (viewer, id) => {
       requireViewer(viewer);
@@ -1108,6 +1155,25 @@ function taxCategoryRepo(working: MemoryState, check: () => void): TaxCategoryRe
         throw new Error("CHECK constraint failed: tax_category_default_deductible_bp");
       }
       working.taxCategories.push(row);
+    },
+    update: (row) => {
+      check();
+      const at = working.taxCategories.findIndex((t) => t.id === row.id);
+      const before = working.taxCategories[at];
+      if (before === undefined) throw new Error(`Tax category ${row.id} not found`);
+      if (working.taxCategories.some((t) => t.id !== row.id && t.code === row.code)) {
+        throw uniqueViolation("tax_category.code");
+      }
+      if (row.defaultDeductibleBp < 0 || row.defaultDeductibleBp > 10_000) {
+        throw new Error("CHECK constraint failed: tax_category_default_deductible_bp");
+      }
+      working.taxCategories[at] = {
+        ...before,
+        code: row.code,
+        label: row.label,
+        defaultDeductibleBp: row.defaultDeductibleBp,
+        updatedAt: row.updatedAt,
+      };
     },
     find: (viewer, id) => {
       requireViewer(viewer);
@@ -1158,13 +1224,38 @@ function scoped<R extends { readonly id: string; readonly scopePersonId: string 
         .filter((row) => inScope(viewer, row))
         .sort((a, b) => byText(`${order(a)}|${a.id}`, `${order(b)}|${b.id}`));
     },
-    softDelete: (id: string, at: string): boolean => {
+    update: (viewer: Viewer, row: R, merge: (before: R, next: R) => R): boolean => {
+      requireViewer(viewer);
       check();
-      const row = live().find((r) => r.id === id);
+      const before = live().find((r) => r.id === row.id && inScope(viewer, r));
+      if (before === undefined) return false;
+      const next = merge(before, row);
+      if (
+        live().some(
+          (r) =>
+            r.id !== row.id && r.scopePersonId === before.scopePersonId && key(r) === key(next),
+        )
+      ) {
+        throw uniqueViolation(what);
+      }
+      setRows(rows().map((r) => (r.id === row.id ? next : r)));
+      return true;
+    },
+    softDelete: (viewer: Viewer, id: string, at: string): boolean => {
+      requireViewer(viewer);
+      check();
+      const row = live().find((r) => r.id === id && inScope(viewer, r));
       if (row === undefined) return false;
       working.deleted.add(id);
       setRows(rows().map((r) => (r.id === id ? { ...r, updatedAt: at } : r)));
       return true;
+    },
+    originOf: (viewer: Viewer, id: string): Id<"Account"> | null | undefined => {
+      requireViewer(viewer);
+      check();
+      const row = live().find((r) => r.id === id && inScope(viewer, r));
+      if (row === undefined) return undefined;
+      return (working.origins.get(id) ?? null) as Id<"Account"> | null;
     },
   };
 }
@@ -1185,7 +1276,14 @@ function tagRepo(working: MemoryState, check: () => void): TagRepo {
     insert: base.insertRow,
     find: base.find,
     list: base.list,
+    update: (viewer, row) =>
+      base.update(viewer, row, (before, next) => ({
+        ...before,
+        name: next.name,
+        updatedAt: next.updatedAt,
+      })),
     softDelete: base.softDelete,
+    originOf: base.originOf,
     attach: (row) => {
       check();
       references(working.splits, row.splitId, "split_tag.split_id");
@@ -1238,7 +1336,21 @@ function activityRepo(working: MemoryState, check: () => void): ActivityRepo {
     },
     find: base.find,
     list: base.list,
+    update: (viewer, row) => {
+      if (row.budgetCents !== null && row.budgetCents < 0) {
+        throw new Error("CHECK constraint failed: activity_budget_cents");
+      }
+      return base.update(viewer, row, (before, next) => ({
+        ...before,
+        name: next.name,
+        startsOn: next.startsOn,
+        endsOn: next.endsOn,
+        budgetCents: next.budgetCents,
+        updatedAt: next.updatedAt,
+      }));
+    },
     softDelete: base.softDelete,
+    originOf: base.originOf,
   };
 }
 
@@ -1259,9 +1371,37 @@ function payeeRepo(working: MemoryState, check: () => void): PayeeRepo {
       references(working.categories, row.defaultCategoryId, "payee.default_category_id");
       base.insertRow(row, origin);
     },
+    clearDefaultCategory: (categoryId, at) => {
+      check();
+      const hit = working.payees.filter(
+        (p) => p.defaultCategoryId === categoryId && !working.deleted.has(p.id),
+      );
+      const out = hit
+        .map((before) => ({
+          before,
+          originAccountId: (working.origins.get(before.id) ?? null) as Id<"Account"> | null,
+        }))
+        .sort((a, b) => byText(a.before.id, b.before.id));
+      working.payees = working.payees.map((p) =>
+        hit.includes(p) ? { ...p, defaultCategoryId: null, updatedAt: at } : p,
+      );
+      return out;
+    },
     find: base.find,
     list: base.list,
+    update: (viewer, row) => {
+      requireViewer(viewer);
+      references(working.categories, row.defaultCategoryId, "payee.default_category_id");
+      return base.update(viewer, row, (before, next) => ({
+        ...before,
+        name: next.name,
+        websiteUrl: next.websiteUrl,
+        defaultCategoryId: next.defaultCategoryId,
+        updatedAt: next.updatedAt,
+      }));
+    },
     softDelete: base.softDelete,
+    originOf: base.originOf,
   };
 }
 
@@ -1280,11 +1420,39 @@ function payeeAliasRepo(working: MemoryState, check: () => void): PayeeAliasRepo
   return {
     insert: (row, origin) => {
       references(working.payees, row.payeeId, "payee_alias.payee_id");
+      assertMatchKind(row.matchKind);
       base.insertRow(row, origin);
+    },
+    softDeleteForPayee: (payeeId, at) => {
+      check();
+      const hit = working.payeeAliases.filter(
+        (a) => a.payeeId === payeeId && !working.deleted.has(a.id),
+      );
+      const out = hit
+        .map((before) => ({
+          before,
+          originAccountId: (working.origins.get(before.id) ?? null) as Id<"Account"> | null,
+        }))
+        .sort((a, b) => byText(a.before.id, b.before.id));
+      for (const { before } of out) working.deleted.add(before.id);
+      working.payeeAliases = working.payeeAliases.map((a) =>
+        hit.includes(a) ? { ...a, updatedAt: at } : a,
+      );
+      return out;
     },
     find: base.find,
     list: base.list,
+    update: (viewer, row) => {
+      assertMatchKind(row.matchKind);
+      return base.update(viewer, row, (before, next) => ({
+        ...before,
+        pattern: next.pattern,
+        matchKind: next.matchKind,
+        updatedAt: next.updatedAt,
+      }));
+    },
     softDelete: base.softDelete,
+    originOf: base.originOf,
   };
 }
 

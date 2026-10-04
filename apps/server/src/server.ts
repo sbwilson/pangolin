@@ -28,6 +28,7 @@ import {
   listenAdminSocket,
   raiseUpgradeFailedIfMarked,
   runAdminCommand,
+  seedClassifyDefaults,
   writeFirstSetupLink,
 } from "./admin/index.ts";
 import { createAuth } from "./auth/auth.ts";
@@ -106,10 +107,13 @@ function openLive(options: StartOptions): Opened {
     const { schemaVersion } = migrate(db, migrations);
     const uow = createUnitOfWork(db);
     const timezone = uow.read((repos) => repos.householdSettings.get().timezone);
+    const clock = systemClock(timezone);
+    // Default categories on a household that has none yet (idempotent).
+    seedClassifyDefaults(uow, { clock, newId });
     return {
       db,
       uow,
-      clock: systemClock(timezone),
+      clock,
       schemaVersion,
       expectedSchemaVersion: migrations.length,
       timezone,

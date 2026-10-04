@@ -482,6 +482,8 @@ export interface CategoryGroupRow {
 
 export interface CategoryGroupRepo {
   insert(row: CategoryGroupRow): void;
+  /** Overwrites name, kind, sort and `updatedAt` of the group with `row.id`; throws when absent. */
+  update(row: CategoryGroupRow): void;
   find(viewer: Viewer, id: string): CategoryGroupRow | undefined;
   /** By `sort`, then name. */
   list(viewer: Viewer): CategoryGroupRow[];
@@ -499,6 +501,8 @@ export interface CategoryRow {
 
 export interface CategoryRepo {
   insert(row: CategoryRow): void;
+  /** Overwrites group, name, fixed-cost flag and `updatedAt` of the live category; throws when absent. */
+  update(row: CategoryRow): void;
   find(viewer: Viewer, id: string): CategoryRow | undefined;
   /** Live categories by name. */
   list(viewer: Viewer): CategoryRow[];
@@ -518,6 +522,8 @@ export interface TaxCategoryRow {
 
 export interface TaxCategoryRepo {
   insert(row: TaxCategoryRow): void;
+  /** Overwrites code, label, default share and `updatedAt` of the tax category; throws when absent. */
+  update(row: TaxCategoryRow): void;
   find(viewer: Viewer, id: string): TaxCategoryRow | undefined;
   /** By code. */
   list(viewer: Viewer): TaxCategoryRow[];
@@ -553,7 +559,15 @@ export interface TagRepo {
   insert(row: TagRow, originAccountId: Id<"Account"> | null): void;
   find(viewer: Viewer, id: string): TagRow | undefined;
   list(viewer: Viewer): TagRow[];
-  softDelete(id: string, at: string): boolean;
+  /**
+   * Overwrites the mutable fields and `updatedAt` of the live row with `row.id` when `viewer`
+   * may see it; false (changing nothing) otherwise. Scope and origin never change.
+   */
+  update(viewer: Viewer, row: TagRow): boolean;
+  /** Soft-deletes a live row `viewer` may see; false when there is none. */
+  softDelete(viewer: Viewer, id: string, at: string): boolean;
+  /** The origin account stored with a row `viewer` may see: non-null only for a private origin. */
+  originOf(viewer: Viewer, id: string): Id<"Account"> | null | undefined;
   /** Puts a tag on a split; the same pair twice is rejected. */
   attach(row: SplitTagRow): void;
   /** The tags on a split, for a split whose transaction `viewer` may see; only tags in scope. */
@@ -576,7 +590,15 @@ export interface ActivityRepo {
   insert(row: ActivityRow, originAccountId: Id<"Account"> | null): void;
   find(viewer: Viewer, id: string): ActivityRow | undefined;
   list(viewer: Viewer): ActivityRow[];
-  softDelete(id: string, at: string): boolean;
+  /**
+   * Overwrites the mutable fields and `updatedAt` of the live row with `row.id` when `viewer`
+   * may see it; false (changing nothing) otherwise. Scope and origin never change.
+   */
+  update(viewer: Viewer, row: ActivityRow): boolean;
+  /** Soft-deletes a live row `viewer` may see; false when there is none. */
+  softDelete(viewer: Viewer, id: string, at: string): boolean;
+  /** The origin account stored with a row `viewer` may see: non-null only for a private origin. */
+  originOf(viewer: Viewer, id: string): Id<"Account"> | null | undefined;
 }
 
 /** `payee`: a clean merchant identity. */
@@ -591,11 +613,30 @@ export interface PayeeRow extends ScopedRows {
   readonly updatedAt: string;
 }
 
+/** A scoped row as it was, with the origin account stored for it, for the audit of a cascade. */
+export interface ScopedBefore<R> {
+  readonly before: R;
+  readonly originAccountId: Id<"Account"> | null;
+}
+
 export interface PayeeRepo {
   insert(row: PayeeRow, originAccountId: Id<"Account"> | null): void;
+  /**
+   * Clears `defaultCategoryId` on every live payee that has `categoryId`, whatever its scope
+   * (a household-wide cascade of a category delete). Returns the payees as they were.
+   */
+  clearDefaultCategory(categoryId: string, at: string): ScopedBefore<PayeeRow>[];
   find(viewer: Viewer, id: string): PayeeRow | undefined;
   list(viewer: Viewer): PayeeRow[];
-  softDelete(id: string, at: string): boolean;
+  /**
+   * Overwrites the mutable fields and `updatedAt` of the live row with `row.id` when `viewer`
+   * may see it; false (changing nothing) otherwise. Scope and origin never change.
+   */
+  update(viewer: Viewer, row: PayeeRow): boolean;
+  /** Soft-deletes a live row `viewer` may see; false when there is none. */
+  softDelete(viewer: Viewer, id: string, at: string): boolean;
+  /** The origin account stored with a row `viewer` may see: non-null only for a private origin. */
+  originOf(viewer: Viewer, id: string): Id<"Account"> | null | undefined;
 }
 
 export const ALIAS_MATCH_KINDS = ["exact", "contains", "prefix", "regex"] as const;
@@ -613,9 +654,22 @@ export interface PayeeAliasRow extends ScopedRows {
 
 export interface PayeeAliasRepo {
   insert(row: PayeeAliasRow, originAccountId: Id<"Account"> | null): void;
+  /**
+   * Soft-deletes every live alias of `payeeId`, whatever its scope (a cascade of a payee
+   * delete). Returns the aliases as they were.
+   */
+  softDeleteForPayee(payeeId: string, at: string): ScopedBefore<PayeeAliasRow>[];
   find(viewer: Viewer, id: string): PayeeAliasRow | undefined;
   list(viewer: Viewer): PayeeAliasRow[];
-  softDelete(id: string, at: string): boolean;
+  /**
+   * Overwrites the mutable fields and `updatedAt` of the live row with `row.id` when `viewer`
+   * may see it; false (changing nothing) otherwise. Scope and origin never change.
+   */
+  update(viewer: Viewer, row: PayeeAliasRow): boolean;
+  /** Soft-deletes a live row `viewer` may see; false when there is none. */
+  softDelete(viewer: Viewer, id: string, at: string): boolean;
+  /** The origin account stored with a row `viewer` may see: non-null only for a private origin. */
+  originOf(viewer: Viewer, id: string): Id<"Account"> | null | undefined;
 }
 
 /**

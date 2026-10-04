@@ -95,9 +95,30 @@ describe("applySeed", () => {
     expect(result).toMatchObject({ seed: "pangolin-v1", today: "2026-07-15" });
   });
 
+  it("seeds the default categories, once", () => {
+    applySeed(createUnitOfWork(db), deps(), seedJson);
+    expect(count("category_group")).toBe(13);
+    expect(count("tax_category")).toBe(8);
+    const categories = count("category");
+    expect(categories).toBeGreaterThan(0);
+    const audits = count("audit_log");
+    applySeed(createUnitOfWork(db), deps(), seedJson);
+    expect(count("category_group")).toBe(13);
+    expect(count("tax_category")).toBe(8);
+    expect(count("category")).toBe(categories);
+    // Only the seed's own people, accounts and transactions were written the second time.
+    expect(
+      db.prepare("SELECT count(*) FROM audit_log WHERE actor = 'job:seed-defaults'").pluck().get(),
+    ).toBe((categories as number) + 13 + 8);
+    expect(count("audit_log")).toBeGreaterThan(audits as number);
+  });
+
   it("audits every write as cli:seed", () => {
     applySeed(createUnitOfWork(db), deps(), seedJson);
-    const audit = db.prepare("SELECT actor, entity, action FROM audit_log").all() as {
+    // The default categories are seeded first, as `job:seed-defaults` (story 2.5).
+    const audit = db
+      .prepare("SELECT actor, entity, action FROM audit_log WHERE actor <> 'job:seed-defaults'")
+      .all() as {
       actor: string;
       entity: string;
       action: string;
@@ -214,6 +235,8 @@ describe("linkSeed", () => {
     const sam = signUp(2, "Sam");
     const result = linkSeed(createUnitOfWork(db), deps(), seedJson);
     expect(result).toMatchObject({ accounts: 3, people: { "person-a": alex, "person-b": sam } });
+    expect(count("category_group")).toBe(13);
+    expect(count("tax_category")).toBe(8);
     expect(count("person")).toBe(2);
     const owners = db
       .prepare(
