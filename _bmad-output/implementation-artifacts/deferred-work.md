@@ -166,6 +166,7 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-and-classification-schema-plan.md`
   summary: Make the memory unit of work enforce the SQLite CHECKs (status, posted_on, kind, match_kind, source, matched_by, flags) and call `check()` before reference checks, with parity cases for them.
   evidence: classification-repos.test.ts parity covers only the matrix rows (review pass 1, medium).
+  disposition: partly fixed (story 2.11, a4d38bc): CHECK parity for status, posted_on, kind, match_kind, source and matched_by (and the account type, owner share and balance snapshot date), `check()` ahead of reference checks, and the parity cases; the split and flag CHECKs were already mirrored
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-and-classification-schema-plan.md`
   summary: Revisit fingerprint v1 for the import epic: normalise descriptions, cross-check the hand-rolled SHA-256 against node:crypto, and decide how v0 (id) fingerprints from pre-0009 rows dedupe.
   evidence: legacy rows carry fingerprint = id, version 0; v1 hashes the raw description (review pass 1, low).
@@ -175,24 +176,29 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-and-classification-schema-plan.md`
   summary: Stop exporting `@pangolin/app/testing/memory-uow` publicly; keep parity tests beside the memory unit of work or in a testing package.
   evidence: packages/app/package.json now exports test-only code (review pass 1, low).
+  disposition: fixed (story 2.11, 6d45715): the export is gone; the parity tests moved beside the memory unit of work and the boundary check allows `packages/app` test files to import `packages/db`
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-privacy-core-hidden-names-redact-and-the-read-rule-plan.md`
   summary: Make audit scope fail closed: audit rows for account-scoped entities with `account_id` NULL are visible to everyone, so every later ledger and accounts use cases (hiding, delete, owner change) must set `accountId`, or the audit repo should refuse such rows.
   evidence: `visibleAudit` treats NULL `account_id` as visible; only createAccount and createTransaction are tested to set it (review pass 1, medium).
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-privacy-core-hidden-names-redact-and-the-read-rule-plan.md`
   summary: Decide what a soft-deleted account's audit rows and review items do for its owner (they vanish today), and widen the read rule to raw SQL and `require`, put the biome restriction group in one place, and cover `split` and `payee`.
   evidence: `visibleAccounts` excludes deleted accounts; read-rule.test.ts matches import specifiers only (review pass 1, low).
+  disposition: partly fixed (story 2.11, 014ee77 and f38e748): the biome read-rule group is stated once, as a plugin; the rest stays open
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-privacy-core-hidden-names-redact-and-the-read-rule-plan.md`
   summary: Bound the audit and transaction reads (limit or keyset), add indexes on `audit_log.account_id` and `transaction.transfer_group_id`, scrub other entities' audit JSON, and unify memory/SQL helpers with an audit parity scenario.
   evidence: listVisible reads have no limit, subqueries run per row, the audit scrub removes two keys (review pass 1, low).
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-accounts-module-plan.md`
   summary: Close the accounts memory-mirror gaps: soft-deleted account in `balanceAsOf`, `replaceOwners` validation and owner order, and same-day snapshot tie-break plus soft-deleted transactions in the SQLite-versus-memory parity scenario.
   evidence: memory-uow.ts `balanceAsOf`, `replaceOwners` and `owners` differ from the SQLite repos and the parity test covers neither (review pass 1, low).
+  disposition: fixed (story 2.11, a4d38bc and 6d45715): soft-deleted account in `balanceAsOf`, `replaceOwners` validation and owner order, same-day snapshot tie-break and soft-deleted transactions are in the parity scenarios
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-accounts-module-plan.md`
   summary: Harden account inputs: reject empty owner lists in `replaceOwners`, make `poolOf` fail with a typed error per row instead of 500ing `listAccounts`, skip no-op writes and their audit rows, and validate future dates, duplicate same-day snapshots and the db `balanceAsOf` date with the real date parser before the manifest reuses it.
   evidence: set-privacy.ts, update-account.ts, pool.ts and packages/db/src/balance.ts (review pass 1, low).
+  disposition: partly fixed (story 2.11, bc64d1a): `poolOf` fails with a typed `Conflict`; the other hardening stays open
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-accounts-module-plan.md`
   summary: Tidy the accounts API: type the route-to-use-case calls instead of `never`, add a body size limit, bound and batch the list reads, and decide on institution deletion and snapshot correction routes.
   evidence: apps/server/src/http/app.ts `objectBody`, `listAccounts` N+1 owners query (review pass 1, low).
+  disposition: partly fixed (story 2.11, 0a21509): route-to-use-case calls are typed instead of `never`; body limit, list bounds and the institution and snapshot decisions stay open
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-web-stack-router-with-url-search-params-table-and-virtual-li-plan.md`
   summary: Complete the shadcn theme tokens (destructive, card, popover, secondary, sidebar) and the icon library dependency before the first story that adds a component using them; remove the `button:not([class])` base-style hack.
   evidence: styles.css defines a subset of shadcn tokens and components.json names lucide without `lucide-react` installed (review pass 1, low).
@@ -208,9 +214,11 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-classify-module-plan.md`
   summary: Harden classify inputs: linear-time or safe-regex alias matching, case-insensitive names, no-op updates skipping audit, name uniqueness by (scope, name) query with UNIQUE mapped to Conflict, typed error in `scopeFor`, defaults seeding inside the seed transaction, and the tax-category labels and RENTAL code from a source.
   evidence: payees.ts requirePatternValid, scope.ts, admin/seed.ts, defaults.ts (review pass 1, low).
+  disposition: partly fixed (story 2.11, bc64d1a): `scopeFor` fails with a typed `Conflict`; the rest stays open
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-classify-module-plan.md`
   summary: Tidy classify routes and test parity: nest aliases under a distinct prefix, one no-store middleware for /api/classify, GET by id for groups, categories and tax categories, memory-mirror payee update order and activity date CHECK, HTTP tests for partner by-id on aliases and activities.
   evidence: apps/server/src/http/app.ts classify block and memory-uow.ts (review pass 1, low).
+  disposition: partly fixed (story 2.11, 0a21509, 6b5a70c and a4d38bc): one no-store middleware for `/api/*`, memory-mirror payee update order, HTTP tests for partner by-id on aliases and activities. The activity date-order check has no SQLite CHECK to mirror (it lives in the use case; a CHECK would be a migration), so it stays open with the aliases prefix and GET-by-id items
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-transactions-plan.md`
   summary: Register the transaction needs_review listener explicitly from a composition root (and assert it at startup) instead of by side-effect import, before the import epic raises `transaction:` review items.
   evidence: ledger/needs-review.ts registers on import from create-transaction.ts and update-transaction.ts (review pass 1, medium).
@@ -220,15 +228,18 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-transactions-plan.md`
   summary: Tidy ledger writes: idempotency or a warning for accidental double POST of a manual line, a splits snapshot in the create audit row, delete audit read back from the row, shared field schemas for create and update, and a signal when needs_review syncs a deleted or missing row.
   evidence: create-transaction.ts, update-transaction.ts, delete-transaction.ts, ledger/needs-review.ts (review pass 1, low).
+  disposition: partly fixed (story 2.11, 88f0c6c): create and update share the description, date and notes field schemas; the other items stay open
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-splits-provenance-beneficiary-and-tags-plan.md`
   summary: Fire the split-field listeners (suggestion closing) from `setSplits` edits too, and decide whether a lower-ranked source writing a deleted or invalid target returns `applied: false` before validating the target.
   evidence: set-split-field.ts runs listeners only for `setSplitField`; set-splits.ts changes classified fields without them (review pass 1, medium).
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-splits-provenance-beneficiary-and-tags-plan.md`
   summary: Tighten split writes: keep non-sum Validation errors free of `remainingCents`, bound amounts so sums stay safe integers, compare splits field by field, reset a private-account split's stored beneficiary to the owner when it differs, mirror the SQLite id-collision error in memory, and put tag ids in create, update and delete audit snapshots.
   evidence: set-splits.ts `fail`, `sameSplit`, `resolve`; memory-uow.ts `replaceSplits` (review pass 1, low).
+  disposition: partly fixed (story 2.11, a4d38bc): the memory unit of work mirrors SQLite's split id-collision error; the other items stay open
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-splits-provenance-beneficiary-and-tags-plan.md`
   summary: Give `tags.attach` a viewer check or remove it with the unused `TagRepo.detach`, use `objectBody` for the split PATCH route instead of `as never`, and return `remainingCents` once from the replace route.
   evidence: classify-repos.ts `attach`/`detach`, apps/server/src/http/app.ts split routes (review pass 1, low).
+  disposition: fixed (story 2.11, 64bc96b and 0a21509): `TagRepo.attach` and `detach` are removed from the port and both adapters, the split PATCH route uses the typed body helper, and the replace route returns `remainingCents` once, inside `transaction`
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-hidden-names-and-transfer-groups-plan.md`
   summary: A partner can delete a transfer group whose other member sits in the owner's private account, clearing that private row's link.
   evidence: `deleteTransferGroup` clears every member including ones the viewer cannot see, by plan; whether the private owner alone should be allowed is unsettled.
@@ -244,6 +255,8 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-seed-the-ledger-plan.md`
   summary: Tidy the seed: warn or reject when the real clock is before the seed's fixed today, link the loan repayment's two sides as a transfer, share one validator between `world.ts` and `checkReferences`, and document `PANGOLIN_ENABLE_SEED` in an env reference.
   evidence: seed.ts applyEvents clock use, transfers-and-privacy module, config.ts (review pass 1, low).
+  disposition: partly fixed (story 2.11, feb3571): `world.ts` and `checkReferences` share one reference validator (`@pangolin/shared/seed`, re-exported by `@pangolin/app`) and `PANGOLIN_ENABLE_SEED` is documented in the README; the clock warning and the loan transfer stay open
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-server-side-privacy-suite-plan.md`
   summary: Strengthen the privacy suite later: aim A's account-scoped review items at the notice dismiss route, run hidden-name checks beside A's private delta and at a time-of-day boundary, replay system and identity GETs in the two-world comparison, replace raw SQL login and account-delete setup with use cases once an account-delete use case exists, and drop the `as never` casts.
   evidence: apps/server/src/privacy/privacy-harness.ts and privacy.test.ts (review pass 1, low).
+  disposition: partly fixed (story 2.11, 6b5a70c): the `as never` casts in the privacy harness and tests are gone; the rest stays open
