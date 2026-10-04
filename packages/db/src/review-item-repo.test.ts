@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createAccount,
   createIdGenerator,
   createPerson,
   defineReviewKind,
@@ -34,6 +35,7 @@ let db: Db;
 let ctx: UseCaseContext;
 let personA: Id<"Person">;
 let personB: Id<"Person">;
+let acc1: Id<"Account">;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "pangolin-review-"));
@@ -48,6 +50,13 @@ beforeEach(() => {
   };
   personA = createPerson(ctx, { displayName: "A", colour: "#000000" });
   personB = createPerson(ctx, { displayName: "B", colour: "#ffffff" });
+  acc1 = createAccount(ctx, {
+    name: "Joint",
+    type: "transaction",
+    currency: "AUD",
+    isPrivate: false,
+    owners: [{ personId: personA, shareBp: 10000 }],
+  });
 });
 
 afterEach(() => {
@@ -89,7 +98,7 @@ describe("review items on SQLite", () => {
     raise({ kind: personal, entityRef: "goal:a", dedupeKey: "a", personId: personA });
     raise({ kind: personal, entityRef: "goal:b", dedupeKey: "b", personId: personB });
     raise({ kind: household, entityRef: "thing:h", dedupeKey: "h" });
-    raise({ kind: perAccount, entityRef: "acct:1", dedupeKey: "acc", accountId: "acc1" });
+    raise({ kind: perAccount, entityRef: "acct:1", dedupeKey: "acc", accountId: acc1 });
     const refs = (viewer: UseCaseContext["viewer"]) =>
       listReviewItems({ ...ctx, viewer }).map((row) => row.entityRef);
     expect(refs(personViewer(personA, now))).toEqual(["goal:a", "thing:h"]);
@@ -108,11 +117,17 @@ describe("review items on SQLite", () => {
       `INSERT INTO review_item (id, kind, account_id, person_id, entity_ref, dedupe_key, created_at)
        VALUES (?, 'test.x', ?, ?, 'e', ?, 'x')`,
     );
-    insert.run("r1", "acc1", null, "k1");
+    insert.run("r1", acc1, null, "k1");
     insert.run("r2", null, personA, "k2");
-    expect(() => insert.run("r3", "acc1", personA, "k3")).toThrow(
+    expect(() => insert.run("r3", acc1, personA, "k3")).toThrow(
       /CHECK constraint failed: review_item_scope/,
     );
+  });
+
+  it("refuses an account_id that is not an account", () => {
+    expect(() =>
+      raise({ kind: perAccount, entityRef: "acct:x", dedupeKey: "x", accountId: "nobody" }),
+    ).toThrow(/FOREIGN KEY constraint failed/);
   });
 
   it("refuses a person_id that is not a person", () => {

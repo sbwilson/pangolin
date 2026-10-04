@@ -1,4 +1,4 @@
-import { idSchema } from "@pangolin/shared";
+import { type Id, idSchema } from "@pangolin/shared";
 import { Temporal } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import type { UseCaseContext } from "../context.ts";
@@ -30,7 +30,22 @@ const household = defineReviewKind({
 
 function setup() {
   const clock = manualClock("2026-09-27T00:00:00Z");
-  return { clock, ...memoryContext(systemViewer("job:test"), clock) };
+  const made = memoryContext(systemViewer("job:test"), clock);
+  // The review item's foreign key: the account the per-account items point at.
+  made.uow.state.accounts.push({
+    id: "acc1" as Id<"Account">,
+    name: "Joint",
+    type: "transaction",
+    currency: "AUD",
+    isPrivate: false,
+    institutionId: null,
+    openedOn: null,
+    closedOn: null,
+    isSavings: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  return { clock, ...made };
 }
 
 function raise(ctx: UseCaseContext, input: RaiseReviewItemInput) {

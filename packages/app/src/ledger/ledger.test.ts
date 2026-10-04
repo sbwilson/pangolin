@@ -9,6 +9,7 @@ import { manualClock, sequentialIds } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import { personViewer, type Viewer } from "../viewer.ts";
 import { createTransaction } from "./create-transaction.ts";
+import { FINGERPRINT_VERSION, fingerprintV1 } from "./fingerprint.ts";
 import { listTransactions } from "./list-transactions.ts";
 
 const clock = manualClock("2026-09-27T00:00:00Z");
@@ -135,8 +136,32 @@ describe("ledger.createTransaction and listTransactions", () => {
     const entry = uow.state.audit.find((row) => row.entity === "transaction");
     expect(entry).toMatchObject({ entityId: id, accountId: shared, action: "create" });
     uow.failAudit = true;
-    expect(() => createTransaction(as(a), txn(shared))).toThrow();
+    expect(() => createTransaction(as(a), txn(shared, "Lunch"))).toThrow("audit append failed");
     expect(uow.state.transactions).toHaveLength(1);
+    expect(uow.state.transactions.map((row) => row.descriptionRaw)).toEqual(["Coffee"]);
+  });
+
+  it("stamps a version 1 fingerprint and turns a duplicate line into a Conflict", () => {
+    const { uow, as, a, shared, privateA } = setup();
+    const id = createTransaction(as(a), txn(shared));
+    const row = uow.state.transactions.find((r) => r.id === id);
+    expect(row?.fingerprintVersion).toBe(FINGERPRINT_VERSION);
+    expect(row?.fingerprint).toBe(
+      fingerprintV1({
+        accountId: shared,
+        postedOn: "2026-09-01",
+        amountCents: -450,
+        description: "Coffee",
+      }),
+    );
+    expect(() => createTransaction(as(a), txn(shared))).toThrow(
+      expect.objectContaining({ code: "Conflict" }),
+    );
+    expect(uow.state.transactions).toHaveLength(1);
+    createTransaction(as(a), txn(shared, "Tea"));
+    createTransaction(as(a), { ...txn(shared), amountCents: -451 });
+    createTransaction(as(a), txn(privateA));
+    expect(uow.state.transactions).toHaveLength(4);
   });
 
   it("validates input", () => {

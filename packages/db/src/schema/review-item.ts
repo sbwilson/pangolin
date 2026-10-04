@@ -1,18 +1,19 @@
 import { sql } from "drizzle-orm";
 import { check, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { account } from "./account.ts";
 import { person } from "./person.ts";
 
 /**
  * The one review inbox (AD-17), owned by `system`. An item is open while `resolved_at` is
  * NULL. Its scope is `account_id` (the account's scope), `person_id` (that person only) or
- * neither (the household). `account_id` gets its foreign key once epic 2 adds `account`.
+ * neither (the household).
  */
 export const reviewItem = sqliteTable(
   "review_item",
   {
     id: text("id").primaryKey(),
     kind: text("kind").notNull(),
-    accountId: text("account_id"),
+    accountId: text("account_id").references(() => account.id),
     personId: text("person_id").references(() => person.id),
     entityRef: text("entity_ref").notNull(),
     dedupeKey: text("dedupe_key").notNull(),

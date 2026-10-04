@@ -43,7 +43,7 @@ describe("committed migrations", () => {
     expect(loadMigrations(packageMigrationsDir)[0]?.name).toBe("0000_baseline");
   });
 
-  it("migrates a fresh database to version 9, then re-applies nothing", () => {
+  it("migrates a fresh database to version 10, then re-applies nothing", () => {
     const migrations = loadMigrations(packageMigrationsDir);
     const names = [
       "0000_baseline",
@@ -55,10 +55,11 @@ describe("committed migrations", () => {
       "0006_backup_verification",
       "0007_recovery_bundle",
       "0008_ledger_accounts",
+      "0009_ledger_classification_schema",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 9 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 9 });
-    expect(schemaVersion(db)).toBe(9);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 10 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 10 });
+    expect(schemaVersion(db)).toBe(10);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });

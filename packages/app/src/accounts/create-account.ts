@@ -71,6 +71,10 @@ export function createAccount(ctx: UseCaseContext, input: CreateAccountInput): I
       type: parsed.type,
       currency: parsed.currency,
       isPrivate: parsed.isPrivate,
+      institutionId: null,
+      openedOn: null,
+      closedOn: null,
+      isSavings: false,
       createdAt: at,
       updatedAt: at,
     };
