@@ -22,6 +22,7 @@
       "!packages/db/migrations/meta"
     ]
   },
+  "css": { "parser": { "tailwindDirectives": true } },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",

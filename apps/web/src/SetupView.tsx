@@ -2,12 +2,18 @@ import { type FormEvent, useState } from "react";
 import { ApiError, signUp } from "./api.ts";
 
 /**
- * First sign-in from a one-time setup link: the account (email, password, name, colour). The
+ * First sign-in from a one-time setup link (`token` was read from the URL once, which then drops
+ * it): the account (email, password, name, colour). The
  * app then shows `EnrolView` for the passkey and TOTP, in the session sign-up starts.
  * `onSignedUp` gets the password, kept in memory only, so TOTP setup need not ask again.
  */
-export function SetupView({ onSignedUp }: { onSignedUp: (password: string) => void }) {
-  const token = new URLSearchParams(window.location.search).get("token") ?? "";
+export function SetupView({
+  token,
+  onSignedUp,
+}: {
+  token: string;
+  onSignedUp: (password: string) => void;
+}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");

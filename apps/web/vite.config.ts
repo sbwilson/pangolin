@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
@@ -8,6 +10,8 @@ export default defineConfig({
   html: { cspNonce: "__CSP_NONCE__" },
   plugins: [
     react(),
+    // Compiled to a hashed stylesheet at build time, so the CSP needs no inline styles.
+    tailwindcss(),
     VitePWA({
       // No inline registration script (the CSP allows none); src/main.tsx registers the worker.
       injectRegister: false,
@@ -31,6 +35,7 @@ export default defineConfig({
       },
     }),
   ],
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   server: {
     proxy: { "/api": "http://localhost:3000" },
   },

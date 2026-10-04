@@ -193,3 +193,9 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-accounts-module-plan.md`
   summary: Tidy the accounts API: type the route-to-use-case calls instead of `never`, add a body size limit, bound and batch the list reads, and decide on institution deletion and snapshot correction routes.
   evidence: apps/server/src/http/app.ts `objectBody`, `listAccounts` N+1 owners query (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-web-stack-router-with-url-search-params-table-and-virtual-li-plan.md`
+  summary: Complete the shadcn theme tokens (destructive, card, popover, secondary, sidebar) and the icon library dependency before the first story that adds a component using them; remove the `button:not([class])` base-style hack.
+  evidence: styles.css defines a subset of shadcn tokens and components.json names lucide without `lucide-react` installed (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-web-stack-router-with-url-search-params-table-and-virtual-li-plan.md`
+  summary: Extract the RootLayout gate precedence into a pure `selectGate(me, pathname)` with node unit tests, normalise trailing slashes on /setup and /recover, and memoise the session context; decide whether unknown paths should redirect or show Home.
+  evidence: RootLayout.tsx compares exact pathnames in an if-chain and only e2e covers the gates (review pass 1, low).
