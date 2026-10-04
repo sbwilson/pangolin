@@ -61,6 +61,19 @@ describe("takeSnapshot", () => {
     db.prepare("UPDATE person SET display_name = 'Changed' WHERE id = 'P000'").run();
   });
 
+  it("writes format 2 with the balance date it is given, and a format-1 manifest still verifies", async () => {
+    const outDir = join(dir, "dated");
+    await takeSnapshot({ dbFile, outDir, balanceDate: "2026-05-06" });
+    const migrations = loadMigrations(packageMigrationsDir);
+    const manifest = parseManifest(readFileSync(join(outDir, MANIFEST_FILE), "utf8"));
+    expect(manifest).toMatchObject({ format: 2, balanceDate: "2026-05-06", accounts: [] });
+    const v1 = parseManifest(
+      JSON.stringify({ ...manifest, format: 1, balanceDate: undefined, accounts: undefined }),
+    );
+    expect(v1.accounts).toBeUndefined();
+    expect(verifySnapshot(join(outDir, SNAPSHOT_FILE), v1, migrations)).toMatchObject({ ok: true });
+  });
+
   it("replaces an existing output directory, and rejects when the database is missing", async () => {
     const outDir = join(dir, "out");
     await takeSnapshot({ dbFile, outDir });

@@ -101,6 +101,7 @@ export function backupJobs(deps: BackupJobDeps): JobRegistration[] {
       dbFile: paths.dbFile,
       outDir: partial,
       takenAt,
+      balanceDate: ctx.clock.today().toString(),
       signal: ctx.signal,
     });
     rmSync(dir, { recursive: true, force: true });

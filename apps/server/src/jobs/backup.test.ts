@@ -167,6 +167,8 @@ describe("the backup jobs", () => {
     const staged = join(backupPaths(dataDir).stagingRoot, jobId);
     const manifest = parseManifest(readFileSync(join(staged, "manifest.json"), "utf8"));
     expect(manifest.tables.find((t) => t.name === "job")?.rows).toBe(1);
+    // Format 2, balances taken on the household's today.
+    expect(manifest).toMatchObject({ format: 2, balanceDate: "2026-09-27" });
 
     await r.tick(); // push (net)
     const progress = backupProgress({ uow }, { jobId });

@@ -29,6 +29,8 @@ export interface TakeSnapshotOptions {
   readonly outDir: string;
   /** Recorded in the manifest as when the snapshot was taken. */
   readonly takenAt?: string;
+  /** The `YYYY-MM-DD` day the manifest's account balances are taken on (the household's today). */
+  readonly balanceDate?: string;
   /** Aborting it terminates the worker. */
   readonly signal?: JobSignal;
   readonly workerFile?: URL;
@@ -55,7 +57,12 @@ export function takeSnapshot(options: TakeSnapshotOptions): Promise<SnapshotSumm
   if (signal?.aborted) return Promise.reject(signal.reason);
   return new Promise<SnapshotSummary>((resolve, reject) => {
     const worker = new Worker(options.workerFile ?? defaultWorkerFile(), {
-      workerData: { dbFile: options.dbFile, outDir: options.outDir, takenAt: options.takenAt },
+      workerData: {
+        dbFile: options.dbFile,
+        outDir: options.outDir,
+        takenAt: options.takenAt,
+        balanceDate: options.balanceDate,
+      },
     });
     let result: SnapshotSummary | undefined;
     let settled = false;
