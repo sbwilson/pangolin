@@ -1,10 +1,52 @@
 // The package root. `systemViewer` is deliberately absent: it is exported only from
 // `@pangolin/app/system-viewer`, which lint bans outside `apps/server/src/{jobs,admin}` (AD-6).
+
+export {
+  type BalanceAsOfInput,
+  balanceAsOf,
+  balanceAsOfInput,
+  CASH_ACCOUNT_TYPES,
+  type ListBalanceSnapshotsInput,
+  listBalanceSnapshots,
+  listBalanceSnapshotsInput,
+  type RecordBalanceSnapshotInput,
+  recordBalanceSnapshot,
+  recordBalanceSnapshotInput,
+} from "./accounts/balance.ts";
+export {
+  type CloseAccountInput,
+  closeAccount,
+  closeAccountInput,
+} from "./accounts/close-account.ts";
 export {
   type CreateAccountInput,
   createAccount,
   createAccountInput,
 } from "./accounts/create-account.ts";
+export {
+  type CreateInstitutionInput,
+  createInstitution,
+  createInstitutionInput,
+  listInstitutions,
+  type UpdateInstitutionInput,
+  updateInstitution,
+  updateInstitutionInput,
+} from "./accounts/institutions.ts";
+export {
+  type GetAccountInput,
+  getAccount,
+  getAccountInput,
+  type ListAccountsInput,
+  listAccounts,
+  listAccountsInput,
+} from "./accounts/list-accounts.ts";
+export { type AccountView, payerOf, poolOf } from "./accounts/pool.ts";
+export { type SetPrivacyInput, setPrivacy, setPrivacyInput } from "./accounts/set-privacy.ts";
+export {
+  type UpdateAccountInput,
+  updateAccount,
+  updateAccountInput,
+} from "./accounts/update-account.ts";
 export { fixedClock, fixedClockAt, systemClock } from "./clock.ts";
 export type { UseCaseContext } from "./context.ts";
 export {

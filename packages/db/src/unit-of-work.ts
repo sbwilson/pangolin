@@ -44,7 +44,7 @@ import { createReviewItemRepo } from "./review-item-repo.ts";
 import { auditLog } from "./schema/audit-log.ts";
 import { householdSettings } from "./schema/household-settings.ts";
 
-type Orm = BetterSQLite3Database;
+type Orm = BetterSQLite3Database & { readonly $client: Db };
 
 /** Guards repositories so a call after their transaction ended throws instead of autocommitting. */
 interface Scope {
@@ -226,7 +226,10 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               findVisible: repos.transactions.findVisible,
             },
             institutions: { find: repos.institutions.find, list: repos.institutions.list },
-            balanceSnapshots: { listVisible: repos.balanceSnapshots.listVisible },
+            balanceSnapshots: {
+              listVisible: repos.balanceSnapshots.listVisible,
+              balanceAsOf: repos.balanceSnapshots.balanceAsOf,
+            },
             transferGroups: { find: repos.transferGroups.find },
             categoryGroups: { find: repos.categoryGroups.find, list: repos.categoryGroups.list },
             categories: { find: repos.categories.find, list: repos.categories.list },

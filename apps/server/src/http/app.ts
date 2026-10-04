@@ -5,34 +5,46 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import {
   AppError,
   backupStatus,
+  balanceAsOf,
   type Clock,
   type CodeHasher,
   checkSignUp,
+  closeAccount,
+  createAccount,
+  createInstitution,
   deadJobs,
   dismissNotice,
   ERROR_CODES,
   type ErrorCode,
   enrolmentNeeds,
+  getAccount,
   health,
   type IdGenerator,
   issueInitialRecoveryCodes,
   issueReEnrolmentLink,
   issueSetupLink,
+  listAccounts,
+  listBalanceSnapshots,
+  listInstitutions,
   listNotices,
   listTransactions,
   me,
   type ReadinessOutput,
   type RunnerLiveness,
   readiness,
+  recordBalanceSnapshot,
   recoveryBundleConfirmed,
   recoveryBundleStatus,
   reEnrolmentUrl,
   regenerateRecoveryCodes,
   revokeMyReEnrolmentLinks,
   type SystemHealthPort,
+  setPrivacy,
   type TokenPort,
   type UnitOfWork,
   type UseCaseContext,
+  updateAccount,
+  updateInstitution,
 } from "@pangolin/app";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
@@ -179,6 +191,35 @@ export function createApi(deps: ApiDeps) {
     if (authn.kind === "demo") throw new AppError("Conflict", "Demo mode is read-only");
     return authn.gateway;
   };
+  /** Demo mode is read-only: every account write calls this first. */
+  const writable = () => {
+    if (deps.authn.kind === "demo") throw new AppError("Conflict", "Demo mode is read-only");
+  };
+  /**
+   * A JSON object body, merged under `fixed` (so a client cannot supply its own `:id`). An empty
+   * body counts as `{}` when `optional`; anything else that is not an object is `Validation`.
+   * Typed `never` so it fits any use case's input: the use case's Zod schema is the check.
+   */
+  const objectBody = async (
+    c: Context,
+    fixed: Record<string, string> = {},
+    optional = false,
+  ): Promise<never> => {
+    const text = await c.req.text();
+    let body: unknown;
+    if (text.trim() === "" && optional) body = {};
+    else {
+      try {
+        body = JSON.parse(text);
+      } catch {
+        throw new AppError("Validation", "Expected a JSON body");
+      }
+    }
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      throw new AppError("Validation", "Expected a JSON object");
+    }
+    return { ...body, ...fixed } as never;
+  };
   const passCookies = (c: Context, cookies: readonly string[]) => {
     for (const cookie of cookies) c.header("Set-Cookie", cookie, { append: true });
   };
@@ -223,6 +264,76 @@ export function createApi(deps: ApiDeps) {
       // Per viewer (AD-3): shared accounts plus the viewer's own private ones. Never cached.
       c.header("Cache-Control", "no-store");
       return c.json({ transactions: listTransactions(ctx(c), {}) }, 200);
+    })
+    .get("/api/accounts/institutions", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ institutions: listInstitutions(ctx(c), {}) }, 200);
+    })
+    .post("/api/accounts/institutions", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const institution = createInstitution(ctx(c), await objectBody(c));
+      return c.json({ institution }, 201);
+    })
+    .patch("/api/accounts/institutions/:id", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      return c.json({ institution: updateInstitution(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .get("/api/accounts", (c) => {
+      // Per viewer (AD-3, AD-5): another person's private account is absent. Never cached.
+      c.header("Cache-Control", "no-store");
+      return c.json({ accounts: listAccounts(ctx(c), {}) }, 200);
+    })
+    .post("/api/accounts", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = createAccount(ctx(c), await objectBody(c));
+      return c.json({ account: getAccount(ctx(c), { id }) }, 201);
+    })
+    .get("/api/accounts/:id", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ account: getAccount(ctx(c), { id: c.req.param("id") }) }, 200);
+    })
+    .patch("/api/accounts/:id", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      return c.json({ account: updateAccount(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .post("/api/accounts/:id/close", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      return c.json({ account: closeAccount(ctx(c), await objectBody(c, { id }, true)) }, 200);
+    })
+    .post("/api/accounts/:id/privacy", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      return c.json({ account: setPrivacy(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .get("/api/accounts/:id/balance", (c) => {
+      c.header("Cache-Control", "no-store");
+      const accountId = c.req.param("id");
+      const date = c.req.query("asOf") ?? deps.clock.today().toString();
+      const balanceCents = balanceAsOf(ctx(c), { accountId, date });
+      return c.json({ asOf: date, balanceCents }, 200);
+    })
+    .get("/api/accounts/:id/snapshots", (c) => {
+      c.header("Cache-Control", "no-store");
+      const snapshots = listBalanceSnapshots(ctx(c), { accountId: c.req.param("id") });
+      return c.json({ snapshots }, 200);
+    })
+    .post("/api/accounts/:id/snapshots", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const accountId = c.req.param("id");
+      // Statement and connector snapshots come from imports, never from a client.
+      const body: Record<string, unknown> = await objectBody(c, { accountId });
+      const snapshot = recordBalanceSnapshot(ctx(c), { ...body, source: undefined } as never);
+      return c.json({ snapshot }, 201);
     })
     .post("/api/identity/setup-links", (c) => {
       c.header("Cache-Control", "no-store");

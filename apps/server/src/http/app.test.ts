@@ -286,6 +286,245 @@ describe("GET /api/ledger/transactions", () => {
   });
 });
 
+describe("/api/accounts", () => {
+  const alex = "01J0000000000000000000000A";
+  const json = { Origin: ORIGIN, "Content-Type": "application/json", Cookie: SESSION_COOKIE };
+
+  /** Alex is the signed-in login. Sam's private account must not exist for Alex. */
+  function seed(db: Db) {
+    addPerson(db);
+    const d = deps(db);
+    const sys: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const sam = createPerson(sys, { displayName: "Sam", colour: "#000000" });
+    const make = (name: string, isPrivate: boolean, owners: [string, number][]) =>
+      createAccount(sys, {
+        name,
+        type: "transaction",
+        currency: "AUD",
+        isPrivate,
+        owners: owners.map(([personId, shareBp]) => ({ personId, shareBp })),
+      });
+    const joint = make("Joint", false, [
+      [alex, 5000],
+      [sam, 5000],
+    ]);
+    const mine = make("Alex private", true, [[alex, 10000]]);
+    const theirs = make("Sam private", true, [[sam, 10000]]);
+    createTransaction(sys, {
+      accountId: joint,
+      postedOn: "2026-09-01",
+      amountCents: -100,
+      description: "j",
+    });
+    return { sam, joint, mine, theirs, sys };
+  }
+
+  const send = (db: Db, method: string, path: string, body?: unknown, authn?: Authn) =>
+    createApp(deps(db, authn)).request(path, {
+      method,
+      headers: json,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  it("needs a session", async () => {
+    const res = await createApp(deps(openDb())).request("/api/accounts");
+    expect(res.status).toBe(401);
+  });
+
+  it("answers 404 to the partner for every read and write of a private account", async () => {
+    const db = openDb();
+    const { theirs } = seed(db);
+    const base = `/api/accounts/${theirs}`;
+    const calls: [string, string, unknown?][] = [
+      ["GET", base],
+      ["PATCH", base, { name: "x" }],
+      ["POST", `${base}/close`, {}],
+      ["POST", `${base}/privacy`, { isPrivate: false }],
+      ["GET", `${base}/balance?asOf=2026-09-27`],
+      ["GET", `${base}/snapshots`],
+      ["POST", `${base}/snapshots`, { asOf: "2026-09-01", balanceCents: 5 }],
+    ];
+    for (const [method, path, body] of calls) {
+      const res = await send(db, method, path, body);
+      expect(res.status, `${method} ${path}`).toBe(404);
+      expect(await res.json()).toEqual({
+        error: { code: "NotFound", message: "Account not found" },
+      });
+    }
+    // Indistinguishable from an account that does not exist.
+    expect((await send(db, "GET", "/api/accounts/01JNOSUCHACCOUNT")).status).toBe(404);
+    const list = (await (await send(db, "GET", "/api/accounts")).json()) as {
+      accounts: { name: string }[];
+    };
+    expect(list.accounts.map((a) => a.name).sort()).toEqual(["Alex private", "Joint"]);
+    expect(
+      db.prepare("SELECT count(*) FROM audit_log WHERE account_id = ?").pluck().get(theirs),
+    ).toBe(1);
+  });
+
+  it("creates, edits, closes, snapshots and reports a balance", async () => {
+    const db = openDb();
+    const { sam } = seed(db);
+    const inst = await send(db, "POST", "/api/accounts/institutions", {
+      name: "Bank",
+      kind: "bank",
+    });
+    expect(inst.status).toBe(201);
+    const { institution } = (await inst.json()) as { institution: { id: string } };
+    const renamed = await send(db, "PATCH", `/api/accounts/institutions/${institution.id}`, {
+      name: "Bank 2",
+    });
+    expect(((await renamed.json()) as { institution: { name: string } }).institution.name).toBe(
+      "Bank 2",
+    );
+    expect(
+      (
+        (await (await send(db, "GET", "/api/accounts/institutions")).json()) as {
+          institutions: unknown[];
+        }
+      ).institutions,
+    ).toHaveLength(1);
+
+    const created = await send(db, "POST", "/api/accounts", {
+      name: "Savings",
+      type: "savings",
+      currency: "AUD",
+      isPrivate: false,
+      isSavings: true,
+      institutionId: institution.id,
+      owners: [
+        { personId: alex, shareBp: 5000 },
+        { personId: sam, shareBp: 5000 },
+      ],
+    });
+    expect(created.status).toBe(201);
+    const { account } = (await created.json()) as { account: { id: string; pool: string } };
+    expect(account.pool).toBe("shared");
+    const path = `/api/accounts/${account.id}`;
+
+    expect((await send(db, "PATCH", path, { name: "Rainy day" })).status).toBe(200);
+    expect((await send(db, "PATCH", path, { currency: "USD" })).status).toBe(400);
+    expect((await send(db, "POST", `${path}/privacy`, { isPrivate: true })).status).toBe(400);
+
+    const snap = await send(db, "POST", `${path}/snapshots`, {
+      asOf: "2026-09-01",
+      balanceCents: 1000,
+      source: "statement",
+    });
+    expect(snap.status).toBe(201);
+    expect(((await snap.json()) as { snapshot: { source: string } }).snapshot.source).toBe(
+      "manual",
+    );
+    const listed = (await (await send(db, "GET", `${path}/snapshots`)).json()) as {
+      snapshots: unknown[];
+    };
+    expect(listed.snapshots).toHaveLength(1);
+    const balance = await send(db, "GET", `${path}/balance?asOf=2026-09-27`);
+    expect(await balance.json()).toEqual({ asOf: "2026-09-27", balanceCents: 1000 });
+
+    const closed = await send(db, "POST", `${path}/close`);
+    expect(((await closed.json()) as { account: { closedOn: string } }).account.closedOn).toBe(
+      "2026-09-27",
+    );
+    expect((await send(db, "POST", `${path}/close`)).status).toBe(409);
+  });
+
+  it("refuses an id or unknown field in a create body, and a bad balance query", async () => {
+    const db = openDb();
+    const { joint } = seed(db);
+    const body = {
+      id: "mine",
+      name: "X",
+      type: "savings",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [{ personId: alex, shareBp: 10000 }],
+    };
+    expect((await send(db, "POST", "/api/accounts", body)).status).toBe(400);
+    expect((await send(db, "GET", `/api/accounts/${joint}/balance?asOf=soon`)).status).toBe(400);
+    expect((await send(db, "POST", "/api/accounts", undefined)).status).toBe(400);
+  });
+
+  it("lets the path id win over an id in the body", async () => {
+    const db = openDb();
+    const { joint, mine } = seed(db);
+    const audits = (id: string) =>
+      db.prepare("SELECT count(*) FROM audit_log WHERE account_id = ?").pluck().get(id);
+    const mineAudits = audits(mine);
+    const patched = await send(db, "PATCH", `/api/accounts/${joint}`, { id: mine, name: "z" });
+    expect(patched.status).toBe(200);
+    const name = (id: string) =>
+      db.prepare("SELECT name FROM account WHERE id = ?").pluck().get(id);
+    expect(name(joint)).toBe("z");
+    expect(name(mine)).toBe("Alex private");
+    const closed = await send(db, "POST", `/api/accounts/${joint}/snapshots`, {
+      accountId: mine,
+      asOf: "2026-09-01",
+      balanceCents: 5,
+    });
+    expect(closed.status).toBe(201);
+    expect(db.prepare("SELECT account_id FROM balance_snapshot").pluck().all()).toEqual([joint]);
+    expect(audits(mine)).toBe(mineAudits);
+  });
+
+  it("answers 400 for a non-cash account's balance and for an empty asOf", async () => {
+    const db = openDb();
+    const { joint, sys } = seed(db);
+    const brokerage = createAccount(sys, {
+      name: "Broker",
+      type: "brokerage",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [{ personId: alex, shareBp: 10000 }],
+    });
+    expect(
+      (await send(db, "GET", `/api/accounts/${brokerage}/balance?asOf=2026-09-27`)).status,
+    ).toBe(400);
+    expect((await send(db, "GET", `/api/accounts/${joint}/balance?asOf=`)).status).toBe(400);
+  });
+
+  it("makes an account private only when no live split is shared", async () => {
+    const db = openDb();
+    const { joint, mine } = seed(db);
+    expect(
+      (
+        await send(db, "PATCH", `/api/accounts/${joint}`, {
+          owners: [{ personId: alex, shareBp: 10000 }],
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await send(db, "POST", `/api/accounts/${joint}/privacy`, { isPrivate: true })).status,
+    ).toBe(409);
+    expect(
+      (await send(db, "POST", `/api/accounts/${mine}/privacy`, { isPrivate: false })).status,
+    ).toBe(200);
+  });
+
+  it("is read-only in demo mode", async () => {
+    const db = openDb();
+    const { joint } = seed(db);
+    const demo: Authn = { kind: "demo" };
+    const writes: [string, string, unknown][] = [
+      ["POST", "/api/accounts", {}],
+      ["PATCH", `/api/accounts/${joint}`, { name: "x" }],
+      ["POST", `/api/accounts/${joint}/close`, {}],
+      ["POST", `/api/accounts/${joint}/privacy`, { isPrivate: false }],
+      ["POST", `/api/accounts/${joint}/snapshots`, { asOf: "2026-09-01", balanceCents: 1 }],
+      ["POST", "/api/accounts/institutions", { name: "x", kind: "bank" }],
+    ];
+    for (const [method, path, body] of writes) {
+      expect((await send(db, method, path, body, demo)).status, path).toBe(409);
+    }
+    expect((await send(db, "GET", "/api/accounts", undefined, demo)).status).toBe(200);
+  });
+});
+
 describe("GET /api/ledger/transactions hidden names", () => {
   // The only login in the helpers is Alex's, so Alex is the partner here: Sam hides one name
   // (Alex sees the placeholder) and Alex hides another (Alex sees the real name).

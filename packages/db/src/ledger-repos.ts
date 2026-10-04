@@ -15,6 +15,8 @@ import type {
 } from "@pangolin/app";
 import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { balanceAsOf } from "./balance.ts";
+import type { Db } from "./open.ts";
 import {
   liveVisibleTxn,
   requireViewer,
@@ -31,6 +33,8 @@ import { transaction } from "./schema/transaction.ts";
 import { transferGroup } from "./schema/transfer-group.ts";
 
 type Orm = BetterSQLite3Database;
+/** An `Orm` that also hands out its connection, which the balance function runs on. */
+type OrmWithClient = Orm & { readonly $client: Pick<Db, "prepare"> };
 
 const accountColumns = {
   id: account.id,
@@ -146,6 +150,53 @@ export function createAccountRepo(orm: Orm, check: () => void): AccountRepo {
         .orderBy(asc(accountOwner.createdAt), asc(accountOwner.personId))
         .all() as AccountOwnerRow[];
     },
+
+    update: (row) => {
+      check();
+      const changed = orm
+        .update(account)
+        .set({
+          name: row.name,
+          isPrivate: row.isPrivate,
+          institutionId: row.institutionId,
+          openedOn: row.openedOn,
+          closedOn: row.closedOn,
+          isSavings: row.isSavings,
+          updatedAt: row.updatedAt,
+        })
+        .where(and(eq(account.id, row.id), isNull(account.deletedAt)))
+        .run().changes;
+      if (changed !== 1) throw new Error(`Account ${row.id} not found`);
+    },
+
+    replaceOwners: (accountId, owners) => {
+      check();
+      orm.delete(accountOwner).where(eq(accountOwner.accountId, accountId)).run();
+      if (owners.length > 0)
+        orm
+          .insert(accountOwner)
+          .values([...owners])
+          .run();
+    },
+
+    hasSharedSplit: (accountId) => {
+      check();
+      return (
+        orm
+          .select({ id: split.id })
+          .from(split)
+          .innerJoin(transaction, eq(split.transactionId, transaction.id))
+          .where(
+            and(
+              eq(transaction.accountId, accountId),
+              isNull(transaction.deletedAt),
+              eq(split.beneficiary, "shared"),
+            ),
+          )
+          .limit(1)
+          .get() !== undefined
+      );
+    },
   };
 }
 
@@ -241,6 +292,20 @@ export function createInstitutionRepo(orm: Orm, check: () => void): InstitutionR
       check();
       orm.insert(institution).values(row).run();
     },
+    update: (row) => {
+      check();
+      const changed = orm
+        .update(institution)
+        .set({
+          name: row.name,
+          kind: row.kind,
+          websiteUrl: row.websiteUrl,
+          updatedAt: row.updatedAt,
+        })
+        .where(and(eq(institution.id, row.id), isNull(institution.deletedAt)))
+        .run().changes;
+      if (changed !== 1) throw new Error(`Institution ${row.id} not found`);
+    },
     find: (viewer, id) => {
       requireViewer(viewer, "institutions.find");
       check();
@@ -274,7 +339,10 @@ export function createInstitutionRepo(orm: Orm, check: () => void): InstitutionR
 }
 
 /** The `balance_snapshot` repository: reads compose `visibleAccounts`. */
-export function createBalanceSnapshotRepo(orm: Orm, check: () => void): BalanceSnapshotRepo {
+export function createBalanceSnapshotRepo(
+  orm: OrmWithClient,
+  check: () => void,
+): BalanceSnapshotRepo {
   return {
     insert: (row) => {
       check();
@@ -308,6 +376,16 @@ export function createBalanceSnapshotRepo(orm: Orm, check: () => void): BalanceS
         )
         .orderBy(desc(balanceSnapshot.asOf), desc(balanceSnapshot.id))
         .all() as BalanceSnapshotRow[];
+    },
+    balanceAsOf: (viewer, accountId, date) => {
+      const visible = visibleAccounts(viewer);
+      check();
+      const seen = orm
+        .select({ id: account.id })
+        .from(account)
+        .where(and(eq(account.id, accountId), visible))
+        .get();
+      return seen === undefined ? undefined : balanceAsOf(orm.$client, accountId, date);
     },
   };
 }

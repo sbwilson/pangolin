@@ -277,6 +277,19 @@ export interface AccountRepo {
   any(): boolean;
   /** The owners of an account, by person ID. */
   owners(accountId: string): AccountOwnerRow[];
+  /**
+   * Overwrites the mutable columns (name, privacy, institution, dates, savings flag, `updatedAt`)
+   * of the account with `row.id`. Throws when there is no such live account; callers find it
+   * with `findVisible` first.
+   */
+  update(row: AccountRow): void;
+  /** Replaces every owner of an account with `owners`. */
+  replaceOwners(accountId: string, owners: readonly AccountOwnerRow[]): void;
+  /**
+   * Whether any split of a live transaction of the account has `beneficiary = shared` (AD-7).
+   * Soft-deleted transactions do not count.
+   */
+  hasSharedSplit(accountId: string): boolean;
 }
 
 /** `transaction`: one bank line. */
@@ -400,6 +413,8 @@ export interface InstitutionRow {
  */
 export interface InstitutionRepo {
   insert(row: InstitutionRow): void;
+  /** Overwrites name, kind, website and `updatedAt` of the live institution with `row.id`. */
+  update(row: InstitutionRow): void;
   find(viewer: Viewer, id: string): InstitutionRow | undefined;
   /** Live institutions by name. */
   list(viewer: Viewer): InstitutionRow[];
@@ -425,6 +440,14 @@ export interface BalanceSnapshotRepo {
   insert(row: BalanceSnapshotRow): void;
   /** Snapshots of an account `viewer` may see, newest day first; empty for any other account. */
   listVisible(viewer: Viewer, accountId: string): BalanceSnapshotRow[];
+  /**
+   * The balance of an account `viewer` may see on `date` (`YYYY-MM-DD`), or undefined for any
+   * other account (AD-19, in cents): the latest snapshot on or before `date` (ties by
+   * `createdAt`, then `id`) plus the live transactions, pending or posted, with `postedOn` after
+   * that snapshot's `asOf` and up to `date`; 0 is the start when there is no snapshot. It does
+   * not check the account's type; `accounts.balanceAsOf` does.
+   */
+  balanceAsOf(viewer: Viewer, accountId: string, date: string): number | undefined;
 }
 
 export const TRANSFER_MATCHES = ["rule", "manual", "auto"] as const;
@@ -841,7 +864,7 @@ export interface ReadRepos {
   readonly accounts: Pick<AccountRepo, "findVisible" | "list" | "owners" | "any">;
   readonly transactions: Pick<TransactionRepo, "listVisible" | "findVisible">;
   readonly institutions: Pick<InstitutionRepo, "find" | "list">;
-  readonly balanceSnapshots: Pick<BalanceSnapshotRepo, "listVisible">;
+  readonly balanceSnapshots: Pick<BalanceSnapshotRepo, "listVisible" | "balanceAsOf">;
   readonly transferGroups: Pick<TransferGroupRepo, "find">;
   readonly categoryGroups: Pick<CategoryGroupRepo, "find" | "list">;
   readonly categories: Pick<CategoryRepo, "find" | "list">;
