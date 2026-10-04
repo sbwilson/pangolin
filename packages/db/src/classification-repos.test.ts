@@ -39,6 +39,9 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+const softDeleteInSqlite = (id: string) =>
+  db.prepare("UPDATE account SET deleted_at = ? WHERE id = ?").run(T, id);
+
 /** Sequential ULID-shaped IDs. */
 function ids() {
   let n = 0;
@@ -70,7 +73,10 @@ function fingerprint(accountId: string, description: string) {
  * The scenario: every row of the I/O matrix, run through the repositories of `uow`. Returns a
  * transcript of what each step answered, so two adapters can be compared step by step.
  */
-function scenario(uow: UnitOfWork): Record<string, unknown> {
+function scenario(
+  uow: UnitOfWork,
+  softDeleteAccount: (id: Id<"Account">) => void,
+): Record<string, unknown> {
   const newId = ids();
   const out: Record<string, unknown> = {};
   const system: Viewer = systemViewer("cli:test");
@@ -689,6 +695,19 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
   step("w.updateUnknownCategory", (r) =>
     r.payees.update(asA, { ...pwRow, name: "Renamed", defaultCategoryId: newId(), updatedAt: T2 }),
   );
+  // A row the viewer cannot see is never checked, so its bad foreign key is just `false`; for a
+  // row they can, UNIQUE answers before the foreign key does.
+  step("w.updateUnknownCategoryAsOther", (r) =>
+    r.payees.update(asB, { ...pwRow, name: "Renamed", defaultCategoryId: newId(), updatedAt: T2 }),
+  );
+  step("w.updateDuplicateAndUnknownCategory", (r) =>
+    r.payees.update(asA, {
+      ...pwRow,
+      name: "Woolworths",
+      defaultCategoryId: newId(),
+      updatedAt: T2,
+    }),
+  );
   const alw = { ...aliasRow("WOOLIES2", a), payeeId: pw };
   step("w.alias", (r) => r.payeeAliases.insert(alw, privA));
   step("w.aliasShared", (r) =>
@@ -752,6 +771,9 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
       updatedAt: T2,
     }),
   );
+  step("w.activityUpdateNegativeAsOther", (r) =>
+    r.activities.update(asA, { ...ac, name: "Trip", budgetCents: -5, updatedAt: T2 }),
+  );
   step("w.activityUpdateNegative", (r) =>
     r.activities.update(asB, { ...ac, name: "Trip", budgetCents: -5, updatedAt: T2 }),
   );
@@ -773,6 +795,232 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
     throws(() => r.payeeAliases.update(undefined as never, alw)),
   ]);
 
+  // Accounts: owner order and replacement, and the CHECKs of every table the matrix touches.
+  const owner = (accountId: Id<"Account">, personId: Id<"Person">, shareBp: number, at = T) => ({
+    accountId,
+    personId,
+    shareBp,
+    createdAt: at,
+    updatedAt: at,
+  });
+  const ownedAcct = newId<"Account">();
+  step("owners.insertOrdered", (r) =>
+    r.accounts.insert(account(ownedAcct, false), [
+      owner(ownedAcct, b, 5000, T2),
+      owner(ownedAcct, a, 5000, T),
+    ]),
+  );
+  out["owners.order"] = tx((r) => r.accounts.owners(ownedAcct).map((o) => o.personId === a));
+  step("owners.insertBadShare", (r) => {
+    const id = newId<"Account">();
+    r.accounts.insert(account(id, false), [owner(id, a, 0)]);
+  });
+  step("owners.insertDuplicate", (r) => {
+    const id = newId<"Account">();
+    r.accounts.insert(account(id, false), [owner(id, a, 5000), owner(id, a, 5000)]);
+  });
+  step("owners.insertUnknownPerson", (r) => {
+    const id = newId<"Account">();
+    r.accounts.insert(account(id, false), [owner(id, newId<"Person">(), 5000)]);
+  });
+  step("account.badType", (r) =>
+    r.accounts.insert({ ...account(newId<"Account">(), false), type: "bogus" as never }, []),
+  );
+  step("owners.replace", (r) =>
+    r.accounts.replaceOwners(ownedAcct, [owner(ownedAcct, b, 6000, T2), owner(ownedAcct, a, 4000)]),
+  );
+  out["owners.afterReplace"] = tx((r) =>
+    r.accounts.owners(ownedAcct).map((o) => [o.personId === a, o.shareBp]),
+  );
+  step("owners.replaceKeepsPerson", (r) =>
+    r.accounts.replaceOwners(ownedAcct, [owner(ownedAcct, a, 10000)]),
+  );
+  step("owners.replaceBadShare", (r) =>
+    r.accounts.replaceOwners(ownedAcct, [owner(ownedAcct, a, 10001)]),
+  );
+  step("owners.replaceDuplicate", (r) =>
+    r.accounts.replaceOwners(ownedAcct, [owner(ownedAcct, a, 5000), owner(ownedAcct, a, 5000)]),
+  );
+  step("owners.replaceUnknownPerson", (r) =>
+    r.accounts.replaceOwners(ownedAcct, [owner(ownedAcct, newId<"Person">(), 5000)]),
+  );
+  step("owners.replaceUnknownAccount", (r) => {
+    const id = newId<"Account">();
+    r.accounts.replaceOwners(id, [owner(id, a, 5000)]);
+  });
+  step("owners.replaceUnknownAccountEmpty", (r) => r.accounts.replaceOwners(newId(), []));
+  out["owners.afterFailures"] = tx((r) =>
+    r.accounts.owners(ownedAcct).map((o) => [o.personId === a, o.shareBp]),
+  );
+  step("owners.replaceEmpty", (r) => r.accounts.replaceOwners(ownedAcct, []));
+  out["owners.afterEmpty"] = tx((r) => r.accounts.owners(ownedAcct).length);
+
+  step("institution.badKind", (r) =>
+    r.institutions.insert({
+      id: newId<"Institution">(),
+      name: "Odd",
+      kind: "bogus" as never,
+      websiteUrl: null,
+      createdAt: T,
+      updatedAt: T,
+    }),
+  );
+  const credit = newId<"Institution">();
+  tx((r) =>
+    r.institutions.insert({
+      id: credit,
+      name: "Credit",
+      kind: "bank",
+      websiteUrl: null,
+      createdAt: T,
+      updatedAt: T,
+    }),
+  );
+  step("institution.updateBadKind", (r) =>
+    r.institutions.update({
+      id: credit,
+      name: "Credit",
+      kind: "bogus" as never,
+      websiteUrl: null,
+      createdAt: T,
+      updatedAt: T2,
+    }),
+  );
+  step("group.badMatchedBy", (r) =>
+    r.transferGroups.insert({
+      id: newId<"TransferGroup">(),
+      matchedBy: "bogus" as never,
+      createdAt: T,
+      updatedAt: T,
+    }),
+  );
+  step("txn.badStatus", (r) =>
+    r.transactions.insert(txn(shared, "status", { status: "bogus" as never }), []),
+  );
+  step("txn.badPostedOn", (r) =>
+    r.transactions.insert(txn(shared, "date", { postedOn: "2026-9-1" }), []),
+  );
+  step("txn.badPostedOnAndDuplicate", (r) =>
+    r.transactions.insert(txn(shared, "joint", { postedOn: "soon" }), []),
+  );
+  const tEdit = txn(shared, "editable");
+  tx((r) => r.transactions.insert(tEdit, []));
+  const edit = (viewer: Viewer, postedOn: string) => (r: TxRepos) =>
+    r.transactions.update(viewer, {
+      id: tEdit.id,
+      postedOn,
+      amountCents: -1,
+      notes: null,
+      updatedAt: T2,
+    });
+  step("txn.updateBadPostedOn", edit(asA, "2026-09-1"));
+  step("txn.updateBadPostedOnInvisible", (r) =>
+    r.transactions.update(asB, {
+      id: tA.id,
+      postedOn: "nope",
+      amountCents: -1,
+      notes: null,
+      updatedAt: T2,
+    }),
+  );
+  step("txn.updateGoodPostedOn", edit(asA, "2026-09-02"));
+
+  // replaceSplits: a split ID another transaction holds is a primary key violation, and
+  // changes neither transaction.
+  const tOwner = txn(shared, "split-owner");
+  const ownerSplit = split(tOwner.id);
+  const tTaker = txn(shared, "split-taker");
+  tx((r) => {
+    r.transactions.insert(tOwner, [ownerSplit]);
+    r.transactions.insert(tTaker, [split(tTaker.id)]);
+  });
+  step("split.replaceStealsId", (r) =>
+    r.transactions.replaceSplits(tTaker.id, [{ ...ownerSplit, transactionId: tTaker.id }]),
+  );
+  step("split.replaceRepeatsFreshId", (r) => {
+    const fresh = split(tTaker.id);
+    r.transactions.replaceSplits(tTaker.id, [fresh, fresh]);
+  });
+  out["split.afterSteal"] = tx((r) => [
+    view(r, tOwner.id)?.map((x) => x.id === ownerSplit.id),
+    view(r, tTaker.id)?.length,
+  ]);
+  step("split.insertBadSourceAndUnknownCategory", (r) => {
+    const t = txn(shared, "order");
+    r.transactions.insert(t, [
+      split(t.id, { categorySource: "bogus" as never, categoryId: newId() }),
+    ]);
+  });
+  step("split.insertReusedId", (r) => {
+    const t = txn(shared, "reused");
+    r.transactions.insert(t, [split(t.id, { id: ownerSplit.id })]);
+  });
+
+  // Balances: the latest snapshot on or before the day (ties by created_at, then id), then live
+  // transactions after it; a soft-deleted account answers nothing.
+  const balAcct = newId<"Account">();
+  tx((r) => r.accounts.insert(account(balAcct, false), [owner(balAcct, a, 10000)]));
+  const snapshot = (asOf: string, balanceCents: number, createdAt: string, source = "manual") => ({
+    id: newId<"BalanceSnapshot">(),
+    accountId: balAcct,
+    asOf,
+    balanceCents,
+    source: source as "manual",
+    createdAt,
+    updatedAt: createdAt,
+  });
+  step("snapshot.badSource", (r) =>
+    r.balanceSnapshots.insert(snapshot("2026-09-01", 1, T, "bogus")),
+  );
+  step("snapshot.badAsOf", (r) => r.balanceSnapshots.insert(snapshot("09/01/2026", 1, T)));
+  tx((r) => {
+    r.balanceSnapshots.insert(snapshot("2026-09-01", 1000, T));
+    // Same day: the later created_at wins even with the lower ID.
+    r.balanceSnapshots.insert(snapshot("2026-09-10", 2000, T2));
+    r.balanceSnapshots.insert(snapshot("2026-09-10", 3000, T));
+    // Same day and created_at: the higher ID wins.
+    r.balanceSnapshots.insert(snapshot("2026-09-15", 4000, T));
+    r.balanceSnapshots.insert(snapshot("2026-09-15", 5000, T));
+  });
+  const balTxn = (postedOn: string, amountCents: number, over: Partial<TransactionRow> = {}) =>
+    txn(balAcct, `bal-${postedOn}-${amountCents}`, {
+      postedOn,
+      amountCents,
+      status: "pending",
+      ...over,
+    });
+  const gone = balTxn("2026-09-12", -777, { status: "posted" });
+  tx((r) => {
+    r.transactions.insert(balTxn("2026-08-20", -10), []);
+    r.transactions.insert(balTxn("2026-09-05", -100), []);
+    r.transactions.insert(balTxn("2026-09-10", -50), []);
+    r.transactions.insert(balTxn("2026-09-20", 25, { status: "posted" }), []);
+    r.transactions.insert(gone, []);
+  });
+  const balances = (viewer: Viewer) => (r: TxRepos) =>
+    [
+      "2026-08-01",
+      "2026-08-25",
+      "2026-09-01",
+      "2026-09-10",
+      "2026-09-12",
+      "2026-09-15",
+      "2026-09-30",
+    ].map((day) => r.balanceSnapshots.balanceAsOf(viewer, balAcct, day));
+  out["balance.beforeDelete"] = tx(balances(system));
+  out["balance.softDeleteTxn"] = tx((r) => r.transactions.softDelete(system, gone.id, T2));
+  out["balance.afterTxnDelete"] = tx(balances(system));
+  out["balance.asOther"] = tx(balances(asB));
+  out["snapshot.listOrder"] = tx((r) =>
+    r.balanceSnapshots.listVisible(system, balAcct).map((x) => [x.asOf, x.balanceCents]),
+  );
+  softDeleteAccount(balAcct);
+  out["balance.afterAccountDelete"] = tx(balances(system));
+  out["snapshot.listAfterAccountDelete"] = tx((r) => [
+    r.balanceSnapshots.listVisible(system, balAcct).length,
+    r.balanceSnapshots.listVisible(asA, balAcct).length,
+  ]);
+
   // Review item foreign key.
   const reviewItem = (accountId: string | null) => ({
     id: newId<"ReviewItem">(),
@@ -792,7 +1040,7 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
 
 describe("ledger and classification schema on SQLite", () => {
   it("answers the I/O matrix", () => {
-    const out = scenario(createUnitOfWork(db));
+    const out = scenario(createUnitOfWork(db), softDeleteInSqlite);
     expect(out["txn.duplicateFingerprint"]).toBe("error:UNIQUE");
     expect(out["txn.duplicateExternalId"]).toBe("error:UNIQUE");
     expect(out["txn.sameExternalIdOtherAccount"]).toBe("ok");
@@ -825,11 +1073,27 @@ describe("ledger and classification schema on SQLite", () => {
     expect(out["w.aliasUpdateBadKind"]).toBe("error:CHECK");
     expect(out["taxCategory.updateBadBp"]).toBe("error:CHECK");
     expect(out["w.delete"]).toEqual([true, false]);
+    // Same-day snapshots: the later created_at wins, then the higher ID; soft-deleted lines drop out.
+    expect(out["balance.beforeDelete"]).toEqual([0, -10, 1000, 2000, 1223, 5000, 5025]);
+    expect(out["balance.afterTxnDelete"]).toEqual([0, -10, 1000, 2000, 2000, 5000, 5025]);
+    expect(out["balance.asOther"]).toEqual([0, -10, 1000, 2000, 2000, 5000, 5025]);
+    expect(out["balance.afterAccountDelete"]).toEqual(Array(7).fill(undefined));
+    expect(out["snapshot.listAfterAccountDelete"]).toEqual([0, 0]);
+    expect(out["owners.order"]).toEqual([true, false]);
+    expect(out["owners.afterEmpty"]).toBe(0);
+    expect(out["split.replaceStealsId"]).toBe("error:UNIQUE");
+    expect(out["split.insertBadSourceAndUnknownCategory"]).toBe("error:CHECK");
+    expect(out["w.updateUnknownCategoryAsOther"]).toBe(false);
+    expect(out["w.updateDuplicateAndUnknownCategory"]).toBe("error:UNIQUE");
+    expect(out["w.activityUpdateNegativeAsOther"]).toBe(false);
+    expect(out["txn.updateBadPostedOn"]).toBe("error:CHECK");
+    expect(out["txn.updateBadPostedOnInvisible"]).toBe(false);
+    expect(out["txn.badPostedOnAndDuplicate"]).toBe("error:CHECK");
     expect(out["w.missingViewer"]).toEqual(["TypeError", "TypeError", "TypeError", "TypeError"]);
   });
 
   it("keeps the scoped origin account in the database, never in a row", () => {
-    scenario(createUnitOfWork(db));
+    scenario(createUnitOfWork(db), softDeleteInSqlite);
     expect(
       db.prepare("SELECT count(*) FROM payee WHERE origin_account_id IS NOT NULL").pluck().get(),
     ).toBe(5);
@@ -946,8 +1210,9 @@ describe("ledger and classification schema on SQLite", () => {
 
 describe("memory and SQLite repositories agree", () => {
   it("gives the same answers to the same sequence", () => {
-    const sqlite = scenario(createUnitOfWork(db));
-    const memory = scenario(memoryUnitOfWork());
+    const sqlite = scenario(createUnitOfWork(db), softDeleteInSqlite);
+    const mirror = memoryUnitOfWork();
+    const memory = scenario(mirror, (id) => mirror.state.deleted.add(id));
     expect(sqlite["tag.hiddenSurvives"]).toEqual([["holiday", true]]);
     expect(memory).toEqual(sqlite);
   });
