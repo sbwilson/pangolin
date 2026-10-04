@@ -518,3 +518,59 @@ describe("hidden names and transfer groups on SQLite", () => {
     expect(JSON.parse(audited[2]?.after ?? "{}").transferGroupId).toBeNull();
   });
 });
+
+describe("AccountRepo update, replaceOwners and hasSharedSplit on SQLite", () => {
+  const uow = () => createUnitOfWork(db);
+  const T = "2026-09-28T00:00:00.000Z";
+  const find = (id: string) => uow().read((r) => r.accounts.findVisible(sys.viewer, id));
+  const owners = (id: string) =>
+    uow()
+      .read((r) => r.accounts.owners(id))
+      .map((o) => [o.personId, o.shareBp]);
+
+  it("update overwrites the mutable columns of a live account and throws for a missing one", () => {
+    const before = find(shared);
+    if (before === undefined) throw new Error("no account");
+    uow().transaction((tx) =>
+      tx.accounts.update({ ...before, name: "Renamed", isSavings: true, updatedAt: T }),
+    );
+    expect(find(shared)).toMatchObject({ name: "Renamed", isSavings: true, updatedAt: T });
+    expect(find(shared)?.isPrivate).toBe(false);
+    expect(() =>
+      uow().transaction((tx) =>
+        tx.accounts.update({ ...before, id: "missing" as Id<"Account">, updatedAt: T }),
+      ),
+    ).toThrow(/not found/);
+    db.prepare("UPDATE account SET deleted_at = ? WHERE id = ?").run(T, shared);
+    expect(() =>
+      uow().transaction((tx) => tx.accounts.update({ ...before, name: "Again", updatedAt: T })),
+    ).toThrow(/not found/);
+  });
+
+  it("replaceOwners swaps the whole owner set", () => {
+    expect(owners(shared)).toEqual([
+      [a, 5000],
+      [b, 5000],
+    ]);
+    uow().transaction((tx) =>
+      tx.accounts.replaceOwners(shared, [
+        { accountId: shared, personId: b, shareBp: 10000, createdAt: T, updatedAt: T },
+      ]),
+    );
+    expect(owners(shared)).toEqual([[b, 10000]]);
+    expect(owners(privateA)).toEqual([[a, 10000]]);
+    uow().transaction((tx) => tx.accounts.replaceOwners(shared, []));
+    expect(owners(shared)).toEqual([]);
+  });
+
+  it("hasSharedSplit sees shared splits of live transactions only", () => {
+    const has = (id: string) => uow().transaction((tx) => tx.accounts.hasSharedSplit(id));
+    expect(has(shared)).toBe(false);
+    const sharedTxn = createTransaction(as(a), txn(shared, "joint"));
+    createTransaction(as(a), txn(privateA, "private"));
+    expect(has(shared)).toBe(true);
+    expect(has(privateA)).toBe(false);
+    deleteTransaction(as(a), { id: sharedTxn });
+    expect(has(shared)).toBe(false);
+  });
+});

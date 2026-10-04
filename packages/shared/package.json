@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./period": "./src/period/index.ts",
+    "./seed": "./src/seed-references.ts",
     "./temporal": "./src/temporal/index.ts"
   },
   "scripts": {

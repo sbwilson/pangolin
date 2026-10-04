@@ -3,10 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createAccount,
+  createActivity,
   createCategory,
   createCategoryGroup,
   createIdGenerator,
   createPayee,
+  createPayeeAlias,
   createPerson,
   createTag,
   createTransaction,
@@ -504,7 +506,7 @@ describe("name hiding and transfer groups", () => {
     const { sys, sam, mine, other } = seed(db);
     const d = deps(db);
     const asSam: UseCaseContext = {
-      viewer: personViewer(sam as never, d.clock.now()),
+      viewer: personViewer(sam, d.clock.now()),
       clock: d.clock,
       newId: d.newId,
       uow: d.uow,
@@ -956,10 +958,17 @@ describe("/api/classify", () => {
     const { sam, sys, theirs } = seed(db);
     const samCtx: UseCaseContext = {
       ...sys,
-      viewer: personViewer(sam as never, sys.clock.now()),
+      viewer: personViewer(sam, sys.clock.now()),
     };
     const payee = createPayee(samCtx, { name: "Secret", originAccountId: theirs });
     const tag = createTag(samCtx, { name: "secret", originAccountId: theirs });
+    const alias = createPayeeAlias(samCtx, {
+      payeeId: payee.id,
+      pattern: "secret",
+      matchKind: "prefix",
+      originAccountId: theirs,
+    });
+    const activity = createActivity(samCtx, { name: "Secret trip", originAccountId: theirs });
     const calls: [string, string, unknown?][] = [
       ["GET", `/api/classify/payees/${payee.id}`],
       ["PATCH", `/api/classify/payees/${payee.id}`, { name: "x" }],
@@ -967,6 +976,12 @@ describe("/api/classify", () => {
       ["GET", `/api/classify/tags/${tag.id}`],
       ["PATCH", `/api/classify/tags/${tag.id}`, { name: "x" }],
       ["DELETE", `/api/classify/tags/${tag.id}`],
+      ["GET", `/api/classify/payees/aliases/${alias.id}`],
+      ["PATCH", `/api/classify/payees/aliases/${alias.id}`, { matchKind: "exact" }],
+      ["DELETE", `/api/classify/payees/aliases/${alias.id}`],
+      ["GET", `/api/classify/activities/${activity.id}`],
+      ["PATCH", `/api/classify/activities/${activity.id}`, { name: "x" }],
+      ["DELETE", `/api/classify/activities/${activity.id}`],
     ];
     for (const [method, path, body] of calls) {
       const res = await send(db, method, path, body);
@@ -995,7 +1010,7 @@ describe("/api/classify", () => {
     const { sam, sys, theirs, mine } = seed(db);
     const samCtx: UseCaseContext = {
       ...sys,
-      viewer: personViewer(sam as never, sys.clock.now()),
+      viewer: personViewer(sam, sys.clock.now()),
     };
     createPayee(samCtx, { name: "Woolworths", originAccountId: theirs });
     const shared = await send(db, "POST", "/api/classify/payees", { name: "Woolworths" });
@@ -1517,6 +1532,40 @@ describe("/api/auth/*", () => {
   });
 });
 
+describe("Cache-Control on every /api response", () => {
+  const routes: [string, string, number][] = [
+    ["person data", "/api/identity/me", 200],
+    ["person data", "/api/ledger/transactions", 200],
+    ["person data", "/api/accounts", 200],
+    ["person data", "/api/classify/payees", 200],
+    ["person data", "/api/identity/notices", 200],
+    ["an error (404)", "/api/ledger/transactions/missing", 404],
+    ["an unknown route (404)", "/api/nothing-here", 404],
+    ["better-auth's passthrough", "/api/auth/get-session", 200],
+  ];
+  it.each(routes)("%s: GET %s answers %i with no-store", async (_what, path, status) => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp(deps(db)).request(path, {
+      headers: { Origin: ORIGIN, Cookie: SESSION_COOKIE },
+    });
+    expect(res.status).toBe(status);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("answers a malformed write (400) with no-store", async () => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp(deps(db)).request("/api/ledger/transactions", {
+      method: "POST",
+      headers: { Origin: ORIGIN, Cookie: SESSION_COOKIE, "Content-Type": "application/json" },
+      body: "not json",
+    });
+    expect(res.status).toBe(400);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+});
+
 describe("errors", () => {
   it("answers a throwing route with 500 Internal, without its message", async () => {
     const logged: unknown[] = [];
@@ -1676,7 +1725,8 @@ describe("/api/ledger/transactions/:id/splits", () => {
     expect(ok.status).toBe(200);
     expect(ok.headers.get("cache-control")).toBe("no-store");
     const body = (await ok.json()) as Body;
-    expect(body.remainingCents).toBe(0);
+    expect(body.transaction.remainingCents).toBe(0);
+    expect(body).not.toHaveProperty("remainingCents");
     expect(body.transaction.splits).toHaveLength(2);
     const bad = await send(db, "PUT", path, { splits: [{ amountCents: -600 }] });
     expect(bad.status).toBe(400);

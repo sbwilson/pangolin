@@ -1,8 +1,8 @@
-// Test support only (reached as `@pangolin/app/testing/memory-uow`, for the adapter parity
-// tests in `packages/db`; not part of the package index): an in-memory `UnitOfWork` with rollback,
+// Test support only (not exported from the package): an in-memory `UnitOfWork` with rollback,
 // so `app` tests can check transaction behaviour without importing an adapter. The job and
 // review-item repositories mirror the SQLite adapter's semantics (partial unique keys, leased
-// claims, visibility); `packages/db` tests prove the adapter on real SQLite.
+// claims, visibility); `packages/db` tests prove the adapter on real SQLite, and the parity tests
+// beside this file (`*-parity.test.ts`, which may import `@pangolin/db`) hold the two together.
 import type { Id } from "@pangolin/shared";
 import type {
   AccountOwnerRow,
@@ -62,7 +62,14 @@ import type {
   UserRepo,
   VisibleTransaction,
 } from "../ports/unit-of-work.ts";
-import { SPLIT_SOURCES } from "../ports/unit-of-work.ts";
+import {
+  ACCOUNT_TYPES,
+  BALANCE_SOURCES,
+  CATEGORY_GROUP_KINDS,
+  INSTITUTION_KINDS,
+  SPLIT_SOURCES,
+  TRANSFER_MATCHES,
+} from "../ports/unit-of-work.ts";
 import type { Viewer } from "../viewer.ts";
 
 export interface MemoryState {
@@ -647,7 +654,9 @@ function accountRepo(working: MemoryState, check: () => void): AccountRepo {
   return {
     insert: (row, owners) => {
       check();
+      checked(oneOf(ACCOUNT_TYPES, row.type), "account_type");
       references(working.institutions, row.institutionId, "account.institution_id");
+      requireOwnersInsertable(working, owners, () => true, [row.id]);
       working.accounts.push(row);
       working.accountOwners.push(...owners);
     },
@@ -672,7 +681,9 @@ function accountRepo(working: MemoryState, check: () => void): AccountRepo {
     },
     owners: (accountId) => {
       check();
-      return working.accountOwners.filter((owner) => owner.accountId === accountId);
+      return working.accountOwners
+        .filter((owner) => owner.accountId === accountId)
+        .sort((a, b) => byText(`${a.createdAt}|${a.personId}`, `${b.createdAt}|${b.personId}`));
     },
     update: (row) => {
       check();
@@ -693,6 +704,8 @@ function accountRepo(working: MemoryState, check: () => void): AccountRepo {
     },
     replaceOwners: (accountId, owners) => {
       check();
+      // As SQLite: the old owners go first, so a person kept is not a duplicate.
+      requireOwnersInsertable(working, owners, (owner) => owner.accountId !== accountId);
       working.accountOwners = [
         ...working.accountOwners.filter((owner) => owner.accountId !== accountId),
         ...owners,
@@ -783,6 +796,22 @@ function checkSplit(s: SplitRow): void {
   if (s.beneficiary.length === 0) throw new Error("CHECK constraint failed: split_beneficiary");
 }
 
+/** The foreign keys of a `split` row's classification columns. */
+function requireSplitReferences(working: MemoryState, s: SplitRow): void {
+  references(working.categories, s.categoryId, "split.category_id");
+  references(working.activities, s.activityId, "split.activity_id");
+  references(working.taxCategories, s.taxCategoryId, "split.tax_category_id");
+}
+
+/** The primary key of `split`: `fresh` rows must not reuse an ID in the table or each other. */
+function requireSplitIdsFree(working: MemoryState, fresh: readonly SplitRow[]): void {
+  const taken = new Set<string>(working.splits.map((s) => s.id));
+  for (const s of fresh) {
+    if (taken.has(s.id)) throw uniqueViolation("split.id");
+    taken.add(s.id);
+  }
+}
+
 function transactionRepo(working: MemoryState, check: () => void): TransactionRepo {
   const withSplits = (row: VisibleTransaction): VisibleTransaction => ({
     ...row,
@@ -824,17 +853,8 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
   return {
     insert: (row, splits) => {
       check();
-      references(working.accounts, row.accountId, "transaction.account_id");
-      references(working.payees, row.payeeId, "transaction.payee_id");
-      references(working.people, row.performedBy, "transaction.performed_by");
-      references(working.transferGroups, row.transferGroupId, "transaction.transfer_group_id");
-      references(working.people, row.nameHiddenBy, "transaction.name_hidden_by");
-      for (const s of splits) {
-        references(working.categories, s.categoryId, "split.category_id");
-        references(working.activities, s.activityId, "split.activity_id");
-        references(working.taxCategories, s.taxCategoryId, "split.tax_category_id");
-        checkSplit(s);
-      }
+      // SQLite's order for each statement: CHECK, then UNIQUE, then foreign keys.
+      checkTransaction(row);
       // Deleted lines count: the row stays so the same line is not imported again.
       for (const other of working.transactions) {
         if (other.accountId !== row.accountId) continue;
@@ -845,6 +865,14 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
           throw uniqueViolation("transaction.account_id, transaction.external_id");
         }
       }
+      references(working.accounts, row.accountId, "transaction.account_id");
+      references(working.payees, row.payeeId, "transaction.payee_id");
+      references(working.people, row.performedBy, "transaction.performed_by");
+      references(working.transferGroups, row.transferGroupId, "transaction.transfer_group_id");
+      references(working.people, row.nameHiddenBy, "transaction.name_hidden_by");
+      for (const s of splits) checkSplit(s);
+      requireSplitIdsFree(working, splits);
+      for (const s of splits) requireSplitReferences(working, s);
       working.transactions.push(row);
       working.splits.push(...splits);
     },
@@ -860,6 +888,7 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       check();
       const row = visibleRows(viewer).find((r) => r.id === change.id);
       if (row === undefined) return false;
+      checked(isDayFormat(change.postedOn), "transaction_posted_on");
       working.transactions[working.transactions.indexOf(row)] = {
         ...row,
         postedOn: change.postedOn,
@@ -884,33 +913,34 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
         if (s.transactionId !== transactionId) {
           throw new Error(`Split ${s.id} belongs to another transaction`);
         }
-        references(working.categories, s.categoryId, "split.category_id");
-        references(working.activities, s.activityId, "split.activity_id");
-        references(working.taxCategories, s.taxCategoryId, "split.tax_category_id");
-        checkSplit(s);
       }
-      const keep = new Set<string>(splits.map((s) => s.id));
-      const gone = new Set(
-        working.splits
-          .filter((s) => s.transactionId === transactionId && !keep.has(s.id))
-          .map((s) => s.id),
+      for (const s of splits) checkSplit(s);
+      // As SQLite: a split not already on this transaction is inserted, so a split ID that
+      // another transaction holds (or that the list repeats) is a primary key violation.
+      const mine = new Set<string>(
+        working.splits.filter((s) => s.transactionId === transactionId).map((s) => s.id),
       );
+      requireSplitIdsFree(
+        working,
+        splits.filter((s) => !mine.has(s.id)),
+      );
+      for (const s of splits) requireSplitReferences(working, s);
+      const keep = new Set<string>(splits.map((s) => s.id));
+      const gone = new Set([...mine].filter((id) => !keep.has(id)));
       working.splitTags = working.splitTags.filter((t) => !gone.has(t.splitId));
-      const present = new Set(working.splits.map((s) => s.id));
       working.splits = working.splits
         .filter((s) => !gone.has(s.id))
         .map((s) => {
+          if (s.transactionId !== transactionId) return s;
           const next = splits.find((n) => n.id === s.id);
           return next === undefined ? s : { ...next, createdAt: s.createdAt };
         });
-      working.splits.push(...splits.filter((s) => !present.has(s.id)));
+      working.splits.push(...splits.filter((s) => !mine.has(s.id)));
     },
     updateSplit: (row) => {
       check();
-      references(working.categories, row.categoryId, "split.category_id");
-      references(working.activities, row.activityId, "split.activity_id");
-      references(working.taxCategories, row.taxCategoryId, "split.tax_category_id");
       checkSplit(row);
+      requireSplitReferences(working, row);
       const index = working.splits.findIndex((s) => s.id === row.id);
       const before = working.splits[index];
       if (before === undefined) return false;
@@ -1061,15 +1091,59 @@ function auditRepo(working: MemoryState, check: () => void, failAudit: () => boo
   };
 }
 
+/** Throws SQLite's CHECK error, named as the schema names the constraint, unless `ok`. */
+function checked(ok: boolean, name: string): void {
+  if (!ok) throw new Error(`CHECK constraint failed: ${name}`);
+}
+
+const oneOf = (list: readonly string[], value: string) => list.includes(value);
+
+/** SQLite's `GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`. */
+const isDayFormat = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
 function assertGroupKind(kind: string): void {
-  if (!["income", "expense", "transfer"].includes(kind)) {
-    throw new Error("CHECK constraint failed: category_group_kind");
-  }
+  checked(oneOf(CATEGORY_GROUP_KINDS, kind), "category_group_kind");
 }
 
 function assertMatchKind(kind: string): void {
-  if (!["exact", "contains", "prefix", "regex"].includes(kind)) {
-    throw new Error("CHECK constraint failed: payee_alias_match_kind");
+  checked(oneOf(["exact", "contains", "prefix", "regex"], kind), "payee_alias_match_kind");
+}
+
+/** Mirror of the CHECK constraints on `transaction`. */
+function checkTransaction(row: Pick<TransactionRow, "status" | "postedOn">): void {
+  checked(row.status === "pending" || row.status === "posted", "transaction_status");
+  checked(isDayFormat(row.postedOn), "transaction_posted_on");
+}
+
+/**
+ * Mirror of inserting `account_owner` rows, in SQLite's order: the share CHECK, the primary key
+ * (account, person) against the owners that stay (`keep`) and each other, then the foreign
+ * keys. `alsoAccounts` are accounts inserted in the same statement batch.
+ */
+function requireOwnersInsertable(
+  working: MemoryState,
+  owners: readonly AccountOwnerRow[],
+  keep: (owner: AccountOwnerRow) => boolean,
+  alsoAccounts: readonly string[] = [],
+): void {
+  for (const owner of owners) {
+    checked(owner.shareBp >= 1 && owner.shareBp <= 10_000, "account_owner_share_bp");
+  }
+  const taken = new Set(
+    working.accountOwners.filter(keep).map((o) => `${o.accountId}|${o.personId}`),
+  );
+  for (const owner of owners) {
+    const key = `${owner.accountId}|${owner.personId}`;
+    if (taken.has(key)) {
+      throw uniqueViolation("account_owner.account_id, account_owner.person_id");
+    }
+    taken.add(key);
+  }
+  for (const owner of owners) {
+    if (!alsoAccounts.includes(owner.accountId)) {
+      references(working.accounts, owner.accountId, "account_owner.account_id");
+    }
+    references(working.people, owner.personId, "account_owner.person_id");
   }
 }
 
@@ -1096,6 +1170,7 @@ function institutionRepo(working: MemoryState, check: () => void): InstitutionRe
   return {
     insert: (row) => {
       check();
+      checked(oneOf(INSTITUTION_KINDS, row.kind), "institution_kind");
       working.institutions.push(row);
     },
     find: (viewer, id) => {
@@ -1115,6 +1190,7 @@ function institutionRepo(working: MemoryState, check: () => void): InstitutionRe
       );
       const before = working.institutions[at];
       if (before === undefined) throw new Error(`Institution ${row.id} not found`);
+      checked(oneOf(INSTITUTION_KINDS, row.kind), "institution_kind");
       working.institutions[at] = {
         ...before,
         name: row.name,
@@ -1139,6 +1215,8 @@ function balanceSnapshotRepo(working: MemoryState, check: () => void): BalanceSn
   return {
     insert: (row) => {
       check();
+      checked(oneOf(BALANCE_SOURCES, row.source), "balance_snapshot_source");
+      checked(isDayFormat(row.asOf), "balance_snapshot_as_of");
       references(working.accounts, row.accountId, "balance_snapshot.account_id");
       working.balanceSnapshots.push(row);
     },
@@ -1183,6 +1261,7 @@ function transferGroupRepo(working: MemoryState, check: () => void): TransferGro
   return {
     insert: (row) => {
       check();
+      checked(oneOf(TRANSFER_MATCHES, row.matchedBy), "transfer_group_matched_by");
       working.transferGroups.push(row);
     },
     find: (viewer, id) => {
@@ -1388,12 +1467,22 @@ function scoped<R extends { readonly id: string; readonly scopePersonId: string 
         .filter((row) => inScope(viewer, row))
         .sort((a, b) => byText(`${order(a)}|${a.id}`, `${order(b)}|${b.id}`));
     },
-    update: (viewer: Viewer, row: R, merge: (before: R, next: R) => R): boolean => {
+    /**
+     * SQLite checks a matched row's CHECKs (`checkRow`), then UNIQUE, then foreign keys
+     * (`checkReferences`); a row that does not match is never checked.
+     */
+    update: (
+      viewer: Viewer,
+      row: R,
+      merge: (before: R, next: R) => R,
+      checks: { checkRow?: (next: R) => void; checkReferences?: (next: R) => void } = {},
+    ): boolean => {
       requireViewer(viewer);
       check();
       const before = live().find((r) => r.id === row.id && inScope(viewer, r));
       if (before === undefined) return false;
       const next = merge(before, row);
+      checks.checkRow?.(next);
       if (
         live().some(
           (r) =>
@@ -1402,6 +1491,7 @@ function scoped<R extends { readonly id: string; readonly scopePersonId: string 
       ) {
         throw uniqueViolation(what);
       }
+      checks.checkReferences?.(next);
       setRows(rows().map((r) => (r.id === row.id ? next : r)));
       return true;
     },
@@ -1448,23 +1538,6 @@ function tagRepo(working: MemoryState, check: () => void): TagRepo {
       })),
     softDelete: base.softDelete,
     originOf: base.originOf,
-    attach: (row) => {
-      check();
-      references(working.splits, row.splitId, "split_tag.split_id");
-      references(working.tags, row.tagId, "split_tag.tag_id");
-      if (working.splitTags.some((t) => t.splitId === row.splitId && t.tagId === row.tagId)) {
-        throw uniqueViolation("split_tag.split_id, split_tag.tag_id");
-      }
-      working.splitTags.push(row);
-    },
-    detach: (splitId, tagId) => {
-      check();
-      const before = working.splitTags.length;
-      working.splitTags = working.splitTags.filter(
-        (t) => !(t.splitId === splitId && t.tagId === tagId),
-      );
-      return working.splitTags.length < before;
-    },
     replaceForSplit: (viewer, splitId, tagIds, at) => {
       requireViewer(viewer);
       check();
@@ -1520,6 +1593,9 @@ function tagRepo(working: MemoryState, check: () => void): TagRepo {
   };
 }
 
+const checkBudget = (budgetCents: number | null) =>
+  checked(budgetCents === null || budgetCents >= 0, "activity_budget_cents");
+
 function activityRepo(working: MemoryState, check: () => void): ActivityRepo {
   const base = scoped(
     working,
@@ -1534,26 +1610,26 @@ function activityRepo(working: MemoryState, check: () => void): ActivityRepo {
   );
   return {
     insert: (row, origin) => {
-      if (row.budgetCents !== null && row.budgetCents < 0) {
-        throw new Error("CHECK constraint failed: activity_budget_cents");
-      }
+      check();
+      checkBudget(row.budgetCents);
       base.insertRow(row, origin);
     },
     find: base.find,
     list: base.list,
-    update: (viewer, row) => {
-      if (row.budgetCents !== null && row.budgetCents < 0) {
-        throw new Error("CHECK constraint failed: activity_budget_cents");
-      }
-      return base.update(viewer, row, (before, next) => ({
-        ...before,
-        name: next.name,
-        startsOn: next.startsOn,
-        endsOn: next.endsOn,
-        budgetCents: next.budgetCents,
-        updatedAt: next.updatedAt,
-      }));
-    },
+    update: (viewer, row) =>
+      base.update(
+        viewer,
+        row,
+        (before, next) => ({
+          ...before,
+          name: next.name,
+          startsOn: next.startsOn,
+          endsOn: next.endsOn,
+          budgetCents: next.budgetCents,
+          updatedAt: next.updatedAt,
+        }),
+        { checkRow: (next) => checkBudget(next.budgetCents) },
+      ),
     softDelete: base.softDelete,
     originOf: base.originOf,
   };
@@ -1573,6 +1649,7 @@ function payeeRepo(working: MemoryState, check: () => void): PayeeRepo {
   );
   return {
     insert: (row, origin) => {
+      check();
       references(working.categories, row.defaultCategoryId, "payee.default_category_id");
       base.insertRow(row, origin);
     },
@@ -1594,17 +1671,22 @@ function payeeRepo(working: MemoryState, check: () => void): PayeeRepo {
     },
     find: base.find,
     list: base.list,
-    update: (viewer, row) => {
-      requireViewer(viewer);
-      references(working.categories, row.defaultCategoryId, "payee.default_category_id");
-      return base.update(viewer, row, (before, next) => ({
-        ...before,
-        name: next.name,
-        websiteUrl: next.websiteUrl,
-        defaultCategoryId: next.defaultCategoryId,
-        updatedAt: next.updatedAt,
-      }));
-    },
+    update: (viewer, row) =>
+      base.update(
+        viewer,
+        row,
+        (before, next) => ({
+          ...before,
+          name: next.name,
+          websiteUrl: next.websiteUrl,
+          defaultCategoryId: next.defaultCategoryId,
+          updatedAt: next.updatedAt,
+        }),
+        {
+          checkReferences: (next) =>
+            references(working.categories, next.defaultCategoryId, "payee.default_category_id"),
+        },
+      ),
     softDelete: base.softDelete,
     originOf: base.originOf,
   };
@@ -1624,8 +1706,9 @@ function payeeAliasRepo(working: MemoryState, check: () => void): PayeeAliasRepo
   );
   return {
     insert: (row, origin) => {
-      references(working.payees, row.payeeId, "payee_alias.payee_id");
+      check();
       assertMatchKind(row.matchKind);
+      references(working.payees, row.payeeId, "payee_alias.payee_id");
       base.insertRow(row, origin);
     },
     softDeleteForPayee: (payeeId, at) => {
@@ -1647,15 +1730,18 @@ function payeeAliasRepo(working: MemoryState, check: () => void): PayeeAliasRepo
     },
     find: base.find,
     list: base.list,
-    update: (viewer, row) => {
-      assertMatchKind(row.matchKind);
-      return base.update(viewer, row, (before, next) => ({
-        ...before,
-        pattern: next.pattern,
-        matchKind: next.matchKind,
-        updatedAt: next.updatedAt,
-      }));
-    },
+    update: (viewer, row) =>
+      base.update(
+        viewer,
+        row,
+        (before, next) => ({
+          ...before,
+          pattern: next.pattern,
+          matchKind: next.matchKind,
+          updatedAt: next.updatedAt,
+        }),
+        { checkRow: (next) => assertMatchKind(next.matchKind) },
+      ),
     softDelete: base.softDelete,
     originOf: base.originOf,
   };

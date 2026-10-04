@@ -22,7 +22,8 @@ export interface Scope {
 /**
  * `scopeFor(tx, viewer, originAccountId)`: no origin, or a public origin account, gives a shared
  * row; a private origin account gives the account's sole owner as the scope and stores the
- * origin. An account the viewer cannot see is `NotFound` (AD-5).
+ * origin. An account the viewer cannot see is `NotFound` (AD-5); a private account with no
+ * owner (corrupt data) is `Conflict`.
  */
 export function scopeFor(
   tx: TxRepos,
@@ -36,7 +37,7 @@ export function scopeFor(
   if (account === undefined) throw new AppError("NotFound", "Account not found");
   if (!account.isPrivate) return { scopePersonId: null, origin: null };
   const [owner] = tx.accounts.owners(account.id);
-  if (owner === undefined) throw new Error("A private account has an owner");
+  if (owner === undefined) throw new AppError("Conflict", "This account has no owner");
   return { scopePersonId: owner.personId, origin: account.id };
 }
 

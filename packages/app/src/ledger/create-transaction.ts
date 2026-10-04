@@ -1,10 +1,11 @@
 import type { Id } from "@pangolin/shared";
-import { formatInstant, parseDate } from "@pangolin/shared/temporal";
+import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import type { SplitRow, TransactionRow } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
+import { descriptionField, postedOnField } from "./fields.ts";
 import { fingerprintManual, MANUAL_FINGERPRINT_VERSION } from "./fingerprint.ts";
 import "./needs-review.ts";
 
@@ -12,20 +13,10 @@ export const createTransactionInput = z
   .object({
     accountId: z.string().min(1).max(100),
     /** `YYYY-MM-DD`. */
-    postedOn: z.string().refine(
-      (value) => {
-        try {
-          parseDate(value);
-          return true;
-        } catch {
-          return false;
-        }
-      },
-      { message: "Expected a real YYYY-MM-DD date" },
-    ),
+    postedOn: postedOnField,
     /** Signed integer minor units. */
     amountCents: z.int(),
-    description: z.string().trim().min(1, { message: "Enter a description" }).max(500),
+    description: descriptionField,
     /** A payee the viewer can see; omitted or null leaves the transaction without one. */
     payeeId: z.string().min(1).max(100).nullish(),
   })

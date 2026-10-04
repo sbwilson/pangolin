@@ -4,6 +4,7 @@ import {
   ACCOUNT_TYPES,
   AppError,
   type Clock,
+  checkSeedReferences,
   createAccount,
   createInstitution,
   createPayee,
@@ -13,6 +14,7 @@ import {
   createTransaction,
   createTransferGroup,
   DEFAULT_CATEGORIES,
+  emptySeedKnown,
   getTransaction,
   hideTransactionName,
   type IdGenerator,
@@ -21,8 +23,10 @@ import {
   listCategoryGroups,
   listLogins,
   listTransactions,
+  type PersonViewer,
   personViewer,
   recordBalanceSnapshot,
+  type SeedKnown,
   seedDefaults,
   setSplitField,
   setSplits,
@@ -64,8 +68,11 @@ export interface AppliedSeed {
   /** Number of transactions created. */
   readonly transactions: number;
   /** The server-minted person ID for each seed person key. */
-  readonly people: Readonly<Record<string, string>>;
+  readonly people: Readonly<Record<string, PersonId>>;
 }
+
+/** A person's ID as `personViewer` takes it. */
+type PersonId = PersonViewer["personId"];
 
 const moduleName = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
   message: "Expected a seed module name",
@@ -214,39 +221,20 @@ const DEFAULT_CATEGORY_KEYS: ReadonlySet<string> = new Set(
   ),
 );
 
-/** What the validation pass knows about the events before the one it is checking. */
-interface Known {
-  readonly people: Set<string>;
-  readonly institutions: Set<string>;
-  readonly accounts: Map<string, { isPrivate: boolean; owners: string[] }>;
-  readonly tags: Map<string, string | null>;
-  readonly payees: Map<string, string | null>;
-  readonly transactions: Map<
-    string,
-    { account: string; amountCents: number; grouped: boolean; hidden: boolean }
-  >;
-}
-
 /**
  * Checks one event against the events before it, naming each problem. Everything a use case
  * would refuse for a bad reference is caught here, so nothing is written for a seed that cannot
  * apply.
  */
-function checkReferences(event: SeedEvent, known: Known, at: string): string[] {
-  const problems: string[] = [];
+function checkReferences(event: SeedEvent, known: SeedKnown, at: string): string[] {
+  // Keys, existence and origin rules are the generator's too (`checkSeedReferences`); what
+  // follows is what only applying through the use cases needs.
+  const problems = checkSeedReferences(event, known).map((message) => `${at}: ${message}`);
   const bad = (message: string) => problems.push(`${at}: ${message}`);
   const requireCategory = (ref: CategoryRef | null | undefined, where: string) => {
     if (ref != null && !DEFAULT_CATEGORY_KEYS.has(categoryKey(ref))) {
       bad(`${where}: unknown category "${ref.group} / ${ref.name}"`);
     }
-  };
-  /** The person who owns the private account `origin`, or null when it is not a private account. */
-  const originOwner = (origin: string, what: string): string | null => {
-    const account = known.accounts.get(origin);
-    if (account === undefined) bad(`${what} has unknown origin account "${origin}"`);
-    else if (!account.isPrivate)
-      bad(`${what} has origin account "${origin}", which is not private`);
-    return account?.isPrivate ? (account.owners[0] ?? null) : null;
   };
   /** An owner-only row (`scopeOwner` is the person it belongs to) goes only on their own private account. */
   const requireUsable = (
@@ -262,40 +250,12 @@ function checkReferences(event: SeedEvent, known: Known, at: string): string[] {
   };
 
   switch (event.type) {
-    case "institution.created":
-      if (known.institutions.has(event.key)) bad(`institution key "${event.key}" is used twice`);
-      known.institutions.add(event.key);
-      break;
-    case "account.created":
-      if (event.institution !== null && !known.institutions.has(event.institution)) {
-        bad(`unknown institution "${event.institution}"`);
-      }
-      break;
-    case "tag.created":
-      if (known.tags.has(event.key)) bad(`tag key "${event.key}" is used twice`);
-      known.tags.set(
-        event.key,
-        event.origin === null ? null : originOwner(event.origin, `tag "${event.key}"`),
-      );
-      break;
     case "payee.created":
-      if (known.payees.has(event.key)) bad(`payee key "${event.key}" is used twice`);
       requireCategory(event.defaultCategory, "defaultCategory");
-      known.payees.set(
-        event.key,
-        event.origin === null ? null : originOwner(event.origin, `payee "${event.key}"`),
-      );
-      break;
-    case "balance.recorded":
-      if (!known.accounts.has(event.account)) bad(`unknown account "${event.account}"`);
       break;
     case "transaction.created": {
-      const account = known.accounts.get(event.account);
-      if (known.transactions.has(event.key)) bad(`transaction key "${event.key}" is used twice`);
-      if (account === undefined) bad(`unknown account "${event.account}"`);
-      if (event.payee !== undefined) {
-        if (!known.payees.has(event.payee)) bad(`unknown payee "${event.payee}"`);
-        else requireUsable(`payee "${event.payee}"`, known.payees.get(event.payee), event.account);
+      if (event.payee !== undefined && known.payees.has(event.payee)) {
+        requireUsable(`payee "${event.payee}"`, known.payees.get(event.payee), event.account);
       }
       if (
         event.splits !== undefined &&
@@ -310,38 +270,20 @@ function checkReferences(event: SeedEvent, known: Known, at: string): string[] {
           ...(event.tags === undefined ? {} : { tags: event.tags }),
         },
       ];
-      if (splits.reduce((sum, split) => sum + split.amountCents, 0) !== event.amountCents) {
-        bad("splits must add up to the transaction amount");
-      }
       if (event.amountCents !== 0 && splits.some((split) => split.amountCents === 0)) {
         bad("a split cannot be zero unless the transaction is");
       }
       for (const [i, split] of splits.entries()) {
         requireCategory(split.category, `splits.${i}.category`);
         for (const tag of split.tags ?? []) {
-          if (!known.tags.has(tag)) bad(`unknown tag "${tag}"`);
-          else requireUsable(`tag "${tag}"`, known.tags.get(tag), event.account);
-        }
-        const beneficiary = split.beneficiary;
-        if (beneficiary !== undefined && beneficiary !== "shared") {
-          if (!known.people.has(beneficiary)) bad(`unknown beneficiary "${beneficiary}"`);
-          else if (account?.isPrivate && account.owners[0] !== beneficiary) {
-            bad(`a private account's splits belong to its owner, not "${beneficiary}"`);
-          }
+          if (known.tags.has(tag))
+            requireUsable(`tag "${tag}"`, known.tags.get(tag), event.account);
         }
       }
-      known.transactions.set(event.key, {
-        account: event.account,
-        amountCents: event.amountCents,
-        grouped: false,
-        hidden: false,
-      });
       break;
     }
     case "transaction.name-hidden": {
       const txn = known.transactions.get(event.transaction);
-      if (txn === undefined) bad(`unknown transaction "${event.transaction}"`);
-      if (!known.people.has(event.by)) bad(`unknown person "${event.by}"`);
       const account = txn === undefined ? undefined : known.accounts.get(txn.account);
       if (account?.isPrivate) bad("a name in a private account cannot be hidden");
       else if (account !== undefined && !account.owners.includes(event.by)) {
@@ -357,9 +299,6 @@ function checkReferences(event: SeedEvent, known: Known, at: string): string[] {
       const [first, second] = event.transactions;
       const a = known.transactions.get(first);
       const b = known.transactions.get(second);
-      if (a === undefined) bad(`unknown transaction "${first}"`);
-      if (b === undefined) bad(`unknown transaction "${second}"`);
-      if (!known.people.has(event.by)) bad(`unknown person "${event.by}"`);
       if (first === second) bad("a transfer links two different transactions");
       if (a !== undefined && b !== undefined && first !== second) {
         if (a.account === b.account) bad("a transfer links two different accounts");
@@ -378,9 +317,18 @@ function checkReferences(event: SeedEvent, known: Known, at: string): string[] {
       }
       break;
     }
+    case "institution.created":
+    case "account.created":
+    case "tag.created":
+    case "balance.recorded":
     case "person.created":
     case "household.settings":
+      // Only the shared reference rules apply to these.
       break;
+    default: {
+      const unchecked: never = event;
+      throw new Error(`Seed event not checked: ${JSON.stringify(unchecked)}`);
+    }
   }
   return problems;
 }
@@ -408,14 +356,7 @@ export function parseSeed(seedJson: string): {
 
   const problems: string[] = [];
   const events: SeedEvent[] = [];
-  const known: Known = {
-    people: new Set(),
-    institutions: new Set(),
-    accounts: new Map(),
-    tags: new Map(),
-    payees: new Map(),
-    transactions: new Map(),
-  };
+  const known = emptySeedKnown();
   file.data.events.forEach((event, i) => {
     const type = (event as { type?: unknown } | null)?.type;
     if (!isEventType(type)) {
@@ -428,26 +369,6 @@ export function parseSeed(seedJson: string): {
       return;
     }
     const data = parsed.data;
-    if (data.type === "person.created") {
-      if (known.people.has(data.key)) {
-        problems.push(`events.${i}: person key "${data.key}" is used twice`);
-      }
-      known.people.add(data.key);
-    }
-    if (data.type === "account.created") {
-      if (known.accounts.has(data.key)) {
-        problems.push(`events.${i}: account key "${data.key}" is used twice`);
-      }
-      for (const owner of data.owners) {
-        if (!known.people.has(owner.person)) {
-          problems.push(`events.${i}: unknown owner "${owner.person}"`);
-        }
-      }
-      known.accounts.set(data.key, {
-        isPrivate: data.isPrivate,
-        owners: data.owners.map((owner) => owner.person),
-      });
-    }
     problems.push(...checkReferences(data, known, `events.${i}`));
     events.push(data);
   });
@@ -461,7 +382,7 @@ export interface ApplySeedOptions {
    * seed's `person.created` keys; a seed person with no entry here is created. When set, the
    * household settings event is skipped: the household keeps its own.
    */
-  readonly people?: Readonly<Record<string, string>>;
+  readonly people?: Readonly<Record<string, PersonId>>;
 }
 
 /**
@@ -504,7 +425,7 @@ function applyEvents(
   };
   seedClassifyDefaults(uow, deps);
   const linked = options.people;
-  const people: Record<string, string> = {};
+  const people: Record<string, PersonId> = {};
   const institutions: Record<string, string> = {};
   const accounts: Record<string, string> = {};
   const tags: Record<string, string> = {};
@@ -514,7 +435,7 @@ function applyEvents(
 
   const asPerson = (personKey: string): UseCaseContext => ({
     ...ctx,
-    viewer: personViewer(people[personKey] as never, deps.clock.now()),
+    viewer: personViewer(people[personKey] as PersonId, deps.clock.now()),
   });
   /** The ID of a default category, looked up once the defaults exist. */
   const categoryId = (ref: CategoryRef): string => {
@@ -728,7 +649,7 @@ export function linkSeed(uow: UnitOfWork, deps: SeedDeps, seedJson: string): App
       );
     }
     const people = Object.fromEntries(
-      keys.map((key, i) => [key, (logins[i] as { personId: string }).personId]),
+      keys.map((key, i) => [key, (logins[i] as { personId: PersonId }).personId]),
     );
     return applyEvents(uow, deps, parsed, { people });
   });

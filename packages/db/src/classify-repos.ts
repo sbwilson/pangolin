@@ -253,19 +253,6 @@ export function createTagRepo(orm: Orm, check: () => void): TagRepo {
         .where(and(eq(tag.id, id), isNull(tag.deletedAt), scope))
         .get()?.origin as Id<"Account"> | null | undefined;
     },
-    attach: (row) => {
-      check();
-      orm.insert(splitTag).values(row).run();
-    },
-    detach: (splitId, tagId) => {
-      check();
-      return (
-        orm
-          .delete(splitTag)
-          .where(and(eq(splitTag.splitId, splitId), eq(splitTag.tagId, tagId)))
-          .run().changes === 1
-      );
-    },
     replaceForSplit: (viewer, splitId, tagIds, at) => {
       const scope = visibleScope(tag.scopePersonId, viewer);
       check();

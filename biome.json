@@ -55,20 +55,6 @@
                   "**/system-viewer.js"
                 ],
                 "message": "SystemViewer sees everything; only apps/server/src/jobs/**, apps/server/src/admin/** and tests may build one (AD-6)."
-              },
-              {
-                "group": [
-                  "**/schema/account",
-                  "**/schema/account.ts",
-                  "**/schema/account.js",
-                  "**/schema/transaction",
-                  "**/schema/transaction.ts",
-                  "**/schema/transaction.js",
-                  "**/schema/audit-log",
-                  "**/schema/audit-log.ts",
-                  "**/schema/audit-log.js"
-                ],
-                "message": "Read account, transaction and audit_log only through privacy.ts, ledger-repos.ts and unit-of-work.ts, which compose the viewer's SQL projection (AD-3, AD-4)."
               }
             ]
           }
@@ -123,20 +109,6 @@
                       "**/system-viewer.js"
                     ],
                     "message": "SystemViewer sees everything; only apps/server/src/jobs/**, apps/server/src/admin/** and tests may build one (AD-6)."
-                  },
-                  {
-                    "group": [
-                      "**/schema/account",
-                      "**/schema/account.ts",
-                      "**/schema/account.js",
-                      "**/schema/transaction",
-                      "**/schema/transaction.ts",
-                      "**/schema/transaction.js",
-                      "**/schema/audit-log",
-                      "**/schema/audit-log.ts",
-                      "**/schema/audit-log.js"
-                    ],
-                    "message": "Read account, transaction and audit_log only through privacy.ts, ledger-repos.ts and unit-of-work.ts, which compose the viewer's SQL projection (AD-3, AD-4)."
                   }
                 ]
               }
@@ -167,20 +139,6 @@
                       "**/system-viewer.js"
                     ],
                     "message": "SystemViewer sees everything; only apps/server/src/jobs/**, apps/server/src/admin/** and tests may build one (AD-6)."
-                  },
-                  {
-                    "group": [
-                      "**/schema/account",
-                      "**/schema/account.ts",
-                      "**/schema/account.js",
-                      "**/schema/transaction",
-                      "**/schema/transaction.ts",
-                      "**/schema/transaction.js",
-                      "**/schema/audit-log",
-                      "**/schema/audit-log.ts",
-                      "**/schema/audit-log.js"
-                    ],
-                    "message": "Read account, transaction and audit_log only through privacy.ts, ledger-repos.ts and unit-of-work.ts, which compose the viewer's SQL projection (AD-3, AD-4)."
                   }
                 ]
               }
@@ -205,20 +163,6 @@
                   {
                     "group": ["ulid", "ulid/**"],
                     "message": "Mint IDs with newId from @pangolin/app (AD-5); only packages/app/src/ids.ts imports ulid."
-                  },
-                  {
-                    "group": [
-                      "**/schema/account",
-                      "**/schema/account.ts",
-                      "**/schema/account.js",
-                      "**/schema/transaction",
-                      "**/schema/transaction.ts",
-                      "**/schema/transaction.js",
-                      "**/schema/audit-log",
-                      "**/schema/audit-log.ts",
-                      "**/schema/audit-log.js"
-                    ],
-                    "message": "Read account, transaction and audit_log only through privacy.ts, ledger-repos.ts and unit-of-work.ts, which compose the viewer's SQL projection (AD-3, AD-4)."
                   }
                 ]
               }
@@ -264,6 +208,20 @@
           }
         }
       }
+    },
+    {
+      "includes": [
+        "apps/**",
+        "packages/**",
+        "tools/**",
+        "e2e/**",
+        "scripts/**",
+        "!**/*.test.ts",
+        "!packages/db/src/privacy.ts",
+        "!packages/db/src/ledger-repos.ts",
+        "!packages/db/src/unit-of-work.ts"
+      ],
+      "plugins": ["./tools/lint/no-ledger-schema-read.grit"]
     },
     {
       "includes": ["packages/domain/src/**", "packages/shared/src/**", "!**/*.test.ts"],

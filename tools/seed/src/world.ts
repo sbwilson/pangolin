@@ -1,5 +1,6 @@
 // The one synthetic household every epic extends (AD-15). Modules never mutate the world:
 // they emit events, and the runner folds those events into the world the next modules see.
+import { checkSeedReferences, emptySeedKnown, type SeedKnown } from "@pangolin/shared/seed";
 import type { PlainDate } from "@pangolin/shared/temporal";
 
 /** A person in the household. `key` is the stable handle other modules refer to them by. */
@@ -246,13 +247,43 @@ export function emptyWorld(seed: string, today: PlainDate): World {
   };
 }
 
+/**
+ * What `world` has created, by key, as the shared reference rules read it. A tag's or payee's
+ * owner is the owner of its private origin account.
+ */
+function knownOf(world: World): SeedKnown {
+  const known = emptySeedKnown();
+  for (const person of world.people) known.people.add(person.key);
+  for (const institution of world.institutions) known.institutions.add(institution.key);
+  for (const account of world.accounts) {
+    known.accounts.set(account.key, {
+      isPrivate: account.isPrivate,
+      owners: account.owners.map((owner) => owner.person),
+    });
+  }
+  const ownerOf = (origin: string | null): string | null =>
+    origin === null ? null : (known.accounts.get(origin)?.owners[0] ?? null);
+  for (const tag of world.tags) known.tags.set(tag.key, ownerOf(tag.origin));
+  for (const payee of world.payees) known.payees.set(payee.key, ownerOf(payee.origin));
+  for (const txn of world.transactions) {
+    known.transactions.set(txn.key, {
+      account: txn.account,
+      amountCents: txn.amountCents,
+      grouped: false,
+      hidden: false,
+    });
+  }
+  return known;
+}
+
 /** The world after `event`. Throws when the event contradicts the world (e.g. a duplicate key). */
 export function applyEvent(world: World, event: SeedEvent): World {
+  const problems = checkSeedReferences(event, knownOf(world));
+  if (problems.length > 0) {
+    throw new Error(`Seed event ${event.type} contradicts the world: ${problems.join("; ")}`);
+  }
   switch (event.type) {
     case "person.created": {
-      if (world.people.some((person) => person.key === event.key)) {
-        throw new Error(`Seed world already has a person with key "${event.key}"`);
-      }
       const { key, displayName, colour } = event;
       return { ...world, people: [...world.people, { key, displayName, colour }] };
     }
@@ -261,27 +292,10 @@ export function applyEvent(world: World, event: SeedEvent): World {
       return { ...world, household: { timezone, baseCurrency, sharedAttribution } };
     }
     case "institution.created": {
-      if (world.institutions.some((institution) => institution.key === event.key)) {
-        throw new Error(`Seed world already has an institution with key "${event.key}"`);
-      }
       const { key, name, kind } = event;
       return { ...world, institutions: [...world.institutions, { key, name, kind }] };
     }
     case "account.created": {
-      if (world.accounts.some((account) => account.key === event.key)) {
-        throw new Error(`Seed world already has an account with key "${event.key}"`);
-      }
-      for (const owner of event.owners) {
-        if (!world.people.some((person) => person.key === owner.person)) {
-          throw new Error(`Account "${event.key}" has unknown owner "${owner.person}"`);
-        }
-      }
-      if (
-        event.institution !== null &&
-        !world.institutions.some((institution) => institution.key === event.institution)
-      ) {
-        throw new Error(`Account "${event.key}" has unknown institution "${event.institution}"`);
-      }
       const { key, name, accountType, currency, isPrivate, owners, institution, isSavings } = event;
       const account: WorldAccount = {
         key,
@@ -296,60 +310,17 @@ export function applyEvent(world: World, event: SeedEvent): World {
       return { ...world, accounts: [...world.accounts, account] };
     }
     case "tag.created": {
-      if (world.tags.some((tag) => tag.key === event.key)) {
-        throw new Error(`Seed world already has a tag with key "${event.key}"`);
-      }
-      requireOrigin(world, event.origin, `Tag "${event.key}"`);
       const { key, name, origin } = event;
       return { ...world, tags: [...world.tags, { key, name, origin }] };
     }
     case "payee.created": {
-      if (world.payees.some((payee) => payee.key === event.key)) {
-        throw new Error(`Seed world already has a payee with key "${event.key}"`);
-      }
-      requireOrigin(world, event.origin, `Payee "${event.key}"`);
       const { key, name, websiteUrl, defaultCategory, origin } = event;
       return {
         ...world,
         payees: [...world.payees, { key, name, websiteUrl, defaultCategory, origin }],
       };
     }
-    case "balance.recorded": {
-      if (!world.accounts.some((account) => account.key === event.account)) {
-        throw new Error(`Balance is for unknown account "${event.account}"`);
-      }
-      return world;
-    }
     case "transaction.created": {
-      if (!world.accounts.some((account) => account.key === event.account)) {
-        throw new Error(`Transaction is in unknown account "${event.account}"`);
-      }
-      if (world.transactions.some((txn) => txn.key === event.key)) {
-        throw new Error(`Seed world already has a transaction with key "${event.key}"`);
-      }
-      if (event.payee !== undefined && !world.payees.some((p) => p.key === event.payee)) {
-        throw new Error(`Transaction "${event.key}" has unknown payee "${event.payee}"`);
-      }
-      const tagKeys = [...(event.tags ?? []), ...(event.splits ?? []).flatMap((s) => s.tags ?? [])];
-      for (const tag of tagKeys) {
-        if (!world.tags.some((t) => t.key === tag)) {
-          throw new Error(`Transaction "${event.key}" has unknown tag "${tag}"`);
-        }
-      }
-      for (const split of event.splits ?? []) {
-        if (split.beneficiary !== undefined && split.beneficiary !== "shared") {
-          const beneficiary = split.beneficiary;
-          if (!world.people.some((person) => person.key === beneficiary)) {
-            throw new Error(`Transaction "${event.key}" has unknown beneficiary "${beneficiary}"`);
-          }
-        }
-      }
-      if (event.splits !== undefined) {
-        const sum = event.splits.reduce((total, split) => total + split.amountCents, 0);
-        if (sum !== event.amountCents) {
-          throw new Error(`Transaction "${event.key}" has splits that do not sum to its amount`);
-        }
-      }
       const { key, account, postedOn, amountCents, description } = event;
       const txn: WorldTransaction = {
         key,
@@ -361,33 +332,9 @@ export function applyEvent(world: World, event: SeedEvent): World {
       };
       return { ...world, transactions: [...world.transactions, txn] };
     }
-    case "transaction.name-hidden": {
-      requireTransaction(world, event.transaction);
-      requirePerson(world, event.by);
+    case "balance.recorded":
+    case "transaction.name-hidden":
+    case "transfer.grouped":
       return world;
-    }
-    case "transfer.grouped": {
-      for (const key of event.transactions) requireTransaction(world, key);
-      requirePerson(world, event.by);
-      return world;
-    }
   }
-}
-
-function requireOrigin(world: World, origin: string | null, what: string): void {
-  if (origin === null) return;
-  const account = world.accounts.find((a) => a.key === origin);
-  if (account === undefined) throw new Error(`${what} has unknown origin account "${origin}"`);
-  if (!account.isPrivate) throw new Error(`${what} has a public origin account "${origin}"`);
-}
-
-function requireTransaction(world: World, key: string): void {
-  if (!world.transactions.some((txn) => txn.key === key)) {
-    throw new Error(`Unknown transaction "${key}"`);
-  }
-}
-
-function requirePerson(world: World, key: string): void {
-  if (!world.people.some((person) => person.key === key))
-    throw new Error(`Unknown person "${key}"`);
 }

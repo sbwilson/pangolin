@@ -115,6 +115,21 @@ describe("checkBoundaries", () => {
     ]);
   });
 
+  it("lets app import db from its test files only", () => {
+    write(
+      "packages/app/src/testing/parity.test.ts",
+      'import { openDatabase } from "@pangolin/db";\n',
+    );
+    expect(checkBoundaries(root)).toEqual([]);
+    write("packages/app/src/testing/support.ts", 'import { openDatabase } from "@pangolin/db";\n');
+    expect(checkBoundaries(root).map((v) => [v.file, v.message])).toEqual([
+      [
+        "packages/app/src/testing/support.ts",
+        'packages/app may import packages/db only from its test files ("@pangolin/db")',
+      ],
+    ]);
+  });
+
   it("rejects a relative path into another package", () => {
     write("packages/shared/src/x.ts", 'import "../../domain/src/index.ts";\n');
     expect(checkBoundaries(root).map((v) => v.message)).toEqual([

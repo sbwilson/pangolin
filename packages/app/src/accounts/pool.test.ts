@@ -8,7 +8,7 @@ describe("poolOf", () => {
   });
 
   it("refuses an account with no owner", () => {
-    expect(() => poolOf([])).toThrow();
+    expect(() => poolOf([])).toThrow(expect.objectContaining({ code: "Conflict" }));
   });
 });
 

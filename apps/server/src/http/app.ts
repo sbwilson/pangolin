@@ -59,6 +59,7 @@ import {
   listTransactions,
   me,
   type ReadinessOutput,
+  type RecordBalanceSnapshotInput,
   type RunnerLiveness,
   readiness,
   recordBalanceSnapshot,
@@ -67,6 +68,7 @@ import {
   reEnrolmentUrl,
   regenerateRecoveryCodes,
   revokeMyReEnrolmentLinks,
+  type SetSplitFieldInput,
   type SystemHealthPort,
   setPrivacy,
   setSplitField,
@@ -236,16 +238,8 @@ export function createApi(deps: ApiDeps) {
   const writable = () => {
     if (deps.authn.kind === "demo") throw new AppError("Conflict", "Demo mode is read-only");
   };
-  /**
-   * A JSON object body, merged under `fixed` (so a client cannot supply its own `:id`). An empty
-   * body counts as `{}` when `optional`; anything else that is not an object is `Validation`.
-   * Typed `never` so it fits any use case's input: the use case's Zod schema is the check.
-   */
-  const objectBody = async (
-    c: Context,
-    fixed: Record<string, string> = {},
-    optional = false,
-  ): Promise<never> => {
+  /** A JSON object body; an empty body counts as `{}` when `optional`, else `Validation`. */
+  const jsonObject = async (c: Context, optional = false): Promise<Record<string, unknown>> => {
     const text = await c.req.text();
     let body: unknown;
     if (text.trim() === "" && optional) body = {};
@@ -259,37 +253,46 @@ export function createApi(deps: ApiDeps) {
     if (typeof body !== "object" || body === null || Array.isArray(body)) {
       throw new AppError("Validation", "Expected a JSON object");
     }
-    return { ...body, ...fixed } as never;
+    return Object.fromEntries(Object.entries(body));
   };
+  /**
+   * `body` merged under `fixed` (so a client cannot supply its own `:id`), as the use case's
+   * input type `T`. The one place the untrusted body is trusted to be `T`: the use case's Zod
+   * schema is the check, and answers `Validation` for anything else.
+   */
+  const asInput = <T extends object>(
+    body: Record<string, unknown>,
+    fixed: Record<string, string | undefined>,
+  ): T => ({ ...body, ...fixed }) as T;
+  const objectBody = async <T extends object>(
+    c: Context,
+    fixed: Record<string, string> = {},
+    optional = false,
+  ): Promise<T> => asInput<T>(await jsonObject(c, optional), fixed);
   const passCookies = (c: Context, cookies: readonly string[]) => {
     for (const cookie of cookies) c.header("Set-Cookie", cookie, { append: true });
   };
   return new Hono<SessionEnv>()
     .get("/api/system/health", (c) => {
-      c.header("Cache-Control", "no-store");
       const result = health({ systemHealth: deps.systemHealth }, {});
       if (result.writable) return c.json(result, 200);
       return c.json(result, 503);
     })
     .get("/api/system/jobs", (c) => {
       // Kind and failure time only: never payload, error text or IDs (AD-9).
-      c.header("Cache-Control", "no-store");
       return c.json({ dead: deadJobs({ uow: deps.uow }, {}) }, 200);
     })
     .get("/api/system/backup", (c) => {
       // The last pushed backup (time and restic ID), the stale warning and the latest check and
       // drill, read from `backup_snapshot` and `backup_verification` (AD-9).
-      c.header("Cache-Control", "no-store");
       return c.json(backupStatus(deps, deps.backupConfigured ?? false), 200);
     })
     .get("/api/system/recovery-bundle", (c) => {
       // Whether the current recovery bundle is confirmed stored safely, and its id (never a
       // secret: the bundle itself stays off the server).
-      c.header("Cache-Control", "no-store");
       return c.json(recoveryBundleStatus(deps.uow, deps.bundleId), 200);
     })
     .get("/api/identity/me", (c) => {
-      c.header("Cache-Control", "no-store");
       const needs = c.get("needs");
       return c.json(
         {
@@ -303,56 +306,52 @@ export function createApi(deps: ApiDeps) {
     })
     .get("/api/ledger/transactions", (c) => {
       // Per viewer (AD-3): shared accounts plus the viewer's own private ones. Never cached.
-      c.header("Cache-Control", "no-store");
       return c.json({ transactions: listTransactions(ctx(c), {}) }, 200);
     })
     .post("/api/ledger/transactions", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = createTransaction(ctx(c), await objectBody(c));
       return c.json({ transaction: getTransaction(ctx(c), { id }) }, 201);
     })
     .get("/api/ledger/transactions/:id", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ transaction: getTransaction(ctx(c), { id: c.req.param("id") }) }, 200);
     })
     .patch("/api/ledger/transactions/:id", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       return c.json({ transaction: updateTransaction(ctx(c), await objectBody(c, { id })) }, 200);
     })
     .put("/api/ledger/transactions/:id/splits", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const transactionId = c.req.param("id");
-      const transaction = setSplits(ctx(c), await objectBody(c, { transactionId }));
-      return c.json({ transaction, remainingCents: transaction.remainingCents }, 200);
+      return c.json(
+        { transaction: setSplits(ctx(c), await objectBody(c, { transactionId })) },
+        200,
+      );
     })
     .patch("/api/ledger/transactions/:id/splits/:splitId", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const fixed = { transactionId: c.req.param("id"), splitId: c.req.param("splitId") };
-      const body: Record<string, unknown> = await objectBody(c);
+      const body = await jsonObject(c);
       // The source is never the client's to choose: rule, payee, activity and llm are internal.
       if ("source" in body) throw new AppError("Validation", "A source cannot be supplied");
-      const result = setSplitField(ctx(c), { ...body, ...fixed, source: "user" } as never);
+      const result = setSplitField(
+        ctx(c),
+        asInput<SetSplitFieldInput>(body, { ...fixed, source: "user" }),
+      );
       return c.json(result, 200);
     })
     .put("/api/ledger/transactions/:id/splits/:splitId/tags", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const fixed = { transactionId: c.req.param("id"), splitId: c.req.param("splitId") };
       return c.json({ transaction: setSplitTags(ctx(c), await objectBody(c, fixed)) }, 200);
     })
     .delete("/api/ledger/transactions/:id", (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       deleteTransaction(ctx(c), { id: c.req.param("id") });
       return c.body(null, 204);
     })
     .put("/api/ledger/transactions/:id/name-hidden", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       return c.json(
@@ -361,102 +360,87 @@ export function createApi(deps: ApiDeps) {
       );
     })
     .delete("/api/ledger/transactions/:id/name-hidden", (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       return c.json({ transaction: unhideTransactionName(ctx(c), { id: c.req.param("id") }) }, 200);
     })
     .post("/api/ledger/transfer-groups", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       return c.json({ transactions: createTransferGroup(ctx(c), await objectBody(c)) }, 201);
     })
     .delete("/api/ledger/transfer-groups/:id", (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       deleteTransferGroup(ctx(c), { id: c.req.param("id") });
       return c.body(null, 204);
     })
     .get("/api/accounts/institutions", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ institutions: listInstitutions(ctx(c), {}) }, 200);
     })
     .post("/api/accounts/institutions", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const institution = createInstitution(ctx(c), await objectBody(c));
       return c.json({ institution }, 201);
     })
     .patch("/api/accounts/institutions/:id", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       return c.json({ institution: updateInstitution(ctx(c), await objectBody(c, { id })) }, 200);
     })
     .get("/api/accounts", (c) => {
       // Per viewer (AD-3, AD-5): another person's private account is absent. Never cached.
-      c.header("Cache-Control", "no-store");
       return c.json({ accounts: listAccounts(ctx(c), {}) }, 200);
     })
     .post("/api/accounts", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = createAccount(ctx(c), await objectBody(c));
       return c.json({ account: getAccount(ctx(c), { id }) }, 201);
     })
     .get("/api/accounts/:id", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ account: getAccount(ctx(c), { id: c.req.param("id") }) }, 200);
     })
     .patch("/api/accounts/:id", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       return c.json({ account: updateAccount(ctx(c), await objectBody(c, { id })) }, 200);
     })
     .post("/api/accounts/:id/close", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       return c.json({ account: closeAccount(ctx(c), await objectBody(c, { id }, true)) }, 200);
     })
     .post("/api/accounts/:id/privacy", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       return c.json({ account: setPrivacy(ctx(c), await objectBody(c, { id })) }, 200);
     })
     .get("/api/accounts/:id/balance", (c) => {
-      c.header("Cache-Control", "no-store");
       const accountId = c.req.param("id");
       const date = c.req.query("asOf") ?? deps.clock.today().toString();
       const balanceCents = balanceAsOf(ctx(c), { accountId, date });
       return c.json({ asOf: date, balanceCents }, 200);
     })
     .get("/api/accounts/:id/snapshots", (c) => {
-      c.header("Cache-Control", "no-store");
       const snapshots = listBalanceSnapshots(ctx(c), { accountId: c.req.param("id") });
       return c.json({ snapshots }, 200);
     })
     .post("/api/accounts/:id/snapshots", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const accountId = c.req.param("id");
       // Statement and connector snapshots come from imports, never from a client.
-      const body: Record<string, unknown> = await objectBody(c, { accountId });
-      const snapshot = recordBalanceSnapshot(ctx(c), { ...body, source: undefined } as never);
+      const body = await jsonObject(c);
+      const snapshot = recordBalanceSnapshot(
+        ctx(c),
+        asInput<RecordBalanceSnapshotInput>(body, { accountId, source: undefined }),
+      );
       return c.json({ snapshot }, 201);
     })
     .get("/api/classify/category-groups", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ categoryGroups: listCategoryGroups(ctx(c), {}) }, 200);
     })
     .post("/api/classify/category-groups", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       return c.json({ categoryGroup: createCategoryGroup(ctx(c), await objectBody(c)) }, 201);
     })
     .patch("/api/classify/category-groups/:id", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       return c.json(
@@ -465,154 +449,125 @@ export function createApi(deps: ApiDeps) {
       );
     })
     .get("/api/classify/categories", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ categories: listCategories(ctx(c), {}) }, 200);
     })
     .post("/api/classify/categories", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       return c.json({ category: createCategory(ctx(c), await objectBody(c)) }, 201);
     })
     .patch("/api/classify/categories/:id", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       return c.json({ category: updateCategory(ctx(c), await objectBody(c, { id })) }, 200);
     })
     .delete("/api/classify/categories/:id", (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       deleteCategory(ctx(c), { id });
       return c.json({ id }, 200);
     })
     .get("/api/classify/tax-categories", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ taxCategories: listTaxCategories(ctx(c), {}) }, 200);
     })
     .post("/api/classify/tax-categories", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       return c.json({ taxCategory: createTaxCategory(ctx(c), await objectBody(c)) }, 201);
     })
     .patch("/api/classify/tax-categories/:id", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       return c.json({ taxCategory: updateTaxCategory(ctx(c), await objectBody(c, { id })) }, 200);
     })
     .get("/api/classify/tags", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ tags: listTags(ctx(c), {}) }, 200);
     })
     .post("/api/classify/tags", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       return c.json({ tag: createTag(ctx(c), await objectBody(c)) }, 201);
     })
     .get("/api/classify/tags/:id", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ tag: getTag(ctx(c), { id: c.req.param("id") }) }, 200);
     })
     .patch("/api/classify/tags/:id", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       return c.json({ tag: updateTag(ctx(c), await objectBody(c, { id })) }, 200);
     })
     .delete("/api/classify/tags/:id", (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       deleteTag(ctx(c), { id });
       return c.json({ id }, 200);
     })
     .get("/api/classify/payees/aliases", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ aliases: listPayeeAliases(ctx(c), {}) }, 200);
     })
     .post("/api/classify/payees/aliases", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       return c.json({ alias: createPayeeAlias(ctx(c), await objectBody(c)) }, 201);
     })
     .get("/api/classify/payees/aliases/:id", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ alias: getPayeeAlias(ctx(c), { id: c.req.param("id") }) }, 200);
     })
     .patch("/api/classify/payees/aliases/:id", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       return c.json({ alias: updatePayeeAlias(ctx(c), await objectBody(c, { id })) }, 200);
     })
     .delete("/api/classify/payees/aliases/:id", (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       deletePayeeAlias(ctx(c), { id });
       return c.json({ id }, 200);
     })
     .get("/api/classify/payees", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ payees: listPayees(ctx(c), {}) }, 200);
     })
     .post("/api/classify/payees", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       return c.json({ payee: createPayee(ctx(c), await objectBody(c)) }, 201);
     })
     .get("/api/classify/payees/:id", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ payee: getPayee(ctx(c), { id: c.req.param("id") }) }, 200);
     })
     .patch("/api/classify/payees/:id", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       return c.json({ payee: updatePayee(ctx(c), await objectBody(c, { id })) }, 200);
     })
     .delete("/api/classify/payees/:id", (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       deletePayee(ctx(c), { id });
       return c.json({ id }, 200);
     })
     .get("/api/classify/activities", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ activities: listActivities(ctx(c), {}) }, 200);
     })
     .post("/api/classify/activities", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       return c.json({ activity: createActivity(ctx(c), await objectBody(c)) }, 201);
     })
     .get("/api/classify/activities/:id", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ activity: getActivity(ctx(c), { id: c.req.param("id") }) }, 200);
     })
     .patch("/api/classify/activities/:id", async (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       return c.json({ activity: updateActivity(ctx(c), await objectBody(c, { id })) }, 200);
     })
     .delete("/api/classify/activities/:id", (c) => {
-      c.header("Cache-Control", "no-store");
       writable();
       const id = c.req.param("id");
       deleteActivity(ctx(c), { id });
       return c.json({ id }, 200);
     })
     .post("/api/identity/setup-links", (c) => {
-      c.header("Cache-Control", "no-store");
       const link = issueSetupLink({ ...ctx(c), tokens: deps.tokens }, {});
       const url = `${deps.publicUrl}/setup?token=${encodeURIComponent(link.token)}`;
       return c.json({ url, expiresAt: link.expiresAt }, 201);
     })
     .post("/api/identity/sign-up", async (c) => {
-      c.header("Cache-Control", "no-store");
       const { authn } = deps;
       if (authn.kind === "demo") throw new AppError("Conflict", "Demo mode is read-only");
       const body = signUpBody.parse(await c.req.json().catch(() => undefined));
@@ -629,21 +584,17 @@ export function createApi(deps: ApiDeps) {
     })
     .post("/api/identity/recovery-codes/initial", (c) => {
       // Shown once, right after enrolment first completes: never cache the response.
-      c.header("Cache-Control", "no-store");
       return c.json(issueInitialRecoveryCodes(withTokens(c), {}), 201);
     })
     .post("/api/identity/recovery-codes", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json(regenerateRecoveryCodes(withTokens(c), {}), 201);
     })
     .post("/api/identity/recover", async (c) => {
-      c.header("Cache-Control", "no-store");
       const gateway = liveGateway();
       const body = recoverBody.parse(await c.req.json().catch(() => undefined));
       return redeemed(c, await gateway.recover(body, c.req.raw.headers));
     })
     .post("/api/identity/re-enrolment-links", async (c) => {
-      c.header("Cache-Control", "no-store");
       const body = reEnrolmentLinkBody.parse(await c.req.json().catch(() => undefined));
       const link = issueReEnrolmentLink(withTokens(c), body);
       return c.json(
@@ -656,13 +607,11 @@ export function createApi(deps: ApiDeps) {
       return c.json(revokeMyReEnrolmentLinks(ctx(c), {}), 200);
     })
     .post("/api/identity/re-enrol", async (c) => {
-      c.header("Cache-Control", "no-store");
       const gateway = liveGateway();
       const body = reEnrolBody.parse(await c.req.json().catch(() => undefined));
       return redeemed(c, await gateway.reEnrol(body, c.req.raw.headers));
     })
     .get("/api/identity/notices", (c) => {
-      c.header("Cache-Control", "no-store");
       return c.json({ notices: listNotices(ctx(c), {}) }, 200);
     })
     .post("/api/identity/notices/:id/dismiss", (c) => {
@@ -808,6 +757,13 @@ export function createApp(deps: AppDeps): Hono<SessionEnv> {
     }
     const { result } = cachedReadiness;
     return c.json(result, result.ok ? 200 : 503);
+  });
+  // Every /api response is per viewer or a secret: never cached (AD-3).
+  // Set after `next()` on the response itself: Hono drops a header set before it when a handler
+  // (better-auth) returns a raw `Response`.
+  app.use("/api/*", async (c, next) => {
+    await next();
+    c.res.headers.set("Cache-Control", "no-store");
   });
   app.use("/api/*", originCheck(deps.publicUrl));
   app.use("/api/*", sessionMiddleware(deps));

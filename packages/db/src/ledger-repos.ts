@@ -339,7 +339,7 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
       return (
         orm
           .update(transaction)
-          .set({ nameHiddenBy: by as never, nameHiddenUntil: until, updatedAt: at })
+          .set({ nameHiddenBy: by, nameHiddenUntil: until, updatedAt: at })
           .where(and(eq(transaction.id, id), visible))
           .run().changes === 1
       );
@@ -351,7 +351,7 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
       for (let i = 0; i < ids.length; i += 500) {
         changed += orm
           .update(transaction)
-          .set({ transferGroupId: groupId as never, updatedAt: at })
+          .set({ transferGroupId: groupId, updatedAt: at })
           .where(inArray(transaction.id, ids.slice(i, i + 500) as string[]))
           .run().changes;
       }

@@ -1,10 +1,9 @@
-// The accounts use cases on real SQLite (the app package may not import an adapter), and the
-// parity of the memory mirror with the SQL balance and shared-split queries.
+// The accounts use cases on real SQLite (the app package may not import an adapter in its
+// sources). Their parity with the memory mirror is in packages/app/src/testing/accounts-parity.test.ts.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  type AccountView,
   balanceAsOf as accountBalanceAsOf,
   closeAccount,
   createAccount,
@@ -24,7 +23,6 @@ import {
   updateInstitution,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
-import { memoryUnitOfWork } from "@pangolin/app/testing/memory-uow";
 import type { Id } from "@pangolin/shared";
 import { Temporal } from "@pangolin/shared/temporal";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -362,67 +360,5 @@ describe("balanceAsOf", () => {
     txn(as(a), id, "2026-09-01", -100);
     expect(dbBalanceAsOf(db, id, "2026-09-27")).toBe(-100);
     expect(() => dbBalanceAsOf(db, id, "tomorrow")).toThrow(TypeError);
-  });
-});
-
-describe("memory mirror parity", () => {
-  it("answers balanceAsOf, shared-split and account views as SQLite does", () => {
-    const run = (
-      ctxs: { sys: UseCaseContext; as: (id: Id<"Person">) => UseCaseContext },
-      pa: Id<"Person">,
-      pb: Id<"Person">,
-    ) => {
-      const acct = createAccount(ctxs.sys, {
-        name: "P",
-        type: "savings",
-        currency: "AUD",
-        isPrivate: false,
-        owners: [
-          { personId: pa, shareBp: 6000 },
-          { personId: pb, shareBp: 4000 },
-        ],
-      });
-      const A = ctxs.as(pa);
-      recordBalanceSnapshot(A, { accountId: acct, asOf: "2026-09-01", balanceCents: 5000 });
-      recordBalanceSnapshot(A, { accountId: acct, asOf: "2026-09-10", balanceCents: 4000 });
-      txn(A, acct, "2026-09-01", -100);
-      txn(A, acct, "2026-09-05", -200);
-      txn(A, acct, "2026-09-12", 25);
-      const balances = ["2026-08-01", "2026-09-01", "2026-09-05", "2026-09-10", "2026-09-30"].map(
-        (date) => accountBalanceAsOf(A, { accountId: acct, date }),
-      );
-      const view: AccountView = getAccount(A, { id: acct });
-      let conflict = "";
-      try {
-        updateAccount(A, { id: acct, owners: own(pa) });
-        setPrivacy(A, { id: acct, isPrivate: true });
-      } catch (error) {
-        conflict = (error as { code: string }).code;
-      }
-      return { balances, pool: view.pool, owners: view.owners, conflict };
-    };
-    const sqlite = run({ sys, as }, a, b);
-
-    const uow = memoryUnitOfWork();
-    let n = 0;
-    const base = {
-      clock: { now: () => now, today: () => now.toZonedDateTimeISO("UTC").toPlainDate() },
-      newId: (<B extends string>() =>
-        `M${String(++n).padStart(6, "0")}` as Id<B>) as UseCaseContext["newId"],
-      uow,
-    };
-    const msys: UseCaseContext = { ...base, viewer: systemViewer("cli:test") };
-    const ma = createPerson(msys, { displayName: "A", colour: "#000000" });
-    const mb = createPerson(msys, { displayName: "B", colour: "#ffffff" });
-    const memory = run(
-      { sys: msys, as: (id) => ({ ...base, viewer: personViewer(id, now) }) },
-      ma,
-      mb,
-    );
-    const norm = (r: typeof sqlite, x: Id<"Person">, y: Id<"Person">) =>
-      JSON.parse(JSON.stringify(r).replaceAll(x, "PA").replaceAll(y, "PB"));
-    expect(norm(memory, ma, mb)).toEqual(norm(sqlite, a, b));
-    expect(sqlite.balances).toEqual([0, 5000, 4800, 4000, 4025]);
-    expect(sqlite.conflict).toBe("Conflict");
   });
 });

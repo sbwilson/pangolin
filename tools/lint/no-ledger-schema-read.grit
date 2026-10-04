@@ -1,0 +1,19 @@
+language js
+
+// The read rule (AD-3, AD-4): account, transaction and audit_log are read only through
+// privacy.ts, ledger-repos.ts and unit-of-work.ts, which compose the viewer's SQL projection.
+// biome.json applies this plugin to every source file except those three and tests.
+// Covers static imports (also `import type` and side-effect), `export ... from`, dynamic
+// `import()` and `require()`.
+or {
+  `import $_ from $source`,
+  `import $source`,
+  `export { $_ } from $source`,
+  `export type { $_ } from $source`,
+  `export * from $source`,
+  `import($source)`,
+  `require($source)`
+} where {
+  $source <: r".*/schema/(?:account|transaction|audit-log)(?:\.[jt]s)?['\"]",
+  register_diagnostic(span=$source, message="Read account, transaction and audit_log only through privacy.ts, ledger-repos.ts and unit-of-work.ts, which compose the viewer's SQL projection (AD-3, AD-4).", severity="error")
+}

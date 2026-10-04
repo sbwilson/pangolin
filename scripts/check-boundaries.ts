@@ -13,6 +13,12 @@ export interface Rule {
   readonly allow: readonly string[];
   /** Workspace packages this one may import only with `import type` / `export type`. */
   readonly typeOnly?: readonly string[];
+  /**
+   * Workspace packages this one may import only from its test files (`*.test.ts`): the adapter
+   * parity tests beside the memory unit of work. It is not a package dependency (that would be a
+   * cycle for pnpm); the repo root's devDependencies link the package for those tests.
+   */
+  readonly testOnly?: readonly string[];
 }
 
 const ADAPTER: Rule = { allow: ["packages/app", "packages/shared"] };
@@ -21,7 +27,10 @@ const ADAPTER: Rule = { allow: ["packages/app", "packages/shared"] };
 export const ALLOWED: Readonly<Record<string, Rule>> = {
   "packages/shared": { allow: [] },
   "packages/domain": { allow: ["packages/shared"] },
-  "packages/app": { allow: ["packages/domain", "packages/shared"] },
+  "packages/app": {
+    allow: ["packages/domain", "packages/shared"],
+    testOnly: ["packages/db"],
+  },
   "packages/db": ADAPTER,
   "packages/importers": ADAPTER,
   "packages/connectors": ADAPTER,
@@ -214,10 +223,13 @@ function ruleFor(from: string): Rule {
 }
 
 /** Why `from` may not import `to` this way, or undefined when it may. */
-function verdict(from: string, to: string, typeOnly: boolean): string | undefined {
+function verdict(from: string, to: string, typeOnly: boolean, isTest: boolean): string | undefined {
   if (from === to) return undefined;
   const rule = ruleFor(from);
   if (rule.allow.includes(to)) return undefined;
+  if (rule.testOnly?.includes(to)) {
+    return isTest ? undefined : `${from} may import ${to} only from its test files`;
+  }
   if (rule.typeOnly?.includes(to)) {
     return typeOnly ? undefined : `${from} may import ${to} only with "import type"`;
   }
@@ -295,7 +307,7 @@ export function checkBoundaries(root: string): Violation[] {
           continue;
         }
         if (to === undefined) continue;
-        const reason = verdict(from, to, ref.typeOnly);
+        const reason = verdict(from, to, ref.typeOnly, relFile.endsWith(".test.ts"));
         if (reason !== undefined) {
           violations.push({
             file: relFile,
