@@ -175,3 +175,12 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-and-classification-schema-plan.md`
   summary: Stop exporting `@pangolin/app/testing/memory-uow` publicly; keep parity tests beside the memory unit of work or in a testing package.
   evidence: packages/app/package.json now exports test-only code (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-privacy-core-hidden-names-redact-and-the-read-rule-plan.md`
+  summary: Make audit scope fail closed: audit rows for account-scoped entities with `account_id` NULL are visible to everyone, so every later ledger and accounts use cases (hiding, delete, owner change) must set `accountId`, or the audit repo should refuse such rows.
+  evidence: `visibleAudit` treats NULL `account_id` as visible; only createAccount and createTransaction are tested to set it (review pass 1, medium).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-privacy-core-hidden-names-redact-and-the-read-rule-plan.md`
+  summary: Decide what a soft-deleted account's audit rows and review items do for its owner (they vanish today), and widen the read rule to raw SQL and `require`, put the biome restriction group in one place, and cover `split` and `payee`.
+  evidence: `visibleAccounts` excludes deleted accounts; read-rule.test.ts matches import specifiers only (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-privacy-core-hidden-names-redact-and-the-read-rule-plan.md`
+  summary: Bound the audit and transaction reads (limit or keyset), add indexes on `audit_log.account_id` and `transaction.transfer_group_id`, scrub other entities' audit JSON, and unify memory/SQL helpers with an audit parity scenario.
+  evidence: listVisible reads have no limit, subqueries run per row, the audit scrub removes two keys (review pass 1, low).

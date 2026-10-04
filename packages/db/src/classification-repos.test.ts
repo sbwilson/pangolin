@@ -23,6 +23,7 @@ import { createUnitOfWork } from "./unit-of-work.ts";
 
 const now = Temporal.Instant.from("2026-09-27T00:00:00Z");
 const T = "2026-09-27T00:00:00.000Z";
+const TODAY = "2026-09-27";
 
 let dir: string;
 let db: Db;
@@ -211,16 +212,16 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
     r.transactions.insert(tB, [split(tB.id, { beneficiary: b })]);
   });
   const names = (v: Viewer) => (r: TxRepos) =>
-    r.transactions.listVisible(v).map((row) => row.descriptionRaw);
+    r.transactions.listVisible(v, TODAY).map((row) => row.descriptionRaw);
   out["txn.listA"] = tx(names(asA));
   out["txn.listB"] = tx(names(asB));
   out["txn.listSystem"] = tx(names(system));
-  out["txn.findPrivateAsOther"] = tx((r) => r.transactions.findVisible(asB, tA.id));
-  out["txn.findAsOwner"] = tx((r) => r.transactions.findVisible(asA, tA.id)?.splits.length);
+  out["txn.findPrivateAsOther"] = tx((r) => r.transactions.findVisible(asB, tA.id, TODAY));
+  out["txn.findAsOwner"] = tx((r) => r.transactions.findVisible(asA, tA.id, TODAY)?.splits.length);
   out["txn.softDeleteAsOther"] = tx((r) => r.transactions.softDelete(asB, tA.id, T));
   out["txn.softDeleteAsOwner"] = tx((r) => r.transactions.softDelete(asA, tA.id, T));
   out["txn.afterDeleteA"] = tx(names(asA));
-  out["txn.afterDeleteFind"] = tx((r) => r.transactions.findVisible(system, tA.id));
+  out["txn.afterDeleteFind"] = tx((r) => r.transactions.findVisible(system, tA.id, TODAY));
   step("txn.reinsertDeleted", (r) => r.transactions.insert(txn(privA, "a-only"), []));
 
   // Transfer groups: visible through a visible transaction.
@@ -415,7 +416,9 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
   step("tag.shared", (r) => r.tags.insert(sharedTag, null));
   step("tag.owner", (r) => r.tags.insert(ownerTag, privA));
   step("tag.duplicateOwner", (r) => r.tags.insert(tagRow("holiday", a), privA));
-  const sp = tx((r) => r.transactions.findVisible(system, t1.id)?.splits[0]?.id) as Id<"Split">;
+  const sp = tx(
+    (r) => r.transactions.findVisible(system, t1.id, TODAY)?.splits[0]?.id,
+  ) as Id<"Split">;
   step("tag.attach", (r) => {
     r.tags.attach({ splitId: sp, tagId: sharedTag.id, createdAt: T, updatedAt: T });
     r.tags.attach({ splitId: sp, tagId: ownerTag.id, createdAt: T, updatedAt: T });
@@ -461,6 +464,62 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
     r.activities.list(system).length,
   ]);
 
+  // Hidden names, scoped payees and transfer labels (AD-4).
+  const pOwn = newId<"Payee">();
+  step("priv.payee", (r) => {
+    r.payees.insert({ ...payeeRow(pOwn, "A scoped", a), logoAttachmentId: "logo-a" }, privA);
+  });
+  const hide = (until: string | null, by: Id<"Person"> | null) => ({
+    nameHiddenUntil: until,
+    nameHiddenBy: by,
+  });
+  const tHide = txn(shared, "secret", { payeeId: pOwn, ...hide("2027-03-12", a) });
+  const tLift = txn(shared, "lifts", hide(TODAY, a));
+  const tPrivHide = txn(privA, "priv-hidden", hide("2027-03-12", a));
+  const tScoped = txn(shared, "scoped-payee", { payeeId: pOwn });
+  const g3 = newId<"TransferGroup">();
+  tx((r) => r.transferGroups.insert({ id: g3, matchedBy: "manual", createdAt: T, updatedAt: T }));
+  const tOut = txn(shared, "xfer-out", { transferGroupId: g3, amountCents: -500 });
+  const tCounter = txn(privB, "xfer-counter", { transferGroupId: g3, amountCents: 500 });
+  const tIn = txn(shared, "xfer-in", { transferGroupId: g2, amountCents: 500 });
+  tx((r) => {
+    for (const t of [tHide, tLift, tPrivHide, tScoped, tOut, tIn, tCounter]) {
+      r.transactions.insert(t, []);
+    }
+  });
+  const mine = new Set<string>([tHide, tLift, tPrivHide, tScoped, tOut, tIn].map((t) => t.id));
+  const projected = (v: Viewer) => (r: TxRepos) =>
+    r.transactions
+      .listVisible(v, TODAY)
+      .filter((row) => mine.has(row.id))
+      .map((row) => [
+        row.id,
+        row.descriptionRaw,
+        row.payeeId,
+        row.payeeName,
+        row.logoAttachmentId,
+        row.nameHidden,
+        row.transferLabel,
+      ]);
+  out["priv.asA"] = tx(projected(asA));
+  out["priv.asB"] = tx(projected(asB));
+  out["priv.asSystem"] = tx(projected(system));
+  out["priv.findHiddenAsB"] = tx((r) => r.transactions.findVisible(asB, tHide.id, TODAY));
+  out["priv.findHiddenAsA"] = tx((r) => r.transactions.findVisible(asA, tHide.id, TODAY));
+  out["priv.findLiftedAsB"] = tx(
+    (r) => r.transactions.findVisible(asB, tHide.id, "2027-03-12")?.descriptionRaw,
+  );
+  out["priv.privHiddenAsB"] = tx((r) => r.transactions.findVisible(asB, tPrivHide.id, TODAY));
+  step("priv.missingViewer", (r) => {
+    try {
+      r.transactions.listVisible(undefined as never, TODAY);
+      return "no throw";
+    } catch (error) {
+      return error instanceof TypeError ? "TypeError" : "other";
+    }
+  });
+  step("priv.badToday", (r) => r.transactions.listVisible(asA, "soon"));
+
   // Review item foreign key.
   const reviewItem = (accountId: string | null) => ({
     id: newId<"ReviewItem">(),
@@ -505,7 +564,7 @@ describe("ledger and classification schema on SQLite", () => {
     scenario(createUnitOfWork(db));
     expect(
       db.prepare("SELECT count(*) FROM payee WHERE origin_account_id IS NOT NULL").pluck().get(),
-    ).toBe(3);
+    ).toBe(4);
     const row = createUnitOfWork(db).read((r) => r.payees.list(systemViewer("cli:test"))[0]);
     expect(row).toBeDefined();
     expect(Object.keys(row ?? {})).not.toContain("originAccountId");

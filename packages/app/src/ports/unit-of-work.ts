@@ -212,8 +212,8 @@ export interface ReviewItemRepo {
   ): { readonly before: ReviewItemRow; readonly after: ReviewItemRow } | undefined;
   /**
    * Open items `viewer` may see, oldest first (AD-3, AD-17). Throws when given no viewer.
-   * A person sees household items and their own; items with an account are hidden from people
-   * until epic 2 supplies `visibleAccounts`. A system viewer sees every item.
+   * A person sees household items, items of an account they can see, and their own. A system
+   * viewer sees every item.
    */
   listOpenFor(viewer: Viewer): ReviewItemRow[];
 }
@@ -329,8 +329,32 @@ export interface SplitRow {
   readonly updatedAt: string;
 }
 
-/** A transaction with its splits, as a read returns it. */
+/** A transaction with its splits. */
 export interface TransactionWithSplits extends TransactionRow {
+  readonly splits: readonly SplitRow[];
+}
+
+/**
+ * A transaction as a read returns it (AD-4): the name fields come from the `visibleTxn` SQL
+ * projection, so a name hidden from this viewer is already null. `redact` renders the
+ * placeholder from `nameHidden` and `nameHiddenUntil`.
+ */
+export interface VisibleTransaction extends Omit<TransactionRow, "descriptionRaw" | "payeeId"> {
+  /** Null while the name is hidden from the viewer. */
+  readonly descriptionRaw: string | null;
+  /** Null while hidden, or when the payee is another person's scoped row. */
+  readonly payeeId: Id<"Payee"> | null;
+  /** The payee's name; null under the same conditions as `payeeId`. */
+  readonly payeeName: string | null;
+  /** The payee's logo attachment; null under the same conditions as `payeeId`. */
+  readonly logoAttachmentId: string | null;
+  /** True while the name is hidden from this viewer. */
+  readonly nameHidden: boolean;
+  /**
+   * "Transfer from <owner>" (inflow) or "Transfer to <owner>" (outflow) when the transfer's
+   * counterpart is in the other person's private account; nothing else of it leaves.
+   */
+  readonly transferLabel: string | null;
   readonly splits: readonly SplitRow[];
 }
 
@@ -340,8 +364,8 @@ export interface TransactionRepo {
    * externalId)` or `(accountId, fingerprint)` is rejected, deleted lines included.
    */
   insert(row: TransactionRow, splits: readonly SplitRow[]): void;
-  /** The live transaction `viewer` may see, with its splits. Throws when given no viewer. */
-  findVisible(viewer: Viewer, id: string): TransactionWithSplits | undefined;
+  /** The live transaction `viewer` may see, with its splits, as of `today`. Throws without a viewer. */
+  findVisible(viewer: Viewer, id: string, today: string): VisibleTransaction | undefined;
   /**
    * Soft-deletes a transaction `viewer` may see. False when there is none (or it is already
    * deleted). The row stays for dedupe.
@@ -349,9 +373,10 @@ export interface TransactionRepo {
   softDelete(viewer: Viewer, id: string, at: string): boolean;
   /**
    * The transactions `viewer` may see (those of public accounts and of their own private ones),
-   * newest first, with their splits. Throws when given no viewer.
+   * newest first, with their splits, names projected for `today` (`YYYY-MM-DD`, from the
+   * clock). Throws when given no viewer.
    */
-  listVisible(viewer: Viewer): TransactionWithSplits[];
+  listVisible(viewer: Viewer, today: string): VisibleTransaction[];
 }
 
 /** What kind of body an institution is. */
@@ -750,8 +775,22 @@ export interface LoginAttemptRepo {
   deleteNewestFailure(email: string): void;
 }
 
+/** An audit row as a read returns it (AD-4): hidden names are already removed from the JSON. */
+export interface AuditView extends AuditRow {
+  /**
+   * The date a transaction name in `before`/`after` stays hidden from this viewer, or null.
+   * While set, the SQL has removed `descriptionRaw` and `payeeId` from the JSON.
+   */
+  readonly hiddenUntil: string | null;
+}
+
 export interface AuditRepo {
   append(row: AuditRow): void;
+  /**
+   * The audit rows `viewer` may see, oldest first: rows with no scope, rows of an account the
+   * viewer can see and rows scoped to the viewer. Throws when given no viewer.
+   */
+  listVisible(viewer: Viewer, today: string): AuditView[];
 }
 
 /** Repositories bound to one open transaction. They throw once that transaction has ended. */
@@ -797,6 +836,7 @@ export interface ReadRepos {
     JobRepo,
     "listDead" | "listPending" | "listRunning" | "countByStatus" | "find" | "firstCreatedAt"
   >;
+  readonly audit: Pick<AuditRepo, "listVisible">;
   readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
   readonly accounts: Pick<AccountRepo, "findVisible" | "list" | "owners" | "any">;
   readonly transactions: Pick<TransactionRepo, "listVisible" | "findVisible">;

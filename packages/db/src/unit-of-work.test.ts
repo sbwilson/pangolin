@@ -75,6 +75,7 @@ function failingAudit(real: UnitOfWork): UnitOfWork {
         fn({
           ...tx,
           audit: {
+            ...tx.audit,
             append: () => {
               throw new Error("audit append failed");
             },

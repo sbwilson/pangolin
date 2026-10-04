@@ -16,7 +16,7 @@ import type {
 } from "@pangolin/app";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { requireViewer, visibleScope, visibleTxn } from "./privacy.ts";
+import { requireViewer, visibleScope, visibleTxnId } from "./privacy.ts";
 import { activity } from "./schema/activity.ts";
 import { category } from "./schema/category.ts";
 import { categoryGroup } from "./schema/category-group.ts";
@@ -26,7 +26,6 @@ import { split } from "./schema/split.ts";
 import { splitTag } from "./schema/split-tag.ts";
 import { tag } from "./schema/tag.ts";
 import { taxCategory } from "./schema/tax-category.ts";
-import { transaction } from "./schema/transaction.ts";
 
 type Orm = BetterSQLite3Database;
 
@@ -197,7 +196,7 @@ export function createTagRepo(orm: Orm, check: () => void): TagRepo {
     },
     listForSplit: (viewer, splitId) => {
       const scope = visibleScope(tag.scopePersonId, viewer);
-      const visible = visibleTxn(viewer);
+      const visible = visibleTxnId(split.transactionId, viewer);
       check();
       return orm
         .select(columns)
@@ -216,18 +215,7 @@ export function createTagRepo(orm: Orm, check: () => void): TagRepo {
                     eq(splitTag.splitId, splitId),
                     inArray(
                       splitTag.splitId,
-                      orm
-                        .select({ id: split.id })
-                        .from(split)
-                        .where(
-                          inArray(
-                            split.transactionId,
-                            orm
-                              .select({ id: transaction.id })
-                              .from(transaction)
-                              .where(and(isNull(transaction.deletedAt), visible)),
-                          ),
-                        ),
+                      orm.select({ id: split.id }).from(split).where(visible),
                     ),
                   ),
                 ),

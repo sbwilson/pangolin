@@ -9,13 +9,19 @@ import type {
   SplitRow,
   TransactionRepo,
   TransactionRow,
-  TransactionWithSplits,
   TransferGroupRepo,
   TransferGroupRow,
+  VisibleTransaction,
 } from "@pangolin/app";
 import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { requireViewer, visibleAccounts, visibleTxn } from "./privacy.ts";
+import {
+  liveVisibleTxn,
+  requireViewer,
+  type TxnProjection,
+  visibleAccounts,
+  visibleTxn,
+} from "./privacy.ts";
 import { account } from "./schema/account.ts";
 import { accountOwner } from "./schema/account-owner.ts";
 import { balanceSnapshot } from "./schema/balance-snapshot.ts";
@@ -62,6 +68,20 @@ const transactionColumns = {
   createdAt: transaction.createdAt,
   updatedAt: transaction.updatedAt,
 };
+
+/** The columns of a transaction read: name fields come from the privacy projection (AD-4). */
+function viewColumns(p: TxnProjection) {
+  const { descriptionRaw: _d, payeeId: _p, ...plain } = transactionColumns;
+  return {
+    ...plain,
+    descriptionRaw: p.descriptionRaw,
+    payeeId: p.payeeId,
+    payeeName: p.payeeName,
+    logoAttachmentId: p.logoAttachmentId,
+    nameHidden: p.hidden,
+    transferLabel: p.transferLabel,
+  };
+}
 
 const splitColumns = {
   id: split.id,
@@ -130,7 +150,7 @@ export function createAccountRepo(orm: Orm, check: () => void): AccountRepo {
 }
 
 /** Attaches each transaction's splits, in chunks: SQLite caps the number of bound parameters. */
-function withSplits(orm: Orm, rows: TransactionRow[]): TransactionWithSplits[] {
+function withSplits(orm: Orm, rows: VisibleTransaction[]): VisibleTransaction[] {
   if (rows.length === 0) return [];
   const splits = new Map<string, SplitRow[]>();
   for (let i = 0; i < rows.length; i += 500) {
@@ -147,7 +167,12 @@ function withSplits(orm: Orm, rows: TransactionRow[]): TransactionWithSplits[] {
       splits.set(s.transactionId, list);
     }
   }
-  return rows.map((row): TransactionWithSplits => ({ ...row, splits: splits.get(row.id) ?? [] }));
+  return rows.map((row): VisibleTransaction => ({ ...row, splits: splits.get(row.id) ?? [] }));
+}
+
+/** SQLite hands the hidden flag back as 0 or 1. */
+function toView(row: { nameHidden: unknown; [key: string]: unknown }): VisibleTransaction {
+  return { ...row, nameHidden: Number(row.nameHidden) === 1 } as unknown as VisibleTransaction;
 }
 
 /** The `transaction` and `split` repository. */
@@ -164,39 +189,39 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
       }
     },
 
-    findVisible: (viewer, id) => {
-      const visible = visibleTxn(viewer);
+    findVisible: (viewer, id, today) => {
+      const projection = visibleTxn(viewer, today);
       check();
       const row = orm
-        .select(transactionColumns)
+        .select(viewColumns(projection))
         .from(transaction)
-        .where(and(eq(transaction.id, id), isNull(transaction.deletedAt), visible))
-        .get() as TransactionRow | undefined;
-      return row === undefined ? undefined : withSplits(orm, [row])[0];
+        .where(and(eq(transaction.id, id), projection.where))
+        .get();
+      return row === undefined ? undefined : withSplits(orm, [toView(row)])[0];
     },
 
     softDelete: (viewer, id, at) => {
-      const visible = visibleTxn(viewer);
+      const visible = liveVisibleTxn(viewer);
       check();
       return (
         orm
           .update(transaction)
           .set({ deletedAt: at, updatedAt: at })
-          .where(and(eq(transaction.id, id), isNull(transaction.deletedAt), visible))
+          .where(and(eq(transaction.id, id), visible))
           .run().changes === 1
       );
     },
 
-    listVisible: (viewer) => {
-      const visible = visibleTxn(viewer);
+    listVisible: (viewer, today) => {
+      const projection = visibleTxn(viewer, today);
       check();
       const rows = orm
-        .select(transactionColumns)
+        .select(viewColumns(projection))
         .from(transaction)
-        .where(and(isNull(transaction.deletedAt), visible))
+        .where(projection.where)
         .orderBy(desc(transaction.postedOn), desc(transaction.id))
-        .all() as TransactionRow[];
-      return withSplits(orm, rows);
+        .all();
+      return withSplits(orm, rows.map(toView));
     },
   };
 }
@@ -295,7 +320,7 @@ export function createTransferGroupRepo(orm: Orm, check: () => void): TransferGr
       orm.insert(transferGroup).values(row).run();
     },
     find: (viewer, id) => {
-      const visible = visibleTxn(viewer);
+      const visible = liveVisibleTxn(viewer);
       check();
       return orm
         .select({
@@ -313,13 +338,7 @@ export function createTransferGroupRepo(orm: Orm, check: () => void): TransferGr
               orm
                 .select({ id: transaction.transferGroupId })
                 .from(transaction)
-                .where(
-                  and(
-                    isNotNull(transaction.transferGroupId),
-                    isNull(transaction.deletedAt),
-                    visible,
-                  ),
-                ),
+                .where(and(isNotNull(transaction.transferGroupId), visible)),
             ),
           ),
         )

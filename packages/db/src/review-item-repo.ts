@@ -1,6 +1,7 @@
 import type { ReviewItemRepo, ReviewItemRow, Viewer } from "@pangolin/app";
 import { and, asc, eq, isNull, or, type SQL, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { visibleAccountId } from "./privacy.ts";
 import { reviewItem } from "./schema/review-item.ts";
 
 type Orm = BetterSQLite3Database;
@@ -10,8 +11,8 @@ const OPEN = sql`resolved_at IS NULL`;
 
 /**
  * The SQL visibility filter for review items (AD-3, AD-17). Throws without a viewer.
- * A system viewer sees everything. A person sees items with no scope and their own; items with
- * an `account_id` stay hidden from people until epic 2 composes `visibleAccounts(viewer)` here.
+ * A system viewer sees everything. A person sees items with no scope, items of an account they
+ * can see (`visibleAccounts`) and their own `person_id` items.
  */
 export function visibleReviewItems(viewer: Viewer | undefined): SQL | undefined {
   if (viewer === undefined || viewer === null) {
@@ -19,7 +20,7 @@ export function visibleReviewItems(viewer: Viewer | undefined): SQL | undefined 
   }
   if (viewer.kind === "system") return undefined;
   return and(
-    isNull(reviewItem.accountId),
+    or(isNull(reviewItem.accountId), visibleAccountId(reviewItem.accountId, viewer)),
     or(isNull(reviewItem.personId), eq(reviewItem.personId, viewer.personId)),
   );
 }

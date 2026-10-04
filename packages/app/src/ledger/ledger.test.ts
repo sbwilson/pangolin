@@ -4,6 +4,7 @@ import { createAccount } from "../accounts/create-account.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
 import { createPerson } from "../identity/create-person.ts";
+import { listAudit } from "../system/list-audit.ts";
 import { systemViewer } from "../system-viewer.ts";
 import { manualClock, sequentialIds } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
@@ -177,5 +178,89 @@ describe("ledger.createTransaction and listTransactions", () => {
     createTransaction(as(a), { ...txn(shared, "old"), postedOn: "2026-01-01" });
     createTransaction(as(a), { ...txn(shared, "new"), postedOn: "2026-03-01" });
     expect(listTransactions(as(a)).map((row) => row.descriptionRaw)).toEqual(["new", "old"]);
+  });
+});
+
+describe("audit scope", () => {
+  it("gives every audit row written by the accounts and ledger use cases an account id", () => {
+    const { uow, as, a, shared, privateA } = setup();
+    createTransaction(as(a), txn(shared));
+    createTransaction(as(a), txn(privateA, "Tea"));
+    const rows = uow.state.audit.filter(
+      (r) => r.entity === "account" || r.entity === "transaction",
+    );
+    expect(rows.map((r) => r.entity).sort()).toEqual([
+      "account",
+      "account",
+      "transaction",
+      "transaction",
+    ]);
+    for (const row of rows) expect(row.accountId).not.toBeNull();
+  });
+
+  it("lists audit rows by account scope, redacting the partner's entries about a hidden name", () => {
+    const { uow, as, a, b, shared, privateA } = setup();
+    const id = createTransaction(as(a), txn(shared, "Surprise"));
+    createTransaction(as(a), txn(privateA, "Tea"));
+    const row = uow.state.transactions.find((r) => r.id === id);
+    if (row === undefined) throw new Error("missing");
+    uow.state.transactions[uow.state.transactions.indexOf(row)] = {
+      ...row,
+      nameHiddenBy: a,
+      nameHiddenUntil: "2027-03-12",
+    };
+    const forB = listAudit(as(b));
+    expect(forB.some((r) => r.accountId === privateA)).toBe(false);
+    expect(JSON.stringify(forB)).not.toContain("Surprise");
+    const entry = forB.find((r) => r.entityId === id);
+    expect(JSON.parse(entry?.after ?? "{}").descriptionRaw).toBe("Hidden until 12 Mar 2027");
+    expect(JSON.stringify(listAudit(as(a)))).toContain("Surprise");
+  });
+
+  it("redacts from an audit row's own after state once the live hide is gone", () => {
+    const { uow, as, a, b, shared } = setup();
+    const id = createTransaction(as(a), txn(shared, "Real"));
+    uow.state.audit.push({
+      id: "AU9" as never,
+      at: "2999-01-01T00:00:00.000Z",
+      actor: "x",
+      entity: "transaction",
+      entityId: id,
+      accountId: shared,
+      personId: null,
+      action: "update",
+      before: null,
+      after: JSON.stringify({
+        descriptionRaw: "Secret name",
+        payeeId: "P9",
+        nameHiddenBy: a,
+        nameHiddenUntil: "2999-03-12",
+      }),
+    });
+    const seen = listAudit(as(b)).find((r) => r.id === ("AU9" as never));
+    expect(seen?.hiddenUntil).toBe("2999-03-12");
+    const json = JSON.parse(seen?.after ?? "{}");
+    expect(json.descriptionRaw).toBe("Hidden until 12 Mar 2999");
+    expect(json.payeeId).toBeUndefined();
+    const own = listAudit(as(a)).find((r) => r.id === ("AU9" as never));
+    expect(own?.hiddenUntil).toBeNull();
+    expect(JSON.parse(own?.after ?? "{}").descriptionRaw).toBe("Secret name");
+  });
+
+  it("renders the placeholder in the list for the partner, and the real name for the hider", () => {
+    const { uow, as, a, b, shared } = setup();
+    const id = createTransaction(as(a), txn(shared, "Surprise"));
+    const row = uow.state.transactions.find((r) => r.id === id);
+    if (row === undefined) throw new Error("missing");
+    uow.state.transactions[uow.state.transactions.indexOf(row)] = {
+      ...row,
+      nameHiddenBy: a,
+      nameHiddenUntil: "2026-09-27",
+    };
+    // Lifts on the date itself.
+    expect(listTransactions(as(b))[0]?.descriptionRaw).toBe("Surprise");
+    uow.state.transactions[0] = { ...row, nameHiddenBy: a, nameHiddenUntil: "2026-09-28" };
+    expect(listTransactions(as(b))[0]?.descriptionRaw).toBe("Hidden until 28 Sep 2026");
+    expect(listTransactions(as(a))[0]?.descriptionRaw).toBe("Surprise");
   });
 });

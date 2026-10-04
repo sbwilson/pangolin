@@ -172,6 +172,7 @@ export type { CodeHasher, TokenPort } from "./ports/tokens.ts";
 export type {
   AuditRepo,
   AuditRow,
+  AuditView,
   BackupSnapshotRepo,
   BackupSnapshotRow,
   BackupVerificationKind,
@@ -251,7 +252,9 @@ export {
   type TransferGroupRepo,
   type TransferGroupRow,
   type TransferMatch,
+  type VisibleTransaction,
 } from "./ports/unit-of-work.ts";
+export { hiddenLabel, redact } from "./redact.ts";
 export {
   BACKUP_CHECK_JOB,
   BACKUP_CHECK_SCHEDULE_NAME,
@@ -335,6 +338,7 @@ export {
   runningJobs,
   runningJobsInput,
 } from "./system/job-status.ts";
+export { type ListAuditInput, listAudit, listAuditInput } from "./system/list-audit.ts";
 export {
   READINESS_CHECKS,
   type ReadinessCheck,

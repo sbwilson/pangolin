@@ -286,6 +286,68 @@ describe("GET /api/ledger/transactions", () => {
   });
 });
 
+describe("GET /api/ledger/transactions hidden names", () => {
+  // The only login in the helpers is Alex's, so Alex is the partner here: Sam hides one name
+  // (Alex sees the placeholder) and Alex hides another (Alex sees the real name).
+  it("shows the partner 'Hidden until <date>' and no payee, and the hider the real name", async () => {
+    const db = openDb();
+    const alex = "01J0000000000000000000000A";
+    addPerson(db);
+    const d = deps(db);
+    const ctx: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const sam = createPerson(ctx, { displayName: "Sam", colour: "#000000" });
+    const joint = createAccount(ctx, {
+      name: "Joint",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [
+        { personId: alex, shareBp: 5000 },
+        { personId: sam, shareBp: 5000 },
+      ],
+    });
+    const add = (description: string) =>
+      createTransaction(ctx, {
+        accountId: joint,
+        postedOn: "2026-09-01",
+        amountCents: -100,
+        description,
+      });
+    const samsSecret = add("Sam surprise gift");
+    const alexsSecret = add("Alex surprise gift");
+    db.prepare(
+      "INSERT INTO payee (id, name, created_at, updated_at) VALUES ('PY1','Secret Shop','t','t')",
+    ).run();
+    const hide = (id: string, by: string) =>
+      db
+        .prepare(
+          "UPDATE \"transaction\" SET name_hidden_until = '2999-03-12', name_hidden_by = ?, payee_id = 'PY1' WHERE id = ?",
+        )
+        .run(by, id);
+    hide(samsSecret, sam);
+    hide(alexsSecret, alex);
+    const res = await createApp(deps(db)).request("/api/ledger/transactions", signedIn);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const body = JSON.parse(text) as {
+      transactions: { id: string; descriptionRaw: string; payeeId: string | null }[];
+    };
+    const sams = body.transactions.find((t) => t.id === samsSecret);
+    expect(sams?.descriptionRaw).toBe("Hidden until 12 Mar 2999");
+    expect(sams?.payeeId).toBeNull();
+    expect(body.transactions.find((t) => t.id === alexsSecret)?.descriptionRaw).toBe(
+      "Alex surprise gift",
+    );
+    expect(text).not.toContain("Sam surprise gift");
+    expect(JSON.stringify(sams)).not.toContain("Secret Shop");
+  });
+});
+
 describe("GET /api/system/jobs", () => {
   function insertJob(db: Db, id: string, kind: string, status: string, finishedAt: string | null) {
     db.prepare(
