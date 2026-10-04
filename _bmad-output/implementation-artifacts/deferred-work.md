@@ -260,3 +260,12 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
   summary: Strengthen the privacy suite later: aim A's account-scoped review items at the notice dismiss route, run hidden-name checks beside A's private delta and at a time-of-day boundary, replay system and identity GETs in the two-world comparison, replace raw SQL login and account-delete setup with use cases once an account-delete use case exists, and drop the `as never` casts.
   evidence: apps/server/src/privacy/privacy-harness.ts and privacy.test.ts (review pass 1, low).
   disposition: partly fixed (story 2.11, 6b5a70c): the `as never` casts in the privacy harness and tests are gone; the rest stays open
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-refactor-sweep-plan.md`
+  summary: Keep `SeedKnown` incrementally in the seed generator instead of rebuilding it per event, and drop its unused `grouped`/`hidden` flags or move the rules that use them into the shared validator.
+  evidence: tools/seed/src/world.ts `applyEvent` calls `knownOf(world)` per event; packages/shared/src/seed-references.ts (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-refactor-sweep-plan.md`
+  summary: Close the remaining memory-mirror parity gaps: per-row CHECK, UNIQUE and FK ordering in `insert`/`replaceSplits`, non-integer `shareBp`, account insert id reuse, and date and currency formats.
+  evidence: packages/app/src/testing/memory-uow.ts runs checks across the whole list where SQLite runs them per row (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-refactor-sweep-plan.md`
+  summary: Declare the `packages/app` test dependency on `@pangolin/db` where it is used (not through the root) once the pnpm task cycle has another answer, extend `testOnly` to other test file names, and remove the remaining `as never` in `seed.test.ts`, `demo.test.ts` and app use-case tests; reword the `objectBody` finding as "one typed cast, Zod is the check".
+  evidence: root package.json devDependencies, scripts/check-boundaries.ts `testOnly`, apps/server/src/http/app.ts (review pass 1, low).
