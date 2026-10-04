@@ -244,3 +244,6 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-seed-the-ledger-plan.md`
   summary: Tidy the seed: warn or reject when the real clock is before the seed's fixed today, link the loan repayment's two sides as a transfer, share one validator between `world.ts` and `checkReferences`, and document `PANGOLIN_ENABLE_SEED` in an env reference.
   evidence: seed.ts applyEvents clock use, transfers-and-privacy module, config.ts (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-server-side-privacy-suite-plan.md`
+  summary: Strengthen the privacy suite later: aim A's account-scoped review items at the notice dismiss route, run hidden-name checks beside A's private delta and at a time-of-day boundary, replay system and identity GETs in the two-world comparison, replace raw SQL login and account-delete setup with use cases once an account-delete use case exists, and drop the `as never` casts.
+  evidence: apps/server/src/privacy/privacy-harness.ts and privacy.test.ts (review pass 1, low).
