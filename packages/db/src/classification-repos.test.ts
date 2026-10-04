@@ -133,10 +133,16 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
     taxCategoryId: null,
     deductibleBp: null,
     memo: null,
+    categorySource: null,
+    activitySource: null,
+    taxCategorySource: null,
+    beneficiarySource: null,
+    deductibleBpSource: null,
     createdAt: T,
     updatedAt: T,
     ...over,
   });
+  const T2 = "2026-09-28T00:00:00.000Z";
   const tx = <R>(fn: (r: TxRepos) => R): R => uow.transaction(fn);
   const step = (name: string, fn: (r: TxRepos) => unknown) => {
     out[name] = attempt(() => tx(fn));
@@ -443,6 +449,77 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
     r.tags.listForSplit(asB, privSplit.id).length,
     r.tags.listForSplit(system, privSplit.id).length,
   ]);
+  // Provenance columns, replaceSplits, updateSplit, detach, replaceForSplit, listForSplits.
+  const view = (r: TxRepos, id: string) => r.transactions.findVisible(system, id, TODAY)?.splits;
+  const extra = split(t1.id, { amountCents: 0, beneficiary: a, beneficiarySource: "user" });
+  step("split.replaceAddsAndKeeps", (r) => {
+    const keep = view(r, t1.id)?.find((x) => x.id === sp) as SplitRow;
+    r.transactions.replaceSplits(t1.id, [
+      { ...keep, amountCents: -1000, categorySource: "rule", updatedAt: T2 },
+      { ...extra, amountCents: -250 },
+    ]);
+  });
+  out["split.afterReplace"] = tx((r) => view(r, t1.id));
+  out["split.tagsKeptOnReplace"] = tx((r) => r.tags.listForSplit(system, sp).length);
+  step("split.badSource", (r) =>
+    r.transactions.replaceSplits(t1.id, [
+      { ...(view(r, t1.id)?.[0] as SplitRow), categorySource: "bogus" as never },
+    ]),
+  );
+  step("split.badBeneficiary", (r) =>
+    r.transactions.updateSplit({ ...(view(r, t1.id)?.[0] as SplitRow), beneficiary: "" }),
+  );
+  step("split.updateUnknownCategory", (r) =>
+    r.transactions.updateSplit({ ...(view(r, t1.id)?.[0] as SplitRow), categoryId: newId() }),
+  );
+  out["split.updateSplit"] = tx((r) => [
+    r.transactions.updateSplit({
+      ...(view(r, t1.id)?.find((x) => x.id === extra.id) as SplitRow),
+      deductibleBp: 5000,
+      deductibleBpSource: "user",
+      updatedAt: T2,
+    }),
+    r.transactions.updateSplit({ ...extra, id: newId<"Split">() }),
+  ]);
+  out["split.afterUpdate"] = tx((r) => view(r, t1.id));
+  out["tag.listForSplits"] = tx((r) => [
+    r.tags
+      .listForSplits(asA, [sp, privSplit.id, extra.id])
+      .map((x) => [x.splitId === sp, x.splitId === privSplit.id, x.tag.name, x.tag.scopePersonId]),
+    r.tags.listForSplits(asB, [sp, privSplit.id]).map((x) => [x.tag.name]),
+    r.tags.listForSplits(system, []).length,
+  ]);
+  out["tag.detach"] = tx((r) => [
+    r.tags.detach(sp, ownerTag.id),
+    r.tags.detach(sp, ownerTag.id),
+    r.tags.listForSplit(system, sp).map((x) => x.name),
+  ]);
+  out["tag.replaceForSplit"] = tx((r) => {
+    r.tags.replaceForSplit(system, extra.id, [sharedTag.id, ownerTag.id], T2);
+    const first = r.tags.listForSplit(system, extra.id).map((x) => x.name);
+    r.tags.replaceForSplit(system, extra.id, [ownerTag.id], T2);
+    const second = r.tags.listForSplit(system, extra.id).map((x) => x.id === ownerTag.id);
+    r.tags.replaceForSplit(system, extra.id, [], T2);
+    return [first, second, r.tags.listForSplit(system, extra.id).length];
+  });
+  step("tag.replaceForSplitUnknownTag", (r) =>
+    r.tags.replaceForSplit(system, extra.id, [newId()], T2),
+  );
+  tx((r) => r.tags.replaceForSplit(system, extra.id, [sharedTag.id], T2));
+  out["tag.hiddenSurvives"] = tx((r) => {
+    r.tags.replaceForSplit(system, extra.id, [sharedTag.id, ownerTag.id], T2);
+    // B cannot see A's scoped tag, so B's whole-set replace leaves it on the split.
+    r.tags.replaceForSplit(asB, extra.id, [], T2);
+    return r.tags.listForSplit(system, extra.id).map((x) => [x.name, x.scopePersonId !== null]);
+  });
+  tx((r) => r.tags.replaceForSplit(system, extra.id, [sharedTag.id], T2));
+  step("split.replaceDropsSplitAndTags", (r) =>
+    r.transactions.replaceSplits(t1.id, [view(r, t1.id)?.find((x) => x.id === sp) as SplitRow]),
+  );
+  out["split.afterDrop"] = tx((r) => [
+    view(r, t1.id)?.map((x) => x.id === sp),
+    r.tags.listForSplits(system, [extra.id]).length,
+  ]);
   out["tag.softDelete"] = tx((r) => [
     r.tags.softDelete(asA, sharedTag.id, T),
     r.tags.list(asA).length,
@@ -525,7 +602,6 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
   step("priv.badToday", (r) => r.transactions.listVisible(asA, "soon"));
 
   // Updates, viewer-first deletes, stored origins and cascades (story 2.5).
-  const T2 = "2026-09-28T00:00:00.000Z";
   const grpX = newId<"CategoryGroup">();
   const catX = newId<"Category">();
   const catY = newId<"Category">();
@@ -821,7 +897,9 @@ describe("ledger and classification schema on SQLite", () => {
       INSERT INTO split (id, transaction_id, amount_cents, beneficiary, created_at, updated_at) VALUES ('S1','T1',-100,'shared','t','t');
       INSERT INTO review_item (id, kind, account_id, entity_ref, dedupe_key, created_at) VALUES ('R1','k','A1','e','d','t');
     `);
-    expect(migrate(old, migrations).applied).toEqual(["0009_ledger_classification_schema"]);
+    expect(migrate(old, migrations.slice(0, 10)).applied).toEqual([
+      "0009_ledger_classification_schema",
+    ]);
     expect(old.pragma("foreign_key_check")).toEqual([]);
     expect(
       old
@@ -837,6 +915,26 @@ describe("ledger and classification schema on SQLite", () => {
       { id: "R1", account_id: "A1" },
     ]);
     expect(old.prepare("SELECT count(*) FROM split").pluck().get()).toBe(1);
+    expect(migrate(old, migrations).applied).toEqual(["0010_split_provenance"]);
+    expect(old.pragma("foreign_key_check")).toEqual([]);
+    expect(
+      old
+        .prepare(
+          "SELECT id, amount_cents, beneficiary, category_source, activity_source, tax_category_source, beneficiary_source, deductible_bp_source FROM split",
+        )
+        .all(),
+    ).toEqual([
+      {
+        id: "S1",
+        amount_cents: -100,
+        beneficiary: "shared",
+        category_source: null,
+        activity_source: null,
+        tax_category_source: null,
+        beneficiary_source: null,
+        deductible_bp_source: null,
+      },
+    ]);
     expect(old.prepare("SELECT is_savings FROM account").pluck().get()).toBe(0);
     expect(
       old
@@ -859,6 +957,7 @@ describe("memory and SQLite repositories agree", () => {
   it("gives the same answers to the same sequence", () => {
     const sqlite = scenario(createUnitOfWork(db));
     const memory = scenario(memoryUnitOfWork());
+    expect(sqlite["tag.hiddenSurvives"]).toEqual([["holiday", true]]);
     expect(memory).toEqual(sqlite);
   });
 });

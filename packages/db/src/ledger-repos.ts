@@ -29,6 +29,7 @@ import { accountOwner } from "./schema/account-owner.ts";
 import { balanceSnapshot } from "./schema/balance-snapshot.ts";
 import { institution } from "./schema/institution.ts";
 import { split } from "./schema/split.ts";
+import { splitTag } from "./schema/split-tag.ts";
 import { transaction } from "./schema/transaction.ts";
 import { transferGroup } from "./schema/transfer-group.ts";
 
@@ -98,6 +99,11 @@ const splitColumns = {
   taxCategoryId: split.taxCategoryId,
   deductibleBp: split.deductibleBp,
   memo: split.memo,
+  categorySource: split.categorySource,
+  activitySource: split.activitySource,
+  taxCategorySource: split.taxCategorySource,
+  beneficiarySource: split.beneficiarySource,
+  deductibleBpSource: split.deductibleBpSource,
   createdAt: split.createdAt,
   updatedAt: split.updatedAt,
 };
@@ -277,6 +283,43 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
         orm.update(split).set({ amountCents, updatedAt: at }).where(eq(split.id, splitId)).run()
           .changes === 1
       );
+    },
+
+    replaceSplits: (transactionId, splits) => {
+      check();
+      for (const s of splits) {
+        if (s.transactionId !== transactionId) {
+          throw new Error(`Split ${s.id} belongs to another transaction`);
+        }
+      }
+      const keep = new Set<string>(splits.map((s) => s.id));
+      const existing = orm
+        .select({ id: split.id })
+        .from(split)
+        .where(eq(split.transactionId, transactionId))
+        .all()
+        .map((r) => r.id);
+      const gone = existing.filter((id) => !keep.has(id));
+      if (gone.length > 0) {
+        orm.delete(splitTag).where(inArray(splitTag.splitId, gone)).run();
+        orm.delete(split).where(inArray(split.id, gone)).run();
+      }
+      const present = new Set(existing);
+      for (const { id, createdAt: _c, ...rest } of splits) {
+        if (present.has(id)) orm.update(split).set(rest).where(eq(split.id, id)).run();
+      }
+      const fresh = splits.filter((s) => !present.has(s.id));
+      if (fresh.length > 0)
+        orm
+          .insert(split)
+          .values(fresh.map((s) => ({ ...s })))
+          .run();
+    },
+
+    updateSplit: (row) => {
+      check();
+      const { id, createdAt: _c, transactionId: _t, ...rest } = row;
+      return orm.update(split).set(rest).where(eq(split.id, id)).run().changes === 1;
     },
 
     setNeedsReview: (id, value, at) => {

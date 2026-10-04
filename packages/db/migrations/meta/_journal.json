@@ -71,6 +71,13 @@
       "when": 1791075642117,
       "tag": "0009_ledger_classification_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1791093835548,
+      "tag": "0010_split_provenance",
+      "breakpoints": true
     }
   ]
 }

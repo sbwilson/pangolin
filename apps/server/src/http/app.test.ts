@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createAccount,
+  createCategory,
+  createCategoryGroup,
   createIdGenerator,
   createPayee,
   createPerson,
@@ -133,7 +135,7 @@ describe("GET /api/system/health", () => {
     const app = createApp(deps(openDb()));
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 10, writable: true });
+    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 11, writable: true });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
@@ -1420,5 +1422,247 @@ describe("static PWA", () => {
     const authed = await createApp({ ...deps(db), webRoot }).request("/api/nope", signedIn);
     expect(authed.status).toBe(404);
     expect(await authed.json()).toEqual({ error: { code: "NotFound", message: "Not found" } });
+  });
+});
+
+describe("/api/ledger/transactions/:id/splits", () => {
+  const alex = "01J0000000000000000000000A";
+  const json = { Origin: ORIGIN, "Content-Type": "application/json", Cookie: SESSION_COOKIE };
+
+  function seed(db: Db) {
+    addPerson(db);
+    const d = deps(db);
+    const sys: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const sam = createPerson(sys, { displayName: "Sam", colour: "#000000" });
+    const make = (name: string, isPrivate: boolean, owners: [string, number][]) =>
+      createAccount(sys, {
+        name,
+        type: "transaction",
+        currency: "AUD",
+        isPrivate,
+        owners: owners.map(([personId, shareBp]) => ({ personId, shareBp })),
+      });
+    const joint = make("Joint", false, [
+      [alex, 5000],
+      [sam, 5000],
+    ]);
+    const theirs = make("Sam private", true, [[sam, 10000]]);
+    const alexPrivate = make("Alex private", true, [[alex, 10000]]);
+    const txn = (accountId: string, amountCents: number) =>
+      createTransaction(sys, {
+        accountId,
+        postedOn: "2026-09-01",
+        amountCents,
+        description: "shop",
+      });
+    const group = createCategoryGroup(sys, { name: "Living", kind: "expense" });
+    const category = createCategory(sys, { groupId: group.id, name: "Food" }).id;
+    const tag = createTag(sys, { name: "holiday" }).id;
+    const scopedTag = createTag(sys, { name: "alex only", originAccountId: alexPrivate }).id;
+    return {
+      joint,
+      theirs,
+      sam,
+      mine: txn(joint, -1000),
+      myPrivate: txn(alexPrivate, -300),
+      theirTxn: txn(theirs, -100),
+      category,
+      tag,
+      scopedTag,
+    };
+  }
+
+  const send = (db: Db, method: string, path: string, body?: unknown, authn?: Authn) =>
+    createApp(deps(db, authn)).request(path, {
+      method,
+      headers: json,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  type Body = {
+    transaction: {
+      remainingCents: number;
+      splits: { id: string; amountCents: number; categorySource: string | null; tags: unknown[] }[];
+    };
+    remainingCents?: number;
+    applied?: boolean;
+    error?: { code: string; details?: unknown };
+  };
+
+  it("replaces splits and answers Validation with remainingCents when they do not add up", async () => {
+    const db = openDb();
+    const { mine } = seed(db);
+    const path = `/api/ledger/transactions/${mine}/splits`;
+    const ok = await send(db, "PUT", path, {
+      splits: [{ amountCents: -600 }, { amountCents: -400 }],
+    });
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("cache-control")).toBe("no-store");
+    const body = (await ok.json()) as Body;
+    expect(body.remainingCents).toBe(0);
+    expect(body.transaction.splits).toHaveLength(2);
+    const bad = await send(db, "PUT", path, { splits: [{ amountCents: -600 }] });
+    expect(bad.status).toBe(400);
+    expect(((await bad.json()) as Body).error).toMatchObject({
+      code: "Validation",
+      details: { remainingCents: -400 },
+    });
+    expect(
+      db.prepare("SELECT count(*) FROM split WHERE transaction_id = ?").pluck().get(mine),
+    ).toBe(2);
+    // The path id wins over a body id, and unknown keys are refused.
+    expect(
+      (await send(db, "PUT", path, { transactionId: "x", splits: [{ amountCents: -1000 }] }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await send(db, "PUT", path, { splits: [{ amountCents: -1000, bogus: 1 }] })).status,
+    ).toBe(400);
+    const got = (await (await send(db, "GET", `/api/ledger/transactions/${mine}`)).json()) as Body;
+    expect(got.transaction.remainingCents).toBe(0);
+  });
+
+  it("sets a field as user, forcing the source and refusing a client-supplied one", async () => {
+    const db = openDb();
+    const { mine, category } = seed(db);
+    const read = (await (await send(db, "GET", `/api/ledger/transactions/${mine}`)).json()) as Body;
+    const split = read.transaction.splits[0]?.id as string;
+    const path = `/api/ledger/transactions/${mine}/splits/${split}`;
+    const ok = await send(db, "PATCH", path, { field: "category", value: category });
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as Body).applied).toBe(true);
+    expect(db.prepare("SELECT category_source FROM split WHERE id = ?").pluck().get(split)).toBe(
+      "user",
+    );
+    for (const source of ["rule", "user", "llm"]) {
+      const res = await send(db, "PATCH", path, { field: "category", value: null, source });
+      expect(res.status, source).toBe(400);
+    }
+    expect(db.prepare("SELECT category_id FROM split WHERE id = ?").pluck().get(split)).toBe(
+      category,
+    );
+    expect((await send(db, "PATCH", path, { field: "category", value: null })).status).toBe(200);
+    expect((await send(db, "PATCH", path, { field: "category", value: "nope" })).status).toBe(404);
+    expect((await send(db, "PATCH", path, { field: "bogus", value: 1 })).status).toBe(400);
+  });
+
+  it("lists remainingCents and per-split tags", async () => {
+    const db = openDb();
+    const { mine, tag } = seed(db);
+    const read = (await (await send(db, "GET", `/api/ledger/transactions/${mine}`)).json()) as Body;
+    const split = read.transaction.splits[0]?.id as string;
+    await send(db, "PUT", `/api/ledger/transactions/${mine}/splits/${split}/tags`, {
+      tagIds: [tag],
+    });
+    const list = (await (await send(db, "GET", "/api/ledger/transactions")).json()) as {
+      transactions: (Body["transaction"] & { id: string })[];
+    };
+    const row = list.transactions.find((x) => x.id === mine);
+    expect(row?.remainingCents).toBe(0);
+    expect(row?.splits[0]?.tags).toHaveLength(1);
+  });
+
+  it("sets a beneficiary, refuses a non-owner in a private account, and refuses clearing it", async () => {
+    const db = openDb();
+    const { mine, myPrivate, sam } = seed(db);
+    const splitOf = (id: string) =>
+      db.prepare("SELECT id FROM split WHERE transaction_id = ?").pluck().get(id);
+    const shared = `/api/ledger/transactions/${mine}/splits/${splitOf(mine)}`;
+    const ok = await send(db, "PATCH", shared, { field: "beneficiary", value: sam });
+    expect(ok.status).toBe(200);
+    expect(
+      db
+        .prepare("SELECT beneficiary, beneficiary_source FROM split WHERE id = ?")
+        .get(splitOf(mine)),
+    ).toEqual({
+      beneficiary: sam,
+      beneficiary_source: "user",
+    });
+    expect((await send(db, "PATCH", shared, { field: "beneficiary", value: null })).status).toBe(
+      400,
+    );
+    const priv = `/api/ledger/transactions/${myPrivate}/splits/${splitOf(myPrivate)}`;
+    expect((await send(db, "PATCH", priv, { field: "beneficiary", value: sam })).status).toBe(400);
+    expect((await send(db, "PATCH", priv, { field: "beneficiary", value: "shared" })).status).toBe(
+      400,
+    );
+    expect((await send(db, "PATCH", priv, { field: "beneficiary", value: alex })).status).toBe(200);
+  });
+
+  it("answers 409 for an owner-scoped tag on a split in a public account", async () => {
+    const db = openDb();
+    const { mine, myPrivate, scopedTag } = seed(db);
+    const splitOf = (id: string) =>
+      db.prepare("SELECT id FROM split WHERE transaction_id = ?").pluck().get(id);
+    const res = await send(
+      db,
+      "PUT",
+      `/api/ledger/transactions/${mine}/splits/${splitOf(mine)}/tags`,
+      {
+        tagIds: [scopedTag],
+      },
+    );
+    expect(res.status).toBe(409);
+    expect(db.prepare("SELECT count(*) FROM split_tag").pluck().get()).toBe(0);
+    const ok = await send(
+      db,
+      "PUT",
+      `/api/ledger/transactions/${myPrivate}/splits/${splitOf(myPrivate)}/tags`,
+      {
+        tagIds: [scopedTag],
+      },
+    );
+    expect(ok.status).toBe(200);
+  });
+
+  it("replaces a split's tags", async () => {
+    const db = openDb();
+    const { mine, tag } = seed(db);
+    const read = (await (await send(db, "GET", `/api/ledger/transactions/${mine}`)).json()) as Body;
+    const split = read.transaction.splits[0]?.id as string;
+    const path = `/api/ledger/transactions/${mine}/splits/${split}/tags`;
+    const res = await send(db, "PUT", path, { tagIds: [tag] });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Body).transaction.splits[0]?.tags).toHaveLength(1);
+    expect((await send(db, "PUT", path, { tagIds: ["nope"] })).status).toBe(404);
+    expect((await send(db, "PUT", path, { tagIds: [] })).status).toBe(200);
+    expect(db.prepare("SELECT count(*) FROM split_tag").pluck().get()).toBe(0);
+  });
+
+  it("answers 404 to the partner on every new route for a private-account transaction", async () => {
+    const db = openDb();
+    const { theirTxn, tag } = seed(db);
+    const sid = db.prepare("SELECT id FROM split WHERE transaction_id = ?").pluck().get(theirTxn);
+    const base = `/api/ledger/transactions/${theirTxn}/splits`;
+    expect((await send(db, "PUT", base, { splits: [{ amountCents: -100 }] })).status).toBe(404);
+    expect(
+      (await send(db, "PATCH", `${base}/${sid}`, { field: "category", value: null })).status,
+    ).toBe(404);
+    expect((await send(db, "PUT", `${base}/${sid}/tags`, { tagIds: [tag] })).status).toBe(404);
+    expect(db.prepare("SELECT count(*) FROM split_tag").pluck().get()).toBe(0);
+    expect(
+      db.prepare("SELECT category_source FROM split WHERE id = ?").pluck().get(sid),
+    ).toBeNull();
+  });
+
+  it("is read-only in demo mode", async () => {
+    const db = openDb();
+    const { mine, tag } = seed(db);
+    const sid = db.prepare("SELECT id FROM split WHERE transaction_id = ?").pluck().get(mine);
+    const base = `/api/ledger/transactions/${mine}/splits`;
+    const demo: Authn = { kind: "demo" };
+    const writes: [string, string, unknown][] = [
+      ["PUT", base, { splits: [{ amountCents: -1000 }] }],
+      ["PATCH", `${base}/${sid}`, { field: "category", value: null }],
+      ["PUT", `${base}/${sid}/tags`, { tagIds: [tag] }],
+    ];
+    for (const [method, path, body] of writes) {
+      expect((await send(db, method, path, body, demo)).status, `${method} ${path}`).toBe(409);
+    }
   });
 });

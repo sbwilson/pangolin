@@ -15,7 +15,13 @@ export type GetTransactionInput = z.input<typeof getTransactionInput>;
 export function getTransaction(ctx: UseCaseContext, input: GetTransactionInput): LedgerTransaction {
   const parsed = parseInput(getTransactionInput, input);
   const today = ctx.clock.today().toString();
-  const row = ctx.uow.read((repos) => repos.transactions.findVisible(ctx.viewer, parsed.id, today));
-  if (row === undefined) throw new AppError("NotFound", "Transaction not found");
-  return toLedgerTransaction(ctx.viewer, row);
+  return ctx.uow.read((repos) => {
+    const row = repos.transactions.findVisible(ctx.viewer, parsed.id, today);
+    if (row === undefined) throw new AppError("NotFound", "Transaction not found");
+    const tags = repos.tags.listForSplits(
+      ctx.viewer,
+      row.splits.map((s) => s.id),
+    );
+    return toLedgerTransaction(ctx.viewer, row, tags);
+  });
 }

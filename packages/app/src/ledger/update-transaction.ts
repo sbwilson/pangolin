@@ -5,7 +5,7 @@ import { AppError, parseInput } from "../errors.ts";
 import { write } from "../write.ts";
 import type { LedgerTransaction } from "./list-transactions.ts";
 import "./needs-review.ts";
-import { auditSnapshot, toLedgerTransaction } from "./transaction-view.ts";
+import { auditSnapshot, tagsOf, toLedgerTransaction } from "./transaction-view.ts";
 
 export const updateTransactionInput = z
   .object({
@@ -39,7 +39,8 @@ export type UpdateTransactionInput = z.input<typeof updateTransactionInput>;
  * `ledger.updateTransaction`: changes the fields it is given. `notes` may be set, changed or
  * cleared (`null`) on any visible transaction. Date, amount and description change only on a
  * manual row (no `importId` or `externalId`); sending one for an imported row is a `Conflict`,
- * as is changing the amount of a transaction with more than one split. The amount is also the
+ * as is changing the amount of a transaction with more than one split (replace its splits
+ * instead). The amount is also the
  * single split's amount. Status, `performedBy`, fingerprint, hidden-name fields, payee and
  * categories never change, and an edit that changes nothing writes and audits nothing. A
  * missing, deleted or partner-private transaction is `NotFound`. Audited as one `update` of
@@ -78,10 +79,13 @@ export function updateTransaction(
       postedOn !== before.postedOn ||
       (parsed.description !== undefined && parsed.description !== before.descriptionRaw) ||
       notes !== before.notes;
-    if (!changed) return toLedgerTransaction(ctx.viewer, before);
+    if (!changed) return toLedgerTransaction(ctx.viewer, before, tagsOf(tx, ctx.viewer, before));
     const [only] = before.splits;
     if (amountChanged && (before.splits.length !== 1 || only === undefined)) {
-      throw new AppError("Conflict", "A transaction with several splits cannot change amount");
+      throw new AppError(
+        "Conflict",
+        "A transaction with several splits cannot change amount; replace its splits instead (PUT /api/ledger/transactions/:id/splits)",
+      );
     }
     const at = formatInstant(ctx.clock.now());
     const updated = tx.transactions.update(ctx.viewer, {
@@ -108,6 +112,6 @@ export function updateTransaction(
       before: auditSnapshot(before),
       after: auditSnapshot(after),
     });
-    return toLedgerTransaction(ctx.viewer, after);
+    return toLedgerTransaction(ctx.viewer, after, tagsOf(tx, ctx.viewer, after));
   });
 }

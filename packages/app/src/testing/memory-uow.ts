@@ -46,6 +46,7 @@ import type {
   SetupLinkRepo,
   SetupLinkRow,
   SplitRow,
+  SplitTagged,
   SplitTagRow,
   TagRepo,
   TagRow,
@@ -61,6 +62,7 @@ import type {
   UserRepo,
   VisibleTransaction,
 } from "../ports/unit-of-work.ts";
+import { SPLIT_SOURCES } from "../ports/unit-of-work.ts";
 import type { Viewer } from "../viewer.ts";
 
 export interface MemoryState {
@@ -759,6 +761,28 @@ function requireDay(today: string, what: string): void {
   }
 }
 
+const SOURCE_COLUMNS = [
+  ["categorySource", "split_category_source"],
+  ["activitySource", "split_activity_source"],
+  ["taxCategorySource", "split_tax_category_source"],
+  ["beneficiarySource", "split_beneficiary_source"],
+  ["deductibleBpSource", "split_deductible_bp_source"],
+] as const;
+
+/** Mirror of the CHECK constraints on `split`. */
+function checkSplit(s: SplitRow): void {
+  if (s.deductibleBp !== null && (s.deductibleBp < 0 || s.deductibleBp > 10_000)) {
+    throw new Error("CHECK constraint failed: split_deductible_bp");
+  }
+  for (const [key, name] of SOURCE_COLUMNS) {
+    const value = s[key];
+    if (value !== null && !(SPLIT_SOURCES as readonly string[]).includes(value)) {
+      throw new Error(`CHECK constraint failed: ${name}`);
+    }
+  }
+  if (s.beneficiary.length === 0) throw new Error("CHECK constraint failed: split_beneficiary");
+}
+
 function transactionRepo(working: MemoryState, check: () => void): TransactionRepo {
   const withSplits = (row: VisibleTransaction): VisibleTransaction => ({
     ...row,
@@ -809,9 +833,7 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
         references(working.categories, s.categoryId, "split.category_id");
         references(working.activities, s.activityId, "split.activity_id");
         references(working.taxCategories, s.taxCategoryId, "split.tax_category_id");
-        if (s.deductibleBp !== null && (s.deductibleBp < 0 || s.deductibleBp > 10_000)) {
-          throw new Error("CHECK constraint failed: split_deductible_bp");
-        }
+        checkSplit(s);
       }
       // Deleted lines count: the row stays so the same line is not imported again.
       for (const other of working.transactions) {
@@ -854,6 +876,49 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       const row = working.splits[index];
       if (row === undefined) return false;
       working.splits[index] = { ...row, amountCents, updatedAt: at };
+      return true;
+    },
+    replaceSplits: (transactionId, splits) => {
+      check();
+      for (const s of splits) {
+        if (s.transactionId !== transactionId) {
+          throw new Error(`Split ${s.id} belongs to another transaction`);
+        }
+        references(working.categories, s.categoryId, "split.category_id");
+        references(working.activities, s.activityId, "split.activity_id");
+        references(working.taxCategories, s.taxCategoryId, "split.tax_category_id");
+        checkSplit(s);
+      }
+      const keep = new Set<string>(splits.map((s) => s.id));
+      const gone = new Set(
+        working.splits
+          .filter((s) => s.transactionId === transactionId && !keep.has(s.id))
+          .map((s) => s.id),
+      );
+      working.splitTags = working.splitTags.filter((t) => !gone.has(t.splitId));
+      const present = new Set(working.splits.map((s) => s.id));
+      working.splits = working.splits
+        .filter((s) => !gone.has(s.id))
+        .map((s) => {
+          const next = splits.find((n) => n.id === s.id);
+          return next === undefined ? s : { ...next, createdAt: s.createdAt };
+        });
+      working.splits.push(...splits.filter((s) => !present.has(s.id)));
+    },
+    updateSplit: (row) => {
+      check();
+      references(working.categories, row.categoryId, "split.category_id");
+      references(working.activities, row.activityId, "split.activity_id");
+      references(working.taxCategories, row.taxCategoryId, "split.tax_category_id");
+      checkSplit(row);
+      const index = working.splits.findIndex((s) => s.id === row.id);
+      const before = working.splits[index];
+      if (before === undefined) return false;
+      working.splits[index] = {
+        ...row,
+        transactionId: before.transactionId,
+        createdAt: before.createdAt,
+      };
       return true;
     },
     setNeedsReview: (id, value, at) => {
@@ -1344,6 +1409,47 @@ function tagRepo(working: MemoryState, check: () => void): TagRepo {
       }
       working.splitTags.push(row);
     },
+    detach: (splitId, tagId) => {
+      check();
+      const before = working.splitTags.length;
+      working.splitTags = working.splitTags.filter(
+        (t) => !(t.splitId === splitId && t.tagId === tagId),
+      );
+      return working.splitTags.length < before;
+    },
+    replaceForSplit: (viewer, splitId, tagIds, at) => {
+      requireViewer(viewer);
+      check();
+      references(working.splits, splitId, "split_tag.split_id");
+      const wanted = new Set<string>(tagIds);
+      for (const id of wanted) references(working.tags, id, "split_tag.tag_id");
+      const seen = new Set<string>(base.list(viewer).map((t) => t.id));
+      working.splitTags = working.splitTags.filter(
+        (t) => t.splitId !== splitId || !seen.has(t.tagId) || wanted.has(t.tagId),
+      );
+      const have = new Set<string>(
+        working.splitTags.filter((t) => t.splitId === splitId).map((t) => t.tagId),
+      );
+      for (const id of wanted) {
+        if (!have.has(id)) {
+          working.splitTags.push({
+            splitId: splitId as Id<"Split">,
+            tagId: id as Id<"Tag">,
+            createdAt: at,
+            updatedAt: at,
+          });
+        }
+      }
+    },
+    listForSplits: (viewer, splitIds) => {
+      const out: SplitTagged[] = [];
+      for (const splitId of new Set(splitIds)) {
+        for (const tag of tagRepo(working, check).listForSplit(viewer, splitId)) {
+          out.push({ splitId: splitId as Id<"Split">, tag });
+        }
+      }
+      return out.sort((a, b) => byText(a.splitId, b.splitId));
+    },
     listForSplit: (viewer, splitId) => {
       requireViewer(viewer);
       check();
@@ -1739,6 +1845,7 @@ export function memoryUnitOfWork(
           find: tagRepo(uow.state, check).find,
           list: tagRepo(uow.state, check).list,
           listForSplit: tagRepo(uow.state, check).listForSplit,
+          listForSplits: tagRepo(uow.state, check).listForSplits,
         },
         activities: {
           find: activityRepo(uow.state, check).find,

@@ -43,7 +43,7 @@ describe("committed migrations", () => {
     expect(loadMigrations(packageMigrationsDir)[0]?.name).toBe("0000_baseline");
   });
 
-  it("migrates a fresh database to version 10, then re-applies nothing", () => {
+  it("migrates a fresh database to version 11, then re-applies nothing", () => {
     const migrations = loadMigrations(packageMigrationsDir);
     const names = [
       "0000_baseline",
@@ -56,12 +56,39 @@ describe("committed migrations", () => {
       "0007_recovery_bundle",
       "0008_ledger_accounts",
       "0009_ledger_classification_schema",
+      "0010_split_provenance",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 10 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 10 });
-    expect(schemaVersion(db)).toBe(10);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 11 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 11 });
+    expect(schemaVersion(db)).toBe(11);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
+  });
+
+  it("keeps tagged splits and their split_tag rows when 0009 upgrades to 0010", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 10));
+    db.exec(`
+      INSERT INTO account (id, name, type, currency, is_private, created_at, updated_at) VALUES ('A1','Joint','transaction','AUD',0,'t','t');
+      INSERT INTO "transaction" (id, account_id, posted_on, amount_cents, description_raw, status, fingerprint, fingerprint_version, created_at, updated_at) VALUES ('T1','A1','2026-09-01',-100,'x','posted','fp',1,'t','t');
+      INSERT INTO split (id, transaction_id, amount_cents, beneficiary, created_at, updated_at) VALUES ('S1','T1',-100,'shared','t','t');
+      INSERT INTO tag (id, name, created_at, updated_at) VALUES ('G1','holiday','t','t');
+      INSERT INTO split_tag (split_id, tag_id, created_at, updated_at) VALUES ('S1','G1','t','t');
+    `);
+    expect(migrate(db, migrations).applied).toEqual(["0010_split_provenance"]);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+    expect(db.prepare("SELECT split_id, tag_id FROM split_tag").all()).toEqual([
+      { split_id: "S1", tag_id: "G1" },
+    ]);
+    expect(db.prepare("SELECT id, category_source FROM split").all()).toEqual([
+      { id: "S1", category_source: null },
+    ]);
+    // The foreign key from split_tag still points at the rebuilt table.
+    expect(() =>
+      db.exec(
+        "INSERT INTO split_tag (split_id, tag_id, created_at, updated_at) VALUES ('nope','G1','t','t')",
+      ),
+    ).toThrow(/FOREIGN KEY/);
   });
 
   it("opens in WAL mode with foreign keys on", () => {

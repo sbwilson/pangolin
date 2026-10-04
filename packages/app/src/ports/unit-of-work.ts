@@ -334,6 +334,10 @@ export interface TransactionRow {
   readonly updatedAt: string;
 }
 
+/** Where a classified split field's value came from; precedence is in `ledger/provenance.ts`. */
+export const SPLIT_SOURCES = ["user", "rule", "payee", "activity", "llm"] as const;
+export type SplitSource = (typeof SPLIT_SOURCES)[number];
+
 /** `split`: where part of a transaction's money went. */
 export interface SplitRow {
   readonly id: Id<"Split">;
@@ -349,6 +353,12 @@ export interface SplitRow {
   /** Deductible share in basis points, 0 to 10000, or null when not set. */
   readonly deductibleBp: number | null;
   readonly memo: string | null;
+  /** Provenance per classified field: null means unset, so any source may write. */
+  readonly categorySource: SplitSource | null;
+  readonly activitySource: SplitSource | null;
+  readonly taxCategorySource: SplitSource | null;
+  readonly beneficiarySource: SplitSource | null;
+  readonly deductibleBpSource: SplitSource | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -409,6 +419,17 @@ export interface TransactionRepo {
   ): boolean;
   /** Sets the amount of one split (and its `updatedAt`). False when there is no such split. */
   updateSplitAmount(splitId: string, amountCents: number, at: string): boolean;
+  /**
+   * Makes `splits` the splits of transaction `transactionId`: a row whose ID exists is updated in
+   * place (every column but `createdAt`), a new ID is inserted, and an existing split not listed
+   * is deleted together with its `split_tag` rows. Rejects a split whose transaction is another.
+   */
+  replaceSplits(transactionId: string, splits: readonly SplitRow[]): void;
+  /**
+   * Overwrites the mutable columns of one split (amount, classified fields and their sources,
+   * property, memo, `updatedAt`). False when there is no such split.
+   */
+  updateSplit(row: SplitRow): boolean;
   /**
    * Sets `needs_review` on transaction `id`, whatever its state or viewer (a derived flag kept
    * by `ledger` from open review items). Writes, and bumps `updatedAt`, only when the value
@@ -606,8 +627,27 @@ export interface TagRepo {
   originOf(viewer: Viewer, id: string): Id<"Account"> | null | undefined;
   /** Puts a tag on a split; the same pair twice is rejected. */
   attach(row: SplitTagRow): void;
+  /** Takes a tag off a split; false when it was not on it. */
+  detach(splitId: string, tagId: string): boolean;
+  /**
+   * Makes `tagIds` the tag set of a split among the tags `viewer` can see (live, in scope):
+   * other visible tags are detached, missing ones attached at `at`. Tags the viewer cannot see
+   * stay on the split untouched.
+   */
+  replaceForSplit(viewer: Viewer, splitId: string, tagIds: readonly string[], at: string): void;
   /** The tags on a split, for a split whose transaction `viewer` may see; only tags in scope. */
   listForSplit(viewer: Viewer, splitId: string): TagRow[];
+  /**
+   * The same for many splits in one read: one entry per (split, tag), by split ID, then tag name
+   * and ID. Splits of a transaction `viewer` may not see, and tags out of scope, are absent.
+   */
+  listForSplits(viewer: Viewer, splitIds: readonly string[]): SplitTagged[];
+}
+
+/** One tag on one split, from `TagRepo.listForSplits`. */
+export interface SplitTagged {
+  readonly splitId: Id<"Split">;
+  readonly tag: TagRow;
 }
 
 /** `activity`: a trip or event. */
@@ -959,7 +999,7 @@ export interface ReadRepos {
   readonly categoryGroups: Pick<CategoryGroupRepo, "find" | "list">;
   readonly categories: Pick<CategoryRepo, "find" | "list">;
   readonly taxCategories: Pick<TaxCategoryRepo, "find" | "list">;
-  readonly tags: Pick<TagRepo, "find" | "list" | "listForSplit">;
+  readonly tags: Pick<TagRepo, "find" | "list" | "listForSplit" | "listForSplits">;
   readonly activities: Pick<ActivityRepo, "find" | "list">;
   readonly payees: Pick<PayeeRepo, "find" | "list">;
   readonly payeeAliases: Pick<PayeeAliasRepo, "find" | "list">;

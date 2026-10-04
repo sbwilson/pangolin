@@ -3,8 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createAccount,
+  createCategory,
+  createCategoryGroup,
   createIdGenerator,
   createPerson,
+  createTag,
   createTransaction,
   defineReviewKind,
   deleteTransaction,
@@ -13,6 +16,9 @@ import {
   personViewer,
   raiseReviewItem,
   resolveReviewItem,
+  setSplitField,
+  setSplits,
+  setSplitTags,
   type UseCaseContext,
   updateTransaction,
   write,
@@ -333,5 +339,86 @@ describe("transaction edit, delete and needs_review on SQLite", () => {
       resolveReviewItem(tx, audit, as(a), { dedupeKey: "r2", resolution: "done" }),
     );
     expect(row(id).needs_review).toBe(0);
+  });
+});
+
+describe("splits, provenance and tags on SQLite", () => {
+  it("replaces splits, applies precedence, tags, drops, and audits each write with the account", () => {
+    const id = createTransaction(as(a), txn(shared, "Shop"));
+    const group = createCategoryGroup(as(a), { name: "Living", kind: "expense" });
+    const category = createCategory(as(a), { groupId: group.id, name: "Food" }).id;
+    const tag = createTag(as(a), { name: "t" }).id;
+    const audits = () =>
+      db
+        .prepare(
+          "SELECT account_id, action, before, after FROM audit_log WHERE entity = 'transaction' AND entity_id = ? AND action = 'update'",
+        )
+        .all(id) as { account_id: string; action: string; before: string; after: string }[];
+    const two = setSplits(as(a), {
+      transactionId: id,
+      splits: [{ amountCents: -1000 }, { amountCents: -250 }],
+    });
+    const [first, second] = two.splits;
+    if (first === undefined || second === undefined) throw new Error("missing");
+    expect(() =>
+      setSplits(as(a), { transactionId: id, splits: [{ id: first.id, amountCents: -1 }] }),
+    ).toThrow(expect.objectContaining({ code: "Validation", details: { remainingCents: -1249 } }));
+    const base = {
+      transactionId: id,
+      splitId: first.id,
+      field: "category",
+      value: category,
+    } as const;
+    expect(setSplitField(sys, { ...base, source: "rule" }).applied).toBe(true);
+    expect(setSplitField(as(a), { ...base, value: null }).applied).toBe(true);
+    expect(setSplitField(sys, { ...base, source: "rule" }).applied).toBe(false);
+    setSplitTags(as(a), { transactionId: id, splitId: second.id, tagIds: [tag] });
+    expect(listTransactions(as(b))[0]?.splits.find((s) => s.id === second.id)?.tags).toHaveLength(
+      1,
+    );
+    expect(
+      db.prepare("SELECT category_id, category_source FROM split WHERE id = ?").get(first.id),
+    ).toEqual({ category_id: null, category_source: "user" });
+    setSplits(as(a), { transactionId: id, splits: [{ id: first.id, amountCents: -1250 }] });
+    expect(db.prepare("SELECT count(*) FROM split_tag").pluck().get()).toBe(0);
+    expect(db.prepare("SELECT count(*) FROM split WHERE transaction_id = ?").pluck().get(id)).toBe(
+      1,
+    );
+    const rows = audits();
+    expect(rows).toHaveLength(5);
+    for (const row of rows) expect(row.account_id).toBe(shared);
+    const last = rows[rows.length - 1];
+    expect(JSON.parse(last?.before ?? "{}").splits).toHaveLength(2);
+    expect(JSON.parse(last?.before ?? "{}").splits[1].tagIds).toEqual([tag]);
+    expect(JSON.parse(last?.after ?? "{}").splits).toHaveLength(1);
+    expect(JSON.parse(last?.after ?? "{}").splits[0]).toMatchObject({ categorySource: "user" });
+  });
+});
+
+describe("TagRepo.listForSplits chunking", () => {
+  it("returns every tag across the 400-id chunk boundary in split id, tag name, tag id order", () => {
+    const txns = [1, 2, 3].map((n) => createTransaction(as(a), txn(shared, `Bulk ${n}`)));
+    const tags = ["zeta", "alpha"].map((name) => createTag(as(a), { name }).id);
+    const insertSplit = db.prepare(
+      "INSERT INTO split (id, transaction_id, amount_cents, beneficiary, created_at, updated_at) VALUES (?, ?, 0, 'shared', 't', 't')",
+    );
+    const insertTag = db.prepare(
+      "INSERT INTO split_tag (split_id, tag_id, created_at, updated_at) VALUES (?, ?, 't', 't')",
+    );
+    const ids: string[] = [];
+    for (let i = 0; i < 450; i++) {
+      const id = `BULK${String(i).padStart(4, "0")}`;
+      insertSplit.run(id, txns[i % 3]);
+      for (const tag of tags) insertTag.run(id, tag);
+      ids.push(id);
+    }
+    // Ask in reverse, so the order comes from the repository and not from the input.
+    const found = createUnitOfWork(db).read((r) =>
+      r.tags.listForSplits(as(a).viewer, [...ids].reverse()),
+    );
+    expect(found).toHaveLength(900);
+    expect(found.map((x) => `${x.splitId}:${x.tag.name}`)).toEqual(
+      ids.flatMap((id) => [`${id}:alpha`, `${id}:zeta`]),
+    );
   });
 });

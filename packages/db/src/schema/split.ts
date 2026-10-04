@@ -25,6 +25,11 @@ export const split = sqliteTable(
     taxCategoryId: text("tax_category_id").references(() => taxCategory.id),
     deductibleBp: integer("deductible_bp"),
     memo: text("memo"),
+    categorySource: text("category_source"),
+    activitySource: text("activity_source"),
+    taxCategorySource: text("tax_category_source"),
+    beneficiarySource: text("beneficiary_source"),
+    deductibleBpSource: text("deductible_bp_source"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
@@ -36,5 +41,26 @@ export const split = sqliteTable(
       "split_deductible_bp",
       sql`${t.deductibleBp} IS NULL OR ${t.deductibleBp} BETWEEN 0 AND 10000`,
     ),
+    check(
+      "split_category_source",
+      sql`${t.categorySource} IS NULL OR ${t.categorySource} IN ('user', 'rule', 'payee', 'activity', 'llm')`,
+    ),
+    check(
+      "split_activity_source",
+      sql`${t.activitySource} IS NULL OR ${t.activitySource} IN ('user', 'rule', 'payee', 'activity', 'llm')`,
+    ),
+    check(
+      "split_tax_category_source",
+      sql`${t.taxCategorySource} IS NULL OR ${t.taxCategorySource} IN ('user', 'rule', 'payee', 'activity', 'llm')`,
+    ),
+    check(
+      "split_beneficiary_source",
+      sql`${t.beneficiarySource} IS NULL OR ${t.beneficiarySource} IN ('user', 'rule', 'payee', 'activity', 'llm')`,
+    ),
+    check(
+      "split_deductible_bp_source",
+      sql`${t.deductibleBpSource} IS NULL OR ${t.deductibleBpSource} IN ('user', 'rule', 'payee', 'activity', 'llm')`,
+    ),
+    check("split_beneficiary", sql`length(${t.beneficiary}) > 0`),
   ],
 );

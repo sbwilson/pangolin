@@ -66,6 +66,9 @@ import {
   revokeMyReEnrolmentLinks,
   type SystemHealthPort,
   setPrivacy,
+  setSplitField,
+  setSplits,
+  setSplitTags,
   type TokenPort,
   type UnitOfWork,
   type UseCaseContext,
@@ -314,6 +317,29 @@ export function createApi(deps: ApiDeps) {
       writable();
       const id = c.req.param("id");
       return c.json({ transaction: updateTransaction(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .put("/api/ledger/transactions/:id/splits", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const transactionId = c.req.param("id");
+      const transaction = setSplits(ctx(c), await objectBody(c, { transactionId }));
+      return c.json({ transaction, remainingCents: transaction.remainingCents }, 200);
+    })
+    .patch("/api/ledger/transactions/:id/splits/:splitId", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const fixed = { transactionId: c.req.param("id"), splitId: c.req.param("splitId") };
+      const body: Record<string, unknown> = await objectBody(c);
+      // The source is never the client's to choose: rule, payee, activity and llm are internal.
+      if ("source" in body) throw new AppError("Validation", "A source cannot be supplied");
+      const result = setSplitField(ctx(c), { ...body, ...fixed, source: "user" } as never);
+      return c.json(result, 200);
+    })
+    .put("/api/ledger/transactions/:id/splits/:splitId/tags", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const fixed = { transactionId: c.req.param("id"), splitId: c.req.param("splitId") };
+      return c.json({ transaction: setSplitTags(ctx(c), await objectBody(c, fixed)) }, 200);
     })
     .delete("/api/ledger/transactions/:id", (c) => {
       c.header("Cache-Control", "no-store");
