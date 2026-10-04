@@ -932,6 +932,38 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       };
       return true;
     },
+    setNameHidden: (viewer, id, by, until, at) => {
+      requireViewer(viewer);
+      check();
+      const row = visibleRows(viewer).find((r) => r.id === id);
+      if (row === undefined) return false;
+      const person = by as TransactionRow["nameHiddenBy"];
+      references(working.people, person, "transaction.name_hidden_by");
+      working.transactions[working.transactions.indexOf(row)] = {
+        ...row,
+        nameHiddenBy: person,
+        nameHiddenUntil: until,
+        updatedAt: at,
+      };
+      return true;
+    },
+    setTransferGroup: (ids, groupId, at) => {
+      check();
+      const group = groupId as TransactionRow["transferGroupId"];
+      references(working.transferGroups, group, "transaction.transfer_group_id");
+      let changed = 0;
+      for (const id of ids) {
+        const row = working.transactions.find((r) => r.id === id);
+        if (row === undefined) continue;
+        working.transactions[working.transactions.indexOf(row)] = {
+          ...row,
+          transferGroupId: group,
+          updatedAt: at,
+        };
+        changed += 1;
+      }
+      return changed;
+    },
     softDelete: (viewer, id, at) => {
       requireViewer(viewer);
       check();
@@ -1164,6 +1196,22 @@ function transferGroupRepo(working: MemoryState, check: () => void): TransferGro
         return account !== undefined && accountVisible(working, viewer, account);
       });
       return seen ? group : undefined;
+    },
+    delete: (id) => {
+      check();
+      if (working.transactions.some((t) => t.transferGroupId === id)) {
+        throw new Error("FOREIGN KEY constraint failed: transaction.transfer_group_id");
+      }
+      const index = working.transferGroups.findIndex((row) => row.id === id);
+      if (index < 0) return false;
+      working.transferGroups.splice(index, 1);
+      return true;
+    },
+    members: (id) => {
+      check();
+      return working.transactions
+        .filter((t) => t.transferGroupId === id)
+        .sort((a, b) => byText(a.id, b.id));
     },
   };
 }

@@ -333,6 +333,31 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
       );
     },
 
+    setNameHidden: (viewer, id, by, until, at) => {
+      const visible = liveVisibleTxn(viewer);
+      check();
+      return (
+        orm
+          .update(transaction)
+          .set({ nameHiddenBy: by as never, nameHiddenUntil: until, updatedAt: at })
+          .where(and(eq(transaction.id, id), visible))
+          .run().changes === 1
+      );
+    },
+
+    setTransferGroup: (ids, groupId, at) => {
+      check();
+      let changed = 0;
+      for (let i = 0; i < ids.length; i += 500) {
+        changed += orm
+          .update(transaction)
+          .set({ transferGroupId: groupId as never, updatedAt: at })
+          .where(inArray(transaction.id, ids.slice(i, i + 500) as string[]))
+          .run().changes;
+      }
+      return changed;
+    },
+
     softDelete: (viewer, id, at) => {
       const visible = liveVisibleTxn(viewer);
       check();
@@ -503,6 +528,19 @@ export function createTransferGroupRepo(orm: Orm, check: () => void): TransferGr
           ),
         )
         .get() as TransferGroupRow | undefined;
+    },
+    delete: (id) => {
+      check();
+      return orm.delete(transferGroup).where(eq(transferGroup.id, id)).run().changes === 1;
+    },
+    members: (id) => {
+      check();
+      return orm
+        .select(transactionColumns)
+        .from(transaction)
+        .where(eq(transaction.transferGroupId, id))
+        .orderBy(asc(transaction.id))
+        .all() as TransactionRow[];
     },
   };
 }

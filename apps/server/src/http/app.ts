@@ -20,6 +20,7 @@ import {
   createTag,
   createTaxCategory,
   createTransaction,
+  createTransferGroup,
   deadJobs,
   deleteActivity,
   deleteCategory,
@@ -27,6 +28,7 @@ import {
   deletePayeeAlias,
   deleteTag,
   deleteTransaction,
+  deleteTransferGroup,
   dismissNotice,
   ERROR_CODES,
   type ErrorCode,
@@ -38,6 +40,7 @@ import {
   getTag,
   getTransaction,
   health,
+  hideTransactionName,
   type IdGenerator,
   issueInitialRecoveryCodes,
   issueReEnrolmentLink,
@@ -72,6 +75,7 @@ import {
   type TokenPort,
   type UnitOfWork,
   type UseCaseContext,
+  unhideTransactionName,
   updateAccount,
   updateActivity,
   updateCategory,
@@ -345,6 +349,31 @@ export function createApi(deps: ApiDeps) {
       c.header("Cache-Control", "no-store");
       writable();
       deleteTransaction(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .put("/api/ledger/transactions/:id/name-hidden", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      return c.json(
+        { transaction: hideTransactionName(ctx(c), await objectBody(c, { id }, true)) },
+        200,
+      );
+    })
+    .delete("/api/ledger/transactions/:id/name-hidden", (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      return c.json({ transaction: unhideTransactionName(ctx(c), { id: c.req.param("id") }) }, 200);
+    })
+    .post("/api/ledger/transfer-groups", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      return c.json({ transactions: createTransferGroup(ctx(c), await objectBody(c)) }, 201);
+    })
+    .delete("/api/ledger/transfer-groups/:id", (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      deleteTransferGroup(ctx(c), { id: c.req.param("id") });
       return c.body(null, 204);
     })
     .get("/api/accounts/institutions", (c) => {

@@ -302,6 +302,15 @@ export {
   getTransactionInput,
 } from "./ledger/get-transaction.ts";
 export {
+  type HideTransactionNameInput,
+  hideTransactionName,
+  hideTransactionNameInput,
+  MAX_HIDE_MONTHS,
+  type UnhideTransactionNameInput,
+  unhideTransactionName,
+  unhideTransactionNameInput,
+} from "./ledger/hide-name.ts";
+export {
   type LedgerSplit,
   type LedgerTransaction,
   type ListTransactionsInput,
@@ -335,6 +344,14 @@ export {
   setSplitTagsInput,
 } from "./ledger/split-tags.ts";
 export { remainingCents } from "./ledger/transaction-view.ts";
+export {
+  type CreateTransferGroupInput,
+  createTransferGroup,
+  createTransferGroupInput,
+  type DeleteTransferGroupInput,
+  deleteTransferGroup,
+  deleteTransferGroupInput,
+} from "./ledger/transfer-groups.ts";
 export {
   type UpdateTransactionInput,
   updateTransaction,

@@ -437,6 +437,23 @@ export interface TransactionRepo {
    */
   setNeedsReview(id: string, value: boolean, at: string): boolean;
   /**
+   * Sets (or, with `null` for both, clears) `name_hidden_by` and `name_hidden_until` on the live
+   * transaction `viewer` may see, and bumps `updatedAt`. Nothing else changes. False when there
+   * is none. The caller owns the rules (cap, ownership, private accounts).
+   */
+  setNameHidden(
+    viewer: Viewer,
+    id: string,
+    by: string | null,
+    until: string | null,
+    at: string,
+  ): boolean;
+  /**
+   * Sets `transfer_group_id` to `groupId` (null clears it) on every transaction in `ids`, live or
+   * deleted, whatever the viewer, bumping `updatedAt`. Returns how many rows it changed.
+   */
+  setTransferGroup(ids: readonly string[], groupId: string | null, at: string): number;
+  /**
    * Soft-deletes a transaction `viewer` may see. False when there is none (or it is already
    * deleted). The row stays for dedupe.
    */
@@ -522,6 +539,13 @@ export interface TransferGroupRepo {
   insert(row: TransferGroupRow): void;
   /** The group, when at least one live transaction in it is visible to `viewer`. */
   find(viewer: Viewer, id: string): TransferGroupRow | undefined;
+  /** Deletes the group row; false when absent. Clear its members first (foreign key). */
+  delete(id: string): boolean;
+  /**
+   * Every transaction in the group, live or deleted, whatever the viewer (raw, for clearing the
+   * link), by ID.
+   */
+  members(id: string): TransactionRow[];
 }
 
 export const CATEGORY_GROUP_KINDS = ["income", "expense", "transfer"] as const;

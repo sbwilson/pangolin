@@ -10,7 +10,9 @@ import {
   createPerson,
   createTag,
   createTransaction,
+  createTransferGroup,
   fixedClockAt,
+  hideTransactionName,
   personViewer,
   systemClock,
   type UnitOfWork,
@@ -379,6 +381,176 @@ describe("/api/ledger/transactions/:id", () => {
       ["POST", "/api/ledger/transactions", line(joint)],
       ["PATCH", `/api/ledger/transactions/${theirTxn}`, { notes: "x" }],
       ["DELETE", `/api/ledger/transactions/${theirTxn}`, undefined],
+    ];
+    for (const [method, path, body] of writes) {
+      expect((await send(db, method, path, body, demo)).status, `${method} ${path}`).toBe(409);
+    }
+  });
+});
+
+describe("name hiding and transfer groups", () => {
+  const alex = "01J0000000000000000000000A";
+  const json = { Origin: ORIGIN, "Content-Type": "application/json", Cookie: SESSION_COOKIE };
+  const send = (db: Db, method: string, path: string, body?: unknown, authn?: Authn) =>
+    createApp(deps(db, authn)).request(path, {
+      method,
+      headers: json,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  function seed(db: Db) {
+    addPerson(db);
+    const d = deps(db);
+    const sys: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const sam = createPerson(sys, { displayName: "Sam", colour: "#000000" });
+    const make = (name: string, isPrivate: boolean, owners: [string, number][]) =>
+      createAccount(sys, {
+        name,
+        type: "transaction",
+        currency: "AUD",
+        isPrivate,
+        owners: owners.map(([personId, shareBp]) => ({ personId, shareBp })),
+      });
+    const joint = make("Joint", false, [
+      [alex, 5000],
+      [sam, 5000],
+    ]);
+    const joint2 = make("Joint 2", false, [
+      [alex, 5000],
+      [sam, 5000],
+    ]);
+    const theirs = make("Sam private", true, [[sam, 10000]]);
+    const line = (accountId: string, amountCents: number, description: string) =>
+      createTransaction(sys, { accountId, postedOn: "2026-09-01", amountCents, description });
+    return {
+      sys,
+      sam,
+      mine: line(joint, -500, "Mine"),
+      other: line(joint2, 500, "Other"),
+      theirTxn: line(theirs, -100, "sam only"),
+    };
+  }
+
+  it("hides and unhides a name, validating the day", async () => {
+    const db = openDb();
+    const { mine } = seed(db);
+    const path = `/api/ledger/transactions/${mine}/name-hidden`;
+    const put = await send(db, "PUT", path, { until: "2026-12-01" });
+    expect(put.status).toBe(200);
+    expect(put.headers.get("cache-control")).toBe("no-store");
+    expect(
+      db.prepare('SELECT name_hidden_until FROM "transaction" WHERE id = ?').pluck().get(mine),
+    ).toBe("2026-12-01");
+    expect((await send(db, "PUT", path, { until: "2028-01-01" })).status).toBe(400);
+    expect((await send(db, "PUT", path, { until: "2026-09-27" })).status).toBe(400);
+    expect((await send(db, "PUT", path, { bogus: 1 })).status).toBe(400);
+    expect((await send(db, "PUT", path)).status).toBe(200);
+    const del = await send(db, "DELETE", path);
+    expect(del.status).toBe(200);
+    expect(
+      db.prepare('SELECT name_hidden_by FROM "transaction" WHERE id = ?').pluck().get(mine),
+    ).toBeNull();
+  });
+
+  it("refuses the viewer while the partner's hiding is active, and 404s a partner-private row", async () => {
+    const db = openDb();
+    const { mine, sam, theirTxn } = seed(db);
+    db.prepare(
+      'UPDATE "transaction" SET name_hidden_by = ?, name_hidden_until = ? WHERE id = ?',
+    ).run(sam, "2027-01-01", mine);
+    const path = `/api/ledger/transactions/${mine}/name-hidden`;
+    expect((await send(db, "PUT", path, {})).status).toBe(409);
+    expect((await send(db, "DELETE", path)).status).toBe(409);
+    const theirs = `/api/ledger/transactions/${theirTxn}/name-hidden`;
+    expect((await send(db, "PUT", theirs, {})).status).toBe(404);
+    expect((await send(db, "DELETE", theirs)).status).toBe(404);
+  });
+
+  it("creates and deletes a transfer group", async () => {
+    const db = openDb();
+    const { mine, other, theirTxn } = seed(db);
+    expect(
+      (await send(db, "POST", "/api/ledger/transfer-groups", { transactionIds: [mine] })).status,
+    ).toBe(400);
+    expect(
+      (await send(db, "POST", "/api/ledger/transfer-groups", { transactionIds: [mine, theirTxn] }))
+        .status,
+    ).toBe(404);
+    const made = await send(db, "POST", "/api/ledger/transfer-groups", {
+      transactionIds: [mine, other],
+    });
+    expect(made.status).toBe(201);
+    expect(made.headers.get("cache-control")).toBe("no-store");
+    const { transactions } = (await made.json()) as { transactions: { transferGroupId: string }[] };
+    expect(transactions).toHaveLength(2);
+    expect(
+      (await send(db, "POST", "/api/ledger/transfer-groups", { transactionIds: [mine, other] }))
+        .status,
+    ).toBe(409);
+    const id = transactions[0]?.transferGroupId;
+    const del = await send(db, "DELETE", `/api/ledger/transfer-groups/${id}`);
+    expect(del.status).toBe(204);
+    expect(del.headers.get("cache-control")).toBe("no-store");
+    expect((await send(db, "DELETE", `/api/ledger/transfer-groups/${id}`)).status).toBe(404);
+  });
+
+  it("shows the viewer the partner's hidden name and transfer label only", async () => {
+    const db = openDb();
+    const { sys, sam, mine, other } = seed(db);
+    const d = deps(db);
+    const asSam: UseCaseContext = {
+      viewer: personViewer(sam as never, d.clock.now()),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const samPrivate = createAccount(asSam, {
+      name: "Sam savings",
+      type: "savings",
+      currency: "AUD",
+      isPrivate: true,
+      owners: [{ personId: sam, shareBp: 10000 }],
+    });
+    const secret = createTransaction(asSam, {
+      accountId: samPrivate,
+      postedOn: "2026-09-01",
+      amountCents: -500,
+      description: "Secret savings",
+    });
+    expect(sys).toBeDefined();
+    hideTransactionName(asSam, { id: mine });
+    createTransferGroup(asSam, { transactionIds: [other, secret] });
+    const hidden = await send(db, "GET", `/api/ledger/transactions/${mine}`);
+    const hiddenBody = (await hidden.json()) as { transaction: { descriptionRaw: string } };
+    expect(hiddenBody.transaction.descriptionRaw).toBe("Hidden until 27 Sep 2027");
+    const linked = await send(db, "GET", `/api/ledger/transactions/${other}`);
+    const linkedBody = (await linked.json()) as { transaction: { transferLabel: string } };
+    expect(linkedBody.transaction.transferLabel).toBe("Transfer from Sam");
+    const list = JSON.stringify(await (await send(db, "GET", "/api/ledger/transactions")).json());
+    expect(list).not.toContain("Secret savings");
+    expect(list).not.toContain("Sam savings");
+    expect(list).not.toContain(secret);
+    expect(list).not.toContain("Mine");
+    expect((await send(db, "GET", `/api/ledger/transactions/${secret}`)).status).toBe(404);
+    // Unhide on a transaction with no hiding is a 200 no-op.
+    const noop = await send(db, "DELETE", `/api/ledger/transactions/${other}/name-hidden`);
+    expect(noop.status).toBe(200);
+  });
+
+  it("is read-only in demo mode", async () => {
+    const db = openDb();
+    const { mine, other } = seed(db);
+    const demo: Authn = { kind: "demo" };
+    const writes: [string, string, unknown][] = [
+      ["PUT", `/api/ledger/transactions/${mine}/name-hidden`, {}],
+      ["DELETE", `/api/ledger/transactions/${mine}/name-hidden`, undefined],
+      ["POST", "/api/ledger/transfer-groups", { transactionIds: [mine, other] }],
+      ["DELETE", "/api/ledger/transfer-groups/x", undefined],
     ];
     for (const [method, path, body] of writes) {
       expect((await send(db, method, path, body, demo)).status, `${method} ${path}`).toBe(409);

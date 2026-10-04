@@ -229,3 +229,9 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-splits-provenance-beneficiary-and-tags-plan.md`
   summary: Give `tags.attach` a viewer check or remove it with the unused `TagRepo.detach`, use `objectBody` for the split PATCH route instead of `as never`, and return `remainingCents` once from the replace route.
   evidence: classify-repos.ts `attach`/`detach`, apps/server/src/http/app.ts split routes (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-hidden-names-and-transfer-groups-plan.md`
+  summary: A partner can delete a transfer group whose other member sits in the owner's private account, clearing that private row's link.
+  evidence: `deleteTransferGroup` clears every member including ones the viewer cannot see, by plan; whether the private owner alone should be allowed is unsettled.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-hidden-names-and-transfer-groups-plan.md`
+  summary: hideTransactionName does not check the viewer is an owner of the shared account.
+  evidence: It only requires the transaction be visible and the account non-private; harmless with two household members, wrong if a non-owner can see a public account.

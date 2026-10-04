@@ -9,9 +9,12 @@ import {
   createPerson,
   createTag,
   createTransaction,
+  createTransferGroup,
   defineReviewKind,
   deleteTransaction,
+  deleteTransferGroup,
   getTransaction,
+  hideTransactionName,
   listTransactions,
   personViewer,
   raiseReviewItem,
@@ -20,6 +23,7 @@ import {
   setSplits,
   setSplitTags,
   type UseCaseContext,
+  unhideTransactionName,
   updateTransaction,
   write,
 } from "@pangolin/app";
@@ -420,5 +424,97 @@ describe("TagRepo.listForSplits chunking", () => {
     expect(found.map((x) => `${x.splitId}:${x.tag.name}`)).toEqual(
       ids.flatMap((id) => [`${id}:alpha`, `${id}:zeta`]),
     );
+  });
+});
+
+describe("hidden names and transfer groups on SQLite", () => {
+  const raw = (id: string) =>
+    db
+      .prepare(
+        'SELECT name_hidden_by, name_hidden_until, transfer_group_id FROM "transaction" WHERE id = ?',
+      )
+      .get(id) as Record<string, unknown>;
+  const line = (ctx: UseCaseContext, accountId: Id<"Account">, amountCents: number, d = "x") =>
+    createTransaction(ctx, { accountId, postedOn: "2026-09-01", amountCents, description: d });
+
+  it("hides, refuses the partner during an active hiding, and unhides", () => {
+    const id = line(as(a), shared, -500, "Surprise");
+    hideTransactionName(as(a), { id });
+    expect(raw(id)).toMatchObject({ name_hidden_by: a, name_hidden_until: "2027-09-27" });
+    expect(getTransaction(as(b), { id }).descriptionRaw).toBe("Hidden until 27 Sep 2027");
+    expect(getTransaction(as(a), { id }).descriptionRaw).toBe("Surprise");
+    expect(() => hideTransactionName(as(b), { id })).toThrow(
+      expect.objectContaining({ code: "Conflict" }),
+    );
+    expect(() => unhideTransactionName(as(b), { id })).toThrow(
+      expect.objectContaining({ code: "Conflict" }),
+    );
+    expect(() =>
+      hideTransactionName(as(a), { id: line(as(a), privateA, -1), until: "2026-10-01" }),
+    ).toThrow(expect.objectContaining({ code: "Validation" }));
+    expect(() => hideTransactionName(as(b), { id: line(as(a), privateA, -1) })).toThrow(
+      expect.objectContaining({ code: "NotFound" }),
+    );
+    unhideTransactionName(as(a), { id });
+    expect(raw(id)).toMatchObject({ name_hidden_by: null, name_hidden_until: null });
+    const entries = db
+      .prepare("SELECT account_id FROM audit_log WHERE entity_id = ? AND action = 'update'")
+      .all(id) as { account_id: string }[];
+    expect(entries.map((e) => e.account_id)).toEqual([shared, shared]);
+  });
+
+  it("deletes a group that has a soft-deleted member, clearing both rows", () => {
+    const x = line(as(a), shared, -500);
+    const y = line(as(a), privateA, 500);
+    const [first] = createTransferGroup(as(a), { transactionIds: [x, y] });
+    const groupId = first.transferGroupId as string;
+    deleteTransaction(as(a), { id: y });
+    deleteTransferGroup(as(a), { id: groupId });
+    expect(raw(x).transfer_group_id).toBeNull();
+    expect(raw(y).transfer_group_id).toBeNull();
+    expect(db.prepare("SELECT count(*) FROM transfer_group").pluck().get()).toBe(0);
+  });
+
+  it("leaves the partner's responses byte-identical across the hider's later edits", () => {
+    const id = line(as(a), shared, -500, "Surprise");
+    hideTransactionName(as(a), { id });
+    const before = JSON.stringify(listTransactions(as(b)));
+    updateTransaction(as(a), { id, description: "Other secret" });
+    expect(JSON.stringify(listTransactions(as(b)))).toBe(before);
+  });
+
+  it("links and unlinks a private and a shared transaction, hiding the private side", () => {
+    const sharedSide = line(as(a), shared, 2500, "Top up");
+    const privateSide = line(as(a), privateA, -2500, "Secret savings");
+    expect(() => createTransferGroup(as(b), { transactionIds: [sharedSide, privateSide] })).toThrow(
+      expect.objectContaining({ code: "NotFound" }),
+    );
+    const [first] = createTransferGroup(as(a), { transactionIds: [sharedSide, privateSide] });
+    const groupId = first.transferGroupId as string;
+    expect(raw(privateSide).transfer_group_id).toBe(groupId);
+    expect(
+      db.prepare("SELECT matched_by FROM transfer_group WHERE id = ?").pluck().get(groupId),
+    ).toBe("manual");
+    expect(getTransaction(as(b), { id: sharedSide }).transferLabel).toBe("Transfer from A");
+    expect(JSON.stringify(listTransactions(as(b)))).not.toContain("Secret savings");
+    expect(() => createTransferGroup(as(a), { transactionIds: [sharedSide, privateSide] })).toThrow(
+      expect.objectContaining({ code: "Conflict" }),
+    );
+    deleteTransferGroup(as(b), { id: groupId });
+    expect(raw(sharedSide).transfer_group_id).toBeNull();
+    expect(raw(privateSide).transfer_group_id).toBeNull();
+    expect(db.prepare("SELECT count(*) FROM transfer_group").pluck().get()).toBe(0);
+    expect(() => deleteTransferGroup(as(b), { id: groupId })).toThrow(
+      expect.objectContaining({ code: "NotFound" }),
+    );
+    const audited = db
+      .prepare(
+        "SELECT account_id, before, after FROM audit_log WHERE entity = 'transaction' AND entity_id = ? ORDER BY at, id",
+      )
+      .all(privateSide) as { account_id: string; before: string; after: string }[];
+    expect(audited).toHaveLength(3);
+    expect(audited.slice(1).every((r) => r.account_id === privateA)).toBe(true);
+    expect(JSON.parse(audited[1]?.after ?? "{}").transferGroupId).toBe(groupId);
+    expect(JSON.parse(audited[2]?.after ?? "{}").transferGroupId).toBeNull();
   });
 });
