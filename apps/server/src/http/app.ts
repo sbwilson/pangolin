@@ -19,12 +19,14 @@ import {
   createPayeeAlias,
   createTag,
   createTaxCategory,
+  createTransaction,
   deadJobs,
   deleteActivity,
   deleteCategory,
   deletePayee,
   deletePayeeAlias,
   deleteTag,
+  deleteTransaction,
   dismissNotice,
   ERROR_CODES,
   type ErrorCode,
@@ -34,6 +36,7 @@ import {
   getPayee,
   getPayeeAlias,
   getTag,
+  getTransaction,
   health,
   type IdGenerator,
   issueInitialRecoveryCodes,
@@ -75,6 +78,7 @@ import {
   updatePayeeAlias,
   updateTag,
   updateTaxCategory,
+  updateTransaction,
 } from "@pangolin/app";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
@@ -294,6 +298,28 @@ export function createApi(deps: ApiDeps) {
       // Per viewer (AD-3): shared accounts plus the viewer's own private ones. Never cached.
       c.header("Cache-Control", "no-store");
       return c.json({ transactions: listTransactions(ctx(c), {}) }, 200);
+    })
+    .post("/api/ledger/transactions", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = createTransaction(ctx(c), await objectBody(c));
+      return c.json({ transaction: getTransaction(ctx(c), { id }) }, 201);
+    })
+    .get("/api/ledger/transactions/:id", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ transaction: getTransaction(ctx(c), { id: c.req.param("id") }) }, 200);
+    })
+    .patch("/api/ledger/transactions/:id", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      return c.json({ transaction: updateTransaction(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .delete("/api/ledger/transactions/:id", (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      deleteTransaction(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
     })
     .get("/api/accounts/institutions", (c) => {
       c.header("Cache-Control", "no-store");

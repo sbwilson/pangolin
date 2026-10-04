@@ -6,9 +6,16 @@ import {
   createIdGenerator,
   createPerson,
   createTransaction,
+  defineReviewKind,
+  deleteTransaction,
+  getTransaction,
   listTransactions,
   personViewer,
+  raiseReviewItem,
+  resolveReviewItem,
   type UseCaseContext,
+  updateTransaction,
+  write,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import type { Id } from "@pangolin/shared";
@@ -164,5 +171,167 @@ describe("transactions per viewer", () => {
         )
         .run(),
     ).toThrow(/account_type/);
+  });
+});
+
+const reviewKind = defineReviewKind({ kind: "ledger.parity", module: "ledger", scope: "account" });
+
+describe("transaction edit, delete and needs_review on SQLite", () => {
+  const row = (id: string) =>
+    db
+      .prepare(
+        'SELECT posted_on, amount_cents, description_raw, notes, fingerprint, fingerprint_version, needs_review, deleted_at FROM "transaction" WHERE id = ?',
+      )
+      .get(id) as Record<string, unknown>;
+  const raise = (ctx: UseCaseContext, id: string, key: string, accountId: string) =>
+    write(ctx, (tx, audit) =>
+      raiseReviewItem(tx, audit, ctx, {
+        kind: reviewKind,
+        accountId,
+        entityRef: `transaction:${id}`,
+        dedupeKey: key,
+      }),
+    );
+
+  it("lets identical manual lines coexist with version 2 fingerprints", () => {
+    const first = createTransaction(as(a), txn(shared, "same"));
+    const second = createTransaction(as(a), txn(shared, "same"));
+    expect(row(first).fingerprint_version).toBe(2);
+    expect(row(first).fingerprint).not.toBe(row(second).fingerprint);
+    expect(listTransactions(as(a))).toHaveLength(2);
+  });
+
+  it("edits a manual row and its split together, keeping the fingerprint, with one audit row", () => {
+    const id = createTransaction(as(a), txn(shared, "Coffee"));
+    const fingerprint = row(id).fingerprint;
+    const audits = db.prepare("SELECT count(*) FROM audit_log").pluck().get() as number;
+    const out = updateTransaction(as(a), {
+      id,
+      postedOn: "2026-09-05",
+      amountCents: -999,
+      description: "Latte",
+      notes: "with Sam",
+    });
+    expect(out.splits.map((s) => s.amountCents)).toEqual([-999]);
+    expect(row(id)).toMatchObject({
+      posted_on: "2026-09-05",
+      amount_cents: -999,
+      description_raw: "Latte",
+      notes: "with Sam",
+      fingerprint,
+    });
+    expect(
+      db.prepare("SELECT amount_cents FROM split WHERE transaction_id = ?").pluck().get(id),
+    ).toBe(-999);
+    expect(db.prepare("SELECT count(*) FROM audit_log").pluck().get()).toBe(audits + 1);
+    const entry = db
+      .prepare(
+        "SELECT account_id, before, after FROM audit_log WHERE entity = 'transaction' AND action = 'update'",
+      )
+      .get() as { account_id: string; before: string; after: string };
+    expect(entry.account_id).toBe(shared);
+    expect(JSON.parse(entry.before).splits[0].amountCents).toBe(-1250);
+    expect(JSON.parse(entry.after).splits[0].amountCents).toBe(-999);
+    updateTransaction(as(a), { id, notes: null });
+    expect(row(id).notes).toBeNull();
+    // A no-op writes nothing.
+    updateTransaction(as(a), { id, amountCents: -999 });
+    expect(db.prepare("SELECT count(*) FROM audit_log").pluck().get()).toBe(audits + 2);
+  });
+
+  it("refuses imported-row line edits and multi-split amount edits with Conflict", () => {
+    const id = createTransaction(as(a), txn(shared, "Imported"));
+    db.prepare("UPDATE \"transaction\" SET import_id = 'IMP' WHERE id = ?").run(id);
+    expect(() => updateTransaction(as(a), { id, amountCents: 1 })).toThrow(
+      expect.objectContaining({ code: "Conflict" }),
+    );
+    expect(updateTransaction(as(a), { id, notes: "ok" }).notes).toBe("ok");
+    const multi = createTransaction(as(a), txn(shared, "Multi"));
+    db.prepare(
+      "INSERT INTO split (id, transaction_id, amount_cents, beneficiary, created_at, updated_at) VALUES ('SPLIT2', ?, 0, 'shared', 't', 't')",
+    ).run(multi);
+    expect(() => updateTransaction(as(a), { id: multi, amountCents: 1 })).toThrow(
+      expect.objectContaining({ code: "Conflict" }),
+    );
+  });
+
+  it("refuses a description edit of a hidden name and keeps it on a notes edit", () => {
+    const id = createTransaction(as(a), txn(shared, "Surprise"));
+    db.prepare(
+      "UPDATE \"transaction\" SET name_hidden_by = ?, name_hidden_until = '2999-03-12' WHERE id = ?",
+    ).run(a, id);
+    expect(() => updateTransaction(as(b), { id, description: "Peek" })).toThrow(
+      expect.objectContaining({ code: "Conflict" }),
+    );
+    const out = updateTransaction(as(b), { id, notes: "from B" });
+    expect(out.descriptionRaw).toBe("Hidden until 12 Mar 2999");
+    expect(row(id)).toMatchObject({ description_raw: "Surprise", notes: "from B" });
+  });
+
+  it("answers NotFound to the partner for a private row on get, update and delete", () => {
+    const id = createTransaction(as(a), txn(privateA, "mine"));
+    for (const fn of [
+      () => getTransaction(as(b), { id }),
+      () => updateTransaction(as(b), { id, notes: "x" }),
+      () => deleteTransaction(as(b), { id }),
+    ]) {
+      expect(fn).toThrow(expect.objectContaining({ code: "NotFound" }));
+    }
+    expect(row(id).deleted_at).toBeNull();
+  });
+
+  it("deletes behind recent auth, keeps the key for dedupe, and resolves open review items", () => {
+    const id = createTransaction(as(a), txn(shared, "Gone"));
+    raise(as(a), id, "k1", shared);
+    expect(row(id).needs_review).toBe(1);
+    const stale: UseCaseContext = {
+      ...as(a),
+      viewer: personViewer(a, now.subtract({ minutes: 10 })),
+    };
+    expect(() => deleteTransaction(stale, { id })).toThrow(
+      expect.objectContaining({ code: "ReauthRequired" }),
+    );
+    expect(row(id).deleted_at).toBeNull();
+    deleteTransaction(as(a), { id });
+    expect(row(id)).toMatchObject({ needs_review: 0 });
+    expect(row(id).deleted_at).not.toBeNull();
+    expect(
+      db.prepare("SELECT resolution FROM review_item WHERE dedupe_key = 'k1'").pluck().get(),
+    ).toBe("transaction deleted");
+    expect(listTransactions(as(a))).toHaveLength(0);
+    expect(() => deleteTransaction(as(a), { id })).toThrow(
+      expect.objectContaining({ code: "NotFound" }),
+    );
+    const fingerprint = row(id).fingerprint;
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO "transaction" (id, account_id, posted_on, amount_cents, description_raw, status, fingerprint, fingerprint_version, created_at, updated_at)
+           VALUES ('DUP', ?, '2026-09-01', 1, 'x', 'posted', ?, 2, 't', 't')`,
+        )
+        .run(shared, fingerprint),
+    ).toThrow(/UNIQUE/);
+    const accounts = db
+      .prepare(
+        "SELECT account_id FROM audit_log WHERE entity = 'transaction' AND action = 'delete'",
+      )
+      .pluck()
+      .all();
+    expect(accounts).toEqual([shared]);
+  });
+
+  it("keeps needs_review in step with open review items", () => {
+    const id = createTransaction(as(a), txn(shared, "Flagged"));
+    raise(as(a), id, "r1", shared);
+    raise(as(a), id, "r2", shared);
+    expect(getTransaction(as(a), { id }).needsReview).toBe(true);
+    write(as(a), (tx, audit) =>
+      resolveReviewItem(tx, audit, as(a), { dedupeKey: "r1", resolution: "done" }),
+    );
+    expect(row(id).needs_review).toBe(1);
+    write(as(a), (tx, audit) =>
+      resolveReviewItem(tx, audit, as(a), { dedupeKey: "r2", resolution: "done" }),
+    );
+    expect(row(id).needs_review).toBe(0);
   });
 });

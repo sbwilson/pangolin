@@ -44,6 +44,32 @@ export function defineReviewKind(spec: ReviewKind): ReviewKind {
   return kind;
 }
 
+/** What an entity-sync listener receives: the repos of the open write and the entity reference. */
+export type EntitySyncListener = (
+  tx: TxRepos,
+  ctx: Pick<UseCaseContext, "clock">,
+  entityRef: string,
+) => void;
+
+const entitySync = new Map<string, EntitySyncListener>();
+
+/**
+ * Registers `listener` for review items whose `entityRef` starts with `prefix` (for example
+ * `transaction:`). `raiseReviewItem` (when it inserts) and `resolveReviewItem` call it in the
+ * caller's write transaction, so the owning module can keep a derived flag in step (AD-11,
+ * AD-17) without `system` importing it. A prefix holds one listener; registering again replaces it.
+ */
+export function registerEntitySync(prefix: string, listener: EntitySyncListener): void {
+  if (prefix === "") throw new TypeError("registerEntitySync: prefix must not be empty");
+  entitySync.set(prefix, listener);
+}
+
+function syncEntity(tx: TxRepos, ctx: Pick<UseCaseContext, "clock">, entityRef: string): void {
+  for (const [prefix, listener] of entitySync) {
+    if (entityRef.startsWith(prefix)) listener(tx, ctx, entityRef);
+  }
+}
+
 /** A job that died and needs a person (AD-9). Household scope; entity `job:<id>`. */
 export const UPGRADE_FAILED_REVIEW = defineReviewKind({
   kind: "system.upgrade-failed",
@@ -147,6 +173,7 @@ export function raiseReviewItem(
       ...(item.accountId === null ? {} : { accountId: item.accountId }),
       ...(item.personId === null ? {} : { personId: item.personId }),
     });
+    syncEntity(tx, ctx, item.entityRef);
   }
   return { id: item.id, raised: inserted };
 }
@@ -175,7 +202,15 @@ export function resolveReviewItem(
     parsed.resolution,
   );
   if (result === undefined) return false;
-  const { before, after } = result;
+  auditResolved(audit, result);
+  syncEntity(tx, ctx, result.after.entityRef);
+  return true;
+}
+
+function auditResolved(
+  audit: Audit,
+  { before, after }: { readonly before: ReviewItemRow; readonly after: ReviewItemRow },
+): void {
   audit({
     entity: "review_item",
     entityId: after.id,
@@ -185,7 +220,34 @@ export function resolveReviewItem(
     ...(after.accountId === null ? {} : { accountId: after.accountId }),
     ...(after.personId === null ? {} : { personId: after.personId }),
   });
-  return true;
+}
+
+const resolveForEntityInput = z
+  .object({ entityRef: z.string().min(1), resolution: z.string().min(1).max(200) })
+  .strict();
+
+export type ResolveReviewItemsForEntityInput = z.input<typeof resolveForEntityInput>;
+
+/**
+ * `system.resolveReviewItemsForEntity`, inside the caller's `write` transaction: resolves every
+ * open item whose `entityRef` is `entityRef` (for example when its entity is deleted), each
+ * audited as `resolve`, then runs the entity-sync listener once. Returns how many it resolved.
+ */
+export function resolveReviewItemsForEntity(
+  tx: TxRepos,
+  audit: Audit,
+  ctx: Pick<UseCaseContext, "clock">,
+  input: ResolveReviewItemsForEntityInput,
+): number {
+  const parsed = parseInput(resolveForEntityInput, input);
+  const results = tx.reviewItems.resolveOpenForEntity(
+    parsed.entityRef,
+    formatInstant(ctx.clock.now()),
+    parsed.resolution,
+  );
+  for (const result of results) auditResolved(audit, result);
+  if (results.length > 0) syncEntity(tx, ctx, parsed.entityRef);
+  return results.length;
 }
 
 /** An open review item as a use case returns it.  */

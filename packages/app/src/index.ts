@@ -292,11 +292,26 @@ export {
   createTransactionInput,
 } from "./ledger/create-transaction.ts";
 export {
+  type DeleteTransactionInput,
+  deleteTransaction,
+  deleteTransactionInput,
+} from "./ledger/delete-transaction.ts";
+export {
+  type GetTransactionInput,
+  getTransaction,
+  getTransactionInput,
+} from "./ledger/get-transaction.ts";
+export {
   type LedgerTransaction,
   type ListTransactionsInput,
   listTransactions,
   listTransactionsInput,
 } from "./ledger/list-transactions.ts";
+export {
+  type UpdateTransactionInput,
+  updateTransaction,
+  updateTransactionInput,
+} from "./ledger/update-transaction.ts";
 export type { Clock } from "./ports/clock.ts";
 export type { SystemHealthPort } from "./ports/system-health.ts";
 export type { CodeHasher, TokenPort } from "./ports/tokens.ts";
@@ -496,6 +511,7 @@ export {
 } from "./system/recovery-bundle.ts";
 export {
   defineReviewKind,
+  type EntitySyncListener,
   JOB_DEAD_REVIEW,
   type ListReviewItemsInput,
   listReviewItems,
@@ -503,11 +519,14 @@ export {
   type RaiseReviewItemInput,
   RESTORED_REVIEW,
   type ResolveReviewItemInput,
+  type ResolveReviewItemsForEntityInput,
   type ReviewItem,
   type ReviewKind,
   type ReviewScope,
   raiseReviewItem,
+  registerEntitySync,
   resolveReviewItem,
+  resolveReviewItemsForEntity,
   UPGRADE_FAILED_REVIEW,
 } from "./system/review-items.ts";
 export {

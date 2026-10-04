@@ -210,6 +210,17 @@ export interface ReviewItemRepo {
     resolvedAt: string,
     resolution: string,
   ): { readonly before: ReviewItemRow; readonly after: ReviewItemRow } | undefined;
+  /** The number of open items whose `entityRef` is `entityRef`. */
+  countOpenForEntity(entityRef: string): number;
+  /**
+   * Resolves every open item whose `entityRef` is `entityRef`, oldest first. Returns each
+   * before and after; empty when none was open.
+   */
+  resolveOpenForEntity(
+    entityRef: string,
+    resolvedAt: string,
+    resolution: string,
+  ): { readonly before: ReviewItemRow; readonly after: ReviewItemRow }[];
   /**
    * Open items `viewer` may see, oldest first (AD-3, AD-17). Throws when given no viewer.
    * A person sees household items, items of an account they can see, and their own. A system
@@ -379,6 +390,31 @@ export interface TransactionRepo {
   insert(row: TransactionRow, splits: readonly SplitRow[]): void;
   /** The live transaction `viewer` may see, with its splits, as of `today`. Throws without a viewer. */
   findVisible(viewer: Viewer, id: string, today: string): VisibleTransaction | undefined;
+  /**
+   * Overwrites the posting date, amount, description and notes of the live transaction `viewer`
+   * may see, and `updatedAt`. Never touches the fingerprint, status, `performedBy`, payee or
+   * hidden-name fields. False when there is none.
+   */
+  update(
+    viewer: Viewer,
+    change: {
+      readonly id: string;
+      readonly postedOn: string;
+      readonly amountCents: number;
+      /** Omitted to leave the description alone (it may be hidden from this viewer). */
+      readonly descriptionRaw?: string;
+      readonly notes: string | null;
+      readonly updatedAt: string;
+    },
+  ): boolean;
+  /** Sets the amount of one split (and its `updatedAt`). False when there is no such split. */
+  updateSplitAmount(splitId: string, amountCents: number, at: string): boolean;
+  /**
+   * Sets `needs_review` on transaction `id`, whatever its state or viewer (a derived flag kept
+   * by `ledger` from open review items). Writes, and bumps `updatedAt`, only when the value
+   * changes. Returns whether it did.
+   */
+  setNeedsReview(id: string, value: boolean, at: string): boolean;
   /**
    * Soft-deletes a transaction `viewer` may see. False when there is none (or it is already
    * deleted). The row stays for dedupe.

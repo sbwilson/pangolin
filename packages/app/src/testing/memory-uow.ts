@@ -606,6 +606,23 @@ function reviewItemRepo(working: MemoryState, check: () => void): ReviewItemRepo
       working.reviewItems[working.reviewItems.indexOf(before)] = after;
       return { before, after };
     },
+    countOpenForEntity: (entityRef) => {
+      check();
+      return working.reviewItems.filter(
+        (row) => row.entityRef === entityRef && row.resolvedAt === null,
+      ).length;
+    },
+    resolveOpenForEntity: (entityRef, resolvedAt, resolution) => {
+      check();
+      return working.reviewItems
+        .filter((row) => row.entityRef === entityRef && row.resolvedAt === null)
+        .sort((a, b) => (`${a.createdAt}|${a.id}` < `${b.createdAt}|${b.id}` ? -1 : 1))
+        .map((before) => {
+          const after = { ...before, resolvedAt, resolution };
+          working.reviewItems[working.reviewItems.indexOf(before)] = after;
+          return { before, after };
+        });
+    },
     listOpenFor: (viewer) => {
       if (viewer === undefined || viewer === null) throw new TypeError("a viewer is required");
       check();
@@ -815,6 +832,40 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       check();
       const row = visibleRows(viewer).find((r) => r.id === id);
       return row === undefined ? undefined : view(viewer, row, today);
+    },
+    update: (viewer, change) => {
+      requireViewer(viewer);
+      check();
+      const row = visibleRows(viewer).find((r) => r.id === change.id);
+      if (row === undefined) return false;
+      working.transactions[working.transactions.indexOf(row)] = {
+        ...row,
+        postedOn: change.postedOn,
+        amountCents: change.amountCents,
+        descriptionRaw: change.descriptionRaw ?? row.descriptionRaw,
+        notes: change.notes,
+        updatedAt: change.updatedAt,
+      };
+      return true;
+    },
+    updateSplitAmount: (splitId, amountCents, at) => {
+      check();
+      const index = working.splits.findIndex((s) => s.id === splitId);
+      const row = working.splits[index];
+      if (row === undefined) return false;
+      working.splits[index] = { ...row, amountCents, updatedAt: at };
+      return true;
+    },
+    setNeedsReview: (id, value, at) => {
+      check();
+      const row = working.transactions.find((r) => r.id === id);
+      if (row === undefined || row.needsReview === value) return false;
+      working.transactions[working.transactions.indexOf(row)] = {
+        ...row,
+        needsReview: value,
+        updatedAt: at,
+      };
+      return true;
     },
     softDelete: (viewer, id, at) => {
       requireViewer(viewer);

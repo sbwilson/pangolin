@@ -232,6 +232,158 @@ describe("GET /healthz", () => {
   });
 });
 
+describe("/api/ledger/transactions/:id", () => {
+  const alex = "01J0000000000000000000000A";
+  const json = { Origin: ORIGIN, "Content-Type": "application/json", Cookie: SESSION_COOKIE };
+
+  function seed(db: Db) {
+    addPerson(db);
+    const d = deps(db);
+    const sys: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const sam = createPerson(sys, { displayName: "Sam", colour: "#000000" });
+    const make = (name: string, isPrivate: boolean, owners: [string, number][]) =>
+      createAccount(sys, {
+        name,
+        type: "transaction",
+        currency: "AUD",
+        isPrivate,
+        owners: owners.map(([personId, shareBp]) => ({ personId, shareBp })),
+      });
+    const joint = make("Joint", false, [
+      [alex, 5000],
+      [sam, 5000],
+    ]);
+    const theirs = make("Sam private", true, [[sam, 10000]]);
+    const theirTxn = createTransaction(sys, {
+      accountId: theirs,
+      postedOn: "2026-09-01",
+      amountCents: -100,
+      description: "sam only",
+    });
+    return { joint, theirs, theirTxn };
+  }
+
+  const send = (db: Db, method: string, path: string, body?: unknown, authn?: Authn) =>
+    createApp(deps(db, authn)).request(path, {
+      method,
+      headers: json,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  const line = (accountId: string) => ({
+    accountId,
+    postedOn: "2026-09-01",
+    amountCents: -450,
+    description: "Coffee",
+  });
+
+  it("creates, reads, edits and deletes a transaction", async () => {
+    const db = openDb();
+    const { joint } = seed(db);
+    const first = await send(db, "POST", "/api/ledger/transactions", line(joint));
+    expect(first.status).toBe(201);
+    expect(first.headers.get("cache-control")).toBe("no-store");
+    const { transaction } = (await first.json()) as { transaction: { id: string } };
+    // An identical manual line is allowed.
+    expect((await send(db, "POST", "/api/ledger/transactions", line(joint))).status).toBe(201);
+    const path = `/api/ledger/transactions/${transaction.id}`;
+    const got = await send(db, "GET", path);
+    expect(got.status).toBe(200);
+    expect(got.headers.get("cache-control")).toBe("no-store");
+    // The path id wins over a body id.
+    const patched = await send(db, "PATCH", path, { id: "other", amountCents: -500, notes: "n" });
+    expect(patched.status).toBe(200);
+    const body = (await patched.json()) as {
+      transaction: {
+        id: string;
+        amountCents: number;
+        notes: string;
+        splits: { amountCents: number }[];
+      };
+    };
+    expect(body.transaction).toMatchObject({ id: transaction.id, amountCents: -500, notes: "n" });
+    expect(body.transaction.splits[0]?.amountCents).toBe(-500);
+    expect((await send(db, "PATCH", path, { bogus: 1 })).status).toBe(400);
+    const del = await send(db, "DELETE", path);
+    expect(del.status).toBe(204);
+    expect(del.headers.get("cache-control")).toBe("no-store");
+    expect((await send(db, "GET", path)).status).toBe(404);
+    expect((await send(db, "DELETE", path)).status).toBe(404);
+  });
+
+  it("refuses line edits of an imported row, bad notes, and any use of a deleted row", async () => {
+    const db = openDb();
+    const { joint } = seed(db);
+    const created = await send(db, "POST", "/api/ledger/transactions", line(joint));
+    const { transaction } = (await created.json()) as { transaction: { id: string } };
+    const path = `/api/ledger/transactions/${transaction.id}`;
+    db.prepare("UPDATE \"transaction\" SET import_id = 'IMP' WHERE id = ?").run(transaction.id);
+    expect((await send(db, "PATCH", path, { postedOn: "2026-09-02" })).status).toBe(409);
+    expect((await send(db, "PATCH", path, { amountCents: -1 })).status).toBe(409);
+    expect((await send(db, "PATCH", path, { notes: "fine" })).status).toBe(200);
+    expect((await send(db, "PATCH", path, { notes: "x".repeat(1001) })).status).toBe(400);
+    expect((await send(db, "DELETE", path)).status).toBe(204);
+    expect((await send(db, "GET", path)).status).toBe(404);
+    expect((await send(db, "PATCH", path, { notes: "again" })).status).toBe(404);
+  });
+
+  it("answers 404 to the partner on every route for a private-account transaction", async () => {
+    const db = openDb();
+    const { theirs, theirTxn } = seed(db);
+    const path = `/api/ledger/transactions/${theirTxn}`;
+    expect((await send(db, "GET", path)).status).toBe(404);
+    expect((await send(db, "PATCH", path, { notes: "x" })).status).toBe(404);
+    expect((await send(db, "DELETE", path)).status).toBe(404);
+    expect((await send(db, "POST", "/api/ledger/transactions", line(theirs))).status).toBe(404);
+    const row = db
+      .prepare('SELECT deleted_at, notes FROM "transaction" WHERE id = ?')
+      .get(theirTxn);
+    expect(row).toEqual({ deleted_at: null, notes: null });
+  });
+
+  it("answers 403 and changes nothing when the session is older than the window", async () => {
+    const db = openDb();
+    const { joint } = seed(db);
+    const created = await send(db, "POST", "/api/ledger/transactions", line(joint));
+    const { transaction } = (await created.json()) as { transaction: { id: string } };
+    const stale: Authn = {
+      kind: "live",
+      gateway: fakeGateway(new Date("2026-09-26T00:00:00Z")),
+    };
+    const res = await send(
+      db,
+      "DELETE",
+      `/api/ledger/transactions/${transaction.id}`,
+      undefined,
+      stale,
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("ReauthRequired");
+    expect(
+      db.prepare('SELECT deleted_at FROM "transaction" WHERE id = ?').pluck().get(transaction.id),
+    ).toBeNull();
+  });
+
+  it("is read-only in demo mode", async () => {
+    const db = openDb();
+    const { joint, theirTxn } = seed(db);
+    const demo: Authn = { kind: "demo" };
+    const writes: [string, string, unknown][] = [
+      ["POST", "/api/ledger/transactions", line(joint)],
+      ["PATCH", `/api/ledger/transactions/${theirTxn}`, { notes: "x" }],
+      ["DELETE", `/api/ledger/transactions/${theirTxn}`, undefined],
+    ];
+    for (const [method, path, body] of writes) {
+      expect((await send(db, method, path, body, demo)).status, `${method} ${path}`).toBe(409);
+    }
+  });
+});
+
 describe("GET /api/ledger/transactions", () => {
   const alex = "01J0000000000000000000000A";
 

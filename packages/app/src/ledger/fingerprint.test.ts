@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fingerprintV1, sha256Hex } from "./fingerprint.ts";
+import { fingerprintManual, fingerprintV1, sha256Hex } from "./fingerprint.ts";
 
 describe("sha256Hex", () => {
   it("matches the published vectors", () => {
@@ -26,5 +26,21 @@ describe("fingerprintV1", () => {
     ]) {
       expect(fingerprintV1({ ...line, ...change })).not.toBe(fingerprintV1(line));
     }
+  });
+});
+
+describe("fingerprintManual", () => {
+  it("is stable, depends on account and transaction ID only, and never matches a V1 key", () => {
+    expect(fingerprintManual("A", "T1")).toBe(sha256Hex("manual\nA\nT1"));
+    expect(fingerprintManual("A", "T1")).toBe(fingerprintManual("A", "T1"));
+    expect(fingerprintManual("A", "T1")).not.toBe(fingerprintManual("A", "T2"));
+    expect(fingerprintManual("A", "T1")).not.toBe(fingerprintManual("B", "T1"));
+    const v1 = fingerprintV1({
+      accountId: "A",
+      postedOn: "2026-09-01",
+      amountCents: -1250,
+      description: "T1",
+    });
+    expect(fingerprintManual("A", "T1")).not.toBe(v1);
   });
 });

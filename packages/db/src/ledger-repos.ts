@@ -13,7 +13,7 @@ import type {
   TransferGroupRow,
   VisibleTransaction,
 } from "@pangolin/app";
-import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { balanceAsOf } from "./balance.ts";
 import type { Db } from "./open.ts";
@@ -249,6 +249,45 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
         .where(and(eq(transaction.id, id), projection.where))
         .get();
       return row === undefined ? undefined : withSplits(orm, [toView(row)])[0];
+    },
+
+    update: (viewer, change) => {
+      const visible = liveVisibleTxn(viewer);
+      check();
+      return (
+        orm
+          .update(transaction)
+          .set({
+            postedOn: change.postedOn,
+            amountCents: change.amountCents,
+            ...(change.descriptionRaw === undefined
+              ? {}
+              : { descriptionRaw: change.descriptionRaw }),
+            notes: change.notes,
+            updatedAt: change.updatedAt,
+          })
+          .where(and(eq(transaction.id, change.id), visible))
+          .run().changes === 1
+      );
+    },
+
+    updateSplitAmount: (splitId, amountCents, at) => {
+      check();
+      return (
+        orm.update(split).set({ amountCents, updatedAt: at }).where(eq(split.id, splitId)).run()
+          .changes === 1
+      );
+    },
+
+    setNeedsReview: (id, value, at) => {
+      check();
+      return (
+        orm
+          .update(transaction)
+          .set({ needsReview: value, updatedAt: at })
+          .where(and(eq(transaction.id, id), ne(transaction.needsReview, value)))
+          .run().changes === 1
+      );
     },
 
     softDelete: (viewer, id, at) => {
