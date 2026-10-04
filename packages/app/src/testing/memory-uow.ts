@@ -1448,23 +1448,6 @@ function tagRepo(working: MemoryState, check: () => void): TagRepo {
       })),
     softDelete: base.softDelete,
     originOf: base.originOf,
-    attach: (row) => {
-      check();
-      references(working.splits, row.splitId, "split_tag.split_id");
-      references(working.tags, row.tagId, "split_tag.tag_id");
-      if (working.splitTags.some((t) => t.splitId === row.splitId && t.tagId === row.tagId)) {
-        throw uniqueViolation("split_tag.split_id, split_tag.tag_id");
-      }
-      working.splitTags.push(row);
-    },
-    detach: (splitId, tagId) => {
-      check();
-      const before = working.splitTags.length;
-      working.splitTags = working.splitTags.filter(
-        (t) => !(t.splitId === splitId && t.tagId === tagId),
-      );
-      return working.splitTags.length < before;
-    },
     replaceForSplit: (viewer, splitId, tagIds, at) => {
       requireViewer(viewer);
       check();

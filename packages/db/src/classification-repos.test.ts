@@ -426,12 +426,8 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
   const sp = tx(
     (r) => r.transactions.findVisible(system, t1.id, TODAY)?.splits[0]?.id,
   ) as Id<"Split">;
-  step("tag.attach", (r) => {
-    r.tags.attach({ splitId: sp, tagId: sharedTag.id, createdAt: T, updatedAt: T });
-    r.tags.attach({ splitId: sp, tagId: ownerTag.id, createdAt: T, updatedAt: T });
-  });
-  step("tag.attachTwice", (r) =>
-    r.tags.attach({ splitId: sp, tagId: sharedTag.id, createdAt: T, updatedAt: T }),
+  step("tag.replaceOnSplit", (r) =>
+    r.tags.replaceForSplit(system, sp, [sharedTag.id, ownerTag.id], T),
   );
   out["tag.forSplit"] = tx((r) => [
     r.tags.listForSplit(asA, sp).length,
@@ -442,14 +438,14 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
   const privSplit = split(tPriv.id, { beneficiary: a });
   tx((r) => {
     r.transactions.insert(tPriv, [privSplit]);
-    r.tags.attach({ splitId: privSplit.id, tagId: sharedTag.id, createdAt: T, updatedAt: T });
+    r.tags.replaceForSplit(system, privSplit.id, [sharedTag.id], T);
   });
   out["tag.forPrivateSplit"] = tx((r) => [
     r.tags.listForSplit(asA, privSplit.id).length,
     r.tags.listForSplit(asB, privSplit.id).length,
     r.tags.listForSplit(system, privSplit.id).length,
   ]);
-  // Provenance columns, replaceSplits, updateSplit, detach, replaceForSplit, listForSplits.
+  // Provenance columns, replaceSplits, updateSplit, replaceForSplit, listForSplits.
   const view = (r: TxRepos, id: string) => r.transactions.findVisible(system, id, TODAY)?.splits;
   const extra = split(t1.id, { amountCents: 0, beneficiary: a, beneficiarySource: "user" });
   step("split.replaceAddsAndKeeps", (r) => {
@@ -488,11 +484,6 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
       .map((x) => [x.splitId === sp, x.splitId === privSplit.id, x.tag.name, x.tag.scopePersonId]),
     r.tags.listForSplits(asB, [sp, privSplit.id]).map((x) => [x.tag.name]),
     r.tags.listForSplits(system, []).length,
-  ]);
-  out["tag.detach"] = tx((r) => [
-    r.tags.detach(sp, ownerTag.id),
-    r.tags.detach(sp, ownerTag.id),
-    r.tags.listForSplit(system, sp).map((x) => x.name),
   ]);
   out["tag.replaceForSplit"] = tx((r) => {
     r.tags.replaceForSplit(system, extra.id, [sharedTag.id, ownerTag.id], T2);

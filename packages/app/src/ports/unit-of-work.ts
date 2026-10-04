@@ -649,10 +649,6 @@ export interface TagRepo {
   softDelete(viewer: Viewer, id: string, at: string): boolean;
   /** The origin account stored with a row `viewer` may see: non-null only for a private origin. */
   originOf(viewer: Viewer, id: string): Id<"Account"> | null | undefined;
-  /** Puts a tag on a split; the same pair twice is rejected. */
-  attach(row: SplitTagRow): void;
-  /** Takes a tag off a split; false when it was not on it. */
-  detach(splitId: string, tagId: string): boolean;
   /**
    * Makes `tagIds` the tag set of a split among the tags `viewer` can see (live, in scope):
    * other visible tags are detached, missing ones attached at `at`. Tags the viewer cannot see
