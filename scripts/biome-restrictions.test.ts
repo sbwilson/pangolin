@@ -40,6 +40,12 @@ const PROBE = [
   'import { auditLog } from "../schema/audit-log.ts";',
   'import "../schema/account.js";',
   'import { payee } from "../schema/payee.ts";',
+  'import type { T } from "../schema/transaction.ts";',
+  'export { re } from "../schema/account.ts";',
+  'export type { RT } from "../schema/audit-log.ts";',
+  'export * from "../schema/transaction.ts";',
+  'export const dyn = import("../schema/account.ts");',
+  'export const req = require("../schema/transaction");',
   "export const probe = [Temporal, ulid, systemViewer, relative, account, transaction, auditLog, payee];",
   "",
 ].join("\n");
@@ -54,6 +60,12 @@ const LINE_TO_MODULE: Record<number, string> = {
   6: "schema/transaction",
   7: "schema/audit-log",
   8: "schema/account (side effect)",
+  10: "import type",
+  11: "export { }",
+  12: "export type { }",
+  13: "export *",
+  14: "import()",
+  15: "require()",
 };
 /** Both ways of reaching the SystemViewer factory. */
 const SV = [SYSTEM_VIEWER, SYSTEM_VIEWER_RELATIVE] as const;
@@ -63,6 +75,12 @@ const DB = [
   "schema/transaction",
   "schema/audit-log",
   "schema/account (side effect)",
+  "import type",
+  "export { }",
+  "export type { }",
+  "export *",
+  "import()",
+  "require()",
 ] as const;
 
 /** Repo-relative probe path -> modules the lint rule must ban there. */
@@ -102,6 +120,8 @@ const READ_CASES: Record<string, readonly string[]> = {
   "packages/db/src/x.ts": DB,
   "packages/db/src/nested/x.ts": DB,
   "apps/web/src/x.ts": DB,
+  "e2e/x.ts": DB,
+  "scripts/x.ts": DB,
   "apps/server/src/http/x.ts": DB,
   "apps/server/src/jobs/x.ts": DB,
   "apps/server/src/admin/x.ts": DB,

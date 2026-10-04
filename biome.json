@@ -214,6 +214,8 @@
         "apps/**",
         "packages/**",
         "tools/**",
+        "e2e/**",
+        "scripts/**",
         "!**/*.test.ts",
         "!packages/db/src/privacy.ts",
         "!packages/db/src/ledger-repos.ts",
