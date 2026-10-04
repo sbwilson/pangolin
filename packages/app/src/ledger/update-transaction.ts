@@ -1,8 +1,9 @@
-import { formatInstant, parseDate } from "@pangolin/shared/temporal";
+import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { write } from "../write.ts";
+import { descriptionField, notesField, postedOnField } from "./fields.ts";
 import type { LedgerTransaction } from "./list-transactions.ts";
 import "./needs-review.ts";
 import { auditSnapshot, tagsOf, toLedgerTransaction } from "./transaction-view.ts";
@@ -11,26 +12,13 @@ export const updateTransactionInput = z
   .object({
     id: z.string().min(1).max(100),
     /** `YYYY-MM-DD`. Manual rows only. */
-    postedOn: z
-      .string()
-      .refine(
-        (value) => {
-          try {
-            parseDate(value);
-            return true;
-          } catch {
-            return false;
-          }
-        },
-        { message: "Expected a real YYYY-MM-DD date" },
-      )
-      .optional(),
+    postedOn: postedOnField.optional(),
     /** Signed integer minor units. Manual rows only. */
     amountCents: z.int().optional(),
     /** Manual rows only. */
-    description: z.string().trim().min(1, { message: "Enter a description" }).max(500).optional(),
+    description: descriptionField.optional(),
     /** Plain text, at most 1000 characters; `null` (or blank) clears it. Any visible row. */
-    notes: z.string().trim().max(1000).nullable().optional(),
+    notes: notesField.optional(),
   })
   .strict();
 export type UpdateTransactionInput = z.input<typeof updateTransactionInput>;
