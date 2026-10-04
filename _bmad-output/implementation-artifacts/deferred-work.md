@@ -184,3 +184,12 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-privacy-core-hidden-names-redact-and-the-read-rule-plan.md`
   summary: Bound the audit and transaction reads (limit or keyset), add indexes on `audit_log.account_id` and `transaction.transfer_group_id`, scrub other entities' audit JSON, and unify memory/SQL helpers with an audit parity scenario.
   evidence: listVisible reads have no limit, subqueries run per row, the audit scrub removes two keys (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-accounts-module-plan.md`
+  summary: Close the accounts memory-mirror gaps: soft-deleted account in `balanceAsOf`, `replaceOwners` validation and owner order, and same-day snapshot tie-break plus soft-deleted transactions in the SQLite-versus-memory parity scenario.
+  evidence: memory-uow.ts `balanceAsOf`, `replaceOwners` and `owners` differ from the SQLite repos and the parity test covers neither (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-accounts-module-plan.md`
+  summary: Harden account inputs: reject empty owner lists in `replaceOwners`, make `poolOf` fail with a typed error per row instead of 500ing `listAccounts`, skip no-op writes and their audit rows, and validate future dates, duplicate same-day snapshots and the db `balanceAsOf` date with the real date parser before the manifest reuses it.
+  evidence: set-privacy.ts, update-account.ts, pool.ts and packages/db/src/balance.ts (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-accounts-module-plan.md`
+  summary: Tidy the accounts API: type the route-to-use-case calls instead of `never`, add a body size limit, bound and batch the list reads, and decide on institution deletion and snapshot correction routes.
+  evidence: apps/server/src/http/app.ts `objectBody`, `listAccounts` N+1 owners query (review pass 1, low).

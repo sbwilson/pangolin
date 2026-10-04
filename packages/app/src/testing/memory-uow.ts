@@ -655,6 +655,39 @@ function accountRepo(working: MemoryState, check: () => void): AccountRepo {
       check();
       return working.accountOwners.filter((owner) => owner.accountId === accountId);
     },
+    update: (row) => {
+      check();
+      const at = working.accounts.findIndex((a) => a.id === row.id && !working.deleted.has(a.id));
+      const before = working.accounts[at];
+      if (before === undefined) throw new Error(`Account ${row.id} not found`);
+      references(working.institutions, row.institutionId, "account.institution_id");
+      working.accounts[at] = {
+        ...before,
+        name: row.name,
+        isPrivate: row.isPrivate,
+        institutionId: row.institutionId,
+        openedOn: row.openedOn,
+        closedOn: row.closedOn,
+        isSavings: row.isSavings,
+        updatedAt: row.updatedAt,
+      };
+    },
+    replaceOwners: (accountId, owners) => {
+      check();
+      working.accountOwners = [
+        ...working.accountOwners.filter((owner) => owner.accountId !== accountId),
+        ...owners,
+      ];
+    },
+    hasSharedSplit: (accountId) => {
+      check();
+      const live = new Set(
+        working.transactions
+          .filter((t) => t.accountId === accountId && !working.deleted.has(t.id))
+          .map((t) => t.id as string),
+      );
+      return working.splits.some((s) => live.has(s.transactionId) && s.beneficiary === "shared");
+    },
   };
 }
 
@@ -915,6 +948,21 @@ function institutionRepo(working: MemoryState, check: () => void): InstitutionRe
       check();
       return live().sort((a, b) => byText(`${a.name}|${a.id}`, `${b.name}|${b.id}`));
     },
+    update: (row) => {
+      check();
+      const at = working.institutions.findIndex(
+        (r) => r.id === row.id && !working.deleted.has(r.id),
+      );
+      const before = working.institutions[at];
+      if (before === undefined) throw new Error(`Institution ${row.id} not found`);
+      working.institutions[at] = {
+        ...before,
+        name: row.name,
+        kind: row.kind,
+        websiteUrl: row.websiteUrl,
+        updatedAt: row.updatedAt,
+      };
+    },
     softDelete: (id, at) => {
       check();
       if (!live().some((row) => row.id === id)) return false;
@@ -942,6 +990,31 @@ function balanceSnapshotRepo(working: MemoryState, check: () => void): BalanceSn
       return working.balanceSnapshots
         .filter((row) => row.accountId === accountId)
         .sort((a, b) => byText(`${b.asOf}|${b.id}`, `${a.asOf}|${a.id}`));
+    },
+    balanceAsOf: (viewer, accountId, date) => {
+      requireViewer(viewer);
+      check();
+      const account = working.accounts.find((row) => row.id === accountId);
+      if (account === undefined || !accountVisible(working, viewer, account)) return undefined;
+      // Mirror of `balance.ts` in packages/db: the same snapshot pick and window.
+      const snapshot = working.balanceSnapshots
+        .filter((row) => row.accountId === accountId && row.asOf <= date)
+        .sort((a, b) =>
+          byText(`${b.asOf}|${b.createdAt}|${b.id}`, `${a.asOf}|${a.createdAt}|${a.id}`),
+        )[0];
+      const after = snapshot?.asOf ?? "";
+      return (
+        (snapshot?.balanceCents ?? 0) +
+        working.transactions
+          .filter(
+            (t) =>
+              t.accountId === accountId &&
+              !working.deleted.has(t.id) &&
+              t.postedOn <= date &&
+              t.postedOn > after,
+          )
+          .reduce((sum, t) => sum + t.amountCents, 0)
+      );
     },
   };
 }
@@ -1426,7 +1499,10 @@ export function memoryUnitOfWork(
           find: institutionRepo(uow.state, check).find,
           list: institutionRepo(uow.state, check).list,
         },
-        balanceSnapshots: { listVisible: balanceSnapshotRepo(uow.state, check).listVisible },
+        balanceSnapshots: {
+          listVisible: balanceSnapshotRepo(uow.state, check).listVisible,
+          balanceAsOf: balanceSnapshotRepo(uow.state, check).balanceAsOf,
+        },
         transferGroups: { find: transferGroupRepo(uow.state, check).find },
         categoryGroups: {
           find: categoryGroupRepo(uow.state, check).find,
