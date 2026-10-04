@@ -317,8 +317,18 @@ function checkReferences(event: SeedEvent, known: SeedKnown, at: string): string
       }
       break;
     }
-    default:
+    case "institution.created":
+    case "account.created":
+    case "tag.created":
+    case "balance.recorded":
+    case "person.created":
+    case "household.settings":
+      // Only the shared reference rules apply to these.
       break;
+    default: {
+      const unchecked: never = event;
+      throw new Error(`Seed event not checked: ${JSON.stringify(unchecked)}`);
+    }
   }
   return problems;
 }

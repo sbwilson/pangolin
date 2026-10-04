@@ -1532,6 +1532,40 @@ describe("/api/auth/*", () => {
   });
 });
 
+describe("Cache-Control on every /api response", () => {
+  const routes: [string, string, number][] = [
+    ["person data", "/api/identity/me", 200],
+    ["person data", "/api/ledger/transactions", 200],
+    ["person data", "/api/accounts", 200],
+    ["person data", "/api/classify/payees", 200],
+    ["person data", "/api/identity/notices", 200],
+    ["an error (404)", "/api/ledger/transactions/missing", 404],
+    ["an unknown route (404)", "/api/nothing-here", 404],
+    ["better-auth's passthrough", "/api/auth/get-session", 200],
+  ];
+  it.each(routes)("%s: GET %s answers %i with no-store", async (_what, path, status) => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp(deps(db)).request(path, {
+      headers: { Origin: ORIGIN, Cookie: SESSION_COOKIE },
+    });
+    expect(res.status).toBe(status);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("answers a malformed write (400) with no-store", async () => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp(deps(db)).request("/api/ledger/transactions", {
+      method: "POST",
+      headers: { Origin: ORIGIN, Cookie: SESSION_COOKIE, "Content-Type": "application/json" },
+      body: "not json",
+    });
+    expect(res.status).toBe(400);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+});
+
 describe("errors", () => {
   it("answers a throwing route with 500 Internal, without its message", async () => {
     const logged: unknown[] = [];

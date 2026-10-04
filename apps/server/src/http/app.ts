@@ -759,9 +759,11 @@ export function createApp(deps: AppDeps): Hono<SessionEnv> {
     return c.json(result, result.ok ? 200 : 503);
   });
   // Every /api response is per viewer or a secret: never cached (AD-3).
+  // Set after `next()` on the response itself: Hono drops a header set before it when a handler
+  // (better-auth) returns a raw `Response`.
   app.use("/api/*", async (c, next) => {
-    c.header("Cache-Control", "no-store");
     await next();
+    c.res.headers.set("Cache-Control", "no-store");
   });
   app.use("/api/*", originCheck(deps.publicUrl));
   app.use("/api/*", sessionMiddleware(deps));
