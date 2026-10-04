@@ -22,6 +22,11 @@ const stateFile = join(stateDir, "account.json");
 const partnerFile = join(stateDir, "partner.json");
 /** The partner's signed-in browser state, saved when they register (see `savePartnerSession`). */
 export const partnerSessionFile = join(stateDir, "partner-session.json");
+/**
+ * The first person's signed-in browser state, saved by a spec that needs a session that later
+ * specs cannot invalidate (see routing.spec.ts); the partner's above ends when Alex resets them.
+ */
+export const firstSessionFile = join(stateDir, "first-session.json");
 
 /**
  * The first-boot setup link: from `E2E_SETUP_LINK_COMMAND` (e.g. `docker compose exec` in CI),

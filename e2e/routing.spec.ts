@@ -2,8 +2,45 @@
 // once, then dropped from the URL (and history) with a replace; a deep link opens its page
 // inside the shell.
 import type { Browser } from "@playwright/test";
-import { partnerSessionFile } from "./helpers/account.ts";
+import { firstSessionFile, loadAccount, signInWithPassword } from "./helpers/account.ts";
 import { expect, test, watchCsp } from "./helpers/csp.ts";
+
+let signedIn: Promise<string> | undefined;
+
+/**
+ * Signs Alex in once with password and TOTP and saves the session. The partner's session from
+ * registration is no use here: the recovery spec, which runs first, resets the partner's access.
+ * A TOTP code cannot be replayed within its 30 second step and an earlier spec may have just used
+ * this one, so a sign-in that does not land waits for the next step and tries once more.
+ */
+function alexSession(browser: Browser): Promise<string> {
+  signedIn ??= (async () => {
+    const account = loadAccount();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const context = await browser.newContext();
+      try {
+        const page = await context.newPage();
+        await signInWithPassword(page, account);
+        const landed = await page
+          .getByText("Signed in as Alex")
+          .waitFor({ timeout: 10_000 })
+          .then(
+            () => true,
+            () => false,
+          );
+        if (landed) {
+          await context.storageState({ path: firstSessionFile });
+          return firstSessionFile;
+        }
+      } finally {
+        await context.close();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 30_000 - (Date.now() % 30_000) + 500));
+    }
+    throw new Error("Alex could not sign in with password and TOTP (twice)");
+  })();
+  return signedIn;
+}
 
 test("a setup link's token is read once and then leaves the URL", async ({ page }) => {
   await page.goto("/setup");
@@ -28,7 +65,7 @@ test("a deep link to /ledger opens the ledger inside the shell", async ({
   browser,
   cspViolations,
 }) => {
-  const context = await browser.newContext({ storageState: partnerSessionFile });
+  const context = await browser.newContext({ storageState: await alexSession(browser) });
   try {
     await watchCsp(context, cspViolations);
     const page = await context.newPage();
@@ -39,7 +76,7 @@ test("a deep link to /ledger opens the ledger inside the shell", async ({
     await expect(nav.getByRole("link", { name: "Ledger" })).toHaveAttribute("aria-current", "page");
     await nav.getByRole("link", { name: "Home" }).click();
     await expect(page).toHaveURL((url) => url.pathname === "/");
-    await expect(page.getByText("Signed in as Sam")).toBeVisible();
+    await expect(page.getByText("Signed in as Alex")).toBeVisible();
   } finally {
     await context.close();
   }
@@ -49,7 +86,7 @@ test("a signed-in person opening a recovery link is asked to sign out first, and
   browser,
   cspViolations,
 }) => {
-  const context = await browser.newContext({ storageState: partnerSessionFile });
+  const context = await browser.newContext({ storageState: await alexSession(browser) });
   try {
     await watchCsp(context, cspViolations);
     const page = await context.newPage();
@@ -62,9 +99,9 @@ test("a signed-in person opening a recovery link is asked to sign out first, and
   }
 });
 
-/** Opens /ledger as the partner with `count` fake transactions. */
+/** Opens /ledger as Alex with `count` fake transactions. */
 async function openLedger(browser: Browser, cspViolations: string[], count: number) {
-  const context = await browser.newContext({ storageState: partnerSessionFile });
+  const context = await browser.newContext({ storageState: await alexSession(browser) });
   await watchCsp(context, cspViolations);
   const page = await context.newPage();
   const transactions = Array.from({ length: count }, (_, i) => ({
