@@ -5,13 +5,19 @@ import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
 import { createPerson } from "../identity/create-person.ts";
 import { listAudit } from "../system/list-audit.ts";
+import { defineReviewKind, raiseReviewItem, resolveReviewItem } from "../system/review-items.ts";
 import { systemViewer } from "../system-viewer.ts";
 import { manualClock, sequentialIds } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import { personViewer, type Viewer } from "../viewer.ts";
+import { write } from "../write.ts";
 import { createTransaction } from "./create-transaction.ts";
-import { FINGERPRINT_VERSION, fingerprintV1 } from "./fingerprint.ts";
+import { deleteTransaction } from "./delete-transaction.ts";
+import { fingerprintManual, MANUAL_FINGERPRINT_VERSION } from "./fingerprint.ts";
+import { getTransaction } from "./get-transaction.ts";
 import { listTransactions } from "./list-transactions.ts";
+import { transactionEntityRef } from "./needs-review.ts";
+import { updateTransaction } from "./update-transaction.ts";
 
 const clock = manualClock("2026-09-27T00:00:00Z");
 
@@ -142,27 +148,19 @@ describe("ledger.createTransaction and listTransactions", () => {
     expect(uow.state.transactions.map((row) => row.descriptionRaw)).toEqual(["Coffee"]);
   });
 
-  it("stamps a version 1 fingerprint and turns a duplicate line into a Conflict", () => {
+  it("stamps a version 2 manual fingerprint and lets identical lines coexist", () => {
     const { uow, as, a, shared, privateA } = setup();
-    const id = createTransaction(as(a), txn(shared));
-    const row = uow.state.transactions.find((r) => r.id === id);
-    expect(row?.fingerprintVersion).toBe(FINGERPRINT_VERSION);
-    expect(row?.fingerprint).toBe(
-      fingerprintV1({
-        accountId: shared,
-        postedOn: "2026-09-01",
-        amountCents: -450,
-        description: "Coffee",
-      }),
-    );
-    expect(() => createTransaction(as(a), txn(shared))).toThrow(
-      expect.objectContaining({ code: "Conflict" }),
-    );
-    expect(uow.state.transactions).toHaveLength(1);
+    const first = createTransaction(as(a), txn(shared));
+    const second = createTransaction(as(a), txn(shared));
+    const [one, two] = [first, second].map((id) => uow.state.transactions.find((r) => r.id === id));
+    expect(one?.fingerprintVersion).toBe(MANUAL_FINGERPRINT_VERSION);
+    expect(one?.fingerprint).toBe(fingerprintManual(shared, first));
+    expect(two?.fingerprint).toBe(fingerprintManual(shared, second));
+    expect(one?.fingerprint).not.toBe(two?.fingerprint);
     createTransaction(as(a), txn(shared, "Tea"));
-    createTransaction(as(a), { ...txn(shared), amountCents: -451 });
     createTransaction(as(a), txn(privateA));
     expect(uow.state.transactions).toHaveLength(4);
+    expect(listTransactions(as(a))).toHaveLength(4);
   });
 
   it("validates input", () => {
@@ -262,5 +260,240 @@ describe("audit scope", () => {
     uow.state.transactions[0] = { ...row, nameHiddenBy: a, nameHiddenUntil: "2026-09-28" };
     expect(listTransactions(as(b))[0]?.descriptionRaw).toBe("Hidden until 28 Sep 2026");
     expect(listTransactions(as(a))[0]?.descriptionRaw).toBe("Surprise");
+  });
+});
+
+const TXN_REVIEW = defineReviewKind({
+  kind: "ledger.test-review",
+  module: "ledger",
+  scope: "account",
+});
+
+function codeOf(fn: () => unknown): unknown {
+  try {
+    fn();
+  } catch (error) {
+    return (error as { code?: string }).code;
+  }
+  return undefined;
+}
+
+describe("ledger.updateTransaction", () => {
+  it("edits a manual row, its split amount and audits once with the account id", () => {
+    const { uow, as, a, shared } = setup();
+    const id = createTransaction(as(a), txn(shared));
+    const fingerprint = uow.state.transactions[0]?.fingerprint;
+    const audits = uow.state.audit.length;
+    const out = updateTransaction(as(a), {
+      id,
+      postedOn: "2026-09-05",
+      amountCents: -999,
+      description: "Latte",
+    });
+    expect(out).toMatchObject({
+      postedOn: "2026-09-05",
+      amountCents: -999,
+      descriptionRaw: "Latte",
+    });
+    expect(out.splits.map((s) => s.amountCents)).toEqual([-999]);
+    expect(uow.state.transactions[0]).toMatchObject({ fingerprint, status: "posted" });
+    expect(uow.state.audit).toHaveLength(audits + 1);
+    const entry = uow.state.audit.at(-1);
+    expect(entry).toMatchObject({ entity: "transaction", action: "update", accountId: shared });
+    expect(JSON.parse(entry?.before ?? "{}")).toMatchObject({ amountCents: -450 });
+    expect(JSON.parse(entry?.before ?? "{}").splits[0].amountCents).toBe(-450);
+    expect(JSON.parse(entry?.after ?? "{}").splits[0].amountCents).toBe(-999);
+  });
+
+  it("refuses date, amount and description on an imported row, but allows notes", () => {
+    const { uow, as, a, b, shared } = setup();
+    const id = createTransaction(as(a), txn(shared));
+    const i = uow.state.transactions.findIndex((r) => r.id === id);
+    const row = uow.state.transactions[i];
+    if (row === undefined) throw new Error("missing");
+    for (const link of [{ importId: "IMP1" }, { externalId: "EXT1" }]) {
+      uow.state.transactions[i] = { ...row, importId: null, externalId: null, ...link };
+      for (const change of [{ postedOn: "2026-09-02" }, { amountCents: 1 }, { description: "x" }]) {
+        expect(codeOf(() => updateTransaction(as(a), { id, ...change }))).toBe("Conflict");
+      }
+    }
+    const audits = uow.state.audit.length;
+    updateTransaction(as(a), { id, notes: "Reimbursed by work" });
+    expect(uow.state.audit).toHaveLength(audits + 1);
+    expect(getTransaction(as(b), { id }).notes).toBe("Reimbursed by work");
+    expect(updateTransaction(as(a), { id, notes: null }).notes).toBeNull();
+    expect(codeOf(() => updateTransaction(as(a), { id, notes: "x".repeat(1001) }))).toBe(
+      "Validation",
+    );
+    expect(codeOf(() => updateTransaction(as(a), { id, needsReview: true } as never))).toBe(
+      "Validation",
+    );
+  });
+
+  it("treats blank notes as clearing them, and writes nothing when there were none", () => {
+    const { uow, as, a, shared } = setup();
+    const id = createTransaction(as(a), txn(shared));
+    const audits = uow.state.audit.length;
+    for (const blank of ["   ", ""]) updateTransaction(as(a), { id, notes: blank });
+    expect(uow.state.audit).toHaveLength(audits);
+    updateTransaction(as(a), { id, notes: "something" });
+    for (const blank of ["   ", ""]) {
+      updateTransaction(as(a), { id, notes: "again" });
+      expect(updateTransaction(as(a), { id, notes: blank }).notes).toBeNull();
+      expect(uow.state.transactions[0]?.notes).toBeNull();
+    }
+  });
+
+  it("guards a name hidden from the viewer, and never exposes or overwrites it", () => {
+    const { uow, as, a, b, shared } = setup();
+    const id = createTransaction(as(a), txn(shared, "Surprise"));
+    const row = uow.state.transactions[0];
+    if (row === undefined) throw new Error("missing");
+    uow.state.transactions[0] = { ...row, nameHiddenBy: a, nameHiddenUntil: "2999-03-12" };
+    expect(codeOf(() => updateTransaction(as(b), { id, description: "Peek" }))).toBe("Conflict");
+    const audits = uow.state.audit.length;
+    const out = updateTransaction(as(b), { id, notes: "from B" });
+    expect(uow.state.transactions[0]?.descriptionRaw).toBe("Surprise");
+    expect(out.descriptionRaw).toBe("Hidden until 12 Mar 2999");
+    const entry = uow.state.audit.slice(audits)[0];
+    expect(entry?.before).not.toContain("Surprise");
+    expect(entry?.after).not.toContain("Surprise");
+    expect(JSON.stringify(listAudit(as(b)))).not.toContain("Surprise");
+  });
+
+  it("refuses an amount change on a multi-split transaction", () => {
+    const { uow, as, a, shared } = setup();
+    const id = createTransaction(as(a), txn(shared));
+    const extra = { ...(uow.state.splits[0] as never as object), id: "SPX" } as never;
+    uow.state.splits.push(extra);
+    expect(codeOf(() => updateTransaction(as(a), { id, amountCents: -1 }))).toBe("Conflict");
+    expect(updateTransaction(as(a), { id, description: "ok" }).descriptionRaw).toBe("ok");
+  });
+
+  it("does not write or audit a no-op edit", () => {
+    const { uow, as, a, shared } = setup();
+    const id = createTransaction(as(a), txn(shared));
+    const audits = uow.state.audit.length;
+    const before = uow.state.transactions[0];
+    updateTransaction(as(a), {
+      id,
+      postedOn: "2026-09-01",
+      amountCents: -450,
+      description: "Coffee",
+    });
+    updateTransaction(as(a), { id });
+    expect(uow.state.audit).toHaveLength(audits);
+    expect(uow.state.transactions[0]).toBe(before);
+  });
+
+  it("answers NotFound for a partner's private row, a missing row and a deleted row", () => {
+    const { as, a, b, privateA, shared } = setup();
+    const priv = createTransaction(as(a), txn(privateA));
+    const gone = createTransaction(as(a), txn(shared));
+    deleteTransaction(as(a), { id: gone });
+    for (const id of [priv, gone, "nope"]) {
+      expect(codeOf(() => updateTransaction(as(b), { id, notes: "x" }))).toBe("NotFound");
+      expect(codeOf(() => getTransaction(as(b), { id }))).toBe("NotFound");
+    }
+    expect(codeOf(() => deleteTransaction(as(b), { id: priv }))).toBe("NotFound");
+    expect(getTransaction(as(a), { id: priv }).descriptionRaw).toBe("Coffee");
+  });
+});
+
+describe("ledger.deleteTransaction", () => {
+  it("soft-deletes, resolves open review items, and audits with the account id", () => {
+    const { uow, as, a, shared } = setup();
+    const id = createTransaction(as(a), txn(shared));
+    const ctx = as(a);
+    write(ctx, (tx, audit) =>
+      raiseReviewItem(tx, audit, ctx, {
+        kind: TXN_REVIEW,
+        accountId: shared,
+        entityRef: transactionEntityRef(id),
+        dedupeKey: `t:${id}`,
+      }),
+    );
+    expect(uow.state.transactions[0]?.needsReview).toBe(true);
+    const audits = uow.state.audit.length;
+    deleteTransaction(as(a), { id });
+    expect(listTransactions(as(a))).toEqual([]);
+    expect(uow.state.reviewItems[0]).toMatchObject({ resolution: "transaction deleted" });
+    expect(uow.state.reviewItems[0]?.resolvedAt).not.toBeNull();
+    expect(uow.state.transactions[0]?.needsReview).toBe(false);
+    const rows = uow.state.audit.slice(audits);
+    expect(rows.map((r) => `${r.entity}:${r.action}`).sort()).toEqual([
+      "review_item:resolve",
+      "transaction:delete",
+    ]);
+    const del = rows.find((r) => r.entity === "transaction");
+    expect(del).toMatchObject({ accountId: shared, entityId: id });
+    expect(del?.before).not.toBeNull();
+    expect(del?.after).not.toBeNull();
+  });
+
+  it("needs recent authentication and changes nothing without it", () => {
+    const { uow, a, as, shared } = setup();
+    const id = createTransaction(as(a), txn(shared));
+    const stale: UseCaseContext = {
+      viewer: personViewer(a, clock.now().subtract({ minutes: 10 })),
+      clock,
+      newId: sequentialIds(),
+      uow,
+    };
+    const audits = uow.state.audit.length;
+    expect(codeOf(() => deleteTransaction(stale, { id }))).toBe("ReauthRequired");
+    expect(uow.state.audit).toHaveLength(audits);
+    expect(listTransactions(as(a))).toHaveLength(1);
+  });
+
+  it("answers NotFound the second time", () => {
+    const { as, a, shared } = setup();
+    const id = createTransaction(as(a), txn(shared));
+    deleteTransaction(as(a), { id });
+    expect(codeOf(() => deleteTransaction(as(a), { id }))).toBe("NotFound");
+  });
+
+  it("keeps the deleted row's key, so the same key is still blocked", () => {
+    const { uow, as, a, shared } = setup();
+    const id = createTransaction(as(a), txn(shared));
+    const row = uow.state.transactions[0];
+    if (row === undefined) throw new Error("missing");
+    deleteTransaction(as(a), { id });
+    expect(() =>
+      uow.transaction((tx) => tx.transactions.insert({ ...row, id: "T2" as never }, [])),
+    ).toThrow(/UNIQUE/);
+  });
+});
+
+describe("transaction.needs_review", () => {
+  it("is true while an open review item names the transaction, and false once resolved", () => {
+    const { uow, as, a, shared } = setup();
+    const id = createTransaction(as(a), txn(shared));
+    const other = createTransaction(as(a), txn(shared, "Other"));
+    const ctx = as(a);
+    const raise = (key: string, ref: string) =>
+      write(ctx, (tx, audit) =>
+        raiseReviewItem(tx, audit, ctx, {
+          kind: TXN_REVIEW,
+          accountId: shared,
+          entityRef: ref,
+          dedupeKey: key,
+        }),
+      );
+    const flag = (txnId: string) => getTransaction(ctx, { id: txnId }).needsReview;
+    expect(flag(id)).toBe(false);
+    raise("k1", transactionEntityRef(id));
+    raise("k2", transactionEntityRef(id));
+    expect(flag(id)).toBe(true);
+    expect(flag(other)).toBe(false);
+    write(ctx, (tx, audit) =>
+      resolveReviewItem(tx, audit, ctx, { dedupeKey: "k1", resolution: "ok" }),
+    );
+    expect(flag(id)).toBe(true);
+    write(ctx, (tx, audit) =>
+      resolveReviewItem(tx, audit, ctx, { dedupeKey: "k2", resolution: "ok" }),
+    );
+    expect(flag(id)).toBe(false);
+    expect(uow.state.transactions.find((r) => r.id === id)?.needsReview).toBe(false);
   });
 });

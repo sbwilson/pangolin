@@ -5,7 +5,8 @@ import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import type { SplitRow, TransactionRow } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
-import { FINGERPRINT_VERSION, fingerprintV1 } from "./fingerprint.ts";
+import { fingerprintManual, MANUAL_FINGERPRINT_VERSION } from "./fingerprint.ts";
+import "./needs-review.ts";
 
 export const createTransactionInput = z
   .object({
@@ -33,8 +34,9 @@ export type CreateTransactionInput = z.input<typeof createTransactionInput>;
  * `ledger.createTransaction`: adds a posted transaction with one split for the whole amount to
  * an account the viewer can see, audited as one `create` of `transaction` with the account's
  * ID. An account that does not exist and another person's private account both answer
- * `NotFound`. A line identical to an existing one in the account (same date, amount and
- * description) is a `Conflict`. The split's beneficiary is the owner of a private account, `shared` otherwise.
+ * `NotFound`. The fingerprint is `fingerprintManual` (version 2): it comes from the new ID, so
+ * identical manual lines coexist. The split's beneficiary is the owner of a private account,
+ * `shared` otherwise.
  * Returns the new transaction's server-minted ID.
  */
 export function createTransaction(
@@ -52,8 +54,9 @@ export function createTransaction(
       beneficiary = owner.personId;
     }
     const at = formatInstant(ctx.clock.now());
+    const id = ctx.newId<"Transaction">();
     const row: TransactionRow = {
-      id: ctx.newId<"Transaction">(),
+      id,
       accountId: account.id,
       postedOn: parsed.postedOn,
       amountCents: parsed.amountCents,
@@ -61,13 +64,8 @@ export function createTransaction(
       payeeId: null,
       status: "posted",
       externalId: null,
-      fingerprint: fingerprintV1({
-        accountId: account.id,
-        postedOn: parsed.postedOn,
-        amountCents: parsed.amountCents,
-        description: parsed.description,
-      }),
-      fingerprintVersion: FINGERPRINT_VERSION,
+      fingerprint: fingerprintManual(account.id, id),
+      fingerprintVersion: MANUAL_FINGERPRINT_VERSION,
       importId: null,
       performedBy: null,
       transferGroupId: null,
@@ -93,15 +91,7 @@ export function createTransaction(
       createdAt: at,
       updatedAt: at,
     };
-    try {
-      tx.transactions.insert(row, [split]);
-    } catch (error) {
-      // Both adapters name the fingerprint index in their unique-violation message.
-      if (error instanceof Error && /UNIQUE.*transaction\.fingerprint/.test(error.message)) {
-        throw new AppError("Conflict", "This transaction already exists in the account");
-      }
-      throw error;
-    }
+    tx.transactions.insert(row, [split]);
     audit({
       entity: "transaction",
       entityId: row.id,

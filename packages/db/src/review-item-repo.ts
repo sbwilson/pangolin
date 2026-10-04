@@ -1,5 +1,5 @@
 import type { ReviewItemRepo, ReviewItemRow, Viewer } from "@pangolin/app";
-import { and, asc, eq, isNull, or, type SQL, sql } from "drizzle-orm";
+import { and, asc, count, eq, isNull, or, type SQL, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { visibleAccountId } from "./privacy.ts";
 import { reviewItem } from "./schema/review-item.ts";
@@ -57,6 +57,36 @@ export function createReviewItemRepo(orm: Orm, check: () => void): ReviewItemRep
         .returning()
         .get() as ReviewItemRow;
       return { before, after };
+    },
+
+    countOpenForEntity: (entityRef) => {
+      check();
+      return (
+        orm
+          .select({ n: count() })
+          .from(reviewItem)
+          .where(and(eq(reviewItem.entityRef, entityRef), OPEN))
+          .get()?.n ?? 0
+      );
+    },
+
+    resolveOpenForEntity: (entityRef, resolvedAt, resolution) => {
+      check();
+      const open = orm
+        .select()
+        .from(reviewItem)
+        .where(and(eq(reviewItem.entityRef, entityRef), OPEN))
+        .orderBy(asc(reviewItem.createdAt), asc(reviewItem.id))
+        .all() as ReviewItemRow[];
+      return open.map((before) => {
+        const after = orm
+          .update(reviewItem)
+          .set({ resolvedAt, resolution })
+          .where(eq(reviewItem.id, before.id))
+          .returning()
+          .get() as ReviewItemRow;
+        return { before, after };
+      });
     },
 
     listOpenFor: (viewer) => {

@@ -1,8 +1,11 @@
 // The transaction fingerprint (dedupe key). Version 1 hashes account, date, amount and the
 // description with SHA-256, in plain TypeScript so `app` stays free of runtime-specific APIs.
 
-/** The version `createTransaction` stamps; stored beside the hash so a later scheme can coexist. */
+/** The content-hash scheme (`fingerprintV1`); stored beside the hash so schemes can coexist. */
 export const FINGERPRINT_VERSION = 1;
+
+/** The version `createTransaction` stamps on a manual line (`fingerprintManual`). */
+export const MANUAL_FINGERPRINT_VERSION = 2;
 
 const K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -111,4 +114,14 @@ export function fingerprintV1(line: {
   readonly description: string;
 }): string {
   return sha256Hex(`${line.accountId}\n${line.postedOn}\n${line.amountCents}\n${line.description}`);
+}
+
+/**
+ * Version 2 fingerprint, for manual entries: SHA-256 of `manual`, the account ID and the
+ * server-minted transaction ID, joined by newlines. The transaction ID is unique, so two
+ * identical manual lines never collide, and it never matches a content-hash import key. It does
+ * not depend on the line's content, so editing the line leaves it unchanged.
+ */
+export function fingerprintManual(accountId: string, transactionId: string): string {
+  return sha256Hex(`manual\n${accountId}\n${transactionId}`);
 }

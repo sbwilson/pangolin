@@ -211,3 +211,12 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-classify-module-plan.md`
   summary: Tidy classify routes and test parity: nest aliases under a distinct prefix, one no-store middleware for /api/classify, GET by id for groups, categories and tax categories, memory-mirror payee update order and activity date CHECK, HTTP tests for partner by-id on aliases and activities.
   evidence: apps/server/src/http/app.ts classify block and memory-uow.ts (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-transactions-plan.md`
+  summary: Register the transaction needs_review listener explicitly from a composition root (and assert it at startup) instead of by side-effect import, before the import epic raises `transaction:` review items.
+  evidence: ledger/needs-review.ts registers on import from create-transaction.ts and update-transaction.ts (review pass 1, medium).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-transactions-plan.md`
+  summary: Decide how deleting one leg of a transfer group behaves (refuse, delete both, or orphan) when story 2.7 adds transfer groups.
+  evidence: deleteTransaction ignores transferGroupId (review pass 1, medium).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-transactions-plan.md`
+  summary: Tidy ledger writes: idempotency or a warning for accidental double POST of a manual line, a splits snapshot in the create audit row, delete audit read back from the row, shared field schemas for create and update, and a signal when needs_review syncs a deleted or missing row.
+  evidence: create-transaction.ts, update-transaction.ts, delete-transaction.ts, ledger/needs-review.ts (review pass 1, low).

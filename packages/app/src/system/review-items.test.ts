@@ -13,7 +13,9 @@ import {
   listReviewItems,
   type RaiseReviewItemInput,
   raiseReviewItem,
+  registerEntitySync,
   resolveReviewItem,
+  resolveReviewItemsForEntity,
 } from "./review-items.ts";
 
 const personA = idSchema("Person").parse("01J0000000000000000000000A");
@@ -163,6 +165,67 @@ describe("raiseReviewItem / resolveReviewItem", () => {
     expect(() => raise(ctx, { kind: household, entityRef: "", dedupeKey: "x" })).toThrow(AppError);
     expect(() => resolve(ctx, "x", "")).toThrow(AppError);
     expect(uow.state.reviewItems).toEqual([]);
+  });
+});
+
+describe("entity sync", () => {
+  const item = (entityRef: string, dedupeKey: string): RaiseReviewItemInput => ({
+    kind: household,
+    entityRef,
+    dedupeKey,
+  });
+
+  it("refuses an empty prefix", () => {
+    expect(() => registerEntitySync("", () => {})).toThrow(TypeError);
+  });
+
+  it("replaces the listener of a prefix and fires every matching prefix", () => {
+    const { ctx } = setup();
+    const calls: string[] = [];
+    registerEntitySync("syncr:", () => calls.push("old"));
+    registerEntitySync("syncr:", () => calls.push("new"));
+    registerEntitySync("sync", () => calls.push("short"));
+    raise(ctx, item("syncr:1", "sr1"));
+    expect(calls.sort()).toEqual(["new", "short"]);
+    calls.length = 0;
+    resolve(ctx, "sr1");
+    expect(calls.sort()).toEqual(["new", "short"]);
+    calls.length = 0;
+    raise(ctx, item("other:1", "sr2"));
+    expect(calls).toEqual([]);
+  });
+
+  it("does not sync when a raise hits an open dedupe key", () => {
+    const { ctx } = setup();
+    const calls: string[] = [];
+    registerEntitySync("syncd:", (_tx, _ctx, ref) => calls.push(ref));
+    raise(ctx, item("syncd:1", "sd1"));
+    raise(ctx, item("syncd:1", "sd1"));
+    expect(calls).toEqual(["syncd:1"]);
+  });
+
+  it("resolves every open item for an entity once, syncing once", () => {
+    const { ctx, uow } = setup();
+    const calls: string[] = [];
+    registerEntitySync("synce:", (_tx, _ctx, ref) => calls.push(ref));
+    raise(ctx, item("synce:1", "se1"));
+    raise(ctx, item("synce:1", "se2"));
+    raise(ctx, item("synce:2", "se3"));
+    calls.length = 0;
+    const resolved = write(ctx, (tx, audit) =>
+      resolveReviewItemsForEntity(tx, audit, ctx, { entityRef: "synce:1", resolution: "gone" }),
+    );
+    expect(resolved).toBe(2);
+    expect(calls).toEqual(["synce:1"]);
+    expect(uow.state.reviewItems.filter((r) => r.resolution === "gone")).toHaveLength(2);
+    expect(uow.state.reviewItems.find((r) => r.dedupeKey === "se3")?.resolvedAt).toBeNull();
+    expect(uow.state.audit.filter((r) => r.action === "resolve")).toHaveLength(2);
+    calls.length = 0;
+    const again = write(ctx, (tx, audit) =>
+      resolveReviewItemsForEntity(tx, audit, ctx, { entityRef: "synce:1", resolution: "gone" }),
+    );
+    expect(again).toBe(0);
+    expect(calls).toEqual([]);
   });
 });
 
