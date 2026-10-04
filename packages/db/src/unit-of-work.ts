@@ -1,6 +1,14 @@
-import type { AuditRow, HouseholdSettingsRow, ReadRepos, TxRepos, UnitOfWork } from "@pangolin/app";
-import { eq } from "drizzle-orm";
+import type {
+  AuditRow,
+  AuditView,
+  HouseholdSettingsRow,
+  ReadRepos,
+  TxRepos,
+  UnitOfWork,
+} from "@pangolin/app";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { type BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
+import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { createBackupSnapshotRepo } from "./backup-snapshot-repo.ts";
 import { createBackupVerificationRepo } from "./backup-verification-repo.ts";
 import {
@@ -30,6 +38,7 @@ import {
   createTransferGroupRepo,
 } from "./ledger-repos.ts";
 import type { Db } from "./open.ts";
+import { auditHiddenUntil, visibleAudit } from "./privacy.ts";
 import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
 import { auditLog } from "./schema/audit-log.ts";
@@ -99,6 +108,34 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
       append: (row: AuditRow) => {
         guard(scope);
         orm.insert(auditLog).values(row).run();
+      },
+      listVisible: (viewer, today) => {
+        const visible = visibleAudit(viewer);
+        const hidden = auditHiddenUntil(viewer, today);
+        guard(scope);
+        // While a name is hidden the JSON loses it here; `redact` writes the placeholder back.
+        const scrub = (json: SQLiteColumn) =>
+          sql<
+            string | null
+          >`(CASE WHEN ${hidden} IS NOT NULL AND ${json} IS NOT NULL THEN json_remove(${json}, '$.descriptionRaw', '$.payeeId') ELSE ${json} END)`;
+        return orm
+          .select({
+            id: auditLog.id,
+            at: auditLog.at,
+            actor: auditLog.actor,
+            entity: auditLog.entity,
+            entityId: auditLog.entityId,
+            accountId: auditLog.accountId,
+            personId: auditLog.personId,
+            action: auditLog.action,
+            before: scrub(auditLog.before),
+            after: scrub(auditLog.after),
+            hiddenUntil: sql<string | null>`${hidden}`,
+          })
+          .from(auditLog)
+          .where(and(visible))
+          .orderBy(asc(auditLog.at), asc(auditLog.id))
+          .all() as AuditView[];
       },
     },
     jobs: createJobRepo(orm, () => guard(scope)),
@@ -176,6 +213,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               find: repos.jobs.find,
               firstCreatedAt: repos.jobs.firstCreatedAt,
             },
+            audit: { listVisible: repos.audit.listVisible },
             reviewItems: { listOpenFor: repos.reviewItems.listOpenFor },
             accounts: {
               findVisible: repos.accounts.findVisible,

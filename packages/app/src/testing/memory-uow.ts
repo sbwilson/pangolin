@@ -11,6 +11,7 @@ import type {
   ActivityRepo,
   ActivityRow,
   AuditRow,
+  AuditView,
   BackupSnapshotRepo,
   BackupSnapshotRow,
   BackupVerificationRepo,
@@ -58,6 +59,7 @@ import type {
   UnitOfWork,
   UserEnrolment,
   UserRepo,
+  VisibleTransaction,
 } from "../ports/unit-of-work.ts";
 import type { Viewer } from "../viewer.ts";
 
@@ -575,9 +577,13 @@ function credentialRepo(working: MemoryState, check: () => void): CredentialRepo
   };
 }
 
-function visible(viewer: Viewer, row: ReviewItemRow): boolean {
+function visible(working: MemoryState, viewer: Viewer, row: ReviewItemRow): boolean {
   if (viewer.kind === "system") return true;
-  return row.accountId === null && (row.personId === null || row.personId === viewer.personId);
+  const account =
+    row.accountId === null ? undefined : working.accounts.find((a) => a.id === row.accountId);
+  const accountOk =
+    row.accountId === null || (account !== undefined && accountVisible(working, viewer, account));
+  return accountOk && (row.personId === null || row.personId === viewer.personId);
 }
 
 function reviewItemRepo(working: MemoryState, check: () => void): ReviewItemRepo {
@@ -604,13 +610,14 @@ function reviewItemRepo(working: MemoryState, check: () => void): ReviewItemRepo
       if (viewer === undefined || viewer === null) throw new TypeError("a viewer is required");
       check();
       return working.reviewItems
-        .filter((row) => row.resolvedAt === null && visible(viewer, row))
+        .filter((row) => row.resolvedAt === null && visible(working, viewer, row))
         .sort((a, b) => (`${a.createdAt}|${a.id}` < `${b.createdAt}|${b.id}` ? -1 : 1));
     },
   };
 }
 
 function accountVisible(working: MemoryState, viewer: Viewer, account: AccountRow): boolean {
+  if (working.deleted.has(account.id)) return false;
   if (viewer.kind === "system" || !account.isPrivate) return true;
   return working.accountOwners.some(
     (owner) => owner.accountId === account.id && owner.personId === viewer.personId,
@@ -651,13 +658,87 @@ function accountRepo(working: MemoryState, check: () => void): AccountRepo {
   };
 }
 
+/** Mirror of the SQL `hidden` expression of `visibleTxn` (AD-4). */
+function nameHiddenFor(
+  working: MemoryState,
+  viewer: Viewer,
+  row: Pick<TransactionRow, "accountId" | "nameHiddenUntil" | "nameHiddenBy">,
+  today: string,
+): boolean {
+  if (viewer.kind === "system") return false;
+  if (row.nameHiddenUntil === null || row.nameHiddenUntil.slice(0, 10) <= today) return false;
+  if (row.nameHiddenBy === viewer.personId) return false;
+  const account = working.accounts.find((a) => a.id === row.accountId);
+  return account !== undefined && !account.isPrivate;
+}
+
+/** Mirror of the SQL transfer label: the counterpart sits in another person's private account. */
+function transferLabelFor(
+  working: MemoryState,
+  viewer: Viewer,
+  row: TransactionRow,
+): string | null {
+  if (viewer.kind === "system" || row.transferGroupId === null) return null;
+  const counterparts = working.transactions
+    .filter(
+      (t) =>
+        t.transferGroupId === row.transferGroupId && t.id !== row.id && !working.deleted.has(t.id),
+    )
+    .map((t) => working.accounts.find((a) => a.id === t.accountId))
+    .filter(
+      (a): a is AccountRow =>
+        a !== undefined &&
+        !working.deleted.has(a.id) &&
+        a.isPrivate &&
+        !accountVisible(working, viewer, a),
+    );
+  for (const account of counterparts) {
+    const owner = working.accountOwners
+      .filter((o) => o.accountId === account.id)
+      .sort((x, y) => byText(`${x.createdAt}|${x.personId}`, `${y.createdAt}|${y.personId}`))[0];
+    const name = working.people.find((p) => p.id === owner?.personId)?.displayName;
+    if (name !== undefined)
+      return `${row.amountCents >= 0 ? "Transfer from" : "Transfer to"} ${name}`;
+  }
+  return null;
+}
+
+function requireDay(today: string, what: string): void {
+  if (typeof today !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(today)) {
+    throw new TypeError(`${what}: today must be a YYYY-MM-DD string`);
+  }
+}
+
 function transactionRepo(working: MemoryState, check: () => void): TransactionRepo {
-  const withSplits = (row: TransactionRow) => ({
+  const withSplits = (row: VisibleTransaction): VisibleTransaction => ({
     ...row,
     splits: working.splits
       .filter((split) => split.transactionId === row.id)
       .sort((a, b) => (a.id < b.id ? -1 : 1)),
   });
+  const view = (viewer: Viewer, row: TransactionRow, today: string): VisibleTransaction => {
+    const hidden = nameHiddenFor(working, viewer, row, today);
+    const payee =
+      row.payeeId === null || hidden
+        ? undefined
+        : working.payees.find(
+            (p) =>
+              p.id === row.payeeId &&
+              (viewer.kind === "system" ||
+                p.scopePersonId === null ||
+                p.scopePersonId === viewer.personId),
+          );
+    return withSplits({
+      ...row,
+      descriptionRaw: hidden ? null : row.descriptionRaw,
+      payeeId: payee === undefined ? null : row.payeeId,
+      payeeName: payee?.name ?? null,
+      logoAttachmentId: payee?.logoAttachmentId ?? null,
+      nameHidden: hidden,
+      transferLabel: transferLabelFor(working, viewer, row),
+      splits: [],
+    });
+  };
   const visibleRows = (viewer: Viewer) => {
     const visibleIds = new Set(
       working.accounts.filter((a) => accountVisible(working, viewer, a)).map((a) => a.id),
@@ -695,11 +776,12 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       working.transactions.push(row);
       working.splits.push(...splits);
     },
-    findVisible: (viewer, id) => {
+    findVisible: (viewer, id, today) => {
       requireViewer(viewer);
+      requireDay(today, "visibleTxn");
       check();
       const row = visibleRows(viewer).find((r) => r.id === id);
-      return row === undefined ? undefined : withSplits(row);
+      return row === undefined ? undefined : view(viewer, row, today);
     },
     softDelete: (viewer, id, at) => {
       requireViewer(viewer);
@@ -710,12 +792,90 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       working.transactions[working.transactions.indexOf(row)] = { ...row, updatedAt: at };
       return true;
     },
-    listVisible: (viewer) => {
+    listVisible: (viewer, today) => {
       requireViewer(viewer);
+      requireDay(today, "visibleTxn");
       check();
       return visibleRows(viewer)
         .sort((a, b) => byText(`${b.postedOn}|${b.id}`, `${a.postedOn}|${a.id}`))
-        .map(withSplits);
+        .map((row) => view(viewer, row, today));
+    },
+  };
+}
+
+/** Mirror of `visibleAudit` and `auditHiddenUntil` (AD-3, AD-4). */
+function auditVisible(working: MemoryState, viewer: Viewer, row: AuditRow): boolean {
+  if (viewer.kind === "system") return true;
+  const account =
+    row.accountId === null ? undefined : working.accounts.find((a) => a.id === row.accountId);
+  const accountOk =
+    row.accountId === null || (account !== undefined && accountVisible(working, viewer, account));
+  return accountOk && (row.personId === null || row.personId === viewer.personId);
+}
+
+function auditHiddenUntil(
+  working: MemoryState,
+  viewer: Viewer,
+  row: AuditRow,
+  today: string,
+): string | null {
+  if (viewer.kind === "system" || row.entity !== "transaction") return null;
+  const hide = (accountId: string | null, until: unknown, by: unknown): string | null => {
+    if (typeof until !== "string" || until.slice(0, 10) <= today) return null;
+    if (by === viewer.personId) return null;
+    const account = working.accounts.find((a) => a.id === accountId);
+    return account !== undefined && !account.isPrivate ? until : null;
+  };
+  const candidates: (string | null)[] = [];
+  const txn = working.transactions.find((t) => t.id === row.entityId);
+  candidates.push(
+    txn === undefined ? null : hide(txn.accountId, txn.nameHiddenUntil, txn.nameHiddenBy),
+  );
+  for (const json of [row.before, row.after]) {
+    const state = json === null ? null : (JSON.parse(json) as Record<string, unknown> | null);
+    candidates.push(
+      state === null || typeof state !== "object"
+        ? null
+        : hide(row.accountId, state.nameHiddenUntil, state.nameHiddenBy),
+    );
+  }
+  const found = candidates.filter((c): c is string => c !== null);
+  return found.length === 0 ? null : found.reduce((a, b) => (a >= b ? a : b));
+}
+
+function auditRepo(working: MemoryState, check: () => void, failAudit: () => boolean) {
+  const scrub = (json: string | null, hidden: boolean): string | null => {
+    if (json === null || !hidden) return json;
+    const {
+      descriptionRaw: _d,
+      payeeId: _p,
+      ...rest
+    } = JSON.parse(json) as Record<string, unknown>;
+    return JSON.stringify(rest);
+  };
+  return {
+    append: (row: AuditRow) => {
+      check();
+      if (failAudit()) throw new Error("audit append failed");
+      working.audit.push(row);
+    },
+    listVisible: (viewer: Viewer, today: string): AuditView[] => {
+      requireViewer(viewer);
+      requireDay(today, "auditHiddenUntil");
+      check();
+      return working.audit
+        .filter((row) => auditVisible(working, viewer, row))
+        .sort((a, b) => byText(`${a.at}|${a.id}`, `${b.at}|${b.id}`))
+        .map((row) => {
+          const hiddenUntil = auditHiddenUntil(working, viewer, row, today);
+          const hidden = hiddenUntil !== null;
+          return {
+            ...row,
+            before: scrub(row.before, hidden),
+            after: scrub(row.after, hidden),
+            hiddenUntil,
+          };
+        });
     },
   };
 }
@@ -1155,13 +1315,7 @@ export function memoryUnitOfWork(
         recoveryCodes: recoveryCodeRepo(working, check),
         reEnrolmentLinks: reEnrolmentLinkRepo(working, check),
         credentials: credentialRepo(working, check),
-        audit: {
-          append: (row) => {
-            check();
-            if (uow.failAudit) throw new Error("audit append failed");
-            working.audit.push(row);
-          },
-        },
+        audit: auditRepo(working, check, () => uow.failAudit),
         jobs: jobRepo(working, check),
         reviewItems: reviewItemRepo(working, check),
         accounts: accountRepo(working, check),
@@ -1256,6 +1410,7 @@ export function memoryUnitOfWork(
           find: jobRepo(uow.state, check).find,
           firstCreatedAt: jobRepo(uow.state, check).firstCreatedAt,
         },
+        audit: { listVisible: auditRepo(uow.state, check, () => false).listVisible },
         reviewItems: { listOpenFor: reviewItemRepo(uow.state, check).listOpenFor },
         accounts: {
           findVisible: accountRepo(uow.state, check).findVisible,

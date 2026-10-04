@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { parseInput } from "../errors.ts";
 import type { ReviewItemRow, TxRepos } from "../ports/unit-of-work.ts";
+import { redact } from "../redact.ts";
 import type { Audit } from "../write.ts";
 
 /** Who an item's kind is scoped to: an account (AD-3), one person, or the whole household. */
@@ -187,7 +188,7 @@ export function resolveReviewItem(
   return true;
 }
 
-/** An open review item as a use case returns it. Redaction (AD-4) arrives with epic 2. */
+/** An open review item as a use case returns it.  */
 export interface ReviewItem {
   readonly id: Id<"ReviewItem">;
   readonly kind: string;
@@ -200,20 +201,26 @@ export interface ReviewItem {
 export const listReviewItemsInput = z.object({}).strict();
 export type ListReviewItemsInput = z.input<typeof listReviewItemsInput>;
 
-/** `system.listReviewItems`: the open items the viewer may see, oldest first (AD-17). */
+/**
+ * `system.listReviewItems`: the open items the viewer may see (those of an account they cannot
+ * see are not listed), oldest first (AD-17), redacted (AD-4).
+ */
 export function listReviewItems(
   ctx: UseCaseContext,
   input: ListReviewItemsInput = {},
 ): ReviewItem[] {
   parseInput(listReviewItemsInput, input);
-  return ctx.uow
+  const items = ctx.uow
     .read((repos) => repos.reviewItems.listOpenFor(ctx.viewer))
-    .map((row) => ({
-      id: row.id,
-      kind: row.kind,
-      accountId: row.accountId,
-      personId: row.personId,
-      entityRef: row.entityRef,
-      createdAt: row.createdAt,
-    }));
+    .map(
+      (row): ReviewItem => ({
+        id: row.id,
+        kind: row.kind,
+        accountId: row.accountId,
+        personId: row.personId,
+        entityRef: row.entityRef,
+        createdAt: row.createdAt,
+      }),
+    );
+  return redact(ctx.viewer, items);
 }

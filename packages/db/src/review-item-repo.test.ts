@@ -51,10 +51,10 @@ beforeEach(() => {
   personA = createPerson(ctx, { displayName: "A", colour: "#000000" });
   personB = createPerson(ctx, { displayName: "B", colour: "#ffffff" });
   acc1 = createAccount(ctx, {
-    name: "Joint",
+    name: "A private",
     type: "transaction",
     currency: "AUD",
-    isPrivate: false,
+    isPrivate: true,
     owners: [{ personId: personA, shareBp: 10000 }],
   });
 });
@@ -101,9 +101,29 @@ describe("review items on SQLite", () => {
     raise({ kind: perAccount, entityRef: "acct:1", dedupeKey: "acc", accountId: acc1 });
     const refs = (viewer: UseCaseContext["viewer"]) =>
       listReviewItems({ ...ctx, viewer }).map((row) => row.entityRef);
-    expect(refs(personViewer(personA, now))).toEqual(["goal:a", "thing:h"]);
+    expect(refs(personViewer(personA, now))).toEqual(["goal:a", "thing:h", "acct:1"]);
     expect(refs(personViewer(personB, now))).toEqual(["goal:b", "thing:h"]);
     expect(refs(ctx.viewer)).toEqual(["goal:a", "goal:b", "thing:h", "acct:1"]);
+  });
+
+  it("keeps an item on a public account visible to both people", () => {
+    const pub = createAccount(ctx, {
+      name: "Joint",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [
+        { personId: personA, shareBp: 5000 },
+        { personId: personB, shareBp: 5000 },
+      ],
+    });
+    raise({ kind: perAccount, entityRef: "acct:pub", dedupeKey: "pub", accountId: pub });
+    for (const person of [personA, personB]) {
+      const refs = listReviewItems({ ...ctx, viewer: personViewer(person, now) }).map(
+        (row) => row.entityRef,
+      );
+      expect(refs).toEqual(["acct:pub"]);
+    }
   });
 
   it("throws when listing without a viewer", () => {

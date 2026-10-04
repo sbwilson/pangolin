@@ -37,11 +37,18 @@ function setup() {
     name: "Joint",
     type: "transaction",
     currency: "AUD",
-    isPrivate: false,
+    isPrivate: true,
     institutionId: null,
     openedOn: null,
     closedOn: null,
     isSavings: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  made.uow.state.accountOwners.push({
+    accountId: "acc1" as Id<"Account">,
+    personId: personA,
+    shareBp: 10000,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   });
@@ -174,12 +181,32 @@ describe("listReviewItems", () => {
     return { ctx, uow };
   }
 
-  it("shows a person their own and the household's open items, hiding account-scoped ones", () => {
+  it("shows a person their own, the household's and visible accounts' items, not another's private account", () => {
     const { ctx } = seeded();
     const asA = { ...ctx, viewer: personViewer(personA, now) };
-    expect(listReviewItems(asA, {}).map((row) => row.entityRef)).toEqual(["goal:a", "thing:h"]);
+    expect(listReviewItems(asA, {}).map((row) => row.entityRef)).toEqual([
+      "goal:a",
+      "thing:h",
+      "acct:1",
+    ]);
     const asB = { ...ctx, viewer: personViewer(personB, now) };
     expect(listReviewItems(asB).map((row) => row.entityRef)).toEqual(["goal:b", "thing:h"]);
+  });
+
+  it("keeps an item on a public account visible to both people", () => {
+    const { ctx, uow } = seeded();
+    uow.state.accounts.push({
+      ...(uow.state.accounts[0] as (typeof uow.state.accounts)[number]),
+      id: "pub1" as Id<"Account">,
+      isPrivate: false,
+    });
+    raise(ctx, { kind: perAccount, entityRef: "acct:pub", dedupeKey: "pub", accountId: "pub1" });
+    for (const person of [personA, personB]) {
+      const refs = listReviewItems({ ...ctx, viewer: personViewer(person, now) }).map(
+        (row) => row.entityRef,
+      );
+      expect(refs).toContain("acct:pub");
+    }
   });
 
   it("shows a system viewer every open item", () => {

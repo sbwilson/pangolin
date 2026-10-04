@@ -18,13 +18,17 @@ const biome = join(repoRoot, "node_modules", ".bin", "biome");
 const CLOCK_PLUGIN = join(repoRoot, "tools", "lint", "no-system-clock.grit");
 
 // Line 1 imports temporal-polyfill, line 2 imports ulid, line 3 imports the SystemViewer factory by
-// package specifier, line 4 imports it by relative path.
+// package specifier, line 4 imports it by relative path, lines 5 to 7 import the `account`,
+// `transaction` and `audit-log` schema files (the read rule, AD-3).
 const PROBE = [
   'import { Temporal } from "temporal-polyfill";',
   'import { ulid } from "ulid";',
   'import { systemViewer } from "@pangolin/app/system-viewer";',
   'import { systemViewer as relative } from "../system-viewer.ts";',
-  "export const probe = [Temporal, ulid, systemViewer, relative];",
+  'import { account } from "../schema/account.ts";',
+  'import { transaction } from "../schema/transaction";',
+  'import { auditLog } from "../schema/audit-log.ts";',
+  "export const probe = [Temporal, ulid, systemViewer, relative, account, transaction, auditLog];",
   "",
 ].join("\n");
 const SYSTEM_VIEWER = "@pangolin/app/system-viewer";
@@ -34,31 +38,41 @@ const LINE_TO_MODULE: Record<number, string> = {
   2: "ulid",
   3: SYSTEM_VIEWER,
   4: SYSTEM_VIEWER_RELATIVE,
+  5: "schema/account",
+  6: "schema/transaction",
+  7: "schema/audit-log",
 };
 /** Both ways of reaching the SystemViewer factory. */
 const SV = [SYSTEM_VIEWER, SYSTEM_VIEWER_RELATIVE] as const;
+/** The three schema files only the privacy path may import. */
+const DB = ["schema/account", "schema/transaction", "schema/audit-log"] as const;
 
 /** Repo-relative probe path -> modules the lint rule must ban there. */
 const CASES: Record<string, readonly string[]> = {
-  "packages/domain/src/x.ts": ["temporal-polyfill", "ulid", ...SV],
-  "packages/app/src/other.ts": ["temporal-polyfill", "ulid", ...SV],
-  "packages/app/src/system/x.ts": ["temporal-polyfill", "ulid", ...SV],
+  "packages/domain/src/x.ts": ["temporal-polyfill", "ulid", ...SV, ...DB],
+  "packages/app/src/other.ts": ["temporal-polyfill", "ulid", ...SV, ...DB],
+  "packages/app/src/system/x.ts": ["temporal-polyfill", "ulid", ...SV, ...DB],
   "packages/app/src/system/x.test.ts": ["temporal-polyfill", "ulid"],
-  "packages/app/src/ids.ts": ["temporal-polyfill", ...SV],
-  "packages/shared/src/temporal/x.ts": ["ulid", ...SV],
+  "packages/app/src/ids.ts": ["temporal-polyfill", ...SV, ...DB],
+  "packages/shared/src/temporal/x.ts": ["ulid", ...SV, ...DB],
   // The temporal override is listed after the test-file one, so it wins for its own tests.
-  "packages/shared/src/temporal/x.test.ts": ["ulid", ...SV],
-  "packages/db/src/x.ts": ["temporal-polyfill", "ulid", ...SV],
-  "apps/web/src/x.ts": ["temporal-polyfill", "ulid", ...SV],
-  "e2e/x.ts": ["temporal-polyfill", "ulid", ...SV],
-  "scripts/x.ts": ["temporal-polyfill", "ulid", ...SV],
-  "apps/server/src/x.ts": ["temporal-polyfill", "ulid", ...SV],
-  "apps/server/src/http/x.ts": ["temporal-polyfill", "ulid", ...SV],
-  "apps/server/src/http/nested/x.ts": ["temporal-polyfill", "ulid", ...SV],
-  "apps/server/src/jobs/x.ts": ["temporal-polyfill", "ulid"],
-  "apps/server/src/jobs/nested/x.ts": ["temporal-polyfill", "ulid"],
-  "apps/server/src/admin/x.ts": ["temporal-polyfill", "ulid"],
-  "apps/server/src/admin/nested/x.ts": ["temporal-polyfill", "ulid"],
+  "packages/shared/src/temporal/x.test.ts": ["ulid", ...SV, ...DB],
+  "packages/db/src/x.ts": ["temporal-polyfill", "ulid", ...SV, ...DB],
+  // The privacy path may read the tables; everything else in it stays banned.
+  "packages/db/src/privacy.ts": ["temporal-polyfill", "ulid", ...SV],
+  "packages/db/src/ledger-repos.ts": ["temporal-polyfill", "ulid", ...SV],
+  "packages/db/src/unit-of-work.ts": ["temporal-polyfill", "ulid", ...SV],
+  "packages/db/src/ledger-repos.test.ts": ["temporal-polyfill", "ulid"],
+  "apps/web/src/x.ts": ["temporal-polyfill", "ulid", ...SV, ...DB],
+  "e2e/x.ts": ["temporal-polyfill", "ulid", ...SV, ...DB],
+  "scripts/x.ts": ["temporal-polyfill", "ulid", ...SV, ...DB],
+  "apps/server/src/x.ts": ["temporal-polyfill", "ulid", ...SV, ...DB],
+  "apps/server/src/http/x.ts": ["temporal-polyfill", "ulid", ...SV, ...DB],
+  "apps/server/src/http/nested/x.ts": ["temporal-polyfill", "ulid", ...SV, ...DB],
+  "apps/server/src/jobs/x.ts": ["temporal-polyfill", "ulid", ...DB],
+  "apps/server/src/jobs/nested/x.ts": ["temporal-polyfill", "ulid", ...DB],
+  "apps/server/src/admin/x.ts": ["temporal-polyfill", "ulid", ...DB],
+  "apps/server/src/admin/nested/x.ts": ["temporal-polyfill", "ulid", ...DB],
 };
 
 interface Diagnostic {

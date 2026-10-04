@@ -80,12 +80,16 @@ const txn = (accountId: string, description: string, postedOn = "2026-09-01") =>
 describe("visibleAccounts and visibleTxn", () => {
   it("throw without a viewer", () => {
     expect(() => visibleAccounts(undefined)).toThrow(TypeError);
-    expect(() => visibleTxn(undefined)).toThrow(TypeError);
+    expect(() => visibleTxn(undefined, "2026-09-27")).toThrow(TypeError);
   });
 
-  it("add no filter for a system viewer", () => {
-    expect(visibleAccounts(systemViewer("cli:test"))).toBeUndefined();
-    expect(visibleTxn(systemViewer("cli:test"))).toBeUndefined();
+  it("refuse a today that is not a YYYY-MM-DD string", () => {
+    expect(() => visibleTxn(systemViewer("cli:test"), "tomorrow")).toThrow(TypeError);
+  });
+
+  it("still hide deleted accounts and transactions from a system viewer", () => {
+    expect(visibleAccounts(systemViewer("cli:test"))).toBeDefined();
+    expect(visibleTxn(systemViewer("cli:test"), "2026-09-27").where).toBeDefined();
   });
 });
 
