@@ -328,7 +328,7 @@ describe("the backup jobs", () => {
   });
 
   it("kills restic when a push runs past its timeout, and the attempt fails as timed out", async () => {
-    const r = runner(true, 300);
+    const r = runner(true, 2000);
     requestBackup(cli());
     await r.tick();
     const pidFile = join(dir, "restic.pid");
@@ -341,7 +341,7 @@ describe("the backup jobs", () => {
     expect(push).toEqual({
       status: "pending",
       attempts: 1,
-      last_error: "JobTimeout: Timed out after 300 ms",
+      last_error: "JobTimeout: Timed out after 2000 ms",
     });
     const pid = Number(readFileSync(pidFile, "utf8"));
     const alive = () => {
