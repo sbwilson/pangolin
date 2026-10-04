@@ -1,6 +1,7 @@
 import type { Id } from "@pangolin/shared";
 import { describe, expect, it } from "vitest";
 import { createAccount } from "../accounts/create-account.ts";
+import { createPayee } from "../classify/payees.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
 import { createPerson } from "../identity/create-person.ts";
@@ -98,6 +99,41 @@ describe("accounts.createAccount", () => {
         owners: [{ personId: b, shareBp: 10000 }],
       }),
     ).toThrow(/yourself/);
+  });
+});
+
+describe("ledger.createTransaction with a payee", () => {
+  it("sets the payee, audited with the transaction", () => {
+    const { as, a, b, shared, uow } = setup();
+    const payee = createPayee(as(a), { name: "Woolworths" });
+    const id = createTransaction(as(a), { ...txn(shared), payeeId: payee.id });
+    for (const viewer of [a, b]) {
+      expect(getTransaction(as(viewer), { id })).toMatchObject({
+        payeeId: payee.id,
+        payeeName: "Woolworths",
+      });
+    }
+    const entry = uow.state.audit.find(
+      (row) => row.entity === "transaction" && row.entityId === id,
+    );
+    expect(JSON.parse(entry?.after ?? "{}")).toMatchObject({ payeeId: payee.id });
+    expect(getTransaction(as(a), { id: createTransaction(as(a), txn(shared)) }).payeeId).toBeNull();
+  });
+
+  it("answers NotFound for an unknown payee or another person's owner-only one", () => {
+    const { as, a, b, privateA, shared } = setup();
+    expect(() => createTransaction(as(a), { ...txn(shared), payeeId: "nope" })).toThrow(
+      expect.objectContaining({ code: "NotFound" }),
+    );
+    const mine = createPayee(as(a), { name: "Book shop", originAccountId: privateA });
+    expect(() => createTransaction(as(b), { ...txn(shared), payeeId: mine.id })).toThrow(
+      expect.objectContaining({ code: "NotFound" }),
+    );
+    // The owner can use it in their own private account, not in a shared one yet.
+    expect(createTransaction(as(a), { ...txn(privateA), payeeId: mine.id })).toBeTruthy();
+    expect(() => createTransaction(as(a), { ...txn(shared), payeeId: mine.id })).toThrow(
+      expect.objectContaining({ code: "Conflict" }),
+    );
   });
 });
 

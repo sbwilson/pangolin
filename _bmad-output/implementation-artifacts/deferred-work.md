@@ -235,3 +235,12 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-hidden-names-and-transfer-groups-plan.md`
   summary: hideTransactionName does not check the viewer is an owner of the shared account.
   evidence: It only requires the transaction be visible and the account non-private; harmless with two household members, wrong if a non-owner can see a public account.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-seed-the-ledger-plan.md`
+  summary: Move the remaining seed checks into `parseSeed` so a bad seed fails up front with a named error: duplicate payee, tag, account and institution names, duplicate balance snapshots, account owner shares and the private-account beneficiary rule.
+  evidence: checkReferences covers references, keys, dates, sums and owner-only use; the rest fails mid-apply and rolls back unnamed (review pass 1, medium).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-seed-the-ledger-plan.md`
+  summary: Make the e2e ledger spec compare the seed it regenerates with the server's `dist/demo-seed.json` (hash or read), strengthen its leak check to keys, and assert hidden names, labels and balances in the UI.
+  evidence: e2e/ledger.spec.ts runs tools/seed/src/cli.ts locally while the server loads its built file (review pass 1, medium).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-seed-the-ledger-plan.md`
+  summary: Tidy the seed: warn or reject when the real clock is before the seed's fixed today, link the loan repayment's two sides as a transfer, share one validator between `world.ts` and `checkReferences`, and document `PANGOLIN_ENABLE_SEED` in an env reference.
+  evidence: seed.ts applyEvents clock use, transfers-and-privacy module, config.ts (review pass 1, low).

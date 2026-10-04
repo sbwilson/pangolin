@@ -29,6 +29,8 @@ import { openDatabase, packageMigrationsDir, schemaVersion } from "@pangolin/db"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { generateSeedFile } from "../scripts/demo-seed.ts";
+import { callAdmin } from "./admin/client.ts";
+import { SEED_DISABLED } from "./admin/commands.ts";
 import {
   DEFAULT_BACKUP_CONFIG,
   DEFAULT_JOBS_CONFIG,
@@ -595,6 +597,7 @@ describe("loadConfig", () => {
       dataDir: "/data",
       port: 3000,
       demo: false,
+      enableSeed: false,
       jobs: { concurrency: { llm: 1, net: 2, local: 1 }, leaseMs: 60_000 },
       auth: {
         publicUrl: "http://localhost:3000",
@@ -609,6 +612,13 @@ describe("loadConfig", () => {
       backup: DEFAULT_BACKUP_CONFIG,
     });
     expect(loadConfig({}).auth).toEqual(defaultAuthConfig("/data"));
+  });
+
+  it("reads PANGOLIN_ENABLE_SEED: off unless set", () => {
+    expect(loadConfig({}).enableSeed).toBe(false);
+    expect(loadConfig({ PANGOLIN_ENABLE_SEED: "true" }).enableSeed).toBe(true);
+    expect(loadConfig({ PANGOLIN_ENABLE_SEED: "false" }).enableSeed).toBe(false);
+    expect(() => loadConfig({ PANGOLIN_ENABLE_SEED: "maybe" })).toThrow();
   });
 
   it("reads the recovery bundle id, trimmed; empty means none, and a malformed one throws", () => {
@@ -803,6 +813,41 @@ describe("startServer admin socket", () => {
     } finally {
       await server.close();
     }
+  });
+
+  /** Boots from environment variables, as production does, and sends `seed` over the socket. */
+  async function seedOverSocket(env: Record<string, string>) {
+    const path = join(dir, "run", "admin.sock");
+    const server = await startServer({
+      // Port 0 is not a valid PORT, so take any free port after loading the rest from the env.
+      config: {
+        ...loadConfig({ PANGOLIN_DATA_DIR: dataDir(), PANGOLIN_ADMIN_SOCKET: path, ...env }),
+        port: 0,
+      },
+      migrationsDir: packageMigrationsDir,
+    });
+    try {
+      return await callAdmin(path, "seed");
+    } finally {
+      await server.close();
+    }
+  }
+
+  it("refuses `seed` unless PANGOLIN_ENABLE_SEED is set", async () => {
+    for (const env of [{}, { PANGOLIN_ENABLE_SEED: "false" }]) {
+      expect(await seedOverSocket(env)).toMatchObject({
+        ok: false,
+        error: { code: "Validation", message: SEED_DISABLED },
+      });
+    }
+  });
+
+  it("lets `seed` past the gate with PANGOLIN_ENABLE_SEED=true, to its next precondition", async () => {
+    const answer = await seedOverSocket({ PANGOLIN_ENABLE_SEED: "true" });
+    // No seed file is configured here, so it stops there, not at the gate.
+    expect(answer).toMatchObject({ ok: false, error: { code: "Validation" } });
+    expect(JSON.stringify(answer)).toContain("no seed file");
+    expect(JSON.stringify(answer)).not.toContain("disabled");
   });
 
   it("opens no socket and takes no lock in demo mode", async () => {

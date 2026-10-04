@@ -26,6 +26,8 @@ export const createTransactionInput = z
     /** Signed integer minor units. */
     amountCents: z.int(),
     description: z.string().trim().min(1, { message: "Enter a description" }).max(500),
+    /** A payee the viewer can see; omitted or null leaves the transaction without one. */
+    payeeId: z.string().min(1).max(100).nullish(),
   })
   .strict();
 export type CreateTransactionInput = z.input<typeof createTransactionInput>;
@@ -36,7 +38,9 @@ export type CreateTransactionInput = z.input<typeof createTransactionInput>;
  * ID. An account that does not exist and another person's private account both answer
  * `NotFound`. The fingerprint is `fingerprintManual` (version 2): it comes from the new ID, so
  * identical manual lines coexist. The split's beneficiary is the owner of a private account,
- * `shared` otherwise.
+ * `shared` otherwise. A payee the viewer cannot see (missing, or another person's) is `NotFound`;
+ * a payee scoped to one person cannot go on a public account's transaction (`Conflict`, as for a
+ * tag) until promotion exists.
  * Returns the new transaction's server-minted ID.
  */
 export function createTransaction(
@@ -53,6 +57,15 @@ export function createTransaction(
       if (owner === undefined) throw new Error(`Private account ${account.id} has no owner`);
       beneficiary = owner.personId;
     }
+    let payeeId: Id<"Payee"> | null = null;
+    if (parsed.payeeId !== undefined && parsed.payeeId !== null) {
+      const payee = tx.payees.find(ctx.viewer, parsed.payeeId);
+      if (payee === undefined) throw new AppError("NotFound", "Payee not found");
+      if (!account.isPrivate && payee.scopePersonId !== null) {
+        throw new AppError("Conflict", "This payee cannot be used on a shared account yet");
+      }
+      payeeId = payee.id as Id<"Payee">;
+    }
     const at = formatInstant(ctx.clock.now());
     const id = ctx.newId<"Transaction">();
     const row: TransactionRow = {
@@ -61,7 +74,7 @@ export function createTransaction(
       postedOn: parsed.postedOn,
       amountCents: parsed.amountCents,
       descriptionRaw: parsed.description,
-      payeeId: null,
+      payeeId,
       status: "posted",
       externalId: null,
       fingerprint: fingerprintManual(account.id, id),

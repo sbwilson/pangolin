@@ -21,6 +21,9 @@ services:
       PANGOLIN_BACKUP_REPOSITORY: ${PANGOLIN_BACKUP_REPOSITORY:-}
       # The recovery bundle's id (story 1.17): the server warns until it is confirmed. Empty: none.
       PANGOLIN_RECOVERY_BUNDLE_ID: ${PANGOLIN_RECOVERY_BUNDLE_ID:-}
+      # Lets `pangolin seed` load the demo ledger (a dev and e2e tool): off unless CI or the
+      # e2e run sets it. The production stack (deploy/compose.yaml) never passes it.
+      PANGOLIN_ENABLE_SEED: ${PANGOLIN_ENABLE_SEED:-false}
     ports:
       - "3000:3000"
     volumes:

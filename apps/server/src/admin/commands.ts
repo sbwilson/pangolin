@@ -72,6 +72,11 @@ export interface AdminDeps {
   readonly bundleId?: string;
   /** The seed file the `seed` command reads (`dist/demo-seed.json`); undefined: it refuses. */
   readonly seedFile?: string;
+  /**
+   * Whether the `seed` command may run (`PANGOLIN_ENABLE_SEED`). It is a dev and e2e tool, off
+   * unless the stack opts in; undefined or false: it refuses.
+   */
+  readonly seedEnabled?: boolean;
 }
 
 /** What `reset-user` needs: enough to run on a stopped stack, without the runner. */
@@ -239,19 +244,26 @@ export function resetUserCommand(deps: ResetUserDeps, args: unknown = {}): Reset
 /** What `seed` answers: how much it added. */
 export interface SeedResult {
   readonly accounts: number;
+  readonly transactions: number;
   readonly events: number;
 }
+
+/** The message `seed` refuses with unless the stack enables it. */
+export const SEED_DISABLED =
+  "The seed command is disabled: it is a dev and e2e tool; set PANGOLIN_ENABLE_SEED=true to allow it";
 
 const seedArgs = z.object({}).strict();
 
 /**
- * `seed`: loads the seed's accounts and transactions onto the signed-up people: the seed's
- * `person-a` and `person-b` become the first two logins, by sign-up order. For the e2e run and
- * dev installs; it needs both partners signed up and an empty ledger, and takes no path (it
- * reads the build's `demo-seed.json`).
+ * `seed`: loads the seed's institutions, accounts, classification, transactions and balances
+ * onto the signed-up people: the seed's `person-a` and `person-b` become the first two logins,
+ * by sign-up order. For the e2e run and dev installs, so it refuses unless `PANGOLIN_ENABLE_SEED`
+ * is set; it needs both partners signed up and an empty ledger (`Conflict` otherwise, writing
+ * nothing), and takes no path (it reads the build's `demo-seed.json`).
  */
 export function seedCommand(deps: AdminDeps, args: unknown = {}): SeedResult {
   parseArgs(seedArgs, args);
+  if (deps.seedEnabled !== true) throw new AppError("Validation", SEED_DISABLED);
   if (deps.seedFile === undefined) throw new AppError("Validation", "There is no seed file");
   let seedJson: string;
   try {
@@ -259,8 +271,8 @@ export function seedCommand(deps: AdminDeps, args: unknown = {}): SeedResult {
   } catch {
     throw new AppError("Validation", "The seed file could not be read");
   }
-  const { accounts, events } = linkSeed(deps.uow, deps, seedJson);
-  return { accounts, events };
+  const { accounts, transactions, events } = linkSeed(deps.uow, deps, seedJson);
+  return { accounts, transactions, events };
 }
 
 export function isAdminCommand(command: string): command is AdminCommand {
