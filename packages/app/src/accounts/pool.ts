@@ -1,3 +1,4 @@
+import { AppError } from "../errors.ts";
 import type { AccountOwnerRow, AccountRow } from "../ports/unit-of-work.ts";
 
 /** An account as the accounts use cases return it: the row, its owners and its pool. */
@@ -9,11 +10,12 @@ export interface AccountView extends AccountRow {
 
 /**
  * `accounts.poolOf` (AD-26): `shared` when the account has two or more owners, otherwise its
- * sole owner. Pure; nothing is stored. An account always has an owner.
+ * sole owner. Pure; nothing is stored. An account always has an owner: one without (corrupt
+ * data) is `Conflict`, so one bad row fails with a typed error rather than a 500.
  */
 export function poolOf(owners: readonly { readonly personId: string }[]): string {
   const [first] = owners;
-  if (first === undefined) throw new Error("An account has at least one owner");
+  if (first === undefined) throw new AppError("Conflict", "This account has no owner");
   return owners.length >= 2 ? "shared" : first.personId;
 }
 
