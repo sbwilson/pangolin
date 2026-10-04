@@ -278,6 +278,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       version: config.version,
       backupConfigured,
       ...(adminSeedFile === undefined ? {} : { seedFile: adminSeedFile }),
+      seedEnabled: config.enableSeed === true,
       ...(config.recoveryBundleId === undefined ? {} : { bundleId: config.recoveryBundleId }),
     };
     try {

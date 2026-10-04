@@ -1,51 +1,224 @@
-// Epic 2's tracer bullet: after both partners have signed up (auth.spec), the `seed` admin
-// command attaches the demo seed's accounts to them, and each partner sees the shared account's
-// transactions and only their own private account's. The first person signs in with password
-// and TOTP; the partner's email is locked by auth.spec's lockout test, so the partner uses the
-// session saved when they registered.
-import { execSync } from "node:child_process";
+// The seeded ledger, end to end. After both partners have signed up (auth.spec), the `seed`
+// admin command loads the demo ledger onto them: institutions, accounts of every cash type,
+// payees and tags, a year of transactions with splits, hidden names and transfers. Each partner
+// then sees the shared accounts plus their own private ones, and nothing else. The first person
+// signs in with password and TOTP; the partner's email is locked by auth.spec's lockout test,
+// so the partner uses the session saved when they registered.
+//
+// Nothing here hard-codes the seed's contents: the spec runs the generator itself (it is
+// deterministic, so it makes the file the server loads) and derives what each person should
+// see from its events and expectations.
+import { execFileSync, execSync, spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { Page } from "@playwright/test";
 import { loadAccount, partnerSessionFile, signInWithPassword } from "./helpers/account.ts";
 import { expect, test, watchCsp } from "./helpers/csp.ts";
 
-// The descriptions tools/seed's accounts module emits.
-const SHARED = [
-  "Joint: Woolworths groceries",
-  "Joint: Energy bill",
-  "Joint: Internet",
-  "Joint: Council rates",
-];
-const PRIVATE_A = ["Person A private: Book shop", "Person A private: Gift"];
-const PRIVATE_B = ["Person B private: Gym", "Person B private: Record shop"];
+interface SeedEvent {
+  type: string;
+  key?: string;
+  account?: string;
+  isPrivate?: boolean;
+  owners?: { person: string }[];
+  postedOn?: string;
+  amountCents?: number;
+  description?: string;
+  transaction?: string;
+  transactions?: string[];
+  by?: string;
+}
 
-test.describe.configure({ mode: "serial" });
+interface Seed {
+  events: SeedEvent[];
+  expectations: Record<string, unknown>;
+}
 
-test.beforeAll(() => {
-  // CI runs the CLI in the container (`docker compose exec`); it needs both partners signed up.
+interface ApiTransaction {
+  id: string;
+  postedOn: string;
+  amountCents: number;
+  descriptionRaw: string;
+  transferLabel: string | null;
+  remainingCents: number;
+  splits: { amountCents: number }[];
+}
+
+/** The seed's `person-a` and `person-b` are the first and second to sign up (auth.spec). */
+const SIGNED_UP_AS = { "person-a": "Alex", "person-b": "Sam" } as const;
+type Person = keyof typeof SIGNED_UP_AS;
+const PEOPLE = Object.keys(SIGNED_UP_AS) as Person[];
+
+const HIDDEN = /^Hidden until \d{1,2} [A-Z][a-z]{2} \d{4}$/;
+
+let seed: Seed;
+let seedDir: string;
+let loaded: { accounts: number; transactions: number };
+
+const events = (type: string) => seed.events.filter((e) => e.type === type);
+const expectation = <T>(key: string) => seed.expectations[key] as T;
+const accountOf = (key: string) =>
+  events("account.created").find((a) => a.key === key) as SeedEvent;
+const transactionOf = (key: string) =>
+  events("transaction.created").find((t) => t.key === key) as SeedEvent;
+
+/** Accounts a person sees: the shared ones and their own private ones (AD-3). */
+function seesAccount(person: Person, key: string): boolean {
+  const account = accountOf(key);
+  return account.isPrivate !== true || (account.owners ?? []).some((o) => o.person === person);
+}
+
+/** What `person` should see of each seeded transaction, as `date|amount|description`. */
+function expectedRows(person: Person): string[] {
+  const hiddenBy = new Map(events("transaction.name-hidden").map((h) => [h.transaction, h.by]));
+  return events("transaction.created")
+    .filter((t) => seesAccount(person, t.account as string))
+    .map((t) => {
+      const by = hiddenBy.get(t.key);
+      const name = by !== undefined && by !== person ? "HIDDEN" : t.description;
+      return `${t.postedOn}|${t.amountCents}|${name}`;
+    })
+    .sort();
+}
+
+const rowOf = (t: ApiTransaction): string =>
+  `${t.postedOn}|${t.amountCents}|${HIDDEN.test(t.descriptionRaw) ? "HIDDEN" : t.descriptionRaw}`;
+
+async function fetchTransactions(page: Page): Promise<ApiTransaction[]> {
+  const res = await page.request.get("/api/ledger/transactions");
+  expect(res.status()).toBe(200);
+  return ((await res.json()) as { transactions: ApiTransaction[] }).transactions;
+}
+
+const seedCommand = (): string => {
   const command = process.env.E2E_SEED_COMMAND;
   if (command === undefined || command === "") {
     throw new Error(
       "Set E2E_SEED_COMMAND (e.g. `docker compose exec -T pangolin node dist/cli.js seed`)",
     );
   }
-  expect(execSync(command, { encoding: "utf8" })).toContain("Seeded 3 accounts");
+  return command;
+};
+
+test.describe.configure({ mode: "serial" });
+
+test.beforeAll(() => {
+  // The generator is deterministic, so this is the file the server loads from its build.
+  seedDir = mkdtempSync(join(tmpdir(), "pangolin-e2e-seed-"));
+  const cli = fileURLToPath(new URL("../tools/seed/src/cli.ts", import.meta.url));
+  execFileSync(process.execPath, [cli, "--out", seedDir], { stdio: "pipe" });
+  seed = JSON.parse(readFileSync(join(seedDir, "seed.json"), "utf8")) as Seed;
+  loaded = {
+    accounts: events("account.created").length,
+    transactions: events("transaction.created").length,
+  };
+
+  // CI runs the CLI in the container (`docker compose exec`); it needs both partners signed up
+  // and the stack started with PANGOLIN_ENABLE_SEED=true.
+  const out = execSync(seedCommand(), { encoding: "utf8" });
+  expect(out).toContain(
+    `Seeded ${loaded.accounts} accounts and ${loaded.transactions} transactions`,
+  );
 });
 
-async function descriptions(page: import("@playwright/test").Page): Promise<string[]> {
+test.afterAll(() => {
+  if (seedDir !== undefined) rmSync(seedDir, { recursive: true, force: true });
+});
+
+/** What a person sees in the UI and the API, checked against what the seed says they should. */
+async function expectSeededView(page: Page, person: Person): Promise<ApiTransaction[]> {
+  const visible = expectation<Record<string, number>>("transfers-and-privacy.visibleCounts")[
+    person
+  ] as number;
+  expect(visible).toBeGreaterThan(300);
+
+  // The UI lists them all (a long list is virtualised, and says how many rows it has).
   await page.getByRole("button", { name: "Transactions" }).click();
   const table = page.getByRole("table", { name: "Transactions" });
   await expect(table).toBeVisible();
-  return table.locator("tbody tr td:nth-child(2)").allTextContents();
+  if (visible > 200) await expect(table).toHaveAttribute("aria-rowcount", String(visible + 1));
+  else await expect(table.locator("tbody tr")).toHaveCount(visible);
+
+  // The API holds the detail: the same rows, hidden names and transfer labels as the seed says.
+  const rows = await fetchTransactions(page);
+  expect(rows).toHaveLength(visible);
+  expect(rows.map(rowOf).sort()).toEqual(expectedRows(person));
+
+  // Every split list adds up to its transaction.
+  for (const t of rows) {
+    expect(t.splits.length).toBeGreaterThan(0);
+    expect(t.splits.reduce((sum, s) => sum + s.amountCents, 0)).toBe(t.amountCents);
+    expect(t.remainingCents).toBe(0);
+  }
+  const multiSplit = expectation<string[]>("ledger-transactions.multiSplitKeys");
+  expect(multiSplit.length).toBeGreaterThan(0);
+  const multiShown = rows.filter((t) => t.splits.length > 1).length;
+  const multiExpected = multiSplit.filter((key) =>
+    seesAccount(person, transactionOf(key).account as string),
+  ).length;
+  expect(multiShown).toBe(multiExpected);
+
+  // A hidden name shows to the person who hid it and as a placeholder to the other.
+  const hidden = expectation<{ transaction: string; by: Person; description: string }[]>(
+    "transfers-and-privacy.hidden",
+  );
+  expect(hidden.length).toBeGreaterThan(0);
+  for (const h of hidden) {
+    const t = transactionOf(h.transaction);
+    const row = rows.find(
+      (r) =>
+        r.postedOn === t.postedOn &&
+        r.amountCents === t.amountCents &&
+        (r.descriptionRaw === h.description || HIDDEN.test(r.descriptionRaw)),
+    );
+    expect(row, `${h.transaction} is in the account both partners share`).toBeDefined();
+    if (h.by === person) expect(row?.descriptionRaw).toBe(h.description);
+    else expect(row?.descriptionRaw).toMatch(HIDDEN);
+  }
+
+  // A transfer whose counterpart is in a partner's private account reads "Transfer from/to
+  // <owner>" to the other partner, and carries no label for the owner, who sees both sides.
+  const privateKeys = new Set(expectation<string[]>("transfers-and-privacy.privateTransferKeys"));
+  expect(privateKeys.size).toBeGreaterThan(0);
+  for (const group of events("transfer.grouped")) {
+    for (const key of group.transactions as string[]) {
+      if (!privateKeys.has(key)) continue;
+      const t = transactionOf(key);
+      if (accountOf(t.account as string).isPrivate === true) {
+        // The private side exists only for its owner.
+        expect(seesAccount(person, t.account as string)).toBe(group.by === person);
+        continue;
+      }
+      const sides = rows.filter(
+        (r) =>
+          r.postedOn === t.postedOn &&
+          r.amountCents === t.amountCents &&
+          r.descriptionRaw === t.description,
+      );
+      expect(sides.length).toBeGreaterThan(0);
+      const labels = sides.map((r) => r.transferLabel);
+      if (group.by === person) expect(labels).toContain(null);
+      else {
+        const owner = SIGNED_UP_AS[group.by as Person];
+        const direction = (t.amountCents as number) >= 0 ? "from" : "to";
+        expect(labels).toContain(`Transfer ${direction} ${owner}`);
+      }
+    }
+  }
+  return rows;
 }
 
-test("the first person sees the shared account and their own private one, not the partner's", async ({
+test("the first person sees the shared accounts and their own private ones, not the partner's", async ({
   page,
 }) => {
   await signInWithPassword(page, loadAccount());
-  await expect(page.getByText("Signed in as Alex")).toBeVisible();
-  expect((await descriptions(page)).sort()).toEqual([...SHARED, ...PRIVATE_A].sort());
+  await expect(page.getByText(`Signed in as ${SIGNED_UP_AS["person-a"]}`)).toBeVisible();
+  await expectSeededView(page, "person-a");
 });
 
-test("the partner sees the shared account and their own private one, not the first person's", async ({
+test("the partner sees the shared accounts and their own private ones, not the first person's", async ({
   browser,
   cspViolations,
 }) => {
@@ -54,19 +227,58 @@ test("the partner sees the shared account and their own private one, not the fir
     await watchCsp(context, cspViolations);
     const page = await context.newPage();
     await page.goto("/");
-    await expect(page.getByText("Signed in as Sam")).toBeVisible();
-    expect((await descriptions(page)).sort()).toEqual([...SHARED, ...PRIVATE_B].sort());
+    await expect(page.getByText(`Signed in as ${SIGNED_UP_AS["person-b"]}`)).toBeVisible();
+    await expectSeededView(page, "person-b");
   } finally {
     await context.close();
   }
 });
 
+test("the partners' views differ only by private accounts and hidden names", () => {
+  const [a, b] = PEOPLE.map((p) => expectedRows(p));
+  const shared = events("transaction.created").filter(
+    (t) => !accountOf(t.account as string).isPrivate,
+  );
+  expect(a?.length).toBeGreaterThan(shared.length);
+  expect(b?.length).toBeGreaterThan(shared.length);
+  expect(a).not.toEqual(b);
+});
+
 test("the API answers per viewer and is never cached", async ({ page }) => {
   await signInWithPassword(page, loadAccount());
-  await expect(page.getByText("Signed in as Alex")).toBeVisible();
+  await expect(page.getByText(`Signed in as ${SIGNED_UP_AS["person-a"]}`)).toBeVisible();
   const res = await page.request.get("/api/ledger/transactions");
   expect(res.status()).toBe(200);
   expect(res.headers()["cache-control"]).toBe("no-store");
   const { transactions } = (await res.json()) as { transactions: { descriptionRaw: string }[] };
-  expect(transactions.map((t) => t.descriptionRaw)).not.toContain(PRIVATE_B[0]);
+  const partnerOnly = events("transaction.created")
+    .filter((t) => !seesAccount("person-a", t.account as string))
+    .map((t) => t.description);
+  expect(partnerOnly.length).toBeGreaterThan(0);
+  const seen = new Set(transactions.map((t) => t.descriptionRaw));
+  const sharedNames = new Set(
+    events("transaction.created")
+      .filter((t) => seesAccount("person-a", t.account as string))
+      .map((t) => t.description),
+  );
+  for (const name of partnerOnly) {
+    // A description the partner's private account shares with a visible one (a merchant used in
+    // both) is fine; one only the partner has must not appear.
+    if (!sharedNames.has(name)) expect(seen.has(name as string)).toBe(false);
+  }
+});
+
+test("loading the seed a second time is refused and changes nothing", async ({ page }) => {
+  const run = spawnSync(seedCommand(), { shell: true, encoding: "utf8" });
+  expect(run.status).not.toBe(0);
+  expect(`${run.stdout}${run.stderr}`).toMatch(/already has accounts or transactions/);
+
+  await signInWithPassword(page, loadAccount());
+  await expect(page.getByText(`Signed in as ${SIGNED_UP_AS["person-a"]}`)).toBeVisible();
+  const rows = await fetchTransactions(page);
+  expect(rows).toHaveLength(
+    expectation<Record<string, number>>("transfers-and-privacy.visibleCounts")[
+      "person-a"
+    ] as number,
+  );
 });

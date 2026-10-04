@@ -24,6 +24,11 @@ const envSchema = z.object({
   PANGOLIN_DEMO: z.stringbool().default(false),
   /** The seed file demo mode loads; defaults to `demo-seed.json` next to the bundle. */
   PANGOLIN_SEED_FILE: z.string().min(1).optional(),
+  /**
+   * Lets the `seed` admin command load the demo ledger onto the signed-up household. A dev and
+   * e2e tool: off by default, set by CI and the e2e harness only.
+   */
+  PANGOLIN_ENABLE_SEED: z.stringbool().default(false),
   /** Jobs each lane runs at once (AD-8). */
   PANGOLIN_JOB_CONCURRENCY_LLM: z.coerce.number().int().min(0).max(64).default(1),
   PANGOLIN_JOB_CONCURRENCY_NET: z.coerce.number().int().min(0).max(64).default(2),
@@ -149,6 +154,8 @@ export interface Config {
   /** Demo mode: an in-memory database loaded from the seed, read-only, with no sign-in. */
   readonly demo: boolean;
   readonly seedFile?: string;
+  /** Whether the `seed` admin command may run (`PANGOLIN_ENABLE_SEED`). */
+  readonly enableSeed?: boolean;
   readonly jobs: JobsConfig;
   readonly auth: AuthConfig;
   /** Reverse-proxy IPs whose `X-Forwarded-For` is trusted. */
@@ -204,6 +211,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
     port: parsed.PORT,
     demo: parsed.PANGOLIN_DEMO,
     ...(parsed.PANGOLIN_SEED_FILE === undefined ? {} : { seedFile: parsed.PANGOLIN_SEED_FILE }),
+    enableSeed: parsed.PANGOLIN_ENABLE_SEED,
     jobs: {
       concurrency: {
         llm: parsed.PANGOLIN_JOB_CONCURRENCY_LLM,

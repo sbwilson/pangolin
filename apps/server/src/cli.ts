@@ -69,7 +69,8 @@ Commands:
                                 written; needs the server running (exits 3 when it is not)
   seed                          load the demo seed's accounts and transactions onto the first two
                                 signed-up people (shared and private accounts), for dev installs
-                                and the end-to-end run; needs both partners signed up and an
+                                and the end-to-end run; refused unless the stack sets
+                                PANGOLIN_ENABLE_SEED=true; needs both partners signed up and an
                                 empty ledger, and the server running (exits 3 when it is not)
   restore [snapshot|latest]     on a stopped stack: fetch the snapshot (default latest), verify
     [--restore-credentials |    it, ask whether to restore the snapshot's sign-in details (sessions,
@@ -444,7 +445,9 @@ async function seedCli(config: Config, io: CliIo): Promise<number> {
     return EXIT_FAILED;
   }
   const result = response.result as SeedResult;
-  io.out(`Seeded ${result.accounts} accounts (${result.events} events) onto the signed-up people`);
+  io.out(
+    `Seeded ${result.accounts} accounts and ${result.transactions} transactions (${result.events} events) onto the signed-up people`,
+  );
   return EXIT_OK;
 }
 

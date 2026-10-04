@@ -4,7 +4,7 @@ import { defaultModules } from "./modules/index.ts";
 import { peopleAndHousehold } from "./modules/people-and-household.ts";
 import { DEFAULT_SEED, DEFAULT_TODAY, orderModules, runSeed } from "./run.ts";
 import { serialize } from "./serialize.ts";
-import type { World } from "./world.ts";
+import type { SeedEvent, World } from "./world.ts";
 
 function stub(name: string, dependsOn: string[] = [], seen?: World[]): SeedModule {
   return {
@@ -143,6 +143,75 @@ describe("runSeed", () => {
     expect(() => runSeed({ modules: [peopleAndHousehold, person("other")] })).toThrow(
       'Seed modules "other" and "people-and-household" both create person "person-a"',
     );
+  });
+
+  describe("keys across unrelated modules", () => {
+    const emits = (name: string, events: SeedEvent[]): SeedModule => ({
+      name,
+      dependsOn: [],
+      generate: () => ({ events, expectations: {} }),
+    });
+    const institution = (key: string): SeedEvent => ({
+      type: "institution.created",
+      key,
+      name: "Bank",
+      kind: "bank",
+    });
+    const tag = (key: string): SeedEvent => ({ type: "tag.created", key, name: "T", origin: null });
+    const payee = (key: string): SeedEvent => ({
+      type: "payee.created",
+      key,
+      name: "P",
+      websiteUrl: null,
+      defaultCategory: null,
+      origin: null,
+    });
+    /** A module with its own person and account, so only the transaction key can clash. */
+    const withTransaction = (name: string, key: string): SeedModule =>
+      emits(name, [
+        { type: "person.created", key: `${name}-person`, displayName: "X", colour: "#000000" },
+        {
+          type: "account.created",
+          key: `${name}-account`,
+          name: "A",
+          accountType: "transaction",
+          currency: "AUD",
+          isPrivate: false,
+          owners: [{ person: `${name}-person`, shareBp: 10000 }],
+          institution: null,
+          isSavings: false,
+        },
+        {
+          type: "transaction.created",
+          key,
+          account: `${name}-account`,
+          postedOn: "2026-01-01",
+          amountCents: -100,
+          description: "x",
+        },
+      ]);
+
+    it.each([
+      ["institution", (n: string) => emits(n, [institution("shared-key")])],
+      ["tag", (n: string) => emits(n, [tag("shared-key")])],
+      ["payee", (n: string) => emits(n, [payee("shared-key")])],
+      ["transaction", (n: string) => withTransaction(n, "shared-key")],
+    ])("rejects two modules creating the same %s key, naming both", (what, make) => {
+      expect(() => runSeed({ modules: [make("alpha"), make("beta")] })).toThrow(
+        `Seed modules "alpha" and "beta" both create ${what} "shared-key"`,
+      );
+    });
+
+    it("keeps each kind of key in its own namespace", () => {
+      const out = runSeed({
+        modules: [
+          emits("alpha", [institution("k"), tag("k")]),
+          emits("beta", [payee("k")]),
+          withTransaction("gamma", "k"),
+        ],
+      });
+      expect(out.events).toHaveLength(6);
+    });
   });
 
   it("rejects two modules setting the household settings, naming both", () => {

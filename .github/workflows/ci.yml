@@ -96,6 +96,8 @@ jobs:
             echo "PANGOLIN_AUTH_RATE_LIMIT=100"
             # An unconfirmed recovery bundle: the e2e suite checks the status page warns.
             echo "PANGOLIN_RECOVERY_BUNDLE_ID=20261003T010203Z-e2e0"
+            # The ledger spec loads the demo ledger with `pangolin seed`, a dev and e2e tool.
+            echo "PANGOLIN_ENABLE_SEED=true"
           } > .env
       - name: Start the stack
         run: docker compose up -d

@@ -120,38 +120,43 @@ export function runSeed(options: RunOptions): SeedOutput {
   return { seed, today: formatDate(today), events, expectations };
 }
 
+/** The event types that define a keyed thing, and what to call it in an error. */
+const KEYED = {
+  "person.created": "person",
+  "institution.created": "institution",
+  "account.created": "account",
+  "tag.created": "tag",
+  "payee.created": "payee",
+  "transaction.created": "transaction",
+} as const;
+
 /**
  * Modules only see their dependencies' events, so a clash between unrelated modules is caught
- * here: person and account keys must be unique and at most one module may set the household settings.
+ * here: keys of people, institutions, accounts, tags, payees and transactions must be unique and
+ * at most one module may set the household settings.
  */
 function assertGloballyConsistent(events: readonly EmittedEvent[]): void {
-  const personOwner = new Map<string, string>();
-  const accountOwner = new Map<string, string>();
+  const owners = new Map<string, string>();
   let settingsOwner: string | undefined;
   for (const event of events) {
-    if (event.type === "person.created") {
-      const other = personOwner.get(event.key);
-      if (other !== undefined) {
-        throw new Error(
-          `Seed modules "${other}" and "${event.module}" both create person "${event.key}"`,
-        );
-      }
-      personOwner.set(event.key, event.module);
-    } else if (event.type === "account.created") {
-      const other = accountOwner.get(event.key);
-      if (other !== undefined) {
-        throw new Error(
-          `Seed modules "${other}" and "${event.module}" both create account "${event.key}"`,
-        );
-      }
-      accountOwner.set(event.key, event.module);
-    } else if (event.type === "household.settings") {
+    if (event.type === "household.settings") {
       if (settingsOwner !== undefined) {
         throw new Error(
           `Seed modules "${settingsOwner}" and "${event.module}" both set the household settings`,
         );
       }
       settingsOwner = event.module;
+      continue;
     }
+    if (!Object.hasOwn(KEYED, event.type)) continue;
+    const what = KEYED[event.type as keyof typeof KEYED];
+    const id = `${what}:${(event as { key: string }).key}`;
+    const other = owners.get(id);
+    if (other !== undefined) {
+      throw new Error(
+        `Seed modules "${other}" and "${event.module}" both create ${what} "${(event as { key: string }).key}"`,
+      );
+    }
+    owners.set(id, event.module);
   }
 }
