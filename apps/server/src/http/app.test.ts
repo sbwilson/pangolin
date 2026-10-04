@@ -1676,7 +1676,8 @@ describe("/api/ledger/transactions/:id/splits", () => {
     expect(ok.status).toBe(200);
     expect(ok.headers.get("cache-control")).toBe("no-store");
     const body = (await ok.json()) as Body;
-    expect(body.remainingCents).toBe(0);
+    expect(body.transaction.remainingCents).toBe(0);
+    expect(body).not.toHaveProperty("remainingCents");
     expect(body.transaction.splits).toHaveLength(2);
     const bad = await send(db, "PUT", path, { splits: [{ amountCents: -600 }] });
     expect(bad.status).toBe(400);
