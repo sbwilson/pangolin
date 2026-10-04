@@ -128,6 +128,28 @@ function stubEnv(env: Record<string, string>): Record<string, string> {
   };
 }
 
+/** Runs argv[1] under `sh -c` on a pty, feeds stdin to it, and exits with its status. */
+const PTY_RUNNER = `
+import os, pty, sys, select
+data = sys.stdin.buffer.read()
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("sh", ["sh", "-c", sys.argv[1]])
+os.write(fd, data)
+while True:
+    try:
+        r, _, _ = select.select([fd], [], [], 60)
+        chunk = os.read(fd, 4096) if r else b""
+    except OSError:
+        chunk = b""
+    if not chunk:
+        break
+    sys.stdout.buffer.write(chunk)
+    sys.stdout.buffer.flush()
+_, status = os.waitpid(pid, 0)
+sys.exit(os.waitstatus_to_exitcode(status))
+`;
+
 /**
  * Runs install.sh interactively under `script`, which gives it a terminal and types `input`
  * (one answer per line) into it. Every answer is given as a flag except `--non-interactive`, so
@@ -142,7 +164,13 @@ function installInteractively(
   const command = ["sh", INSTALL, "--root", root, ...args, ...extra]
     .map((arg) => `'${arg}'`)
     .join(" ");
-  const result = spawnSync("script", ["-qec", command, "/dev/null"], {
+  // util-linux `script -c` gives the installer a terminal; BSD `script` needs a terminal on its
+  // own stdin, so on macOS python's pty module stands in for it.
+  const [file, fileArgs] =
+    process.platform === "darwin"
+      ? ["python3", ["-c", PTY_RUNNER, command]]
+      : ["script", ["-qec", command, "/dev/null"]];
+  const result = spawnSync(file as string, fileArgs as string[], {
     encoding: "utf8",
     input,
     env: { ...process.env, SSH_CONNECTION: "", ...stubEnv(env) },
