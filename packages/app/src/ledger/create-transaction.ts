@@ -88,6 +88,11 @@ export function createTransaction(
       taxCategoryId: null,
       deductibleBp: null,
       memo: null,
+      categorySource: null,
+      activitySource: null,
+      taxCategorySource: null,
+      beneficiarySource: null,
+      deductibleBpSource: null,
       createdAt: at,
       updatedAt: at,
     };

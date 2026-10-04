@@ -220,3 +220,12 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-transactions-plan.md`
   summary: Tidy ledger writes: idempotency or a warning for accidental double POST of a manual line, a splits snapshot in the create audit row, delete audit read back from the row, shared field schemas for create and update, and a signal when needs_review syncs a deleted or missing row.
   evidence: create-transaction.ts, update-transaction.ts, delete-transaction.ts, ledger/needs-review.ts (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-splits-provenance-beneficiary-and-tags-plan.md`
+  summary: Fire the split-field listeners (suggestion closing) from `setSplits` edits too, and decide whether a lower-ranked source writing a deleted or invalid target returns `applied: false` before validating the target.
+  evidence: set-split-field.ts runs listeners only for `setSplitField`; set-splits.ts changes classified fields without them (review pass 1, medium).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-splits-provenance-beneficiary-and-tags-plan.md`
+  summary: Tighten split writes: keep non-sum Validation errors free of `remainingCents`, bound amounts so sums stay safe integers, compare splits field by field, reset a private-account split's stored beneficiary to the owner when it differs, mirror the SQLite id-collision error in memory, and put tag ids in create, update and delete audit snapshots.
+  evidence: set-splits.ts `fail`, `sameSplit`, `resolve`; memory-uow.ts `replaceSplits` (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-splits-provenance-beneficiary-and-tags-plan.md`
+  summary: Give `tags.attach` a viewer check or remove it with the unused `TagRepo.detach`, use `objectBody` for the split PATCH route instead of `as never`, and return `remainingCents` once from the replace route.
+  evidence: classify-repos.ts `attach`/`detach`, apps/server/src/http/app.ts split routes (review pass 1, low).

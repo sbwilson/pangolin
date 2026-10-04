@@ -302,11 +302,39 @@ export {
   getTransactionInput,
 } from "./ledger/get-transaction.ts";
 export {
+  type LedgerSplit,
   type LedgerTransaction,
   type ListTransactionsInput,
   listTransactions,
   listTransactionsInput,
 } from "./ledger/list-transactions.ts";
+export {
+  mayOverwrite,
+  sourceRank,
+} from "./ledger/provenance.ts";
+export {
+  registerSplitFieldListener,
+  type SetSplitFieldInput,
+  type SetSplitFieldResult,
+  SPLIT_FIELDS,
+  type SplitField,
+  type SplitFieldListener,
+  type SplitFieldWrite,
+  setSplitField,
+  setSplitFieldInput,
+} from "./ledger/set-split-field.ts";
+export {
+  MAX_SPLITS,
+  type SetSplitsInput,
+  setSplits,
+  setSplitsInput,
+} from "./ledger/set-splits.ts";
+export {
+  type SetSplitTagsInput,
+  setSplitTags,
+  setSplitTagsInput,
+} from "./ledger/split-tags.ts";
+export { remainingCents } from "./ledger/transaction-view.ts";
 export {
   type UpdateTransactionInput,
   updateTransaction,
@@ -385,7 +413,10 @@ export {
   type PayeeRepo,
   type PayeeRow,
   type ScopedRows,
+  SPLIT_SOURCES,
   type SplitRow,
+  type SplitSource,
+  type SplitTagged,
   type SplitTagRow,
   type TagRepo,
   type TagRow,

@@ -238,6 +238,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               find: repos.tags.find,
               list: repos.tags.list,
               listForSplit: repos.tags.listForSplit,
+              listForSplits: repos.tags.listForSplits,
             },
             activities: { find: repos.activities.find, list: repos.activities.list },
             payees: { find: repos.payees.find, list: repos.payees.list },

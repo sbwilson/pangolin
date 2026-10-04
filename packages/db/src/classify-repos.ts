@@ -9,6 +9,7 @@ import type {
   PayeeAliasRow,
   PayeeRepo,
   PayeeRow,
+  SplitTagged,
   TagRepo,
   TagRow,
   TaxCategoryRepo,
@@ -182,6 +183,9 @@ export function createTaxCategoryRepo(orm: Orm, check: () => void): TaxCategoryR
   };
 }
 
+/** Code-point order, which is what SQLite's BINARY collation gives ULIDs and plain names. */
+const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 /** The `tag` and `split_tag` repository. Reads compose `visibleScope`. */
 export function createTagRepo(orm: Orm, check: () => void): TagRepo {
   const columns = {
@@ -252,6 +256,78 @@ export function createTagRepo(orm: Orm, check: () => void): TagRepo {
     attach: (row) => {
       check();
       orm.insert(splitTag).values(row).run();
+    },
+    detach: (splitId, tagId) => {
+      check();
+      return (
+        orm
+          .delete(splitTag)
+          .where(and(eq(splitTag.splitId, splitId), eq(splitTag.tagId, tagId)))
+          .run().changes === 1
+      );
+    },
+    replaceForSplit: (viewer, splitId, tagIds, at) => {
+      const scope = visibleScope(tag.scopePersonId, viewer);
+      check();
+      const wanted = new Set<string>(tagIds);
+      const have = orm
+        .select({ tagId: splitTag.tagId })
+        .from(splitTag)
+        .innerJoin(tag, eq(splitTag.tagId, tag.id))
+        .where(and(eq(splitTag.splitId, splitId), isNull(tag.deletedAt), scope))
+        .all()
+        .map((r) => r.tagId);
+      const drop = have.filter((id) => !wanted.has(id));
+      if (drop.length > 0) {
+        orm
+          .delete(splitTag)
+          .where(and(eq(splitTag.splitId, splitId), inArray(splitTag.tagId, drop)))
+          .run();
+      }
+      const present = new Set(have);
+      const add = [...wanted].filter((id) => !present.has(id));
+      if (add.length > 0) {
+        orm
+          .insert(splitTag)
+          .values(add.map((tagId) => ({ splitId, tagId, createdAt: at, updatedAt: at })))
+          .run();
+      }
+    },
+    listForSplits: (viewer, splitIds) => {
+      const scope = visibleScope(tag.scopePersonId, viewer);
+      const visible = visibleTxnId(split.transactionId, viewer);
+      check();
+      const out: SplitTagged[] = [];
+      for (let i = 0; i < splitIds.length; i += 400) {
+        const chunk = splitIds.slice(i, i + 400);
+        const found = orm
+          .select({
+            splitId: splitTag.splitId,
+            id: tag.id,
+            name: tag.name,
+            scopePersonId: tag.scopePersonId,
+            createdAt: tag.createdAt,
+            updatedAt: tag.updatedAt,
+          })
+          .from(splitTag)
+          .innerJoin(tag, eq(splitTag.tagId, tag.id))
+          .where(
+            and(
+              inArray(splitTag.splitId, chunk),
+              isNull(tag.deletedAt),
+              scope,
+              inArray(splitTag.splitId, orm.select({ id: split.id }).from(split).where(visible)),
+            ),
+          )
+          .all();
+        for (const { splitId, ...row } of found) {
+          out.push({ splitId: splitId as Id<"Split">, tag: row as TagRow });
+        }
+      }
+      return out.sort(
+        (a, b) =>
+          cmp(a.splitId, b.splitId) || cmp(a.tag.name, b.tag.name) || cmp(a.tag.id, b.tag.id),
+      );
     },
     listForSplit: (viewer, splitId) => {
       const scope = visibleScope(tag.scopePersonId, viewer);
