@@ -64,6 +64,13 @@
       "when": 1791065529496,
       "tag": "0008_ledger_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1791075642117,
+      "tag": "0009_ledger_classification_schema",
+      "breakpoints": true
     }
   ]
 }

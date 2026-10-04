@@ -160,3 +160,18 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-tracer-bullet-one-account-s-transactions-seen-per-viewer-plan.md`
   summary: Paginate `GET /api/ledger/transactions`, show account name, private marker and account currency on the list page, and add a `visibleAudit` path for audit rows carrying private payloads.
   evidence: `listVisible` loads every visible transaction, the page hard-codes AUD, and audit rows store private account names and descriptions (review pass 1, low; epic-ledger-workspace).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-and-classification-schema-plan.md`
+  summary: Scope and viewer checks for classification writes: `softDelete` and `tag.attach` on payee, payee_alias, tag, activity take no viewer, so entries 4 and 5 use cases must `find(viewer, id)` first, or the repos should take the viewer.
+  evidence: classify-repos.ts write methods apply no `visibleScope` and the memory mirror copies the gap (review pass 1, medium).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-and-classification-schema-plan.md`
+  summary: Make the memory unit of work enforce the SQLite CHECKs (status, posted_on, kind, match_kind, source, matched_by, flags) and call `check()` before reference checks, with parity cases for them.
+  evidence: classification-repos.test.ts parity covers only the matrix rows (review pass 1, medium).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-and-classification-schema-plan.md`
+  summary: Revisit fingerprint v1 for the import epic: normalise descriptions, cross-check the hand-rolled SHA-256 against node:crypto, and decide how v0 (id) fingerprints from pre-0009 rows dedupe.
+  evidence: legacy rows carry fingerprint = id, version 0; v1 hashes the raw description (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-and-classification-schema-plan.md`
+  summary: Tighten the 0009 schema: date-order and format CHECKs, case-insensitive name uniqueness, balance_snapshot uniqueness, indexes on new foreign keys, and `payeeId` redaction on shared transactions that reference a scoped payee (entry 3).
+  evidence: no such constraints exist in 0009 and visibleTxn returns payeeId as stored (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-ledger-and-classification-schema-plan.md`
+  summary: Stop exporting `@pangolin/app/testing/memory-uow` publicly; keep parity tests beside the memory unit of work or in a testing package.
+  evidence: packages/app/package.json now exports test-only code (review pass 1, low).

@@ -241,6 +241,13 @@ export interface AccountRow {
   /** ISO 4217 code; v1 requires it to match the base currency. */
   readonly currency: string;
   readonly isPrivate: boolean;
+  readonly institutionId: Id<"Institution"> | null;
+  /** `YYYY-MM-DD`, or null when unknown. */
+  readonly openedOn: string | null;
+  /** `YYYY-MM-DD`, or null while the account is open. */
+  readonly closedOn: string | null;
+  /** Counts toward savings (a flag on the account, not its type). */
+  readonly isSavings: boolean;
   /** UTC ISO-8601 timestamp. */
   readonly createdAt: string;
   /** UTC ISO-8601 timestamp. */
@@ -264,6 +271,8 @@ export interface AccountRepo {
    * private account (the two are indistinguishable). Throws when given no viewer.
    */
   findVisible(viewer: Viewer, id: string): AccountRow | undefined;
+  /** The accounts `viewer` may see, oldest first. Throws when given no viewer. */
+  list(viewer: Viewer): AccountRow[];
   /** Whether any account exists (deleted ones included). */
   any(): boolean;
   /** The owners of an account, by person ID. */
@@ -279,7 +288,24 @@ export interface TransactionRow {
   /** Signed integer minor units. */
   readonly amountCents: number;
   readonly descriptionRaw: string;
+  readonly payeeId: Id<"Payee"> | null;
   readonly status: "pending" | "posted";
+  /** The bank's own ID for the line; unique per account when present. */
+  readonly externalId: string | null;
+  /** Hash of the line's identity (see `fingerprint_version`); unique per account. */
+  readonly fingerprint: string;
+  /** 1 for `ledger/fingerprint.ts`; 0 marks a row that predates fingerprints (its own ID). */
+  readonly fingerprintVersion: number;
+  /** The import that made the line. No foreign key until the import epic. */
+  readonly importId: string | null;
+  readonly performedBy: Id<"Person"> | null;
+  readonly transferGroupId: Id<"TransferGroup"> | null;
+  readonly needsReview: boolean;
+  readonly isHidden: boolean;
+  readonly nameHiddenBy: Id<"Person"> | null;
+  /** UTC ISO-8601 timestamp, or null. */
+  readonly nameHiddenUntil: string | null;
+  readonly notes: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -289,8 +315,15 @@ export interface SplitRow {
   readonly id: Id<"Split">;
   readonly transactionId: Id<"Transaction">;
   readonly amountCents: number;
+  readonly categoryId: Id<"Category"> | null;
+  readonly activityId: Id<"Activity"> | null;
   /** `shared` or a person ID. A private account's splits carry its owner. */
   readonly beneficiary: string;
+  /** No foreign key until the property table exists. */
+  readonly propertyId: string | null;
+  readonly taxCategoryId: Id<"TaxCategory"> | null;
+  /** Deductible share in basis points, 0 to 10000, or null when not set. */
+  readonly deductibleBp: number | null;
   readonly memo: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -302,12 +335,239 @@ export interface TransactionWithSplits extends TransactionRow {
 }
 
 export interface TransactionRepo {
+  /**
+   * Inserts the transaction and its splits. A second line with the same `(accountId,
+   * externalId)` or `(accountId, fingerprint)` is rejected, deleted lines included.
+   */
   insert(row: TransactionRow, splits: readonly SplitRow[]): void;
+  /** The live transaction `viewer` may see, with its splits. Throws when given no viewer. */
+  findVisible(viewer: Viewer, id: string): TransactionWithSplits | undefined;
+  /**
+   * Soft-deletes a transaction `viewer` may see. False when there is none (or it is already
+   * deleted). The row stays for dedupe.
+   */
+  softDelete(viewer: Viewer, id: string, at: string): boolean;
   /**
    * The transactions `viewer` may see (those of public accounts and of their own private ones),
    * newest first, with their splits. Throws when given no viewer.
    */
   listVisible(viewer: Viewer): TransactionWithSplits[];
+}
+
+/** What kind of body an institution is. */
+export const INSTITUTION_KINDS = ["bank", "broker", "super_fund", "other"] as const;
+export type InstitutionKind = (typeof INSTITUTION_KINDS)[number];
+
+/** `institution`: a bank, broker or super fund. */
+export interface InstitutionRow {
+  readonly id: Id<"Institution">;
+  readonly name: string;
+  readonly kind: InstitutionKind;
+  readonly websiteUrl: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/**
+ * Every read here takes the viewer first (throws without one). Institutions, categories and tax
+ * categories are household-wide; `softDelete` hides a row from every read and returns false when
+ * there was nothing to delete.
+ */
+export interface InstitutionRepo {
+  insert(row: InstitutionRow): void;
+  find(viewer: Viewer, id: string): InstitutionRow | undefined;
+  /** Live institutions by name. */
+  list(viewer: Viewer): InstitutionRow[];
+  softDelete(id: string, at: string): boolean;
+}
+
+export const BALANCE_SOURCES = ["statement", "api", "manual"] as const;
+export type BalanceSource = (typeof BALANCE_SOURCES)[number];
+
+/** `balance_snapshot`: an account's balance on one day. */
+export interface BalanceSnapshotRow {
+  readonly id: Id<"BalanceSnapshot">;
+  readonly accountId: Id<"Account">;
+  /** `YYYY-MM-DD`. */
+  readonly asOf: string;
+  readonly balanceCents: number;
+  readonly source: BalanceSource;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface BalanceSnapshotRepo {
+  insert(row: BalanceSnapshotRow): void;
+  /** Snapshots of an account `viewer` may see, newest day first; empty for any other account. */
+  listVisible(viewer: Viewer, accountId: string): BalanceSnapshotRow[];
+}
+
+export const TRANSFER_MATCHES = ["rule", "manual", "auto"] as const;
+export type TransferMatch = (typeof TRANSFER_MATCHES)[number];
+
+/** `transfer_group`: links both sides of a transfer between our own accounts. */
+export interface TransferGroupRow {
+  readonly id: Id<"TransferGroup">;
+  readonly matchedBy: TransferMatch;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface TransferGroupRepo {
+  insert(row: TransferGroupRow): void;
+  /** The group, when at least one live transaction in it is visible to `viewer`. */
+  find(viewer: Viewer, id: string): TransferGroupRow | undefined;
+}
+
+export const CATEGORY_GROUP_KINDS = ["income", "expense", "transfer"] as const;
+export type CategoryGroupKind = (typeof CATEGORY_GROUP_KINDS)[number];
+
+/** `category_group`: a report group of categories. Never soft-deleted. */
+export interface CategoryGroupRow {
+  readonly id: Id<"CategoryGroup">;
+  readonly name: string;
+  readonly kind: CategoryGroupKind;
+  readonly sort: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface CategoryGroupRepo {
+  insert(row: CategoryGroupRow): void;
+  find(viewer: Viewer, id: string): CategoryGroupRow | undefined;
+  /** By `sort`, then name. */
+  list(viewer: Viewer): CategoryGroupRow[];
+}
+
+/** `category`: a leaf category. */
+export interface CategoryRow {
+  readonly id: Id<"Category">;
+  readonly groupId: Id<"CategoryGroup">;
+  readonly name: string;
+  readonly isFixedCost: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface CategoryRepo {
+  insert(row: CategoryRow): void;
+  find(viewer: Viewer, id: string): CategoryRow | undefined;
+  /** Live categories by name. */
+  list(viewer: Viewer): CategoryRow[];
+  softDelete(id: string, at: string): boolean;
+}
+
+/** `tax_category`: an ATO deduction label. */
+export interface TaxCategoryRow {
+  readonly id: Id<"TaxCategory">;
+  readonly code: string;
+  readonly label: string;
+  /** Basis points, 0 to 10000. */
+  readonly defaultDeductibleBp: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface TaxCategoryRepo {
+  insert(row: TaxCategoryRow): void;
+  find(viewer: Viewer, id: string): TaxCategoryRow | undefined;
+  /** By code. */
+  list(viewer: Viewer): TaxCategoryRow[];
+}
+
+/**
+ * Tags, activities, payees and aliases carry a scope (AD-18): `scopePersonId` null is shared,
+ * otherwise the row is that person's alone. The account a scoped row came from is stored but
+ * never part of a row type; `insert` takes it as its second argument. A system viewer sees every
+ * scope; a person sees shared rows and their own. A live name is unique per scope.
+ */
+export interface ScopedRows {
+  readonly scopePersonId: Id<"Person"> | null;
+}
+
+/** `tag`: a free-form label. */
+export interface TagRow extends ScopedRows {
+  readonly id: Id<"Tag">;
+  readonly name: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** `split_tag`: one tag on one split. */
+export interface SplitTagRow {
+  readonly splitId: Id<"Split">;
+  readonly tagId: Id<"Tag">;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface TagRepo {
+  insert(row: TagRow, originAccountId: Id<"Account"> | null): void;
+  find(viewer: Viewer, id: string): TagRow | undefined;
+  list(viewer: Viewer): TagRow[];
+  softDelete(id: string, at: string): boolean;
+  /** Puts a tag on a split; the same pair twice is rejected. */
+  attach(row: SplitTagRow): void;
+  /** The tags on a split, for a split whose transaction `viewer` may see; only tags in scope. */
+  listForSplit(viewer: Viewer, splitId: string): TagRow[];
+}
+
+/** `activity`: a trip or event. */
+export interface ActivityRow extends ScopedRows {
+  readonly id: Id<"Activity">;
+  readonly name: string;
+  /** `YYYY-MM-DD`, or null. */
+  readonly startsOn: string | null;
+  readonly endsOn: string | null;
+  readonly budgetCents: number | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface ActivityRepo {
+  insert(row: ActivityRow, originAccountId: Id<"Account"> | null): void;
+  find(viewer: Viewer, id: string): ActivityRow | undefined;
+  list(viewer: Viewer): ActivityRow[];
+  softDelete(id: string, at: string): boolean;
+}
+
+/** `payee`: a clean merchant identity. */
+export interface PayeeRow extends ScopedRows {
+  readonly id: Id<"Payee">;
+  readonly name: string;
+  readonly websiteUrl: string | null;
+  /** No foreign key until attachments exist. */
+  readonly logoAttachmentId: string | null;
+  readonly defaultCategoryId: Id<"Category"> | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface PayeeRepo {
+  insert(row: PayeeRow, originAccountId: Id<"Account"> | null): void;
+  find(viewer: Viewer, id: string): PayeeRow | undefined;
+  list(viewer: Viewer): PayeeRow[];
+  softDelete(id: string, at: string): boolean;
+}
+
+export const ALIAS_MATCH_KINDS = ["exact", "contains", "prefix", "regex"] as const;
+export type AliasMatchKind = (typeof ALIAS_MATCH_KINDS)[number];
+
+/** `payee_alias`: a raw-description pattern that maps to a payee. */
+export interface PayeeAliasRow extends ScopedRows {
+  readonly id: Id<"PayeeAlias">;
+  readonly pattern: string;
+  readonly matchKind: AliasMatchKind;
+  readonly payeeId: Id<"Payee">;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface PayeeAliasRepo {
+  insert(row: PayeeAliasRow, originAccountId: Id<"Account"> | null): void;
+  find(viewer: Viewer, id: string): PayeeAliasRow | undefined;
+  list(viewer: Viewer): PayeeAliasRow[];
+  softDelete(id: string, at: string): boolean;
 }
 
 /**
@@ -509,6 +769,16 @@ export interface TxRepos {
   readonly reviewItems: ReviewItemRepo;
   readonly accounts: AccountRepo;
   readonly transactions: TransactionRepo;
+  readonly institutions: InstitutionRepo;
+  readonly balanceSnapshots: BalanceSnapshotRepo;
+  readonly transferGroups: TransferGroupRepo;
+  readonly categoryGroups: CategoryGroupRepo;
+  readonly categories: CategoryRepo;
+  readonly taxCategories: TaxCategoryRepo;
+  readonly tags: TagRepo;
+  readonly activities: ActivityRepo;
+  readonly payees: PayeeRepo;
+  readonly payeeAliases: PayeeAliasRepo;
   readonly backups: BackupSnapshotRepo;
   readonly backupVerifications: BackupVerificationRepo;
   readonly recoveryBundle: RecoveryBundleRepo;
@@ -528,8 +798,18 @@ export interface ReadRepos {
     "listDead" | "listPending" | "listRunning" | "countByStatus" | "find" | "firstCreatedAt"
   >;
   readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
-  readonly accounts: Pick<AccountRepo, "findVisible" | "owners" | "any">;
-  readonly transactions: Pick<TransactionRepo, "listVisible">;
+  readonly accounts: Pick<AccountRepo, "findVisible" | "list" | "owners" | "any">;
+  readonly transactions: Pick<TransactionRepo, "listVisible" | "findVisible">;
+  readonly institutions: Pick<InstitutionRepo, "find" | "list">;
+  readonly balanceSnapshots: Pick<BalanceSnapshotRepo, "listVisible">;
+  readonly transferGroups: Pick<TransferGroupRepo, "find">;
+  readonly categoryGroups: Pick<CategoryGroupRepo, "find" | "list">;
+  readonly categories: Pick<CategoryRepo, "find" | "list">;
+  readonly taxCategories: Pick<TaxCategoryRepo, "find" | "list">;
+  readonly tags: Pick<TagRepo, "find" | "list" | "listForSplit">;
+  readonly activities: Pick<ActivityRepo, "find" | "list">;
+  readonly payees: Pick<PayeeRepo, "find" | "list">;
+  readonly payeeAliases: Pick<PayeeAliasRepo, "find" | "list">;
   readonly backups: Pick<BackupSnapshotRepo, "find" | "latestPushed">;
   readonly backupVerifications: Pick<BackupVerificationRepo, "latest">;
   readonly recoveryBundle: Pick<RecoveryBundleRepo, "get">;

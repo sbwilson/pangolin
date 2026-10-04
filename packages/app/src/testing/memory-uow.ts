@@ -1,4 +1,5 @@
-// Test support only (not exported from the package): an in-memory `UnitOfWork` with rollback,
+// Test support only (reached as `@pangolin/app/testing/memory-uow`, for the adapter parity
+// tests in `packages/db`; not part of the package index): an in-memory `UnitOfWork` with rollback,
 // so `app` tests can check transaction behaviour without importing an adapter. The job and
 // review-item repositories mirror the SQLite adapter's semantics (partial unique keys, leased
 // claims, visibility); `packages/db` tests prove the adapter on real SQLite.
@@ -7,17 +8,31 @@ import type {
   AccountOwnerRow,
   AccountRepo,
   AccountRow,
+  ActivityRepo,
+  ActivityRow,
   AuditRow,
   BackupSnapshotRepo,
   BackupSnapshotRow,
   BackupVerificationRepo,
   BackupVerificationRow,
+  BalanceSnapshotRepo,
+  BalanceSnapshotRow,
+  CategoryGroupRepo,
+  CategoryGroupRow,
+  CategoryRepo,
+  CategoryRow,
   CredentialRepo,
   HouseholdSettingsRow,
+  InstitutionRepo,
+  InstitutionRow,
   JobRepo,
   JobRow,
   LoginAttemptRepo,
   LoginAttemptRow,
+  PayeeAliasRepo,
+  PayeeAliasRow,
+  PayeeRepo,
+  PayeeRow,
   PersonRepo,
   PersonRow,
   RecoveryBundleRow,
@@ -30,8 +45,15 @@ import type {
   SetupLinkRepo,
   SetupLinkRow,
   SplitRow,
+  SplitTagRow,
+  TagRepo,
+  TagRow,
+  TaxCategoryRepo,
+  TaxCategoryRow,
   TransactionRepo,
   TransactionRow,
+  TransferGroupRepo,
+  TransferGroupRow,
   TxRepos,
   UnitOfWork,
   UserEnrolment,
@@ -49,6 +71,21 @@ export interface MemoryState {
   accountOwners: AccountOwnerRow[];
   transactions: TransactionRow[];
   splits: SplitRow[];
+  institutions: InstitutionRow[];
+  balanceSnapshots: BalanceSnapshotRow[];
+  transferGroups: TransferGroupRow[];
+  categoryGroups: CategoryGroupRow[];
+  categories: CategoryRow[];
+  taxCategories: TaxCategoryRow[];
+  tags: TagRow[];
+  splitTags: SplitTagRow[];
+  activities: ActivityRow[];
+  payees: PayeeRow[];
+  payeeAliases: PayeeAliasRow[];
+  /** IDs of soft-deleted rows (ULIDs are unique across tables); the rows stay, as in SQLite. */
+  deleted: Set<string>;
+  /** The origin account of each scoped row (AD-18), by row ID; never part of a row type. */
+  origins: Map<string, string | null>;
   backups: BackupSnapshotRow[];
   backupVerifications: BackupVerificationRow[];
   /** The confirmed recovery bundle; undefined until the first confirmation. */
@@ -551,6 +588,7 @@ function reviewItemRepo(working: MemoryState, check: () => void): ReviewItemRepo
       check();
       const existing = open(row.dedupeKey);
       if (existing !== undefined) return { item: existing, inserted: false };
+      references(working.accounts, row.accountId, "review_item.account_id");
       working.reviewItems.push(row);
       return { item: row, inserted: true };
     },
@@ -583,6 +621,7 @@ function accountRepo(working: MemoryState, check: () => void): AccountRepo {
   return {
     insert: (row, owners) => {
       check();
+      references(working.institutions, row.institutionId, "account.institution_id");
       working.accounts.push(row);
       working.accountOwners.push(...owners);
     },
@@ -593,6 +632,13 @@ function accountRepo(working: MemoryState, check: () => void): AccountRepo {
       return account !== undefined && accountVisible(working, viewer, account)
         ? account
         : undefined;
+    },
+    list: (viewer) => {
+      requireViewer(viewer);
+      check();
+      return working.accounts
+        .filter((row) => accountVisible(working, viewer, row))
+        .sort((a, b) => byText(`${a.createdAt}|${a.id}`, `${b.createdAt}|${b.id}`));
     },
     any: () => {
       check();
@@ -606,34 +652,406 @@ function accountRepo(working: MemoryState, check: () => void): AccountRepo {
 }
 
 function transactionRepo(working: MemoryState, check: () => void): TransactionRepo {
+  const withSplits = (row: TransactionRow) => ({
+    ...row,
+    splits: working.splits
+      .filter((split) => split.transactionId === row.id)
+      .sort((a, b) => (a.id < b.id ? -1 : 1)),
+  });
+  const visibleRows = (viewer: Viewer) => {
+    const visibleIds = new Set(
+      working.accounts.filter((a) => accountVisible(working, viewer, a)).map((a) => a.id),
+    );
+    return working.transactions.filter(
+      (row) => visibleIds.has(row.accountId) && !working.deleted.has(row.id),
+    );
+  };
   return {
     insert: (row, splits) => {
       check();
+      references(working.accounts, row.accountId, "transaction.account_id");
+      references(working.payees, row.payeeId, "transaction.payee_id");
+      references(working.people, row.performedBy, "transaction.performed_by");
+      references(working.transferGroups, row.transferGroupId, "transaction.transfer_group_id");
+      references(working.people, row.nameHiddenBy, "transaction.name_hidden_by");
+      for (const s of splits) {
+        references(working.categories, s.categoryId, "split.category_id");
+        references(working.activities, s.activityId, "split.activity_id");
+        references(working.taxCategories, s.taxCategoryId, "split.tax_category_id");
+        if (s.deductibleBp !== null && (s.deductibleBp < 0 || s.deductibleBp > 10_000)) {
+          throw new Error("CHECK constraint failed: split_deductible_bp");
+        }
+      }
+      // Deleted lines count: the row stays so the same line is not imported again.
+      for (const other of working.transactions) {
+        if (other.accountId !== row.accountId) continue;
+        if (other.fingerprint === row.fingerprint) {
+          throw uniqueViolation("transaction.account_id, transaction.fingerprint");
+        }
+        if (row.externalId !== null && other.externalId === row.externalId) {
+          throw uniqueViolation("transaction.account_id, transaction.external_id");
+        }
+      }
       working.transactions.push(row);
       working.splits.push(...splits);
     },
-    listVisible: (viewer) => {
-      if (viewer === undefined || viewer === null) throw new TypeError("a viewer is required");
+    findVisible: (viewer, id) => {
+      requireViewer(viewer);
       check();
-      const visibleIds = new Set(
-        working.accounts.filter((a) => accountVisible(working, viewer, a)).map((a) => a.id),
-      );
-      return working.transactions
-        .filter((row) => visibleIds.has(row.accountId))
-        .sort((a, b) =>
-          `${b.postedOn}|${b.id}` < `${a.postedOn}|${a.id}`
-            ? -1
-            : `${b.postedOn}|${b.id}` > `${a.postedOn}|${a.id}`
-              ? 1
-              : 0,
-        )
-        .map((row) => ({
-          ...row,
-          splits: working.splits
-            .filter((split) => split.transactionId === row.id)
-            .sort((a, b) => (a.id < b.id ? -1 : 1)),
-        }));
+      const row = visibleRows(viewer).find((r) => r.id === id);
+      return row === undefined ? undefined : withSplits(row);
     },
+    softDelete: (viewer, id, at) => {
+      requireViewer(viewer);
+      check();
+      const row = visibleRows(viewer).find((r) => r.id === id);
+      if (row === undefined) return false;
+      working.deleted.add(id);
+      working.transactions[working.transactions.indexOf(row)] = { ...row, updatedAt: at };
+      return true;
+    },
+    listVisible: (viewer) => {
+      requireViewer(viewer);
+      check();
+      return visibleRows(viewer)
+        .sort((a, b) => byText(`${b.postedOn}|${b.id}`, `${a.postedOn}|${a.id}`))
+        .map(withSplits);
+    },
+  };
+}
+
+const uniqueViolation = (what: string) => new Error(`UNIQUE constraint failed: ${what}`);
+
+/** Throws SQLite's foreign key error unless `id` is null or among `rows`. */
+function references(rows: readonly { readonly id: string }[], id: string | null, what: string) {
+  if (id !== null && !rows.some((row) => row.id === id)) {
+    throw new Error(`FOREIGN KEY constraint failed: ${what}`);
+  }
+}
+
+function requireViewer(viewer: Viewer | undefined): asserts viewer is Viewer {
+  if (viewer === undefined || viewer === null) throw new TypeError("a viewer is required");
+}
+
+const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+const inScope = (viewer: Viewer, row: { readonly scopePersonId: string | null }) =>
+  viewer.kind === "system" || row.scopePersonId === null || row.scopePersonId === viewer.personId;
+
+function institutionRepo(working: MemoryState, check: () => void): InstitutionRepo {
+  const live = () => working.institutions.filter((row) => !working.deleted.has(row.id));
+  return {
+    insert: (row) => {
+      check();
+      working.institutions.push(row);
+    },
+    find: (viewer, id) => {
+      requireViewer(viewer);
+      check();
+      return live().find((row) => row.id === id);
+    },
+    list: (viewer) => {
+      requireViewer(viewer);
+      check();
+      return live().sort((a, b) => byText(`${a.name}|${a.id}`, `${b.name}|${b.id}`));
+    },
+    softDelete: (id, at) => {
+      check();
+      if (!live().some((row) => row.id === id)) return false;
+      working.deleted.add(id);
+      working.institutions = working.institutions.map((row) =>
+        row.id === id ? { ...row, updatedAt: at } : row,
+      );
+      return true;
+    },
+  };
+}
+
+function balanceSnapshotRepo(working: MemoryState, check: () => void): BalanceSnapshotRepo {
+  return {
+    insert: (row) => {
+      check();
+      references(working.accounts, row.accountId, "balance_snapshot.account_id");
+      working.balanceSnapshots.push(row);
+    },
+    listVisible: (viewer, accountId) => {
+      requireViewer(viewer);
+      check();
+      const account = working.accounts.find((row) => row.id === accountId);
+      if (account === undefined || !accountVisible(working, viewer, account)) return [];
+      return working.balanceSnapshots
+        .filter((row) => row.accountId === accountId)
+        .sort((a, b) => byText(`${b.asOf}|${b.id}`, `${a.asOf}|${a.id}`));
+    },
+  };
+}
+
+function transferGroupRepo(working: MemoryState, check: () => void): TransferGroupRepo {
+  return {
+    insert: (row) => {
+      check();
+      working.transferGroups.push(row);
+    },
+    find: (viewer, id) => {
+      requireViewer(viewer);
+      check();
+      const group = working.transferGroups.find((row) => row.id === id);
+      if (group === undefined) return undefined;
+      const seen = working.transactions.some((txn) => {
+        if (txn.transferGroupId !== id || working.deleted.has(txn.id)) return false;
+        const account = working.accounts.find((row) => row.id === txn.accountId);
+        return account !== undefined && accountVisible(working, viewer, account);
+      });
+      return seen ? group : undefined;
+    },
+  };
+}
+
+function categoryGroupRepo(working: MemoryState, check: () => void): CategoryGroupRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.categoryGroups.some((g) => g.name === row.name)) {
+        throw uniqueViolation("category_group.name");
+      }
+      working.categoryGroups.push(row);
+    },
+    find: (viewer, id) => {
+      requireViewer(viewer);
+      check();
+      return working.categoryGroups.find((row) => row.id === id);
+    },
+    list: (viewer) => {
+      requireViewer(viewer);
+      check();
+      return [...working.categoryGroups].sort(
+        (a, b) => a.sort - b.sort || byText(a.name, b.name) || byText(a.id, b.id),
+      );
+    },
+  };
+}
+
+function categoryRepo(working: MemoryState, check: () => void): CategoryRepo {
+  const live = () => working.categories.filter((row) => !working.deleted.has(row.id));
+  return {
+    insert: (row) => {
+      check();
+      references(working.categoryGroups, row.groupId, "category.group_id");
+      if (live().some((c) => c.groupId === row.groupId && c.name === row.name)) {
+        throw uniqueViolation("category.group_id, category.name");
+      }
+      working.categories.push(row);
+    },
+    find: (viewer, id) => {
+      requireViewer(viewer);
+      check();
+      return live().find((row) => row.id === id);
+    },
+    list: (viewer) => {
+      requireViewer(viewer);
+      check();
+      return live().sort((a, b) => byText(`${a.name}|${a.id}`, `${b.name}|${b.id}`));
+    },
+    softDelete: (id, at) => {
+      check();
+      if (!live().some((row) => row.id === id)) return false;
+      working.deleted.add(id);
+      working.categories = working.categories.map((row) =>
+        row.id === id ? { ...row, updatedAt: at } : row,
+      );
+      return true;
+    },
+  };
+}
+
+function taxCategoryRepo(working: MemoryState, check: () => void): TaxCategoryRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.taxCategories.some((t) => t.code === row.code)) {
+        throw uniqueViolation("tax_category.code");
+      }
+      if (row.defaultDeductibleBp < 0 || row.defaultDeductibleBp > 10_000) {
+        throw new Error("CHECK constraint failed: tax_category_default_deductible_bp");
+      }
+      working.taxCategories.push(row);
+    },
+    find: (viewer, id) => {
+      requireViewer(viewer);
+      check();
+      return working.taxCategories.find((row) => row.id === id);
+    },
+    list: (viewer) => {
+      requireViewer(viewer);
+      check();
+      return [...working.taxCategories].sort((a, b) =>
+        byText(`${a.code}|${a.id}`, `${b.code}|${b.id}`),
+      );
+    },
+  };
+}
+
+/** Shared bookkeeping for the four scoped tables (AD-18). */
+function scoped<R extends { readonly id: string; readonly scopePersonId: string | null }>(
+  working: MemoryState,
+  check: () => void,
+  rows: () => R[],
+  setRows: (next: R[]) => void,
+  key: (row: R) => string,
+  order: (row: R) => string,
+  what: string,
+) {
+  const live = () => rows().filter((row) => !working.deleted.has(row.id));
+  return {
+    insertRow: (row: R, originAccountId: string | null) => {
+      check();
+      references(working.people, row.scopePersonId, `${what}.scope_person_id`);
+      references(working.accounts, originAccountId, `${what}.origin_account_id`);
+      if (live().some((r) => r.scopePersonId === row.scopePersonId && key(r) === key(row))) {
+        throw uniqueViolation(what);
+      }
+      rows().push(row);
+      working.origins.set(row.id, originAccountId);
+    },
+    find: (viewer: Viewer, id: string): R | undefined => {
+      requireViewer(viewer);
+      check();
+      return live().find((row) => row.id === id && inScope(viewer, row));
+    },
+    list: (viewer: Viewer): R[] => {
+      requireViewer(viewer);
+      check();
+      return live()
+        .filter((row) => inScope(viewer, row))
+        .sort((a, b) => byText(`${order(a)}|${a.id}`, `${order(b)}|${b.id}`));
+    },
+    softDelete: (id: string, at: string): boolean => {
+      check();
+      const row = live().find((r) => r.id === id);
+      if (row === undefined) return false;
+      working.deleted.add(id);
+      setRows(rows().map((r) => (r.id === id ? { ...r, updatedAt: at } : r)));
+      return true;
+    },
+  };
+}
+
+function tagRepo(working: MemoryState, check: () => void): TagRepo {
+  const base = scoped(
+    working,
+    check,
+    () => working.tags,
+    (next) => {
+      working.tags = next;
+    },
+    (row) => row.name,
+    (row) => row.name,
+    "tag.name",
+  );
+  return {
+    insert: base.insertRow,
+    find: base.find,
+    list: base.list,
+    softDelete: base.softDelete,
+    attach: (row) => {
+      check();
+      references(working.splits, row.splitId, "split_tag.split_id");
+      references(working.tags, row.tagId, "split_tag.tag_id");
+      if (working.splitTags.some((t) => t.splitId === row.splitId && t.tagId === row.tagId)) {
+        throw uniqueViolation("split_tag.split_id, split_tag.tag_id");
+      }
+      working.splitTags.push(row);
+    },
+    listForSplit: (viewer, splitId) => {
+      requireViewer(viewer);
+      check();
+      const split = working.splits.find((row) => row.id === splitId);
+      const txn = working.transactions.find((row) => row.id === split?.transactionId);
+      const account = working.accounts.find((row) => row.id === txn?.accountId);
+      if (
+        txn === undefined ||
+        working.deleted.has(txn.id) ||
+        account === undefined ||
+        !accountVisible(working, viewer, account)
+      ) {
+        return [];
+      }
+      const ids = new Set(
+        working.splitTags.filter((row) => row.splitId === splitId).map((row) => row.tagId),
+      );
+      return base.list(viewer).filter((row) => ids.has(row.id));
+    },
+  };
+}
+
+function activityRepo(working: MemoryState, check: () => void): ActivityRepo {
+  const base = scoped(
+    working,
+    check,
+    () => working.activities,
+    (next) => {
+      working.activities = next;
+    },
+    (row) => row.name,
+    (row) => row.name,
+    "activity.name",
+  );
+  return {
+    insert: (row, origin) => {
+      if (row.budgetCents !== null && row.budgetCents < 0) {
+        throw new Error("CHECK constraint failed: activity_budget_cents");
+      }
+      base.insertRow(row, origin);
+    },
+    find: base.find,
+    list: base.list,
+    softDelete: base.softDelete,
+  };
+}
+
+function payeeRepo(working: MemoryState, check: () => void): PayeeRepo {
+  const base = scoped(
+    working,
+    check,
+    () => working.payees,
+    (next) => {
+      working.payees = next;
+    },
+    (row) => row.name,
+    (row) => row.name,
+    "payee.name",
+  );
+  return {
+    insert: (row, origin) => {
+      references(working.categories, row.defaultCategoryId, "payee.default_category_id");
+      base.insertRow(row, origin);
+    },
+    find: base.find,
+    list: base.list,
+    softDelete: base.softDelete,
+  };
+}
+
+function payeeAliasRepo(working: MemoryState, check: () => void): PayeeAliasRepo {
+  const base = scoped(
+    working,
+    check,
+    () => working.payeeAliases,
+    (next) => {
+      working.payeeAliases = next;
+    },
+    (row) => `${row.matchKind}|${row.pattern}`,
+    (row) => row.pattern,
+    "payee_alias.pattern",
+  );
+  return {
+    insert: (row, origin) => {
+      references(working.payees, row.payeeId, "payee_alias.payee_id");
+      base.insertRow(row, origin);
+    },
+    find: base.find,
+    list: base.list,
+    softDelete: base.softDelete,
   };
 }
 
@@ -651,6 +1069,19 @@ export function memoryUnitOfWork(
       accountOwners: [],
       transactions: [],
       splits: [],
+      institutions: [],
+      balanceSnapshots: [],
+      transferGroups: [],
+      categoryGroups: [],
+      categories: [],
+      taxCategories: [],
+      tags: [],
+      splitTags: [],
+      activities: [],
+      payees: [],
+      payeeAliases: [],
+      deleted: new Set(),
+      origins: new Map(),
       backups: [],
       backupVerifications: [],
       recoveryBundle: undefined,
@@ -676,6 +1107,19 @@ export function memoryUnitOfWork(
         accountOwners: [...uow.state.accountOwners],
         transactions: [...uow.state.transactions],
         splits: [...uow.state.splits],
+        institutions: [...uow.state.institutions],
+        balanceSnapshots: [...uow.state.balanceSnapshots],
+        transferGroups: [...uow.state.transferGroups],
+        categoryGroups: [...uow.state.categoryGroups],
+        categories: [...uow.state.categories],
+        taxCategories: [...uow.state.taxCategories],
+        tags: [...uow.state.tags],
+        splitTags: [...uow.state.splitTags],
+        activities: [...uow.state.activities],
+        payees: [...uow.state.payees],
+        payeeAliases: [...uow.state.payeeAliases],
+        deleted: new Set(uow.state.deleted),
+        origins: new Map(uow.state.origins),
         backups: [...uow.state.backups],
         backupVerifications: [...uow.state.backupVerifications],
         recoveryBundle: uow.state.recoveryBundle,
@@ -722,6 +1166,16 @@ export function memoryUnitOfWork(
         reviewItems: reviewItemRepo(working, check),
         accounts: accountRepo(working, check),
         transactions: transactionRepo(working, check),
+        institutions: institutionRepo(working, check),
+        balanceSnapshots: balanceSnapshotRepo(working, check),
+        transferGroups: transferGroupRepo(working, check),
+        categoryGroups: categoryGroupRepo(working, check),
+        categories: categoryRepo(working, check),
+        taxCategories: taxCategoryRepo(working, check),
+        tags: tagRepo(working, check),
+        activities: activityRepo(working, check),
+        payees: payeeRepo(working, check),
+        payeeAliases: payeeAliasRepo(working, check),
         backups: backupRepo(working, check),
         backupVerifications: backupVerificationRepo(working, check),
         recoveryBundle: {
@@ -746,6 +1200,19 @@ export function memoryUnitOfWork(
         uow.state.accountOwners = working.accountOwners;
         uow.state.transactions = working.transactions;
         uow.state.splits = working.splits;
+        uow.state.institutions = working.institutions;
+        uow.state.balanceSnapshots = working.balanceSnapshots;
+        uow.state.transferGroups = working.transferGroups;
+        uow.state.categoryGroups = working.categoryGroups;
+        uow.state.categories = working.categories;
+        uow.state.taxCategories = working.taxCategories;
+        uow.state.tags = working.tags;
+        uow.state.splitTags = working.splitTags;
+        uow.state.activities = working.activities;
+        uow.state.payees = working.payees;
+        uow.state.payeeAliases = working.payeeAliases;
+        uow.state.deleted = working.deleted;
+        uow.state.origins = working.origins;
         uow.state.backups = working.backups;
         uow.state.backupVerifications = working.backupVerifications;
         uow.state.recoveryBundle = working.recoveryBundle;
@@ -792,10 +1259,49 @@ export function memoryUnitOfWork(
         reviewItems: { listOpenFor: reviewItemRepo(uow.state, check).listOpenFor },
         accounts: {
           findVisible: accountRepo(uow.state, check).findVisible,
+          list: accountRepo(uow.state, check).list,
           owners: accountRepo(uow.state, check).owners,
           any: accountRepo(uow.state, check).any,
         },
-        transactions: { listVisible: transactionRepo(uow.state, check).listVisible },
+        transactions: {
+          listVisible: transactionRepo(uow.state, check).listVisible,
+          findVisible: transactionRepo(uow.state, check).findVisible,
+        },
+        institutions: {
+          find: institutionRepo(uow.state, check).find,
+          list: institutionRepo(uow.state, check).list,
+        },
+        balanceSnapshots: { listVisible: balanceSnapshotRepo(uow.state, check).listVisible },
+        transferGroups: { find: transferGroupRepo(uow.state, check).find },
+        categoryGroups: {
+          find: categoryGroupRepo(uow.state, check).find,
+          list: categoryGroupRepo(uow.state, check).list,
+        },
+        categories: {
+          find: categoryRepo(uow.state, check).find,
+          list: categoryRepo(uow.state, check).list,
+        },
+        taxCategories: {
+          find: taxCategoryRepo(uow.state, check).find,
+          list: taxCategoryRepo(uow.state, check).list,
+        },
+        tags: {
+          find: tagRepo(uow.state, check).find,
+          list: tagRepo(uow.state, check).list,
+          listForSplit: tagRepo(uow.state, check).listForSplit,
+        },
+        activities: {
+          find: activityRepo(uow.state, check).find,
+          list: activityRepo(uow.state, check).list,
+        },
+        payees: {
+          find: payeeRepo(uow.state, check).find,
+          list: payeeRepo(uow.state, check).list,
+        },
+        payeeAliases: {
+          find: payeeAliasRepo(uow.state, check).find,
+          list: payeeAliasRepo(uow.state, check).list,
+        },
         backups: {
           find: backupRepo(uow.state, check).find,
           latestPushed: backupRepo(uow.state, check).latestPushed,

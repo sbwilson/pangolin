@@ -4,6 +4,15 @@ import { type BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3"
 import { createBackupSnapshotRepo } from "./backup-snapshot-repo.ts";
 import { createBackupVerificationRepo } from "./backup-verification-repo.ts";
 import {
+  createActivityRepo,
+  createCategoryGroupRepo,
+  createCategoryRepo,
+  createPayeeAliasRepo,
+  createPayeeRepo,
+  createTagRepo,
+  createTaxCategoryRepo,
+} from "./classify-repos.ts";
+import {
   createCredentialRepo,
   createLoginAttemptRepo,
   createPersonRepo,
@@ -13,7 +22,13 @@ import {
   createUserRepo,
 } from "./identity-repos.ts";
 import { createJobRepo } from "./job-repo.ts";
-import { createAccountRepo, createTransactionRepo } from "./ledger-repos.ts";
+import {
+  createAccountRepo,
+  createBalanceSnapshotRepo,
+  createInstitutionRepo,
+  createTransactionRepo,
+  createTransferGroupRepo,
+} from "./ledger-repos.ts";
 import type { Db } from "./open.ts";
 import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
@@ -90,6 +105,16 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     reviewItems: createReviewItemRepo(orm, () => guard(scope)),
     accounts: createAccountRepo(orm, () => guard(scope)),
     transactions: createTransactionRepo(orm, () => guard(scope)),
+    institutions: createInstitutionRepo(orm, () => guard(scope)),
+    balanceSnapshots: createBalanceSnapshotRepo(orm, () => guard(scope)),
+    transferGroups: createTransferGroupRepo(orm, () => guard(scope)),
+    categoryGroups: createCategoryGroupRepo(orm, () => guard(scope)),
+    categories: createCategoryRepo(orm, () => guard(scope)),
+    taxCategories: createTaxCategoryRepo(orm, () => guard(scope)),
+    tags: createTagRepo(orm, () => guard(scope)),
+    activities: createActivityRepo(orm, () => guard(scope)),
+    payees: createPayeeRepo(orm, () => guard(scope)),
+    payeeAliases: createPayeeAliasRepo(orm, () => guard(scope)),
     backups: createBackupSnapshotRepo(orm, () => guard(scope)),
     backupVerifications: createBackupVerificationRepo(orm, () => guard(scope)),
     recoveryBundle: createRecoveryBundleRepo(orm, () => guard(scope)),
@@ -154,10 +179,28 @@ export function createUnitOfWork(db: Db): UnitOfWork {
             reviewItems: { listOpenFor: repos.reviewItems.listOpenFor },
             accounts: {
               findVisible: repos.accounts.findVisible,
+              list: repos.accounts.list,
               owners: repos.accounts.owners,
               any: repos.accounts.any,
             },
-            transactions: { listVisible: repos.transactions.listVisible },
+            transactions: {
+              listVisible: repos.transactions.listVisible,
+              findVisible: repos.transactions.findVisible,
+            },
+            institutions: { find: repos.institutions.find, list: repos.institutions.list },
+            balanceSnapshots: { listVisible: repos.balanceSnapshots.listVisible },
+            transferGroups: { find: repos.transferGroups.find },
+            categoryGroups: { find: repos.categoryGroups.find, list: repos.categoryGroups.list },
+            categories: { find: repos.categories.find, list: repos.categories.list },
+            taxCategories: { find: repos.taxCategories.find, list: repos.taxCategories.list },
+            tags: {
+              find: repos.tags.find,
+              list: repos.tags.list,
+              listForSplit: repos.tags.listForSplit,
+            },
+            activities: { find: repos.activities.find, list: repos.activities.list },
+            payees: { find: repos.payees.find, list: repos.payees.list },
+            payeeAliases: { find: repos.payeeAliases.find, list: repos.payeeAliases.list },
             backups: { find: repos.backups.find, latestPushed: repos.backups.latestPushed },
             backupVerifications: { latest: repos.backupVerifications.latest },
             recoveryBundle: { get: repos.recoveryBundle.get },
