@@ -194,6 +194,14 @@ pnpm build
 PANGOLIN_DEMO=true node apps/server/dist/main.js
 ```
 
+### Seed and demo settings
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PANGOLIN_DEMO` | `false` | Boots the read-only demo on an in-memory database loaded from the seed file; no sign-in |
+| `PANGOLIN_SEED_FILE` | `dist/demo-seed.json` | The seed file demo mode loads. A relative path resolves against the working directory |
+| `PANGOLIN_ENABLE_SEED` | `false` | Lets the `seed` admin command load the demo ledger onto a signed-up household. A dev and e2e tool: CI and the e2e run set it, the production stack (`deploy/compose.yaml`) never passes it. The command still refuses unless every person in the seed has signed up and the ledger has no accounts or transactions |
+
 **Mock servers** replay fixture files so tests never reach the network. Both take
 `--port`, `--host` (default `127.0.0.1`) and `--fixtures <dir>`.
 

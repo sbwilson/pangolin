@@ -128,7 +128,7 @@ describe("runSeed", () => {
         expectations: {},
       }),
     };
-    expect(() => runSeed({ modules: [twice] })).toThrow('already has a person with key "x"');
+    expect(() => runSeed({ modules: [twice] })).toThrow('person key "x" is used twice');
   });
 
   it("rejects two unrelated modules creating the same person key, naming both", () => {

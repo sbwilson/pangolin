@@ -2,6 +2,12 @@
 // `@pangolin/app/system-viewer`, which lint bans outside `apps/server/src/{jobs,admin}` (AD-6).
 
 export {
+  checkSeedReferences,
+  emptySeedKnown,
+  type SeedKnown,
+  type SeedReferenceEvent,
+} from "@pangolin/shared/seed";
+export {
   type BalanceAsOfInput,
   balanceAsOf,
   balanceAsOfInput,
