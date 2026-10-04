@@ -11,22 +11,45 @@ import {
   checkSignUp,
   closeAccount,
   createAccount,
+  createActivity,
+  createCategory,
+  createCategoryGroup,
   createInstitution,
+  createPayee,
+  createPayeeAlias,
+  createTag,
+  createTaxCategory,
   deadJobs,
+  deleteActivity,
+  deleteCategory,
+  deletePayee,
+  deletePayeeAlias,
+  deleteTag,
   dismissNotice,
   ERROR_CODES,
   type ErrorCode,
   enrolmentNeeds,
   getAccount,
+  getActivity,
+  getPayee,
+  getPayeeAlias,
+  getTag,
   health,
   type IdGenerator,
   issueInitialRecoveryCodes,
   issueReEnrolmentLink,
   issueSetupLink,
   listAccounts,
+  listActivities,
   listBalanceSnapshots,
+  listCategories,
+  listCategoryGroups,
   listInstitutions,
   listNotices,
+  listPayeeAliases,
+  listPayees,
+  listTags,
+  listTaxCategories,
   listTransactions,
   me,
   type ReadinessOutput,
@@ -44,7 +67,14 @@ import {
   type UnitOfWork,
   type UseCaseContext,
   updateAccount,
+  updateActivity,
+  updateCategory,
+  updateCategoryGroup,
   updateInstitution,
+  updatePayee,
+  updatePayeeAlias,
+  updateTag,
+  updateTaxCategory,
 } from "@pangolin/app";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
@@ -334,6 +364,165 @@ export function createApi(deps: ApiDeps) {
       const body: Record<string, unknown> = await objectBody(c, { accountId });
       const snapshot = recordBalanceSnapshot(ctx(c), { ...body, source: undefined } as never);
       return c.json({ snapshot }, 201);
+    })
+    .get("/api/classify/category-groups", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ categoryGroups: listCategoryGroups(ctx(c), {}) }, 200);
+    })
+    .post("/api/classify/category-groups", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      return c.json({ categoryGroup: createCategoryGroup(ctx(c), await objectBody(c)) }, 201);
+    })
+    .patch("/api/classify/category-groups/:id", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      return c.json(
+        { categoryGroup: updateCategoryGroup(ctx(c), await objectBody(c, { id })) },
+        200,
+      );
+    })
+    .get("/api/classify/categories", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ categories: listCategories(ctx(c), {}) }, 200);
+    })
+    .post("/api/classify/categories", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      return c.json({ category: createCategory(ctx(c), await objectBody(c)) }, 201);
+    })
+    .patch("/api/classify/categories/:id", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      return c.json({ category: updateCategory(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .delete("/api/classify/categories/:id", (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      deleteCategory(ctx(c), { id });
+      return c.json({ id }, 200);
+    })
+    .get("/api/classify/tax-categories", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ taxCategories: listTaxCategories(ctx(c), {}) }, 200);
+    })
+    .post("/api/classify/tax-categories", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      return c.json({ taxCategory: createTaxCategory(ctx(c), await objectBody(c)) }, 201);
+    })
+    .patch("/api/classify/tax-categories/:id", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      return c.json({ taxCategory: updateTaxCategory(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .get("/api/classify/tags", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ tags: listTags(ctx(c), {}) }, 200);
+    })
+    .post("/api/classify/tags", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      return c.json({ tag: createTag(ctx(c), await objectBody(c)) }, 201);
+    })
+    .get("/api/classify/tags/:id", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ tag: getTag(ctx(c), { id: c.req.param("id") }) }, 200);
+    })
+    .patch("/api/classify/tags/:id", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      return c.json({ tag: updateTag(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .delete("/api/classify/tags/:id", (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      deleteTag(ctx(c), { id });
+      return c.json({ id }, 200);
+    })
+    .get("/api/classify/payees/aliases", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ aliases: listPayeeAliases(ctx(c), {}) }, 200);
+    })
+    .post("/api/classify/payees/aliases", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      return c.json({ alias: createPayeeAlias(ctx(c), await objectBody(c)) }, 201);
+    })
+    .get("/api/classify/payees/aliases/:id", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ alias: getPayeeAlias(ctx(c), { id: c.req.param("id") }) }, 200);
+    })
+    .patch("/api/classify/payees/aliases/:id", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      return c.json({ alias: updatePayeeAlias(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .delete("/api/classify/payees/aliases/:id", (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      deletePayeeAlias(ctx(c), { id });
+      return c.json({ id }, 200);
+    })
+    .get("/api/classify/payees", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ payees: listPayees(ctx(c), {}) }, 200);
+    })
+    .post("/api/classify/payees", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      return c.json({ payee: createPayee(ctx(c), await objectBody(c)) }, 201);
+    })
+    .get("/api/classify/payees/:id", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ payee: getPayee(ctx(c), { id: c.req.param("id") }) }, 200);
+    })
+    .patch("/api/classify/payees/:id", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      return c.json({ payee: updatePayee(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .delete("/api/classify/payees/:id", (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      deletePayee(ctx(c), { id });
+      return c.json({ id }, 200);
+    })
+    .get("/api/classify/activities", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ activities: listActivities(ctx(c), {}) }, 200);
+    })
+    .post("/api/classify/activities", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      return c.json({ activity: createActivity(ctx(c), await objectBody(c)) }, 201);
+    })
+    .get("/api/classify/activities/:id", (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ activity: getActivity(ctx(c), { id: c.req.param("id") }) }, 200);
+    })
+    .patch("/api/classify/activities/:id", async (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      return c.json({ activity: updateActivity(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .delete("/api/classify/activities/:id", (c) => {
+      c.header("Cache-Control", "no-store");
+      writable();
+      const id = c.req.param("id");
+      deleteActivity(ctx(c), { id });
+      return c.json({ id }, 200);
     })
     .post("/api/identity/setup-links", (c) => {
       c.header("Cache-Control", "no-store");

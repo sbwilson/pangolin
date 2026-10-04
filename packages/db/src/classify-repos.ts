@@ -14,6 +14,7 @@ import type {
   TaxCategoryRepo,
   TaxCategoryRow,
 } from "@pangolin/app";
+import type { Id } from "@pangolin/shared";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { requireViewer, visibleScope, visibleTxnId } from "./privacy.ts";
@@ -43,6 +44,15 @@ export function createCategoryGroupRepo(orm: Orm, check: () => void): CategoryGr
     insert: (row) => {
       check();
       orm.insert(categoryGroup).values(row).run();
+    },
+    update: (row) => {
+      check();
+      const changed = orm
+        .update(categoryGroup)
+        .set({ name: row.name, kind: row.kind, sort: row.sort, updatedAt: row.updatedAt })
+        .where(eq(categoryGroup.id, row.id))
+        .run().changes;
+      if (changed !== 1) throw new Error(`Category group ${row.id} not found`);
     },
     find: (viewer, id) => {
       requireViewer(viewer, "categoryGroups.find");
@@ -77,6 +87,20 @@ export function createCategoryRepo(orm: Orm, check: () => void): CategoryRepo {
     insert: (row) => {
       check();
       orm.insert(category).values(row).run();
+    },
+    update: (row) => {
+      check();
+      const changed = orm
+        .update(category)
+        .set({
+          groupId: row.groupId,
+          name: row.name,
+          isFixedCost: row.isFixedCost,
+          updatedAt: row.updatedAt,
+        })
+        .where(and(eq(category.id, row.id), isNull(category.deletedAt)))
+        .run().changes;
+      if (changed !== 1) throw new Error(`Category ${row.id} not found`);
     },
     find: (viewer, id) => {
       requireViewer(viewer, "categories.find");
@@ -124,6 +148,20 @@ export function createTaxCategoryRepo(orm: Orm, check: () => void): TaxCategoryR
     insert: (row) => {
       check();
       orm.insert(taxCategory).values(row).run();
+    },
+    update: (row) => {
+      check();
+      const changed = orm
+        .update(taxCategory)
+        .set({
+          code: row.code,
+          label: row.label,
+          defaultDeductibleBp: row.defaultDeductibleBp,
+          updatedAt: row.updatedAt,
+        })
+        .where(eq(taxCategory.id, row.id))
+        .run().changes;
+      if (changed !== 1) throw new Error(`Tax category ${row.id} not found`);
     },
     find: (viewer, id) => {
       requireViewer(viewer, "taxCategories.find");
@@ -180,15 +218,36 @@ export function createTagRepo(orm: Orm, check: () => void): TagRepo {
         .orderBy(asc(tag.name), asc(tag.id))
         .all() as TagRow[];
     },
-    softDelete: (id, at) => {
+    update: (viewer, row) => {
+      const scope = visibleScope(tag.scopePersonId, viewer);
+      check();
+      return (
+        orm
+          .update(tag)
+          .set({ name: row.name, updatedAt: row.updatedAt })
+          .where(and(eq(tag.id, row.id), isNull(tag.deletedAt), scope))
+          .run().changes === 1
+      );
+    },
+    softDelete: (viewer, id, at) => {
+      const scope = visibleScope(tag.scopePersonId, viewer);
       check();
       return (
         orm
           .update(tag)
           .set({ deletedAt: at, updatedAt: at })
-          .where(and(eq(tag.id, id), isNull(tag.deletedAt)))
+          .where(and(eq(tag.id, id), isNull(tag.deletedAt), scope))
           .run().changes === 1
       );
+    },
+    originOf: (viewer, id) => {
+      const scope = visibleScope(tag.scopePersonId, viewer);
+      check();
+      return orm
+        .select({ origin: tag.originAccountId })
+        .from(tag)
+        .where(and(eq(tag.id, id), isNull(tag.deletedAt), scope))
+        .get()?.origin as Id<"Account"> | null | undefined;
     },
     attach: (row) => {
       check();
@@ -267,15 +326,42 @@ export function createActivityRepo(orm: Orm, check: () => void): ActivityRepo {
         .orderBy(asc(activity.name), asc(activity.id))
         .all() as ActivityRow[];
     },
-    softDelete: (id, at) => {
+    update: (viewer, row) => {
+      const scope = visibleScope(activity.scopePersonId, viewer);
+      check();
+      return (
+        orm
+          .update(activity)
+          .set({
+            name: row.name,
+            startsOn: row.startsOn,
+            endsOn: row.endsOn,
+            budgetCents: row.budgetCents,
+            updatedAt: row.updatedAt,
+          })
+          .where(and(eq(activity.id, row.id), isNull(activity.deletedAt), scope))
+          .run().changes === 1
+      );
+    },
+    softDelete: (viewer, id, at) => {
+      const scope = visibleScope(activity.scopePersonId, viewer);
       check();
       return (
         orm
           .update(activity)
           .set({ deletedAt: at, updatedAt: at })
-          .where(and(eq(activity.id, id), isNull(activity.deletedAt)))
+          .where(and(eq(activity.id, id), isNull(activity.deletedAt), scope))
           .run().changes === 1
       );
+    },
+    originOf: (viewer, id) => {
+      const scope = visibleScope(activity.scopePersonId, viewer);
+      check();
+      return orm
+        .select({ origin: activity.originAccountId })
+        .from(activity)
+        .where(and(eq(activity.id, id), isNull(activity.deletedAt), scope))
+        .get()?.origin as Id<"Account"> | null | undefined;
     },
   };
 }
@@ -300,6 +386,21 @@ export function createPayeeRepo(orm: Orm, check: () => void): PayeeRepo {
         .values({ ...row, originAccountId })
         .run();
     },
+    clearDefaultCategory: (categoryId, at) => {
+      check();
+      const live = and(eq(payee.defaultCategoryId, categoryId), isNull(payee.deletedAt));
+      const before = orm
+        .select({ ...columns, origin: payee.originAccountId })
+        .from(payee)
+        .where(live)
+        .orderBy(asc(payee.id))
+        .all();
+      orm.update(payee).set({ defaultCategoryId: null, updatedAt: at }).where(live).run();
+      return before.map(({ origin, ...row }) => ({
+        before: row as PayeeRow,
+        originAccountId: origin as Id<"Account"> | null,
+      }));
+    },
     find: (viewer, id) => {
       const scope = visibleScope(payee.scopePersonId, viewer);
       check();
@@ -319,15 +420,41 @@ export function createPayeeRepo(orm: Orm, check: () => void): PayeeRepo {
         .orderBy(asc(payee.name), asc(payee.id))
         .all() as PayeeRow[];
     },
-    softDelete: (id, at) => {
+    update: (viewer, row) => {
+      const scope = visibleScope(payee.scopePersonId, viewer);
+      check();
+      return (
+        orm
+          .update(payee)
+          .set({
+            name: row.name,
+            websiteUrl: row.websiteUrl,
+            defaultCategoryId: row.defaultCategoryId,
+            updatedAt: row.updatedAt,
+          })
+          .where(and(eq(payee.id, row.id), isNull(payee.deletedAt), scope))
+          .run().changes === 1
+      );
+    },
+    softDelete: (viewer, id, at) => {
+      const scope = visibleScope(payee.scopePersonId, viewer);
       check();
       return (
         orm
           .update(payee)
           .set({ deletedAt: at, updatedAt: at })
-          .where(and(eq(payee.id, id), isNull(payee.deletedAt)))
+          .where(and(eq(payee.id, id), isNull(payee.deletedAt), scope))
           .run().changes === 1
       );
+    },
+    originOf: (viewer, id) => {
+      const scope = visibleScope(payee.scopePersonId, viewer);
+      check();
+      return orm
+        .select({ origin: payee.originAccountId })
+        .from(payee)
+        .where(and(eq(payee.id, id), isNull(payee.deletedAt), scope))
+        .get()?.origin as Id<"Account"> | null | undefined;
     },
   };
 }
@@ -351,6 +478,21 @@ export function createPayeeAliasRepo(orm: Orm, check: () => void): PayeeAliasRep
         .values({ ...row, originAccountId })
         .run();
     },
+    softDeleteForPayee: (payeeId, at) => {
+      check();
+      const live = and(eq(payeeAlias.payeeId, payeeId), isNull(payeeAlias.deletedAt));
+      const before = orm
+        .select({ ...columns, origin: payeeAlias.originAccountId })
+        .from(payeeAlias)
+        .where(live)
+        .orderBy(asc(payeeAlias.id))
+        .all();
+      orm.update(payeeAlias).set({ deletedAt: at, updatedAt: at }).where(live).run();
+      return before.map(({ origin, ...row }) => ({
+        before: row as PayeeAliasRow,
+        originAccountId: origin as Id<"Account"> | null,
+      }));
+    },
     find: (viewer, id) => {
       const scope = visibleScope(payeeAlias.scopePersonId, viewer);
       check();
@@ -370,15 +512,36 @@ export function createPayeeAliasRepo(orm: Orm, check: () => void): PayeeAliasRep
         .orderBy(asc(payeeAlias.pattern), asc(payeeAlias.id))
         .all() as PayeeAliasRow[];
     },
-    softDelete: (id, at) => {
+    update: (viewer, row) => {
+      const scope = visibleScope(payeeAlias.scopePersonId, viewer);
+      check();
+      return (
+        orm
+          .update(payeeAlias)
+          .set({ pattern: row.pattern, matchKind: row.matchKind, updatedAt: row.updatedAt })
+          .where(and(eq(payeeAlias.id, row.id), isNull(payeeAlias.deletedAt), scope))
+          .run().changes === 1
+      );
+    },
+    softDelete: (viewer, id, at) => {
+      const scope = visibleScope(payeeAlias.scopePersonId, viewer);
       check();
       return (
         orm
           .update(payeeAlias)
           .set({ deletedAt: at, updatedAt: at })
-          .where(and(eq(payeeAlias.id, id), isNull(payeeAlias.deletedAt)))
+          .where(and(eq(payeeAlias.id, id), isNull(payeeAlias.deletedAt), scope))
           .run().changes === 1
       );
+    },
+    originOf: (viewer, id) => {
+      const scope = visibleScope(payeeAlias.scopePersonId, viewer);
+      check();
+      return orm
+        .select({ origin: payeeAlias.originAccountId })
+        .from(payeeAlias)
+        .where(and(eq(payeeAlias.id, id), isNull(payeeAlias.deletedAt), scope))
+        .get()?.origin as Id<"Account"> | null | undefined;
     },
   };
 }

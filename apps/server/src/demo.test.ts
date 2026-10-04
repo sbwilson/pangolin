@@ -33,9 +33,11 @@ describe("openDemoDatabase", () => {
       expect(demo.uow.read((repos) => repos.householdSettings.get().baseCurrency)).toBe(
         expectations["people-and-household.baseCurrency"],
       );
-      expect(demo.db.prepare("SELECT DISTINCT actor FROM audit_log").pluck().all()).toEqual([
-        "cli:seed",
-      ]);
+      expect(
+        demo.db.prepare("SELECT DISTINCT actor FROM audit_log ORDER BY actor").pluck().all(),
+      ).toEqual(["cli:seed", "job:seed-defaults"]);
+      // The demo household has the default categories (story 2.5).
+      expect(demo.db.prepare("SELECT count(*) FROM category_group").pluck().get()).toBe(13);
       // Every run uses the seed's fixed today (AD-15), never the real clock.
       const today = JSON.parse(readFileSync(seedFile, "utf8")).today as string;
       const stamps = demo.db.prepare("SELECT at FROM audit_log").pluck().all() as string[];

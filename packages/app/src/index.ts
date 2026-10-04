@@ -47,6 +47,95 @@ export {
   updateAccount,
   updateAccountInput,
 } from "./accounts/update-account.ts";
+export {
+  type CreateActivityInput,
+  createActivity,
+  createActivityInput,
+  type DeleteActivityInput,
+  deleteActivity,
+  deleteActivityInput,
+  getActivity,
+  getActivityInput,
+  listActivities,
+  type UpdateActivityInput,
+  updateActivity,
+  updateActivityInput,
+} from "./classify/activities.ts";
+export {
+  type CreateCategoryInput,
+  createCategory,
+  createCategoryInput,
+  type DeleteCategoryInput,
+  deleteCategory,
+  deleteCategoryInput,
+  listCategories,
+  type UpdateCategoryInput,
+  updateCategory,
+  updateCategoryInput,
+} from "./classify/categories.ts";
+export {
+  type CreateCategoryGroupInput,
+  createCategoryGroup,
+  createCategoryGroupInput,
+  listCategoryGroups,
+  type UpdateCategoryGroupInput,
+  updateCategoryGroup,
+  updateCategoryGroupInput,
+} from "./classify/category-groups.ts";
+export {
+  DEFAULT_CATEGORIES,
+  DEFAULT_TAX_CATEGORIES,
+  seedDefaults,
+} from "./classify/defaults.ts";
+export {
+  type CreatePayeeAliasInput,
+  type CreatePayeeInput,
+  createPayee,
+  createPayeeAlias,
+  createPayeeAliasInput,
+  createPayeeInput,
+  deletePayee,
+  deletePayeeAlias,
+  deletePayeeAliasInput,
+  deletePayeeInput,
+  getPayee,
+  getPayeeAlias,
+  getPayeeAliasInput,
+  getPayeeInput,
+  listPayeeAliases,
+  listPayees,
+  MAX_ALIAS_PATTERN_LENGTH,
+  type UpdatePayeeAliasInput,
+  type UpdatePayeeInput,
+  updatePayee,
+  updatePayeeAlias,
+  updatePayeeAliasInput,
+  updatePayeeInput,
+} from "./classify/payees.ts";
+export { type Scope, scopeFor } from "./classify/scope.ts";
+export {
+  type CreateTagInput,
+  createTag,
+  createTagInput,
+  type DeleteTagInput,
+  deleteTag,
+  deleteTagInput,
+  getTag,
+  getTagInput,
+  listTags,
+  type UpdateTagInput,
+  updateTag,
+  updateTagInput,
+} from "./classify/tags.ts";
+export {
+  type CreateTaxCategoryInput,
+  createTaxCategory,
+  createTaxCategoryInput,
+  listTaxCategories,
+  type UpdateTaxCategoryInput,
+  updateTaxCategory,
+  updateTaxCategoryInput,
+} from "./classify/tax-categories.ts";
 export { fixedClock, fixedClockAt, systemClock } from "./clock.ts";
 export type { UseCaseContext } from "./context.ts";
 export {

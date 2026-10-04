@@ -4,9 +4,12 @@ import { join } from "node:path";
 import {
   createAccount,
   createIdGenerator,
+  createPayee,
   createPerson,
+  createTag,
   createTransaction,
   fixedClockAt,
+  personViewer,
   systemClock,
   type UnitOfWork,
   type UseCaseContext,
@@ -522,6 +525,246 @@ describe("/api/accounts", () => {
       expect((await send(db, method, path, body, demo)).status, path).toBe(409);
     }
     expect((await send(db, "GET", "/api/accounts", undefined, demo)).status).toBe(200);
+  });
+});
+
+describe("/api/classify", () => {
+  const alex = "01J0000000000000000000000A";
+  const json = { Origin: ORIGIN, "Content-Type": "application/json", Cookie: SESSION_COOKIE };
+
+  /** Alex is the signed-in login; Sam (the partner) owns a private account with scoped rows. */
+  function seed(db: Db) {
+    addPerson(db);
+    const d = deps(db);
+    const sys: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const sam = createPerson(sys, { displayName: "Sam", colour: "#000000" });
+    const account = (name: string, isPrivate: boolean, owners: [string, number][]) =>
+      createAccount(sys, {
+        name,
+        type: "transaction",
+        currency: "AUD",
+        isPrivate,
+        owners: owners.map(([personId, shareBp]) => ({ personId, shareBp })),
+      });
+    const joint = account("Joint", false, [
+      [alex, 5000],
+      [sam, 5000],
+    ]);
+    const mine = account("Alex private", true, [[alex, 10000]]);
+    const theirs = account("Sam private", true, [[sam, 10000]]);
+    return { sam, joint, mine, theirs, sys };
+  }
+
+  const send = (db: Db, method: string, path: string, body?: unknown, authn?: Authn) =>
+    createApp(deps(db, authn)).request(path, {
+      method,
+      headers: json,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  it("needs a session", async () => {
+    expect((await createApp(deps(openDb())).request("/api/classify/payees")).status).toBe(401);
+  });
+
+  it("creates, lists, edits and deletes household-wide rows", async () => {
+    const db = openDb();
+    seed(db);
+    const group = (await (
+      await send(db, "POST", "/api/classify/category-groups", { name: "Pets", kind: "expense" })
+    ).json()) as { categoryGroup: { id: string; sort: number } };
+    expect(group.categoryGroup.sort).toBe(1);
+    expect(
+      (await send(db, "POST", "/api/classify/category-groups", { name: "Pets", kind: "expense" }))
+        .status,
+    ).toBe(409);
+    expect(
+      (
+        await send(db, "PATCH", `/api/classify/category-groups/${group.categoryGroup.id}`, {
+          sort: 5,
+        })
+      ).status,
+    ).toBe(200);
+    const created = await send(db, "POST", "/api/classify/categories", {
+      groupId: group.categoryGroup.id,
+      name: "Food",
+    });
+    expect(created.status).toBe(201);
+    const { category } = (await created.json()) as { category: { id: string } };
+    expect(
+      (await send(db, "PATCH", `/api/classify/categories/${category.id}`, { isFixedCost: true }))
+        .status,
+    ).toBe(200);
+    const tax = await send(db, "POST", "/api/classify/tax-categories", { code: "X1", label: "X" });
+    expect(tax.status).toBe(201);
+    const { taxCategory } = (await tax.json()) as { taxCategory: { id: string } };
+    expect(
+      (
+        await send(db, "PATCH", `/api/classify/tax-categories/${taxCategory.id}`, {
+          defaultDeductibleBp: 100,
+        })
+      ).status,
+    ).toBe(200);
+    const deleted = await send(db, "DELETE", `/api/classify/categories/${category.id}`);
+    expect(deleted.status).toBe(200);
+    expect(
+      (
+        (await (await send(db, "GET", "/api/classify/categories")).json()) as {
+          categories: unknown[];
+        }
+      ).categories,
+    ).toEqual([]);
+    expect((await send(db, "DELETE", `/api/classify/categories/${category.id}`)).status).toBe(404);
+    // Groups and tax categories have no delete route.
+    expect(
+      (await send(db, "DELETE", `/api/classify/category-groups/${group.categoryGroup.id}`)).status,
+    ).toBe(404);
+  });
+
+  it("answers 404 to the partner's scoped rows for every read and write", async () => {
+    const db = openDb();
+    const { sam, sys, theirs } = seed(db);
+    const samCtx: UseCaseContext = {
+      ...sys,
+      viewer: personViewer(sam as never, sys.clock.now()),
+    };
+    const payee = createPayee(samCtx, { name: "Secret", originAccountId: theirs });
+    const tag = createTag(samCtx, { name: "secret", originAccountId: theirs });
+    const calls: [string, string, unknown?][] = [
+      ["GET", `/api/classify/payees/${payee.id}`],
+      ["PATCH", `/api/classify/payees/${payee.id}`, { name: "x" }],
+      ["DELETE", `/api/classify/payees/${payee.id}`],
+      ["GET", `/api/classify/tags/${tag.id}`],
+      ["PATCH", `/api/classify/tags/${tag.id}`, { name: "x" }],
+      ["DELETE", `/api/classify/tags/${tag.id}`],
+    ];
+    for (const [method, path, body] of calls) {
+      const res = await send(db, method, path, body);
+      expect(res.status, `${method} ${path}`).toBe(404);
+    }
+    expect(
+      ((await (await send(db, "GET", "/api/classify/payees")).json()) as { payees: unknown[] })
+        .payees,
+    ).toEqual([]);
+    // Passing the partner's private account as an origin is a 404, like an unknown account.
+    for (const [path, body] of [
+      ["/api/classify/payees", { name: "P", originAccountId: theirs }],
+      ["/api/classify/tags", { name: "T", originAccountId: theirs }],
+      ["/api/classify/activities", { name: "A", originAccountId: theirs }],
+    ] as const) {
+      expect((await send(db, "POST", path, body)).status, path).toBe(404);
+    }
+    // A client cannot name a scope.
+    expect(
+      (await send(db, "POST", "/api/classify/payees", { name: "P", scopePersonId: sam })).status,
+    ).toBe(400);
+  });
+
+  it("creates a same-name shared payee beside the partner's hidden scoped one", async () => {
+    const db = openDb();
+    const { sam, sys, theirs, mine } = seed(db);
+    const samCtx: UseCaseContext = {
+      ...sys,
+      viewer: personViewer(sam as never, sys.clock.now()),
+    };
+    createPayee(samCtx, { name: "Woolworths", originAccountId: theirs });
+    const shared = await send(db, "POST", "/api/classify/payees", { name: "Woolworths" });
+    expect(shared.status).toBe(201);
+    const again = await send(db, "POST", "/api/classify/payees", { name: "Woolworths" });
+    expect(again.status).toBe(409);
+    expect(JSON.stringify(await again.json())).not.toMatch(/scope|private/i);
+    // Alex's own private origin gives an Alex-scoped row, never returned with its origin.
+    const own = await send(db, "POST", "/api/classify/payees", {
+      name: "Woolworths",
+      originAccountId: mine,
+    });
+    expect(own.status).toBe(201);
+    expect(JSON.stringify(await own.json())).not.toContain(mine);
+  });
+
+  it("covers aliases and activities", async () => {
+    const db = openDb();
+    const { mine } = seed(db);
+    const payee = (await (
+      await send(db, "POST", "/api/classify/payees", { name: "P" })
+    ).json()) as {
+      payee: { id: string };
+    };
+    const alias = await send(db, "POST", "/api/classify/payees/aliases", {
+      payeeId: payee.payee.id,
+      pattern: "^P",
+      matchKind: "regex",
+    });
+    expect(alias.status).toBe(201);
+    const { alias: made } = (await alias.json()) as { alias: { id: string } };
+    expect(
+      (
+        await send(db, "POST", "/api/classify/payees/aliases", {
+          payeeId: payee.payee.id,
+          pattern: "(",
+          matchKind: "regex",
+        })
+      ).status,
+    ).toBe(400);
+    expect((await send(db, "GET", `/api/classify/payees/aliases/${made.id}`)).status).toBe(200);
+    expect(
+      (await send(db, "PATCH", `/api/classify/payees/aliases/${made.id}`, { matchKind: "prefix" }))
+        .status,
+    ).toBe(200);
+    expect((await send(db, "GET", "/api/classify/payees/aliases")).status).toBe(200);
+    expect((await send(db, "DELETE", `/api/classify/payees/aliases/${made.id}`)).status).toBe(200);
+
+    const act = await send(db, "POST", "/api/classify/activities", {
+      name: "Japan",
+      startsOn: "2026-10-01",
+      endsOn: "2026-10-02",
+      budgetCents: 100,
+      originAccountId: mine,
+    });
+    expect(act.status).toBe(201);
+    const { activity } = (await act.json()) as { activity: { id: string; scopePersonId: string } };
+    expect(activity.scopePersonId).toBe(alex);
+    expect(
+      (await send(db, "PATCH", `/api/classify/activities/${activity.id}`, { endsOn: "2026-09-01" }))
+        .status,
+    ).toBe(400);
+    expect((await send(db, "DELETE", `/api/classify/activities/${activity.id}`)).status).toBe(200);
+    expect((await send(db, "DELETE", `/api/classify/payees/${payee.payee.id}`)).status).toBe(200);
+  });
+
+  it("is read-only in demo mode", async () => {
+    const db = openDb();
+    seed(db);
+    const demo: Authn = { kind: "demo" };
+    const writes: [string, string, unknown][] = [
+      ["POST", "/api/classify/category-groups", { name: "x", kind: "expense" }],
+      ["PATCH", "/api/classify/category-groups/x", {}],
+      ["POST", "/api/classify/categories", {}],
+      ["PATCH", "/api/classify/categories/x", {}],
+      ["DELETE", "/api/classify/categories/x", undefined],
+      ["POST", "/api/classify/tax-categories", {}],
+      ["PATCH", "/api/classify/tax-categories/x", {}],
+      ["POST", "/api/classify/tags", {}],
+      ["PATCH", "/api/classify/tags/x", {}],
+      ["DELETE", "/api/classify/tags/x", undefined],
+      ["POST", "/api/classify/payees", {}],
+      ["PATCH", "/api/classify/payees/x", {}],
+      ["DELETE", "/api/classify/payees/x", undefined],
+      ["POST", "/api/classify/payees/aliases", {}],
+      ["PATCH", "/api/classify/payees/aliases/x", {}],
+      ["DELETE", "/api/classify/payees/aliases/x", undefined],
+      ["POST", "/api/classify/activities", {}],
+      ["PATCH", "/api/classify/activities/x", {}],
+      ["DELETE", "/api/classify/activities/x", undefined],
+    ];
+    for (const [method, path, body] of writes) {
+      expect((await send(db, method, path, body, demo)).status, `${method} ${path}`).toBe(409);
+    }
+    expect((await send(db, "GET", "/api/classify/payees", undefined, demo)).status).toBe(200);
   });
 });
 

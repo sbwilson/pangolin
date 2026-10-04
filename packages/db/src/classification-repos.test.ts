@@ -382,7 +382,8 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
   out["payee.listB"] = tx(payeeIds(asB));
   out["payee.listSystem"] = tx(payeeIds(system));
   out["payee.findOthersScope"] = tx((r) => r.payees.find(asB, pA));
-  out["payee.softDelete"] = tx((r) => r.payees.softDelete(pA, T));
+  out["payee.softDeleteAsOther"] = tx((r) => r.payees.softDelete(asB, pA, T));
+  out["payee.softDelete"] = tx((r) => r.payees.softDelete(asA, pA, T));
   out["payee.afterDelete"] = tx((r) => [r.payees.find(system, pA), r.payees.list(asA).length]);
   step("payee.reuseDeletedName", (r) => r.payees.insert(payeeRow(newId(), "Woolworths", a), privA));
 
@@ -442,7 +443,10 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
     r.tags.listForSplit(asB, privSplit.id).length,
     r.tags.listForSplit(system, privSplit.id).length,
   ]);
-  out["tag.softDelete"] = tx((r) => [r.tags.softDelete(sharedTag.id, T), r.tags.list(asA).length]);
+  out["tag.softDelete"] = tx((r) => [
+    r.tags.softDelete(asA, sharedTag.id, T),
+    r.tags.list(asA).length,
+  ]);
 
   const act = (name: string, scopePersonId: Id<"Person"> | null, budgetCents: number | null) => ({
     id: newId<"Activity">(),
@@ -520,6 +524,188 @@ function scenario(uow: UnitOfWork): Record<string, unknown> {
   });
   step("priv.badToday", (r) => r.transactions.listVisible(asA, "soon"));
 
+  // Updates, viewer-first deletes, stored origins and cascades (story 2.5).
+  const T2 = "2026-09-28T00:00:00.000Z";
+  const grpX = newId<"CategoryGroup">();
+  const catX = newId<"Category">();
+  const catY = newId<"Category">();
+  tx((r) => {
+    r.categoryGroups.insert({
+      id: grpX,
+      name: "Other",
+      kind: "income",
+      sort: 9,
+      createdAt: T,
+      updatedAt: T,
+    });
+    r.categories.insert({ ...category(catX, "X"), groupId: grpX });
+    r.categories.insert({ ...category(catY, "Y"), groupId: grpX });
+  });
+  const groupRow = tx((r) => r.categoryGroups.find(system, grpX));
+  const catRow = tx((r) => r.categories.find(system, catX));
+  const catYRow = tx((r) => r.categories.find(system, catY));
+  const taxRow = tx((r) => r.taxCategories.list(system)[0]);
+  if (!groupRow || !catRow || !catYRow || !taxRow) throw new Error("fixtures");
+  step("categoryGroup.update", (r) =>
+    r.categoryGroups.update({
+      ...groupRow,
+      name: "Renamed",
+      kind: "transfer",
+      sort: 3,
+      updatedAt: T2,
+    }),
+  );
+  step("categoryGroup.updateDuplicate", (r) =>
+    r.categoryGroups.update({ ...groupRow, name: "Food", updatedAt: T2 }),
+  );
+  step("categoryGroup.updateBadKind", (r) =>
+    r.categoryGroups.update({ ...groupRow, kind: "nope" as never, updatedAt: T2 }),
+  );
+  step("categoryGroup.insertBadKind", (r) =>
+    r.categoryGroups.insert({ ...groupRow, id: newId(), name: "Bad", kind: "nope" as never }),
+  );
+  step("categoryGroup.updateMissing", (r) =>
+    r.categoryGroups.update({ ...groupRow, id: newId(), updatedAt: T2 }),
+  );
+  out["categoryGroup.afterUpdate"] = tx((r) => r.categoryGroups.find(system, grpX));
+  step("category.update", (r) =>
+    r.categories.update({ ...catRow, name: "X2", isFixedCost: true, groupId: grp, updatedAt: T2 }),
+  );
+  step("category.updateDuplicate", (r) =>
+    r.categories.update({ ...catYRow, name: "X2", groupId: grp, updatedAt: T2 }),
+  );
+  step("category.updateUnknownGroup", (r) =>
+    r.categories.update({ ...catYRow, groupId: newId(), updatedAt: T2 }),
+  );
+  out["category.afterUpdate"] = tx((r) => r.categories.find(system, catX));
+  step("taxCategory.update", (r) =>
+    r.taxCategories.update({
+      ...taxRow,
+      label: "Relabelled",
+      defaultDeductibleBp: 2500,
+      updatedAt: T2,
+    }),
+  );
+  step("taxCategory.updateBadBp", (r) =>
+    r.taxCategories.update({ ...taxRow, defaultDeductibleBp: 10001, updatedAt: T2 }),
+  );
+  out["taxCategory.afterUpdate"] = tx((r) => r.taxCategories.find(system, taxRow.id));
+
+  const pw = newId<"Payee">();
+  const pwRow = { ...payeeRow(pw, "Updatable", a), defaultCategoryId: catX };
+  step("w.insert", (r) => r.payees.insert(pwRow, privA));
+  out["w.originAsA"] = tx((r) => r.payees.originOf(asA, pw));
+  out["w.originAsB"] = tx((r) => r.payees.originOf(asB, pw));
+  out["w.originAsSystem"] = tx((r) => r.payees.originOf(system, pw));
+  out["w.originSharedRow"] = tx((r) => r.payees.originOf(asB, pShared));
+  out["w.updateAsOther"] = tx((r) =>
+    r.payees.update(asB, { ...pwRow, name: "Hijack", updatedAt: T2 }),
+  );
+  out["w.deleteAsOther"] = tx((r) => r.payees.softDelete(asB, pw, T2));
+  out["w.update"] = tx((r) =>
+    r.payees.update(asA, {
+      ...pwRow,
+      name: "Renamed",
+      websiteUrl: "https://w.example",
+      updatedAt: T2,
+    }),
+  );
+  out["w.afterUpdate"] = tx((r) => r.payees.find(asA, pw));
+  step("w.updateToSharedName", (r) =>
+    r.payees.update(asA, { ...pwRow, name: "Woolworths", updatedAt: T2 }),
+  );
+  step("w.updateDuplicateInScope", (r) => {
+    const other = newId<"Payee">();
+    r.payees.insert(payeeRow(other, "Taken", a), privA);
+    return r.payees.update(asA, { ...pwRow, name: "Taken", updatedAt: T2 });
+  });
+  step("w.updateUnknownCategory", (r) =>
+    r.payees.update(asA, { ...pwRow, name: "Renamed", defaultCategoryId: newId(), updatedAt: T2 }),
+  );
+  const alw = { ...aliasRow("WOOLIES2", a), payeeId: pw };
+  step("w.alias", (r) => r.payeeAliases.insert(alw, privA));
+  step("w.aliasShared", (r) =>
+    r.payeeAliases.insert({ ...aliasRow("SHARED2", null), payeeId: pShared }, null),
+  );
+  step("w.aliasBadKind", (r) =>
+    r.payeeAliases.insert({ ...alw, id: newId(), pattern: "Q", matchKind: "nope" as never }, privA),
+  );
+  out["w.aliasUpdateAsOther"] = tx((r) =>
+    r.payeeAliases.update(asB, { ...alw, pattern: "X", updatedAt: T2 }),
+  );
+  out["w.aliasUpdate"] = tx((r) =>
+    r.payeeAliases.update(asA, { ...alw, pattern: "WOOLIES3", matchKind: "prefix", updatedAt: T2 }),
+  );
+  step("w.aliasUpdateBadKind", (r) =>
+    r.payeeAliases.update(asA, { ...alw, matchKind: "nope" as never, updatedAt: T2 }),
+  );
+  step("w.aliasUpdateDuplicate", (r) =>
+    r.payeeAliases.update(asA, {
+      ...alw,
+      pattern: "WOOLIES",
+      matchKind: "contains",
+      updatedAt: T2,
+    }),
+  );
+  out["w.aliasAfterUpdate"] = tx((r) => r.payeeAliases.find(asA, alw.id));
+  out["w.aliasOrigin"] = tx((r) => [
+    r.payeeAliases.originOf(asA, alw.id),
+    r.payeeAliases.originOf(asB, alw.id),
+  ]);
+  out["w.cascadeClearDefault"] = tx((r) => r.payees.clearDefaultCategory(catX, T2));
+  out["w.afterClear"] = tx((r) => r.payees.find(asA, pw)?.defaultCategoryId);
+  out["w.cascadeAliases"] = tx((r) => r.payeeAliases.softDeleteForPayee(pw, T2));
+  out["w.afterCascade"] = tx((r) => [
+    r.payeeAliases.find(asA, alw.id),
+    r.payeeAliases.list(asA).length,
+  ]);
+  out["w.delete"] = tx((r) => [r.payees.softDelete(asA, pw, T2), r.payees.softDelete(asA, pw, T2)]);
+  out["w.afterDelete"] = tx((r) => [r.payees.find(system, pw), r.payees.originOf(system, pw)]);
+
+  const tg = tagRow("renamable", a);
+  step("w.tag", (r) => r.tags.insert(tg, privA));
+  out["w.tagUpdateAsOther"] = tx((r) => r.tags.update(asB, { ...tg, name: "no", updatedAt: T2 }));
+  out["w.tagUpdate"] = tx((r) => r.tags.update(asA, { ...tg, name: "renamed", updatedAt: T2 }));
+  step("w.tagUpdateDuplicate", (r) =>
+    r.tags.update(asA, { ...tg, name: "holiday", updatedAt: T2 }),
+  );
+  out["w.tagDeleteAsOther"] = tx((r) => r.tags.softDelete(asB, tg.id, T2));
+  out["w.tagDelete"] = tx((r) => [r.tags.softDelete(asA, tg.id, T2), r.tags.originOf(asA, tg.id)]);
+  const ac = act("Updatable", b, null);
+  step("w.activity", (r) => r.activities.insert(ac, privB));
+  out["w.activityUpdateAsOther"] = tx((r) =>
+    r.activities.update(asA, { ...ac, name: "no", updatedAt: T2 }),
+  );
+  out["w.activityUpdate"] = tx((r) =>
+    r.activities.update(asB, {
+      ...ac,
+      name: "Trip",
+      endsOn: "2026-11-01",
+      budgetCents: 100,
+      updatedAt: T2,
+    }),
+  );
+  step("w.activityUpdateNegative", (r) =>
+    r.activities.update(asB, { ...ac, name: "Trip", budgetCents: -5, updatedAt: T2 }),
+  );
+  out["w.activityAfterUpdate"] = tx((r) => r.activities.find(asB, ac.id));
+  out["w.activityDeleteAsOther"] = tx((r) => r.activities.softDelete(asA, ac.id, T2));
+  out["w.activityDelete"] = tx((r) => r.activities.softDelete(asB, ac.id, T2));
+  const throws = (fn: () => unknown) => {
+    try {
+      fn();
+      return "no throw";
+    } catch (error) {
+      return error instanceof TypeError ? "TypeError" : "other";
+    }
+  };
+  out["w.missingViewer"] = tx((r) => [
+    throws(() => r.payees.softDelete(undefined as never, pw, T2)),
+    throws(() => r.tags.update(undefined as never, tg)),
+    throws(() => r.activities.originOf(undefined as never, ac.id)),
+    throws(() => r.payeeAliases.update(undefined as never, alw)),
+  ]);
+
   // Review item foreign key.
   const reviewItem = (accountId: string | null) => ({
     id: newId<"ReviewItem">(),
@@ -558,13 +744,28 @@ describe("ledger and classification schema on SQLite", () => {
     expect(out["txn.findPrivateAsOther"]).toBeUndefined();
     expect(out["tag.forSplit"]).toEqual([2, 1, 2]);
     expect(out["tag.forPrivateSplit"]).toEqual([1, 0, 1]);
+    expect(out["w.updateAsOther"]).toBe(false);
+    expect(out["w.deleteAsOther"]).toBe(false);
+    expect(out["w.originAsB"]).toBeUndefined();
+    expect(out["w.originSharedRow"]).toBeNull();
+    expect(out["w.update"]).toBe(true);
+    expect(out["w.updateToSharedName"]).toBe("error:UNIQUE");
+    expect(out["w.updateDuplicateInScope"]).toBe("error:UNIQUE");
+    expect(out["w.updateUnknownCategory"]).toBe("error:FOREIGN KEY");
+    expect(out["categoryGroup.insertBadKind"]).toBe("error:CHECK");
+    expect(out["categoryGroup.updateBadKind"]).toBe("error:CHECK");
+    expect(out["w.aliasBadKind"]).toBe("error:CHECK");
+    expect(out["w.aliasUpdateBadKind"]).toBe("error:CHECK");
+    expect(out["taxCategory.updateBadBp"]).toBe("error:CHECK");
+    expect(out["w.delete"]).toEqual([true, false]);
+    expect(out["w.missingViewer"]).toEqual(["TypeError", "TypeError", "TypeError", "TypeError"]);
   });
 
   it("keeps the scoped origin account in the database, never in a row", () => {
     scenario(createUnitOfWork(db));
     expect(
       db.prepare("SELECT count(*) FROM payee WHERE origin_account_id IS NOT NULL").pluck().get(),
-    ).toBe(4);
+    ).toBe(5);
     const row = createUnitOfWork(db).read((r) => r.payees.list(systemViewer("cli:test"))[0]);
     expect(row).toBeDefined();
     expect(Object.keys(row ?? {})).not.toContain("originAccountId");

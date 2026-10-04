@@ -37,6 +37,7 @@ export {
   linkSeed,
   parseSeed,
   type SeedDeps,
+  seedClassifyDefaults,
 } from "./seed.ts";
 export { type FirstSetupLinkDeps, SETUP_LINK_FILE, writeFirstSetupLink } from "./setup-link.ts";
 export {

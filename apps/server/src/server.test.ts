@@ -14,6 +14,7 @@ import { join } from "node:path";
 import {
   AppError,
   createIdGenerator,
+  DEFAULT_CATEGORIES,
   defineJobKind,
   defineSchedule,
   enqueueJob,
@@ -92,6 +93,39 @@ describe("startServer", () => {
     } finally {
       await server.close();
     }
+  });
+
+  it("seeds the default categories once, across restarts", async () => {
+    const count = (sql: string) => {
+      const db = openDatabase(join(dataDir(), "pangolin.sqlite"), { readonly: true });
+      try {
+        return db.prepare(sql).pluck().get();
+      } finally {
+        db.close();
+      }
+    };
+    await (await boot()).close();
+    const groups = count("SELECT count(*) FROM category_group");
+    const categories = count("SELECT count(*) FROM category");
+    expect(groups).toBe(13);
+    expect(categories).toBe(DEFAULT_CATEGORIES.reduce((n, g) => n + g.categories.length, 0));
+    expect(count("SELECT count(*) FROM tax_category")).toBe(8);
+    await (await boot()).close();
+    expect(count("SELECT count(*) FROM category_group")).toBe(groups);
+    expect(count("SELECT count(*) FROM category")).toBe(categories);
+    const actors = (sql: string) => {
+      const db = openDatabase(join(dataDir(), "pangolin.sqlite"), { readonly: true });
+      try {
+        return db.prepare(sql).pluck().all();
+      } finally {
+        db.close();
+      }
+    };
+    expect(
+      actors(
+        "SELECT DISTINCT actor FROM audit_log WHERE entity IN ('category_group','category','tax_category')",
+      ),
+    ).toEqual(["job:seed-defaults"]);
   });
 
   it("re-applies nothing on restart", async () => {

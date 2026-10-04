@@ -11,6 +11,7 @@ import {
   type IdGenerator,
   listLogins,
   listTransactions,
+  seedDefaults,
   type UnitOfWork,
   type UseCaseContext,
   updateHouseholdSettings,
@@ -22,6 +23,19 @@ import { z } from "zod";
 export interface SeedDeps {
   readonly clock: Clock;
   readonly newId: IdGenerator;
+}
+
+/**
+ * Seeds the default categories and tax categories as `job:seed-defaults` (AD-6), only when the
+ * household has no category groups, so it is safe to run on every start. Returns whether it seeded.
+ */
+export function seedClassifyDefaults(uow: UnitOfWork, deps: SeedDeps): boolean {
+  return seedDefaults({
+    viewer: systemViewer("job:seed-defaults"),
+    clock: deps.clock,
+    newId: deps.newId,
+    uow,
+  });
 }
 
 export interface AppliedSeed {
@@ -202,6 +216,7 @@ function applyParsed(
     newId: deps.newId,
     uow,
   };
+  seedClassifyDefaults(uow, deps);
   const linked = options.people;
   const people: Record<string, string> = {};
   const accounts: Record<string, string> = {};
