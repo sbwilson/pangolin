@@ -1,8 +1,8 @@
-// Test support only (reached as `@pangolin/app/testing/memory-uow`, for the adapter parity
-// tests in `packages/db`; not part of the package index): an in-memory `UnitOfWork` with rollback,
+// Test support only (not exported from the package): an in-memory `UnitOfWork` with rollback,
 // so `app` tests can check transaction behaviour without importing an adapter. The job and
 // review-item repositories mirror the SQLite adapter's semantics (partial unique keys, leased
-// claims, visibility); `packages/db` tests prove the adapter on real SQLite.
+// claims, visibility); `packages/db` tests prove the adapter on real SQLite, and the parity tests
+// beside this file (`*-parity.test.ts`, which may import `@pangolin/db`) hold the two together.
 import type { Id } from "@pangolin/shared";
 import type {
   AccountOwnerRow,
