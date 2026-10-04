@@ -3,10 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createAccount,
+  createActivity,
   createCategory,
   createCategoryGroup,
   createIdGenerator,
   createPayee,
+  createPayeeAlias,
   createPerson,
   createTag,
   createTransaction,
@@ -504,7 +506,7 @@ describe("name hiding and transfer groups", () => {
     const { sys, sam, mine, other } = seed(db);
     const d = deps(db);
     const asSam: UseCaseContext = {
-      viewer: personViewer(sam as never, d.clock.now()),
+      viewer: personViewer(sam, d.clock.now()),
       clock: d.clock,
       newId: d.newId,
       uow: d.uow,
@@ -956,10 +958,17 @@ describe("/api/classify", () => {
     const { sam, sys, theirs } = seed(db);
     const samCtx: UseCaseContext = {
       ...sys,
-      viewer: personViewer(sam as never, sys.clock.now()),
+      viewer: personViewer(sam, sys.clock.now()),
     };
     const payee = createPayee(samCtx, { name: "Secret", originAccountId: theirs });
     const tag = createTag(samCtx, { name: "secret", originAccountId: theirs });
+    const alias = createPayeeAlias(samCtx, {
+      payeeId: payee.id,
+      pattern: "secret",
+      matchKind: "prefix",
+      originAccountId: theirs,
+    });
+    const activity = createActivity(samCtx, { name: "Secret trip", originAccountId: theirs });
     const calls: [string, string, unknown?][] = [
       ["GET", `/api/classify/payees/${payee.id}`],
       ["PATCH", `/api/classify/payees/${payee.id}`, { name: "x" }],
@@ -967,6 +976,12 @@ describe("/api/classify", () => {
       ["GET", `/api/classify/tags/${tag.id}`],
       ["PATCH", `/api/classify/tags/${tag.id}`, { name: "x" }],
       ["DELETE", `/api/classify/tags/${tag.id}`],
+      ["GET", `/api/classify/payees/aliases/${alias.id}`],
+      ["PATCH", `/api/classify/payees/aliases/${alias.id}`, { matchKind: "exact" }],
+      ["DELETE", `/api/classify/payees/aliases/${alias.id}`],
+      ["GET", `/api/classify/activities/${activity.id}`],
+      ["PATCH", `/api/classify/activities/${activity.id}`, { name: "x" }],
+      ["DELETE", `/api/classify/activities/${activity.id}`],
     ];
     for (const [method, path, body] of calls) {
       const res = await send(db, method, path, body);
@@ -995,7 +1010,7 @@ describe("/api/classify", () => {
     const { sam, sys, theirs, mine } = seed(db);
     const samCtx: UseCaseContext = {
       ...sys,
-      viewer: personViewer(sam as never, sys.clock.now()),
+      viewer: personViewer(sam, sys.clock.now()),
     };
     createPayee(samCtx, { name: "Woolworths", originAccountId: theirs });
     const shared = await send(db, "POST", "/api/classify/payees", { name: "Woolworths" });

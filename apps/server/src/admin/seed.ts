@@ -21,6 +21,7 @@ import {
   listCategoryGroups,
   listLogins,
   listTransactions,
+  type PersonViewer,
   personViewer,
   recordBalanceSnapshot,
   seedDefaults,
@@ -64,8 +65,11 @@ export interface AppliedSeed {
   /** Number of transactions created. */
   readonly transactions: number;
   /** The server-minted person ID for each seed person key. */
-  readonly people: Readonly<Record<string, string>>;
+  readonly people: Readonly<Record<string, PersonId>>;
 }
+
+/** A person's ID as `personViewer` takes it. */
+type PersonId = PersonViewer["personId"];
 
 const moduleName = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
   message: "Expected a seed module name",
@@ -461,7 +465,7 @@ export interface ApplySeedOptions {
    * seed's `person.created` keys; a seed person with no entry here is created. When set, the
    * household settings event is skipped: the household keeps its own.
    */
-  readonly people?: Readonly<Record<string, string>>;
+  readonly people?: Readonly<Record<string, PersonId>>;
 }
 
 /**
@@ -504,7 +508,7 @@ function applyEvents(
   };
   seedClassifyDefaults(uow, deps);
   const linked = options.people;
-  const people: Record<string, string> = {};
+  const people: Record<string, PersonId> = {};
   const institutions: Record<string, string> = {};
   const accounts: Record<string, string> = {};
   const tags: Record<string, string> = {};
@@ -514,7 +518,7 @@ function applyEvents(
 
   const asPerson = (personKey: string): UseCaseContext => ({
     ...ctx,
-    viewer: personViewer(people[personKey] as never, deps.clock.now()),
+    viewer: personViewer(people[personKey] as PersonId, deps.clock.now()),
   });
   /** The ID of a default category, looked up once the defaults exist. */
   const categoryId = (ref: CategoryRef): string => {
@@ -728,7 +732,7 @@ export function linkSeed(uow: UnitOfWork, deps: SeedDeps, seedJson: string): App
       );
     }
     const people = Object.fromEntries(
-      keys.map((key, i) => [key, (logins[i] as { personId: string }).personId]),
+      keys.map((key, i) => [key, (logins[i] as { personId: PersonId }).personId]),
     );
     return applyEvents(uow, deps, parsed, { people });
   });

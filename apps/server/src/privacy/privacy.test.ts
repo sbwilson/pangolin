@@ -418,7 +418,7 @@ describe("the route manifest", () => {
   });
 
   it("fails naming a route added without an entry", () => {
-    const routes = [...w.app.routes, { method: "GET", path: "/api/ledger/new-thing" } as never];
+    const routes = [...w.app.routes, { method: "GET", path: "/api/ledger/new-thing" }];
     expect(manifestProblems(routes)).toEqual([
       "Route GET /api/ledger/new-thing has no privacy manifest entry",
     ]);
@@ -444,7 +444,7 @@ describe("the route manifest", () => {
       "GET /api/system/audit",
     ]);
     for (const entry of pending) {
-      const routes = [...w.app.routes, { method: entry.method, path: entry.path } as never];
+      const routes = [...w.app.routes, { method: entry.method, path: entry.path }];
       expect(manifestProblems(routes)).toEqual([
         expect.stringContaining(`${routeKey(entry)} is registered`),
       ]);
@@ -456,7 +456,7 @@ describe("the route manifest", () => {
       { method: "ALL", path: "/api/ledger/sneaky" },
       { method: "GET", path: "/data/export" },
     ]) {
-      expect(manifestProblems([...w.app.routes, route as never])).toEqual([
+      expect(manifestProblems([...w.app.routes, route])).toEqual([
         expect.stringContaining(`${route.method} ${route.path} is dropped`),
       ]);
     }

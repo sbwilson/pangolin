@@ -181,7 +181,7 @@ export interface World {
   readonly db: Db;
   readonly uow: UnitOfWork;
   readonly clock: TestClock;
-  readonly people: Readonly<Record<Who, string>>;
+  readonly people: Readonly<Record<Who, PersonViewer["personId"]>>;
   /** Partner A's private data. */
   readonly privateIds: PrivateIds;
   /** The first id of each kind that partner B may use, and a second where a route needs two. */
@@ -321,14 +321,14 @@ export function buildWorld(seedJson: string, variant: Variant): World {
 
   const applied = applySeed(uow, { clock, newId }, seedJson);
   const people = {
-    a: applied.people["person-a"] as string,
-    b: applied.people["person-b"] as string,
+    a: applied.people["person-a"] as PersonViewer["personId"],
+    b: applied.people["person-b"] as PersonViewer["personId"],
   };
   linkLogin(db, "user-a", people.a, "A");
   linkLogin(db, "user-b", people.b, "B");
 
   const ctx = (who: Who): UseCaseContext => ({
-    viewer: personViewer(people[who] as never, clock.now()),
+    viewer: personViewer(people[who], clock.now()),
     clock,
     newId,
     uow,
@@ -488,7 +488,7 @@ function tamperUow(uow: UnitOfWork, mode: LeakMode, a: PersonViewer): UnitOfWork
  * world's database, so a leak that writes changes the real data.
  */
 export function leakyWorld(world: World, mode: LeakMode): World {
-  const viewerA = personViewer(world.people.a as never, world.clock.now());
+  const viewerA = personViewer(world.people.a, world.clock.now());
   const uow = tamperUow(world.uow, mode, viewerA);
   const deps: AppDeps = { ...world.deps, uow };
   const app = createApp(deps);
