@@ -1,57 +1,24 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import {
   ApiError,
   type BackupVerification,
   dismissNotice,
   fetchBackupStatus,
   fetchDeadJobs,
-  fetchHealth,
-  fetchMe,
   fetchNotices,
   fetchRecoveryBundle,
-  fetchTransactions,
   invitePartner,
   type Me,
   type Notice,
   resetPartner,
   revokeMyRecoveryLinks,
-} from "./api.ts";
-import { authClient, authMessage } from "./auth-client.ts";
-import { EnrolView } from "./EnrolView.tsx";
-import { LoginView } from "./LoginView.tsx";
-import { InitialRecoveryCodes, RecoverView, RegenerateRecoveryCodes } from "./RecoveryViews.tsx";
-import { SetupView } from "./SetupView.tsx";
-
-const ME_KEY = ["identity", "me"] as const;
-
-/** A tiny router: the path, updated on back/forward and by `navigate`. */
-function usePath(): [string, (path: string) => void] {
-  const [path, setPath] = useState(window.location.pathname);
-  useEffect(() => {
-    const onPop = () => setPath(window.location.pathname);
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
-  // Replaces the entry, so a used setup link's token does not stay in the history.
-  const navigate = (next: string) => {
-    window.history.replaceState(null, "", next);
-    setPath(next);
-  };
-  return [path, navigate];
-}
-
-function HealthStatus() {
-  const health = useQuery({ queryKey: ["system", "health"], queryFn: fetchHealth, retry: false });
-  if (health.isPending) return <p>Checking…</p>;
-  if (!health.data?.healthy) return <p role="status">Unhealthy</p>;
-  return (
-    <>
-      <p role="status">Healthy</p>
-      <p>Schema version {health.data.schemaVersion}</p>
-    </>
-  );
-}
+} from "../api.ts";
+import { HealthStatus } from "../components/HealthStatus.tsx";
+import { Button } from "../components/ui/button.tsx";
+import { RegenerateRecoveryCodes } from "../RecoveryViews.tsx";
+import { useSignedIn } from "../session.tsx";
 
 function DeadJobs() {
   const jobs = useQuery({ queryKey: ["system", "jobs"], queryFn: fetchDeadJobs, retry: false });
@@ -307,62 +274,10 @@ function Notices() {
   );
 }
 
-const MONEY = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" });
-
-/** The transactions the signed-in person may see: shared accounts and their own private ones. */
-function LedgerView({ onBack }: { onBack: () => void }) {
-  const ledger = useQuery({
-    queryKey: ["ledger", "transactions"],
-    queryFn: fetchTransactions,
-    retry: false,
-  });
-  return (
-    <section aria-labelledby="ledger">
-      <h2 id="ledger">Transactions</h2>
-      {ledger.isPending ? <p>Loading…</p> : null}
-      {ledger.isError ? <p role="alert">Transactions unavailable</p> : null}
-      {ledger.data === undefined ? null : ledger.data.length === 0 ? (
-        <p>No transactions yet</p>
-      ) : (
-        <table aria-labelledby="ledger">
-          <thead>
-            <tr>
-              <th scope="col">Date</th>
-              <th scope="col">Description</th>
-              <th scope="col">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ledger.data.map((txn) => (
-              <tr key={txn.id}>
-                <td>
-                  <time dateTime={txn.postedOn}>{txn.postedOn}</time>
-                </td>
-                <td>{txn.descriptionRaw}</td>
-                <td>{MONEY.format(txn.amountCents / 100)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <button type="button" onClick={onBack}>
-        Back
-      </button>
-    </section>
-  );
-}
-
-function Home({
-  me,
-  onSignOut,
-  onChanged,
-  onLedger,
-}: {
-  onLedger: () => void;
-  me: Me;
-  onSignOut: () => void;
-  onChanged: () => void;
-}) {
+/** The signed-in home: who is signed in, notices, system status and account actions. */
+export function HomePage() {
+  const { me, signOut, refresh } = useSignedIn();
+  const navigate = useNavigate();
   return (
     <>
       <p>
@@ -370,144 +285,33 @@ function Home({
         {me.demo ? " (demo)" : null}
       </p>
       <Notices />
-      <button type="button" onClick={onLedger}>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => navigate({ to: "/ledger", replace: true })}
+      >
         Transactions
-      </button>
+      </Button>
       <HealthStatus />
       <LastBackup />
       <RecoveryBundle />
       <DeadJobs />
-      {me.canInvite && !me.demo ? <InvitePartner onSignOut={onSignOut} /> : null}
+      {me.canInvite && !me.demo ? <InvitePartner onSignOut={signOut} /> : null}
       {me.demo ? null : (
         <RegenerateRecoveryCodes
           remaining={me.recoveryCodes.remaining}
-          onSignOut={onSignOut}
-          onDone={onChanged}
+          onSignOut={signOut}
+          onDone={refresh}
         />
       )}
       {me.partner !== null && !me.demo ? (
-        <ResetPartner partner={me.partner} onSignOut={onSignOut} />
+        <ResetPartner partner={me.partner} onSignOut={signOut} />
       ) : null}
       {me.demo ? null : (
-        <button type="button" onClick={onSignOut}>
+        <button type="button" onClick={signOut}>
           Sign out
         </button>
       )}
     </>
-  );
-}
-
-export function App() {
-  const [path, navigate] = usePath();
-  const queryClient = useQueryClient();
-  const me = useQuery({ queryKey: ME_KEY, queryFn: fetchMe, retry: false });
-  const [signOutError, setSignOutError] = useState<string | null>(null);
-  // The password just chosen at sign-up, in memory only, so TOTP setup need not ask again.
-  const [newPassword, setNewPassword] = useState<string | null>(null);
-  // A recovery link's token, read from the URL once; the URL (and history) then drops it.
-  const [recoverToken] = useState(() =>
-    window.location.pathname === "/recover"
-      ? (new URLSearchParams(window.location.search).get("token") ?? "")
-      : "",
-  );
-  useEffect(() => {
-    if (window.location.pathname === "/recover" && window.location.search !== "") {
-      window.history.replaceState(null, "", "/recover");
-    }
-  }, []);
-
-  const refresh = async () => {
-    await queryClient.invalidateQueries();
-  };
-  const signedIn = async () => {
-    navigate("/");
-    await refresh();
-  };
-  const signOut = async () => {
-    const { error } = await authClient.signOut();
-    setSignOutError(error ? authMessage(error) : null);
-    // Drop everything cached for the signed-in person, and refetch who is signed in (nobody).
-    await queryClient.resetQueries();
-  };
-
-  const signedUp = async (password: string) => {
-    setNewPassword(password);
-    await signedIn();
-  };
-  const enrolled = async () => {
-    setNewPassword(null);
-    await refresh();
-  };
-
-  let body: ReactNode;
-  if (me.isPending) {
-    body = <HealthStatus />;
-  } else if (me.isError) {
-    body = <p role="alert">Could not reach the server. Reload to try again.</p>;
-  } else if (path === "/recover" && me.data !== null) {
-    // A recovery link opened while someone is signed in here: it is for a signed-out browser.
-    body = (
-      <section aria-labelledby="recover-signed-in">
-        <h2 id="recover-signed-in">Use a recovery link</h2>
-        <p>
-          You are signed in as {me.data.displayName}. To use this recovery link, sign out first.
-        </p>
-        <button type="button" onClick={signOut}>
-          Sign out and use this link
-        </button>
-        <button type="button" onClick={() => navigate("/")}>
-          Keep me signed in
-        </button>
-      </section>
-    );
-  } else if (path === "/recover") {
-    // The new password stays in memory so TOTP setup need not ask for it again.
-    body = (
-      <RecoverView
-        token={recoverToken}
-        onReEnrolled={signedUp}
-        onSignInInstead={() => navigate("/")}
-      />
-    );
-  } else if (me.data !== null && me.data.enrolment === "incomplete") {
-    body = (
-      <>
-        <EnrolView needs={me.data.needs} password={newPassword} onDone={enrolled} />
-        <button type="button" onClick={signOut}>
-          Sign out
-        </button>
-      </>
-    );
-  } else if (me.data === null && path === "/setup") {
-    body = <SetupView onSignedUp={signedUp} />;
-  } else if (me.data === null) {
-    body = (
-      <>
-        <LoginView onSignedIn={signedIn} />
-        <HealthStatus />
-      </>
-    );
-  } else if (!me.data.demo && !me.data.recoveryCodes.issued) {
-    // Enrolment has just completed (for the first time, or again after a reset).
-    body = <InitialRecoveryCodes onDone={refresh} />;
-  } else if (path === "/ledger") {
-    body = <LedgerView onBack={() => navigate("/")} />;
-  } else {
-    body = (
-      <Home
-        me={me.data}
-        onSignOut={signOut}
-        onChanged={refresh}
-        onLedger={() => navigate("/ledger")}
-      />
-    );
-  }
-
-  return (
-    <main>
-      <h1>Pangolin Money</h1>
-      {signOutError === null ? null : <p role="alert">{signOutError}</p>}
-      {body}
-    </main>
   );
 }
