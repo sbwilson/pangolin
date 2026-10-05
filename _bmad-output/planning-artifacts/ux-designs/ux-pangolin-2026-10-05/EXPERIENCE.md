@@ -91,7 +91,7 @@ The single home for privacy behaviour; other sections point here. The rules are 
 | Hidden name | Partner sees the wink row ("Hidden until <date>" and the wink line); owner sees a "Hidden from <partner> until <date>" tag. Amount, date, category, tags and notes stay visible. Excluded from the partner's search results and exports. Lifts automatically on the chosen date, at most 12 months ahead. |
 | Per-viewer totals | May differ between Simon and Carissa; shared figures are identical. Copy never says "household" for a per-viewer total [ASSUMPTION]. |
 | Partner pending | Count of the partner's open items on shared-visible data only ("Carissa: 12 left"); items from the partner's private accounts never contribute. Count only, never contents; hidden at zero. |
-| Transfer to partner's private account | Shows "Transfer from <owner>" (AD-4). |
+| Transfer with partner's private account | Shows "Transfer from <owner>" for money in, "Transfer to <owner>" for money out (AD-4). |
 | Personal budgets, goals, forecast assumptions | Visible only to their person (AD-22); shared ones to both. |
 | Cover an expense (goal drawdowns) | One pool only. A shared-pool cover lists shared goals only and shows in both partners' Goals history with who confirmed it; a personal-pool cover is visible only to its person. The partner's personal goals are never listed, counted or touched. Large withdrawal items follow AD-22 (§ Needs review item kinds). |
 | Import for partner | Hand-off, never direct import into the partner's accounts (keeps AD-5). |

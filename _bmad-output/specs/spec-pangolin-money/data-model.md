@@ -74,7 +74,7 @@ No `loan_plan_row` table: importing a lender's repayment plan is later work, so 
 
 Queries never touch `account` or `transaction` directly. They go through `visibleAccounts(viewer)` and `redact(viewer, rows)`. There are two kinds of privacy:
 
-- **Private accounts** are seen only by their owner; to the other partner they don't exist. Each person has one view: household totals and net worth cover everything that person can see, including their own private accounts, so the two partners' household figures can differ. Shared figures (shared-beneficiary spending, the shared savings pool, contribution) never include private money and are identical for both.
+- **Private accounts** are seen only by their owner; to the other partner they don't exist. Each person has one view: household totals and net worth cover everything that person can see, including their own private accounts, so the two partners' household figures can differ. Shared figures (shared-beneficiary spending, the shared savings pool, contribution) never include private money and are identical for both. A transfer whose other side is in the partner's private account shows as "Transfer from <owner>" (money in) or "Transfer to <owner>" (money out); the partner can infer the account exists, an accepted residual (AD-4, 2026-10-05).
 - **Hidden transactions** sit in shared or public accounts (e.g. a birthday present).
   - Only the name is hidden from the other partner: payee, description and merchant logo. They see "Hidden until 12 Mar 2027" instead.
   - Amount, date, category, tags and notes stay visible, so totals and reports stay correct.

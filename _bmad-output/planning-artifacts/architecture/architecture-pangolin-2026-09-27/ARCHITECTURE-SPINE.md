@@ -52,6 +52,8 @@ flowchart TD
 
 Arrows point from a package to what it may import. Anything not drawn is forbidden. The rule is enforced by a lint rule on import paths.
 
+One test-only exception (2026-10-05): test files in `packages/app` may import `packages/db`, so use-case tests and the memory/SQLite parity suite run against the real repositories. Non-test `app` code still never imports an adapter; `scripts/check-boundaries.ts` enforces both through its `testOnly` list.
+
 ### AD-1 — One write path through `app` use cases
 
 - **Binds:** all
@@ -94,7 +96,7 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
   - Attachments on a hidden transaction stay hidden from the partner until the hiding expires.
   - Hiding expires at read time; no job clears it.
   - A hiding outlives a switch of the account to private, or an owner change: until it expires the name stays hidden from everyone but the person who hid it (2026-10-05, epic 2 retro P1/P6).
-  - A transfer whose counterpart sits in the other partner's private account shows as "Transfer from <owner>". The partner can still infer the account exists by elimination; that residual is accepted.
+  - A transfer whose counterpart sits in the other partner's private account shows as "Transfer from <owner>" when money comes in and "Transfer to <owner>" when it goes out (2026-10-05). The partner can still infer the account exists by elimination; that residual is accepted.
 
 ### AD-5 — Private accounts don't exist for the other partner
 
