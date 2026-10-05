@@ -17,7 +17,7 @@ import {
   recordBackupSnapshot,
   recordBackupVerification,
 } from "@pangolin/app";
-import { loadMigrations } from "@pangolin/db";
+import { loadMigrations, type SnapshotCheck } from "@pangolin/db";
 import {
   type BackupPaths,
   backupPaths,
@@ -60,6 +60,19 @@ function listStaged(paths: BackupPaths): string[] {
 
 function removeStaged(paths: BackupPaths, name: string): void {
   rmSync(join(paths.stagingRoot, name), { recursive: true, force: true });
+}
+
+/**
+ * What a failed check or drill is stored, returned and audited as: the kind of check and, when a
+ * snapshot was fetched, its short ID. Never the verdict's or restic's own text: a manifest
+ * mismatch names private account IDs with their counts and sums, and the summary reaches the
+ * backup status and the unscoped audit log. The detailed message stays on the operator paths.
+ */
+function failureSummary(
+  check: SnapshotCheck | "restore" | "repository",
+  snapshotId?: string,
+): string {
+  return `the ${check} check failed${snapshotId === undefined ? "" : ` on snapshot ${snapshotId.slice(0, 8)}`}`;
 }
 
 /** The restore drill's directory names, under `<dataDir>/backup`. */
@@ -156,7 +169,7 @@ export function backupJobs(deps: BackupJobDeps): JobRegistration[] {
       recordBackupVerification(ctx, {
         kind: "check",
         ok: false,
-        summary: error.message.slice(0, 500),
+        summary: failureSummary("repository"),
       });
       return;
     }
@@ -192,16 +205,16 @@ export function backupJobs(deps: BackupJobDeps): JobRegistration[] {
         ok = verdict.ok;
         summary = verdict.ok
           ? `restored snapshot ${fetched.snapshot.id.slice(0, 8)} and verified ${verdict.tables} tables, ${verdict.rows} rows`
-          : `the ${verdict.check} check failed on snapshot ${fetched.snapshot.id.slice(0, 8)}: ${verdict.message}`;
+          : failureSummary(verdict.check, fetched.snapshot.id);
       } catch (error) {
         if (error instanceof SnapshotNotFound) return;
         if (error instanceof ResticError && error.exitCode === null) throw error;
         if (ctx.signal.aborted) throw error;
         // restic ran and failed, or the snapshot is not a Pangolin backup.
         ok = false;
-        summary = `the restore failed: ${error instanceof Error ? error.message : String(error)}`;
+        summary = failureSummary("restore");
       }
-      recordBackupVerification(ctx, { kind: "drill", ok, summary: summary.slice(0, 500) });
+      recordBackupVerification(ctx, { kind: "drill", ok, summary });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

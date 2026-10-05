@@ -62,12 +62,20 @@ export interface Manifest {
   readonly accounts?: readonly AccountManifest[];
 }
 
-export interface BuildManifestOptions {
-  /** The day balances are taken on; today's UTC date when omitted. */
-  readonly balanceDate?: string;
-  /** False builds a format-1 shape (no account scan); true by default. */
-  readonly accounts?: boolean;
-}
+/**
+ * What `buildManifest` builds: a format-1 shape without the account scan (`accounts: false`), or
+ * format 2, which needs the `YYYY-MM-DD` day the balances are taken on. There is no default day:
+ * a server caller passes the household clock's today, so none can forget it.
+ */
+export type BuildManifestOptions =
+  | { readonly accounts: false }
+  | { readonly accounts?: true; readonly balanceDate: string };
+
+/** `writeSnapshot`'s options: those of `buildManifest`, and when the snapshot was taken. */
+export type WriteSnapshotOptions = BuildManifestOptions & {
+  /** Recorded in the manifest as when the snapshot was taken. */
+  readonly takenAt?: string;
+};
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -154,11 +162,14 @@ function accountManifests(db: Db, balanceDate: string): AccountManifest[] {
   }));
 }
 
-/** Builds the manifest of `db` inside one read transaction, so it is one consistent state. */
-export function buildManifest(db: Db, options: BuildManifestOptions = {}): Manifest {
-  const withAccounts = options.accounts ?? true;
-  const balanceDate = options.balanceDate ?? new Date().toISOString().slice(0, 10);
-  if (withAccounts && !DAY.test(balanceDate)) {
+/**
+ * Builds the manifest of `db` inside one read transaction, so it is one consistent state. Format 2
+ * needs `options.balanceDate`; `{ accounts: false }` builds the format-1 shape.
+ */
+export function buildManifest(db: Db, options: BuildManifestOptions): Manifest {
+  // The types require the date; a caller that gets past them (`{}`) must not become format 1.
+  const balanceDate = options.accounts === false ? undefined : options.balanceDate;
+  if (options.accounts !== false && !DAY.test(String(balanceDate))) {
     throw new TypeError("buildManifest: balanceDate must be a YYYY-MM-DD string");
   }
   return db
@@ -169,7 +180,7 @@ export function buildManifest(db: Db, options: BuildManifestOptions = {}): Manif
         migrations,
         tables: tableNames(db).map((name) => tableManifest(db, name)),
       };
-      if (!withAccounts) return { format: 1, ...base };
+      if (balanceDate === undefined) return { format: 1, ...base };
       return {
         format: MANIFEST_FORMAT,
         ...base,
@@ -430,15 +441,14 @@ export interface WrittenSnapshot {
  * Writes a consistent snapshot of the database at `dbFile` into `outDir` (replaced if it
  * exists): `pangolin.sqlite` by `VACUUM INTO` on a read-only connection of its own, switched to a
  * rollback journal so it opens read-only anywhere, and `manifest.json` built from that copy
- * (with `takenAt` when given) and, for the account balances, `balanceDate` (today's UTC date when
- * not given).
+ * (with `options.takenAt` when given) and, for the account balances, `options.balanceDate`, which
+ * format 2 requires: the household clock's today, never a default.
  * Synchronous and slow on a large database: run it off the main thread.
  */
 export function writeSnapshot(
   dbFile: string,
   outDir: string,
-  takenAt?: string,
-  balanceDate?: string,
+  options: WriteSnapshotOptions,
 ): WrittenSnapshot {
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true, mode: 0o700 });
@@ -455,8 +465,8 @@ export function writeSnapshot(
   let manifest: Manifest;
   try {
     snapshot.pragma("journal_mode = DELETE");
-    manifest = buildManifest(snapshot, balanceDate === undefined ? {} : { balanceDate });
-    if (takenAt !== undefined) manifest = { ...manifest, takenAt };
+    manifest = buildManifest(snapshot, options);
+    if (options.takenAt !== undefined) manifest = { ...manifest, takenAt: options.takenAt };
   } finally {
     snapshot.close();
   }

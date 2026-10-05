@@ -67,7 +67,10 @@ function run(args: readonly string[]): number {
   try {
     let written: ReturnType<typeof writeSnapshot>;
     try {
-      written = writeSnapshot(path, join(tempDir, "snapshot"));
+      // No household here: the UTC date, as decision 83 allows for this tool.
+      written = writeSnapshot(path, join(tempDir, "snapshot"), {
+        balanceDate: new Date().toISOString().slice(0, 10),
+      });
     } catch (error) {
       return fail("manifest", `cannot write the snapshot: ${message(error)}`);
     }

@@ -34,6 +34,7 @@ import {
   openDatabase,
   packageMigrationsDir,
   parseManifest,
+  verifySnapshot,
 } from "@pangolin/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { backupPaths } from "../backup/paths.ts";
@@ -419,7 +420,9 @@ describe("the backup jobs", () => {
       await run(r, BACKUP_CHECK_JOB);
       await run(r, BACKUP_CHECK_JOB);
       expect(verifications().map((v) => v.ok)).toEqual([0, 0]);
-      expect(verifications()[0]?.summary).toContain("restic check exited with 1");
+      // Only the kind of check: restic's own text stays out of the status and the audit log.
+      expect(verifications()[0]?.summary).toBe("the repository check failed");
+      expect(backupStatus({ uow, clock }, true).check?.summary).toBe("the repository check failed");
       // A verdict, not a crash: the job is done and is not retried or dead.
       expect(jobStatus("backup-check")).toBe("done");
       expect(openItems()).toEqual(["system.backup-verification-failed"]);
@@ -514,13 +517,12 @@ describe("the backup jobs", () => {
       expect(openItems()).toEqual([]);
     });
 
-    it("fails the drill naming the failed verification check, removes its directory, and raises the review item", async () => {
-      const r = runner();
-      const snapshotId = await backUp(r);
+    /** The snapshot's database file inside the stub repository. */
+    function storedDatabase(snapshotId: string): string {
       const meta = JSON.parse(
         readFileSync(join(stub.repoDir, "snapshots", snapshotId, "meta.json"), "utf8"),
       ) as { paths: string[] };
-      const stored = join(
+      return join(
         stub.repoDir,
         "snapshots",
         snapshotId,
@@ -528,14 +530,72 @@ describe("the backup jobs", () => {
         meta.paths[0] as string,
         "pangolin.sqlite",
       );
-      writeFileSync(stored, "this is not a database");
+    }
+
+    const auditRows = () =>
+      db
+        .prepare("SELECT * FROM audit_log WHERE entity = 'backup_verification' ORDER BY at, rowid")
+        .all();
+
+    it("fails the drill naming the failed verification check, removes its directory, and raises the review item", async () => {
+      const r = runner();
+      const snapshotId = await backUp(r);
+      writeFileSync(storedDatabase(snapshotId), "this is not a database");
       await run(r, BACKUP_DRILL_JOB);
       const [drill] = verifications();
       expect(drill).toMatchObject({ kind: "drill", ok: 0 });
-      expect(drill?.summary).toMatch(/^the integrity check failed on snapshot [0-9a-f]{8}: /);
+      expect(drill?.summary).toBe(
+        `the integrity check failed on snapshot ${snapshotId.slice(0, 8)}`,
+      );
       expect(drillDirs()).toEqual([]);
       expect(openItems()).toEqual(["system.backup-verification-failed"]);
       expect(jobStatus("backup-drill")).toBe("done");
+    });
+
+    it("keeps a private account's ID, counts and figures out of a failed drill's summary, status and audit row", async () => {
+      const privateId = "01PRIVATEACCOUNT0000000001";
+      db.prepare(
+        "INSERT INTO account (id, name, type, currency, is_private, created_at, updated_at) VALUES (?, 'Secret', 'transaction', 'AUD', 1, 't', 't')",
+      ).run(privateId);
+      db.prepare(
+        `INSERT INTO "transaction" (id, account_id, posted_on, amount_cents, description_raw, status, fingerprint, fingerprint_version, created_at, updated_at)
+         VALUES ('01PRIVATETX', ?, '2026-09-01', 4242424, 'd', 'posted', 'fp', 1, 't', 't')`,
+      ).run(privateId);
+      const r = runner();
+      const snapshotId = await backUp(r);
+      // The stored copy's private account no longer sums to what its manifest says.
+      const stored = openDatabase(storedDatabase(snapshotId));
+      stored.prepare('UPDATE "transaction" SET amount_cents = amount_cents + 3131313').run();
+      stored.close();
+      await run(r, BACKUP_DRILL_JOB);
+
+      const expected = `the manifest check failed on snapshot ${snapshotId.slice(0, 8)}`;
+      expect(verifications()).toEqual([{ kind: "drill", ok: 0, summary: expected }]);
+      expect(backupStatus({ uow, clock }, true).drill).toMatchObject({
+        ok: false,
+        summary: expected,
+      });
+      const audit = JSON.stringify(auditRows());
+      expect(audit).toContain(expected);
+      for (const text of [JSON.stringify(verifications()), audit]) {
+        expect(text).not.toContain(privateId);
+        expect(text).not.toContain("cents");
+        // The original figure, the delta and the altered sum: digits no ULID or hex prefix holds.
+        for (const figure of ["4242424", "3131313", "7373737"]) expect(text).not.toContain(figure);
+      }
+      expect(openItems()).toEqual(["system.backup-verification-failed"]);
+
+      // The operator's path still gets the detailed message.
+      const manifest = parseManifest(
+        readFileSync(join(storedDatabase(snapshotId), "..", "manifest.json"), "utf8"),
+      );
+      const verdict = verifySnapshot(
+        storedDatabase(snapshotId),
+        manifest,
+        loadMigrations(packageMigrationsDir),
+      );
+      expect(verdict).toMatchObject({ ok: false, check: "manifest" });
+      expect(verdict.ok ? "" : verdict.message).toContain(privateId);
     });
 
     it("fails the drill when the restore fails, removes its directory, and resolves on the next pass", async () => {
@@ -544,9 +604,16 @@ describe("the backup jobs", () => {
       process.env.STUB_RESTIC_FAIL = "restore";
       await run(r, BACKUP_DRILL_JOB);
       expect(verifications()[0]).toMatchObject({ kind: "drill", ok: 0 });
-      expect(verifications()[0]?.summary).toContain(
-        "the restore failed: restic restore exited with 1",
-      );
+      // No restic text, in the table, the status or the audit row.
+      expect(verifications()[0]?.summary).toBe("the restore check failed");
+      expect(backupStatus({ uow, clock }, true).drill?.summary).toBe("the restore check failed");
+      const audit = auditRows() as { action: string; after: string | null }[];
+      expect(JSON.stringify(audit)).not.toContain("restic restore exited");
+      expect(JSON.stringify(audit)).toContain("the restore check failed");
+      const recorded = audit.filter((row) => row.action === "record");
+      expect(
+        recorded.map((row) => (JSON.parse(row.after ?? "null") as { summary: string }).summary),
+      ).toEqual(["the restore check failed"]);
       expect(drillDirs()).toEqual([]);
       expect(openItems()).toEqual(["system.backup-verification-failed"]);
       delete process.env.STUB_RESTIC_FAIL;

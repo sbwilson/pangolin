@@ -30,7 +30,7 @@ export interface TakeSnapshotOptions {
   /** Recorded in the manifest as when the snapshot was taken. */
   readonly takenAt?: string;
   /** The `YYYY-MM-DD` day the manifest's account balances are taken on (the household's today). */
-  readonly balanceDate?: string;
+  readonly balanceDate: string;
   /** Aborting it terminates the worker. */
   readonly signal?: JobSignal;
   readonly workerFile?: URL;

@@ -302,3 +302,7 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-cross-partner-split-and-transfer-guards-plan.md`
   summary: A soft-deleted transaction that still carries a `transfer_group_id` from before story 2.16 blocks deleting its group or its survivor's deletion (foreign key), because `members` and `upkeepMembers` read live rows only; no backfill unlinks survivors already stuck in a dead group.
   evidence: 2.16 review #2 and #3; released data holds no ledger rows (epic note), so only dev databases can have them; a fix is a one-off migration or a repo method that clears links by group id.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-backup-manifest-privacy-plan.md`
+  summary: Validate `balanceDate` (real calendar date, and before any file is removed) in `writeSnapshot`/`buildManifest`.
+  evidence: The check is a `YYYY-MM-DD` regex inside `buildManifest`, run after `writeSnapshot` has removed `outDir` and copied the database, and `2026-13-45` passes it. Pre-existing; no current caller can pass a bad date.

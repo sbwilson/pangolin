@@ -64,10 +64,13 @@ function addLedger(): void {
   addTx("T5", "A2", "2026-02-10", 300);
 }
 
+/** The day every test takes balances on: the code under test has no default. */
+const BALANCE_DATE = "2026-03-01";
+
 /** Writes a snapshot of the live database; returns its directory, file and manifest. */
 function snapshot(name = "snap") {
   const outDir = join(dir, name);
-  const written = writeSnapshot(dbFile, outDir);
+  const written = writeSnapshot(dbFile, outDir, { balanceDate: BALANCE_DATE });
   return { outDir, file: join(outDir, SNAPSHOT_FILE), manifest: written.manifest };
 }
 
@@ -94,7 +97,7 @@ afterEach(() => {
 
 describe("buildManifest", () => {
   it("lists every table with its row count and a checksum, and the applied migrations", () => {
-    const manifest = buildManifest(db);
+    const manifest = buildManifest(db, { balanceDate: BALANCE_DATE });
     expect(manifest.format).toBe(2);
     expect(manifest.schemaVersion).toBe(migrations.length);
     expect(manifest.migrations).toEqual(migrations.map((m) => m.name));
@@ -110,7 +113,7 @@ describe("buildManifest", () => {
   });
 
   it("does not depend on insertion order, and changes with any value", () => {
-    const before = buildManifest(db);
+    const before = buildManifest(db, { balanceDate: BALANCE_DATE });
     // The same rows inserted in reverse order in another database.
     const other = openDatabase(join(dir, "other.sqlite"));
     migrate(other, migrations);
@@ -119,9 +122,11 @@ describe("buildManifest", () => {
     );
     for (let i = 19; i >= 0; i--) insert.run(`P${String(i).padStart(4, "0")}`, `Person ${i}`);
     const person = (m: Manifest) => m.tables.find((t) => t.name === "person");
-    expect(person(buildManifest(other))).toEqual(person(before));
+    expect(person(buildManifest(other, { balanceDate: BALANCE_DATE }))).toEqual(person(before));
     other.prepare("UPDATE person SET colour = '#112234' WHERE id = 'P0007'").run();
-    expect(person(buildManifest(other))?.sha256).not.toBe(person(before)?.sha256);
+    expect(person(buildManifest(other, { balanceDate: BALANCE_DATE }))?.sha256).not.toBe(
+      person(before)?.sha256,
+    );
     other.close();
   });
 
@@ -139,7 +144,7 @@ describe("buildManifest", () => {
     insert.run("a", 1);
     const { manifest } = snapshot();
     expect(manifest.tables.find((t) => t.name === "loose")).toEqual(
-      buildManifest(db).tables.find((t) => t.name === "loose"),
+      buildManifest(db, { balanceDate: BALANCE_DATE }).tables.find((t) => t.name === "loose"),
     );
   });
 });
@@ -158,8 +163,13 @@ describe("account figures", () => {
     expect(JSON.stringify(manifest)).not.toContain("Name A1");
   });
 
-  it("defaults the balance date to today's UTC date and refuses a malformed one", () => {
-    expect(buildManifest(db).balanceDate).toBe(new Date().toISOString().slice(0, 10));
+  it("requires a balance date for format 2, and refuses a malformed one", () => {
+    // @ts-expect-error format 2 has no default day: a caller passes the household's
+    expect(() => buildManifest(db)).toThrow();
+    // @ts-expect-error likewise with options and no date
+    expect(() => buildManifest(db, {})).toThrow();
+    // @ts-expect-error likewise for a snapshot
+    expect(() => writeSnapshot(dbFile, join(dir, "undated"))).toThrow();
     expect(() => buildManifest(db, { balanceDate: "yesterday" })).toThrow("balanceDate");
   });
 
@@ -246,7 +256,7 @@ describe("account figures", () => {
     addLedger();
     // On 2026-02-10 A1 is 10000 - 250 = 9750 and on 2099-02-01 it is 9820: the date matters.
     const outDir = join(dir, "past");
-    const { manifest } = writeSnapshot(dbFile, outDir, undefined, "2026-02-10");
+    const { manifest } = writeSnapshot(dbFile, outDir, { balanceDate: "2026-02-10" });
     expect(manifest.accounts?.[0]?.balanceCents).toBe(9_750);
     expect(buildManifest(db, { balanceDate: "2099-02-01" }).accounts?.[0]?.balanceCents).toBe(
       9_820,
@@ -277,13 +287,18 @@ describe("account figures", () => {
 describe("writeSnapshot and verifySnapshot", () => {
   it("writes a consistent copy whose manifest matches the live database", () => {
     const { outDir, file, manifest } = snapshot();
-    expect(manifest).toEqual(buildManifest(db));
+    expect(manifest).toEqual(buildManifest(db, { balanceDate: BALANCE_DATE }));
     const text = readFileSync(join(outDir, MANIFEST_FILE), "utf8");
     expect(text).toBe(serializeManifest(manifest));
     expect(parseManifest(text)).toEqual(manifest);
-    expect(writeSnapshot(dbFile, outDir).manifestSha256).toBe(manifestSha256(text));
+    expect(writeSnapshot(dbFile, outDir, { balanceDate: BALANCE_DATE }).manifestSha256).toBe(
+      manifestSha256(text),
+    );
     // With the time it was taken, which a restore records.
-    const timed = writeSnapshot(dbFile, outDir, "2026-09-27T02:30:00.000Z");
+    const timed = writeSnapshot(dbFile, outDir, {
+      balanceDate: BALANCE_DATE,
+      takenAt: "2026-09-27T02:30:00.000Z",
+    });
     const timedText = readFileSync(join(outDir, MANIFEST_FILE), "utf8");
     expect(parseManifest(timedText)).toEqual({ ...manifest, takenAt: "2026-09-27T02:30:00.000Z" });
     expect(timed.manifestSha256).toBe(manifestSha256(timedText));
@@ -347,7 +362,9 @@ describe("writeSnapshot and verifySnapshot", () => {
         { ...extra.manifest.tables[0], name: "gone" } as Manifest["tables"][number],
       ],
     };
-    expect(compareManifests(missing, buildManifest(db))).toContain("table gone is missing");
+    expect(compareManifests(missing, buildManifest(db, { balanceDate: BALANCE_DATE }))).toContain(
+      "table gone is missing",
+    );
   });
 
   it("fails the schema check when the snapshot is newer than this build or diverges from it", () => {
@@ -375,7 +392,7 @@ describe("writeSnapshot and verifySnapshot", () => {
 
 describe("parseManifest", () => {
   it("refuses anything but a well-formed manifest", () => {
-    const good = serializeManifest(buildManifest(db));
+    const good = serializeManifest(buildManifest(db, { balanceDate: BALANCE_DATE }));
     expect(() => parseManifest("{")).toThrow("not JSON");
     expect(() => parseManifest("[]")).toThrow("not format 1 or 2");
     const raw = JSON.parse(good) as Record<string, unknown>;
@@ -391,7 +408,9 @@ describe("parseManifest", () => {
   });
 
   it("reads format 1 and validates format 2's balance date and accounts", () => {
-    const raw = JSON.parse(serializeManifest(buildManifest(db))) as Record<string, unknown>;
+    const raw = JSON.parse(
+      serializeManifest(buildManifest(db, { balanceDate: BALANCE_DATE })),
+    ) as Record<string, unknown>;
     const { accounts: _a, balanceDate: _b, ...rest } = raw;
     expect(parseManifest(JSON.stringify({ ...rest, format: 1 })).accounts).toBeUndefined();
     expect(() => parseManifest(JSON.stringify({ ...rest, format: 3 }))).toThrow(

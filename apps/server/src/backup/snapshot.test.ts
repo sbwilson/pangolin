@@ -37,13 +37,15 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+const BALANCE_DATE = "2026-05-06";
+
 describe("takeSnapshot", () => {
   it("writes a VACUUM INTO copy and its manifest in a worker while the live database stays open", async () => {
     const outDir = join(dir, "backup", "staging", "01TEST");
-    const summary = await takeSnapshot({ dbFile, outDir });
+    const summary = await takeSnapshot({ dbFile, outDir, balanceDate: BALANCE_DATE });
     const text = readFileSync(join(outDir, MANIFEST_FILE), "utf8");
     const manifest = parseManifest(text);
-    expect(manifest).toEqual(buildManifest(db));
+    expect(manifest).toEqual(buildManifest(db, { balanceDate: BALANCE_DATE }));
     const migrations = loadMigrations(packageMigrationsDir);
     expect(summary).toEqual({
       schemaVersion: migrations.length,
@@ -76,10 +78,12 @@ describe("takeSnapshot", () => {
 
   it("replaces an existing output directory, and rejects when the database is missing", async () => {
     const outDir = join(dir, "out");
-    await takeSnapshot({ dbFile, outDir });
-    await takeSnapshot({ dbFile, outDir });
+    await takeSnapshot({ dbFile, outDir, balanceDate: BALANCE_DATE });
+    await takeSnapshot({ dbFile, outDir, balanceDate: BALANCE_DATE });
     expect(existsSync(join(outDir, SNAPSHOT_FILE))).toBe(true);
-    await expect(takeSnapshot({ dbFile: join(dir, "missing.sqlite"), outDir })).rejects.toThrow();
+    await expect(
+      takeSnapshot({ dbFile: join(dir, "missing.sqlite"), outDir, balanceDate: BALANCE_DATE }),
+    ).rejects.toThrow();
   });
 
   it("rejects with the signal's reason when aborted", async () => {
@@ -87,10 +91,20 @@ describe("takeSnapshot", () => {
     const reason = new Error("stop");
     controller.abort(reason);
     await expect(
-      takeSnapshot({ dbFile, outDir: join(dir, "x"), signal: controller.signal }),
+      takeSnapshot({
+        dbFile,
+        outDir: join(dir, "x"),
+        balanceDate: BALANCE_DATE,
+        signal: controller.signal,
+      }),
     ).rejects.toBe(reason);
     const running = new AbortController();
-    const pending = takeSnapshot({ dbFile, outDir: join(dir, "y"), signal: running.signal });
+    const pending = takeSnapshot({
+      dbFile,
+      outDir: join(dir, "y"),
+      balanceDate: BALANCE_DATE,
+      signal: running.signal,
+    });
     running.abort(reason);
     await expect(pending).rejects.toBe(reason);
   });
