@@ -18,11 +18,15 @@ One bank line becomes one transaction row with one or more splits. Categories, t
 | Area | Table | Holds | Key columns |
 | --- | --- | --- | --- |
 | People | `person` | Each of us, linked to a login | `user_id`, `display_name`, `colour`, `pay_anchor_date`, `pay_cadence` |
+| People | `person_preference` | Each person's appearance | `person_id`, `theme`, `mode` (light, dark, system) |
 | People | better-auth tables | Users, sessions, passkeys, TOTP secrets | managed by the library |
 | Accounts | `institution` | Bank, broker, super fund | `name`, `kind`, `website_url` |
-| Accounts | `account` | Any balance we track | `type` (transaction, savings, offset, credit_card, home_loan, brokerage, super, property, vehicle, other), `currency`, `is_private`, `opened_on`, `closed_on`, `is_savings` |
+| Accounts | `account` | Any balance we track | `type` (transaction, savings, offset, credit_card, home_loan, brokerage, super, property, vehicle, other), `currency`, `is_private`, `opened_on`, `closed_on`, `is_savings`, `credit_limit_cents` |
 | Accounts | `account_owner` | Who owns it and in what share | `account_id`, `person_id`, `share_bp` (basis points: 5000 = 50%) |
 | Accounts | `balance_snapshot` | Statement, API or manual balances | `account_id`, `as_of`, `balance_cents`, `source` |
+| Accounts | `loan_terms` | A loan's contract terms, entered by hand or from an import | `account_id`, `lender`, `loan_type`, `borrowed_cents`, `start_on`, `term_months`, `repayment_cents`, `repayment_cadence` (weekly, fortnightly, monthly), `comparison_rate`, `yearly_extra_cap_cents`, `offset_account_id`. No nominal-rate column: the starting rate is the loan's first `loan_rate_change` row (`effective_from` = `start_on`) |
+| Accounts | `loan_rate_change` | A loan's nominal rate over time; the first row is the initial rate | `account_id`, `effective_from`, `rate` |
+| Accounts | `loan_interest_entry` | Interest charged for a period, from a statement | `account_id`, `period_start`, `period_end`, `interest_cents`, `source` (user, statement) |
 | Ledger | `transaction` | One bank line | `account_id`, `posted_on`, `amount_cents`, `description_raw`, `payee_id`, `status`, `external_id`, `fingerprint`, `import_id`, `performed_by`, `transfer_group_id`, `needs_review`, `is_hidden`, `name_hidden_by`, `name_hidden_until`, `notes` |
 | Ledger | `split` | Where the money went (≥ 1 per transaction; amounts sum to the parent) | `transaction_id`, `amount_cents`, `category_id`, `activity_id`, `beneficiary` (shared or a person), `property_id`, `tax_category_id`, `deductible_bp`, `memo` |
 | Ledger | `transfer_group` | Links both sides of an internal transfer | `id`, `matched_by` (rule, manual, auto) |
@@ -36,13 +40,18 @@ One bank line becomes one transaction row with one or more splits. Categories, t
 | Classify | `suggestion` | LLM proposals awaiting review | `split_id`, `field`, `value`, `confidence`, `model`, `status` |
 | Import | `import_profile` | Per-bank CSV mapping | `institution_id`, `columns` (JSON), `date_format`, `sign_convention` |
 | Import | `import_batch` | One uploaded file (CSV, OFX, QIF or PDF) | `account_id`, `source`, `file_sha256`, `row_count`, `new_count`, `dup_count`, `status` |
-| Import | `import_row` | Parsed rows awaiting review and commit, with the PDF page each came from | |
+| Import | `import_row` | Parsed rows awaiting review and commit, with the PDF page each came from | `batch_id`, `row_number`, `raw_line`, `status` (staged, committed, set_aside, discarded), `reason`, `pdf_page` |
+| Import | `import_handoff` | A file imported for the partner, waiting for them to pick an account | `attachment_id`, `sender_person_id`, `recipient_person_id`, `status`, `batch_id` |
 | Planning | `budget` | A cap per category or group | `category_id` or `group_id`, `scope` (shared or person), `period` (fortnight, month), `anchor_date`, `amount_cents`, `rollover` |
 | Planning | `recurring_series` | Detected or confirmed bills | `payee_id`, `account_id`, `cadence`, `expected_cents`, `tolerance_bp`, `next_due_on`, `status` |
-| Planning | `goal` | Savings target | `name`, `target_cents`, `target_date`, `priority`, `completed_at` |
-| Planning | `goal_rule` | % of each period's savings | `goal_id`, `stage_id`, `share_bp`, `effective_from` |
+| Planning | `goal` | Savings target | `name`, `person_id` (null for the shared pool), `target_cents`, `target_date`, `priority`, `kind` (flexible, protected), `is_emergency_fund` (at most one per pool), `completed_at` |
+| Planning | `goal_rule` | % of each period's savings | `goal_id`, `stage_id`, `share_bp`, `effective_from`, `effective_until` (nullable), `source` (rule, shortfall_override). A shortfall override is a time-boxed rule that diverts $X/fortnight to the buffer |
+| Planning | `goal_drawdown` | One confirmed cover | `person_id` (null for shared), `reason` (large_purchase, shortfall), `label`, `amount_cents`, `transaction_id` (nullable: the covered withdrawal), `created_by`, `created_at`, `undone_at` |
+| Planning | `goal_adjustment` | One goal's debit within a drawdown | `drawdown_id`, `goal_id`, `amount_cents` (debit) |
+| Planning | `planning_setting` | Per-pool planning settings [ASSUMPTION: home of the threshold] | `person_id` (null for shared), `large_withdrawal_threshold_cents` |
 | Planning | `goal_allocation` | Virtual money assigned per period | `goal_id`, `period_start`, `allocated_cents` |
 | Planning | `allocation_stage` | `name`, `sort`, `exit_goal_id`, `fallback_threshold_bp`, `completed_share_policy` (rescale or buffer). The active stage is derived from goal balances, not stored. | |
+| Planning | `home_plan` | A named saved home buying plan, shared by both | `name`, `created_by`, `inputs` (JSON of typed values and choices), `scenarios` (JSON), `headline` (JSON of borrow, repayment and left to live on at save time); no other figures stored |
 | Invest | `security` | ETF, share or cash | `code` (e.g. `VAS.AX`), `name`, `kind` |
 | Invest | `investment_event` | Buy, sell, distribution, reinvestment, cost-base adjustment | `account_id`, `security_id`, `trade_date`, `kind`, `units_micro`, `price`, `fees_cents`, `amount_cents` |
 | Invest | `lot` | Parcels for capital-gains calculations | `buy_event_id`, `units_remaining_micro`, `cost_base_cents` |
@@ -53,11 +62,13 @@ One bank line becomes one transaction row with one or more splits. Categories, t
 | Super | `contribution` | Money into super | `account_id`, `date`, `kind` (SG, salary sacrifice, personal concessional, non-concessional), `amount_cents` |
 | Tax | `tax_category` | ATO deduction labels (D1–D10 and so on) | `code`, `label`, `default_deductible_bp` |
 | Tax | `attachment`, `transaction_attachment` | Receipts and statements, encrypted on disk | `sha256`, `mime`, `bytes`, `path` |
-| Property | `property` | `name`, `owner_person_id`, `loan_account_id`, `value_account_id`. Rental income and property costs link to it through `split.property_id`. | |
+| Property | `property` | `name`, `place`, `kind` (investment, home), `loan_account_id`, `value_account_id`, `weekly_rent_cents`, `purchase_price_cents`, `purchased_on`, `cost_base_adjustments_cents`. Ownership comes from the value account's `account_owner`. Rental income and property costs link to it through `split.property_id`. | |
 | System | `job` | Scheduled and queued work | `kind`, `run_at`, `status`, `attempts`, `payload` |
 | System | `audit_log` | Who changed what | `user_id`, `entity`, `entity_id`, `action`, `before`, `after` |
 | Config | `household_settings` | `base_currency` (default AUD), `fy_start` (07-01), `timezone` (Australia/Sydney), `shared_attribution` (by contribution or 50/50) | |
-| LLM | `llm_provider` | `kind` (openai or anthropic), `base_url`, `model`, encrypted `api_key`, `is_local`, allowed purposes (categorise, PDF extraction) | |
+| LLM | `llm_provider` | `kind` (openai or anthropic), `base_url`, `model`, encrypted `api_key`, `is_local`, allowed purposes (categorise, PDF extraction, row interpretation) | |
+
+No `loan_plan_row` table: importing a lender's repayment plan is later work, so a loan's schedule is estimated from `loan_terms` and corrected by `loan_interest_entry`.
 
 ## Privacy enforcement
 

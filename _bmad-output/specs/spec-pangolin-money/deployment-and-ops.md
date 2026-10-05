@@ -49,7 +49,7 @@ The server runs one app container under Docker Compose, managed by the `pangolin
   - per-account balance sums against the backup's manifest.
 - **Tested twice:**
   - CI backs up and restores a synthetic database on every release.
-  - The server runs a monthly restore drill into a temporary directory and shows the result on the status page.
+  - The server runs a monthly restore drill into a temporary directory and shows the result in Settings › System status.
 
 ## CI/CD (GitHub Actions)
 
@@ -83,9 +83,9 @@ Five milestones, each ending in a check that can actually be verified. Security,
 | Milestone | Scope | Gate |
 | --- | --- | --- |
 | M0 · Foundations | Repo, CI, Debian install script behind NPM, passkey login, seed data, mock LLM server; nightly encrypted backup and automated restore test | Fresh install to first login in one command; restore test passes in CI |
-| M1 · Ledger and import | Accounts and ownership, OFX, CSV and QIF import, dedupe, transfer matching, privacy redaction; transaction list with filters, splits, tags, rules and the review inbox | 12 months of our real data imported with no unexplained balance gaps |
+| M1 · Ledger and import | Accounts and ownership, OFX, CSV and QIF import, dedupe, transfer matching, privacy redaction; transaction list with filters, splits, tags, rules and the review inbox; app shell, Settings page and per-person themes | 12 months of our real data imported with no unexplained balance gaps |
 | M2 · Insight | Cash flow (Sankey, P&L by group or category), spending by any period, net worth; LLM categorisation (any OpenAI- or Anthropic-style provider), PDF statement import, merchant logos | We use it weekly instead of the spreadsheets |
-| M3 · Planning | Fortnightly budgets with pace and projection, recurring bill detection and alerts; goals with percentage allocation rules, cash-flow and net-worth forecasts | One full budget cycle tracked for both of us |
+| M3 · Planning | Fortnightly budgets with pace and projection, recurring bill detection and alerts; goals with percentage allocation rules, cash-flow and net-worth forecasts; loans and property (net cash, LVR); home buying planner with shared saved plans | One full budget cycle tracked for both of us; the home buying planner works on our real data |
 | M4 · Wealth and tax | ETF events, lots and prices; super units, unit prices and contribution caps; tax pack per person per financial year, activities, receipts | — |
 
 M1 is highlighted because it carries the most risk: if import, deduplication and transfer matching aren't trustworthy, every report built on them is wrong. It's worth spending disproportionate time there.

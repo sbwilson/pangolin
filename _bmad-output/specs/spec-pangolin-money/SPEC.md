@@ -6,6 +6,7 @@ companions:
   - import-pipeline.md
   - categorisation.md
   - budgets-goals-forecasting.md
+  - home-buying.md
   - investments-super-tax.md
   - security-and-recovery.md
   - deployment-and-ops.md
@@ -28,7 +29,7 @@ A couple wants to see where their money goes, what they can save, and how they'r
 
 - **CAP-1**
   - **intent:** Household can import transactions from CommBank (OFX/CSV/QIF), ubank (CSV), Up (CSV history), any bank/broker PDF statement (LLM-extracted and checked against statement balances), CMC Invest (CSV) and Betashares/super (units × price) through one idempotent pipeline.
-  - **success:** Each format ships a committed, anonymised sample file; re-importing the same file or an overlapping date range changes nothing; any statement with a printed opening/closing or running balance reconciles to the cent.
+  - **success:** Each format ships a committed, anonymised sample file; re-importing the same file or an overlapping date range changes nothing; any statement with a printed opening/closing or running balance reconciles to the cent. Unreadable rows in CSV/OFX/QIF are set aside with row number and reason while good rows commit; a PDF statement with any failed check still blocks as a whole. A file can be handed to the partner, who chooses the account. Once set-aside rows are fixed or discarded, the statement reconciles to the cent.
 - **CAP-2**
   - **intent:** A transaction split is categorised deterministically by rule, then payee default, then LLM suggestion, with LLM auto-apply gated by a confidence threshold tuned from acceptance rate.
   - **success:** Every auto-applied split records the suggestion's model, prompt version and outcome; everything else lands in the review inbox.
@@ -36,17 +37,17 @@ A couple wants to see where their money goes, what they can save, and how they'r
   - **intent:** An account can be marked private (visible only to its owner) and a transaction's name hidden from the other partner in a shared account for up to 12 months, while shared totals stay correct.
   - **success:** Cross-user reads of private accounts or hidden names fail in tests (including search, exports, audit log); hidden names lift automatically after 12 months; redaction runs through one `visibleAccounts()`/`redact()` path.
 - **CAP-4**
-  - **intent:** A household or a person sets a spending cap per category or group on a fortnight or month cycle, anchored to a payday, with spent/pace/projected computed live from splits.
+  - **intent:** A household or a person sets a spending cap per category or group on a fortnight or month cycle, anchored to a payday, with spent/pace/projected computed live from splits; the editor suggests a limit from recent average spending, and going over the limit raises one review item per budget per period.
   - **success:** Spent/pace/projected figures match a hand-computed check against seeded splits; rollover behaves per its per-budget setting.
 - **CAP-5**
   - **intent:** The app detects recurring bills from payee/interval/amount patterns and alerts on a missed payment or an amount increase over 10%.
   - **success:** A synthetic series of ≥3 occurrences with a stable median interval is detected and confirmed with one click; a seeded 11%+ rise raises an alert.
 - **CAP-6**
-  - **intent:** Positive new savings each period are split across goals by staged, priority-ordered rules, with automatic stage transitions when a stage's exit goal completes and fallback reactivation when a goal drops below its threshold.
-  - **success:** A seeded multi-period savings history produces `goal_allocation` rows matching the active stage's shares; a completed or under-threshold goal triggers the documented rescale or reactivation with a logged stage change.
+  - **intent:** Positive new savings each period are split across goals by staged, priority-ordered rules, with automatic stage transitions when a stage's exit goal completes and fallback reactivation when a goal drops below its threshold. Each goal is Flexible or Protected, and each pool has at most one goal marked as its emergency fund.
+  - **success:** A seeded multi-period savings history produces `goal_allocation` rows matching the active stage's shares; a completed or under-threshold goal triggers the documented rescale or reactivation with a logged stage change. A second emergency fund in the same pool is rejected. A drawdown that takes the emergency fund below its fallback threshold reactivates stage 1, the same as a linked withdrawal.
 - **CAP-7**
-  - **intent:** Each period and after every import, goal balances plus the unallocated buffer must reconcile to the real balance of that pool's savings accounts, with over-commitment and other mismatches flagged.
-  - **success:** A seeded over-commitment (buffer exhausted) shows a red shortfall on the goals page and review inbox; any other mismatch offers a one-click buffer adjustment.
+  - **intent:** Each period and after every import, goal balances plus the unallocated buffer must reconcile to the real balance of that pool's savings accounts, with over-commitment and other mismatches flagged. A large purchase or a shortfall is covered by a user-confirmed drawdown across that pool's goals, in a fixed order by goal kind.
+  - **success:** A seeded over-commitment shows a shortfall in the warning colour (never money-out red), with a glyph and text, on the goals page and in the review inbox. Its fix opens Cover an expense in shortfall order: Flexible, then emergency fund, then Protected. A seeded savings withdrawal at or above the pool's threshold raises a Large withdrawal item. Covering it debits the emergency fund first, then Flexible goals, then Protected goals only after a warning. Each confirmed drawdown writes one audited `goal_adjustment` per goal under one `goal_drawdown`, never touches another pool, and is undone in full. Any other mismatch offers a one-click buffer adjustment.
 - **CAP-8**
   - **intent:** Cash flow (3–12 months ahead, per account, with a low-balance warning) and net worth (assets/liabilities with editable savings-rate, return, mortgage-amortisation and super assumptions) are projected from known pay cycles, confirmed bills and budgeted discretionary spend.
   - **success:** A seeded pay-cycle + bills + budget scenario produces a cash-flow projection whose low-balance warning fires at the expected date.
@@ -57,8 +58,8 @@ A couple wants to see where their money goes, what they can save, and how they'r
   - **intent:** Super balance is derived as units × that day's unit price per option; contributions are tagged by kind and tracked against per-person, per-FY concessional caps with carry-forward; expected SG per payday is checked against contributions received.
   - **success:** A seeded statement plus unit-price history reproduces the fund's reported balance within rounding; the cap tracker flags a seeded over-cap contribution; a seeded missed SG payment is flagged after its payday.
 - **CAP-11**
-  - **intent:** A property record links its loan account, rental income and costs to show net cash position per month and per FY, and gearing (loan balance ÷ latest valuation), with repayments treated as a simple expense.
-  - **success:** A seeded property's rent/repayments/costs produce the documented net cash position and gearing figure, visible in the owner's individual view and hidden from the partner when the loan account is private.
+  - **intent:** A property record links its value account, loan account, rental income and costs. Its ownership shares come from its owners. It shows value, equity and LVR (loan ÷ latest valuation). It shows net cash per month and per FY, where net cash = rent − user-entered loan interest − running costs, with principal shown separately as out of pocket. It labels the property negatively or positively geared from last FY's net cash.
+  - **success:** A seeded property's rent, entered interest and costs produce the documented net cash (this FY, last FY), LVR and gearing label. Months without entered interest show interest as missing, never estimated. The property is hidden from the partner when its value or loan account is private.
 - **CAP-12**
   - **intent:** The app produces a per-person, per-FY pack of deductions by ATO label, investment income and capital gains, and super contributions vs caps, exportable as CSV and a PDF bundle with receipts.
   - **success:** A seeded FY of deductible splits, distributions and lot sales produces a deduction summary, capital gains schedule and cap comparison matching hand-computed totals, exported in both formats.
@@ -80,15 +81,25 @@ A couple wants to see where their money goes, what they can save, and how they'r
 - **CAP-18**
   - **intent:** A partner can browse thousands of transactions with filters held in the URL, edit splits and tags, and work the review inbox.
   - **success:** An end-to-end test filters the seeded ledger via URL parameters, splits a transaction into two splits summing to the parent, tags it, and clears a review-inbox item.
+- **CAP-19**
+  - **intent:** The couple estimate what they can borrow, their repayments, and what's left to live on. Borrowing is estimated two ways, simple and lender-style serviceability, with editable defaults: +3 pp buffer, max(actual, HEM) living costs, rent at 80%, 3.8% of card limits, DTI 6×. The estimate can include existing properties, used for equity (80% LVR) or sold (2.5% costs + CGT estimate). Up to three scenarios. Named saved plans are shared by both and built only from data both can see.
+  - **success:** Against the seed, borrowing power, repayments and the stress row match a hand calculation. A private loan never changes a plan's figures for either partner. A reopened plan shows its saved headline (borrow, repayment, left to live on) beside today's recalculation from its saved inputs. Inputs that are no longer shared drop out with 'Some inputs are no longer shared'.
+- **CAP-20**
+  - **intent:** A loan records its terms, rate changes and user-entered interest per period. It shows balance over time (actual, projected, with extras), interest paid and still to pay, payoff date, and the effect of extra repayments (capped yearly) and of the offset balance. Its schedule is estimated from its terms and corrected by the user-entered interest. Loans can be added by hand.
+  - **success:** A seeded loan's projected payoff, and the interest saved by a given extra, match a hand amortisation. Principal and interest are shown only for periods with entered interest.
+- **CAP-21**
+  - **intent:** Each person picks one of six themes in light, dark or system mode, saved to their profile. The app has a desktop sidebar, a phone tab bar and a single Settings page (appearance, sign-in & security, signed-in devices, partner, household, LLM providers, system status). A person can list and end their sessions.
+  - **success:** A theme choice follows the person to another device. The axe check is clean on every route.
 
 ## Constraints
 
 - Private data never leaves the server by default; outbound network is limited to an explicit allowlist (price/unit-price hosts, any configured LLM endpoint) — no third-party aggregators, no telemetry. Only the job runner makes outbound calls; API and domain services make none.
 - SQLite is the single source of truth with a single writer (one Node process/container); jobs are polled rows in SQLite, not a separate queue server.
 - Money is stored as integer minor units (branded `Cents` type) — no floats near money. Units are integer micro-units; prices are decimal strings.
-- Cloud LLM use is opt-in only, assigned per purpose, and receives only description/amount/date/category list — never account names, people, or private transactions. PDF statement extraction is restricted to local providers unless explicitly enabled for cloud, because statements carry names, addresses and account numbers.
+- Cloud LLM use is opt-in only, assigned per purpose, and receives only description/amount/date/category list — never account names, people, or private transactions. PDF statement extraction is restricted to local providers unless explicitly enabled for cloud, because statements carry names, addresses and account numbers; set-aside row interpretation, like PDF extraction, sees raw text and is restricted to local providers unless explicitly enabled for cloud, and never for a private account.
 - One-command install and upgrade on Debian first (then Ubuntu 24.04, Rocky Linux 9), must work behind an existing reverse proxy (Nginx Proxy Manager), with encrypted backups and a CI-tested restore.
 - Web and mobile ship as one responsive PWA; no native app-store app.
+- Every surface meets WCAG 2.2 AA: full keyboard operation, visible focus, a table equivalent for every chart, and reduced motion respected. An automated accessibility test in CI checks it.
 - The database file is protected by host disk encryption, not SQLCipher — avoids a second key to manage and keeps standard SQLite tooling working.
 - Australian defaults are baked in: AUD base currency, July–June financial year, fortnightly pay cycles, ATO tax categories, super; the ledger stays currency-agnostic but v1 requires each account's currency to match the base currency.
 - `STRICT` SQLite tables with `PRAGMA foreign_keys = ON`; every write goes through a service layer that also writes `audit_log`.
@@ -103,13 +114,13 @@ A couple wants to see where their money goes, what they can save, and how they'r
 - Full double-entry accounting — the ledger uses transactions + splits with transfer links, and lot-level accounting for investments.
 - Partner settlement (who owes whom for shared costs paid from personal accounts) — deferred to v1.1, after M4.
 - Betashares Direct statement parsing — v1 uses manual holdings entry only.
-- Splitting mortgage repayments into interest/principal — v1 treats repayments as a simple expense.
+- Automatically splitting imported mortgage repayments into interest/principal — v1 treats repayments as a simple expense in cash flow; interest is only ever user-entered per period from statements.
 - Monte Carlo forecasting bands — v1 ships editable explicit assumptions only.
 - A native app-store mobile app.
 
 ## Success signal
 
-A fresh install reaches first login in one command with the restore test passing in CI (M0 gate); 12 months of the couple's real data import with no unexplained balance gaps (M1 gate); both partners use it weekly instead of their spreadsheets (M2 gate) and track one full budget cycle each (M3 gate); and the M4 tax pack reproduces hand-checked per-person FY totals. The milestone table is in `deployment-and-ops.md`.
+A fresh install reaches first login in one command with the restore test passing in CI (M0 gate); 12 months of the couple's real data import with no unexplained balance gaps (M1 gate); both partners use it weekly instead of their spreadsheets (M2 gate) and track one full budget cycle each, and the home buying planner works on their real data (M3 gate); and the M4 tax pack reproduces hand-checked per-person FY totals. The milestone table is in `deployment-and-ops.md`.
 
 ## Assumptions
 

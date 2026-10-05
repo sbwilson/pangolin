@@ -8,6 +8,8 @@ Rules decide; the LLM only suggests. A transaction is categorised by the first o
 
 An LLM suggestion is applied automatically only above a confidence threshold tuned from our own acceptance rate. Everything else waits in the review inbox.
 
+Until the confidence threshold is tuned, nothing auto-applies. Review batches suggestions at ≥ 90% confidence into one bulk-accept card.
+
 ## LLM call design
 
 - Transactions are sent in batches of about 20. Each prompt includes the category list and up to 10 similar past transactions already categorised, found with SQLite full-text search (FTS5). No vector database is needed.
@@ -25,7 +27,8 @@ An LLM suggestion is applied automatically only above a confidence threshold tun
 - **Configuration and keys:**
   - Each provider has a base URL, model, and optional API key.
   - Keys are encrypted at rest, never logged, and never sent to the browser.
-- **Per-purpose assignment:** each purpose (categorisation, PDF extraction) is assigned to a provider. For example, categorisation can use a cloud model while PDFs stay local.
+- **Per-purpose assignment:** each purpose (categorisation, PDF extraction, set-aside row interpretation) is assigned to a provider. For example, categorisation can use a cloud model while PDFs stay local.
+- **Row interpretation** (`row_interpret`) sees the raw line, so it is local by default. It runs on a cloud provider only if explicitly enabled for that provider, and never for a private account's row. It returns a schema-shaped proposal, either a transaction or a loan rate change. Nothing applies without the person's confirmation.
 - **Cloud providers get the minimum data:**
   - Only description, amount, date and the category list are sent.
   - Account names, people and private transactions never are.

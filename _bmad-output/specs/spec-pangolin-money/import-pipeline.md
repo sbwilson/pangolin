@@ -2,7 +2,7 @@
 
 Every upload, whether CSV, OFX, QIF or PDF, goes through the same idempotent pipeline. Importing the same file twice changes nothing, and overlapping date ranges are safe.
 
-1. **Parse.** Rows are parsed and validated with Zod, then staged in `import_row`. Bad rows are reported with line numbers; nothing is committed.
+1. **Parse.** Rows are parsed and validated with Zod, then staged in `import_row`. For CSV, OFX and QIF, rows that fail validation are **set aside** in `import_row` (status `set_aside`, row number, raw line, reason) and never committed; the rest continue. Set-aside rows are gathered into one review item. There, each row can be fixed inline (then committed through the same batch), discarded, or read by the LLM (`row_interpret`, see `categorisation.md`). PDF statements are unchanged: any failed check blocks the whole batch.
    - OFX and QIF use standard parsers and need no mapping.
    - CSV uses the account's `import_profile` (column map, date format, sign convention).
    - PDF goes through LLM extraction first (below).
@@ -17,6 +17,10 @@ Every upload, whether CSV, OFX, QIF or PDF, goes through the same idempotent pip
    - An ambiguous one goes to review.
 7. **Reconcile.** Where the source has a running or closing balance (CommBank CSV and OFX do, as do PDF statements), compare it with the computed balance. Any gap is flagged against the batch.
 8. **Review inbox.** Anything uncategorised, low-confidence, or newly matched as a transfer lands in "Needs review". Accepting a correction offers to create a rule.
+
+## Hand-off to the partner
+
+A file imported "For <partner>" is stored as an encrypted attachment and raises a hand-off review item for the partner, who picks any of their accounts. The sender sees only the hand-off's status, never the account. Dismissing the item discards the file. The person who imported a batch can undo it.
 
 ## PDF statements (LLM-assisted)
 

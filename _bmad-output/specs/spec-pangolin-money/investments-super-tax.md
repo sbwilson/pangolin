@@ -28,14 +28,13 @@ Investments and super are both modelled as units × price. Holdings on any date 
   - Cap amounts and eligibility thresholds live in a config table per financial year, not in code.
 - **Payday Super check:** since 1 July 2026 employers must pay super with each pay cycle. The app compares expected SG per payday against contributions received and flags gaps.
 
-## Investment property (owned by one of us)
+## Investment property
 
-- A `property` record links the loan account, the rental income and the property's costs (through `split.property_id`).
-- Repayments are treated simply as an expense for now, with no interest/principal split.
-- **Property view:** rent in, repayments and costs out, and net cash position per month and per financial year.
-- **Gearing:** loan balance ÷ latest valuation. Valuations are entered by hand as balance snapshots.
-- **Caveat:** repayments include principal, so the net cash position understates the property's real return. An interest-only view can be added later from the interest lines in the home loan export.
-- The property belongs to its owner's individual view and tax pack. The partner sees it unless the owner makes the loan account private.
+- A `property` record links the value account, the loan account, the rental income and the property's costs (through `split.property_id`).
+- Ownership shares come from the property's owners and scale equity, rent, costs and sale figures.
+- **Property view:** net cash = rent − user-entered loan interest − running costs, per month and per FY (this FY to date, last FY). Principal is shown separately as out of pocket. Loan interest comes from `loan_interest_entry`; repayments stay a simple expense in cash flow.
+- **LVR:** loan balance ÷ latest valuation. Valuations are entered by hand as balance snapshots. **Gearing label:** negatively or positively geared from last FY's net cash (estimate, not tax advice).
+- The property belongs to its owners' individual views and tax packs. The partner sees it unless its value or loan account is private.
 
 Member-portal logins are deliberately not automated: they need MFA, break often, and would mean storing credentials.
 
