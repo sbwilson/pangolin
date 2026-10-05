@@ -302,5 +302,5 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | Format-1 restore to a scratch location: snapshot, `"format": 1`, integrity result (step 11) | Snapshot `1c69b789366f8841af07dffcca5cdcae384e2cbfa769c5fcfa3b76dae482fdcb` (2026-10-04, written by build `4df1f99`), `restic restore` to `/root/scratch-restore`: `"format": 1`, schema 11, `PRAGMA integrity_check` `ok`. This proves the old backup is intact and restorable; `v0.2.0`'s reading of a format-1 manifest by `pangolin restore` is covered by the db-level tests only, not exercised on the host |
 | Scratch directory deleted | Yes: `ls /root/scratch-restore` reports no such file or directory, 2026-10-05 |
 | **Decision** | |
-| Outcome (accepted / failed) and reason | |
-| Accepted by the human (name, date) | |
+| Outcome (accepted / failed) and reason | Accepted. The release run is green on the tag, pang-dev runs v0.2.0 healthy on the verified digest, the first backup after the upgrade is manifest format 2 and an old format-1 backup restores intact. Not seen on a real host: a per-account manifest entry (pang-dev has no ledger accounts) and `pangolin restore` reading a format-1 manifest on the new build; both are covered by the db tests. No manual backup preceded the upgrade; the scheduled backup and the automatic pre-upgrade copy were the recovery points. |
+| Accepted by the human (name, date) | Simon Wilson, 2026-10-05 |
