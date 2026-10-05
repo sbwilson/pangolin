@@ -7,13 +7,23 @@ import { join } from "node:path";
 import {
   createAccount,
   createIdGenerator,
+  createPayee,
   createPerson,
+  createTag,
   createTransaction,
+  createTransferGroup,
+  deleteTransaction,
+  getTransaction,
+  hideTransactionName,
   listAudit,
   listReviewItems,
   listTransactions,
   personViewer,
+  setSplitField,
+  setSplits,
+  setSplitTags,
   type UseCaseContext,
+  updateTransaction,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import type { Id } from "@pangolin/shared";
@@ -252,12 +262,155 @@ describe("audit read", () => {
       expect(seen?.hiddenUntil).toBe("2027-03-12");
       const json = JSON.parse(seen?.after ?? "{}");
       expect(json.descriptionRaw).toBe("Hidden until 12 Mar 2027");
-      expect(json.payeeId).toBeUndefined();
+      // The key is kept (nulled in SQL) and labelled; a key the row lacked is never added.
+      expect(json.payeeId).toBe("Hidden until 12 Mar 2027");
+      expect(json.fingerprint).toBeUndefined();
       expect(JSON.stringify(seen)).not.toContain("Secret name");
     }
     const own = entryFor(as(a));
     expect(own?.hiddenUntil).toBeNull();
     expect(JSON.parse(own?.after ?? "{}").descriptionRaw).toBe("Secret name");
+  });
+
+  it("stores the true name when the partner writes on a hidden row; B reads the placeholder", () => {
+    const payee = createPayee(as(a), { name: "Florist" });
+    const id = createTransaction(as(a), { ...txn(shared, "Surprise gift"), payeeId: payee.id });
+    hideTransactionName(as(a), { id, until: "2027-03-12" });
+    updateTransaction(as(b), { id, notes: "for May" });
+    const [first] = setSplits(as(b), {
+      transactionId: id,
+      splits: [{ amountCents: -1000 }, { amountCents: -250 }],
+    }).splits;
+    if (first === undefined) throw new Error("missing split");
+    setSplitField(as(b), {
+      transactionId: id,
+      splitId: first.id,
+      field: "deductible_bp",
+      value: 1,
+    });
+    const tag = createTag(as(b), { name: "gift" });
+    setSplitTags(as(b), { transactionId: id, splitId: first.id, tagIds: [tag.id] });
+    // A transfer group needs two accounts: link to the other side through a second shared one.
+    const joint2 = createAccount(sys, {
+      name: "Joint 2",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [
+        { personId: a, shareBp: 5000 },
+        { personId: b, shareBp: 5000 },
+      ],
+    });
+    const across = createTransaction(as(b), txn(joint2, "Across", 1250));
+    createTransferGroup(as(b), { transactionIds: [id, across] });
+    deleteTransaction(as(b), { id });
+
+    const byB = db
+      .prepare(
+        "SELECT action, before, after FROM audit_log WHERE entity = 'transaction' AND entity_id = ? AND actor = ? ORDER BY rowid",
+      )
+      .all(id, `person:${b}`) as { action: string; before: string; after: string }[];
+    expect(byB.map((r) => r.action)).toEqual([
+      "update",
+      "update",
+      "update",
+      "update",
+      "update",
+      "delete",
+    ]);
+    for (const row of byB) {
+      for (const json of [row.before, row.after]) {
+        expect(JSON.parse(json)).toMatchObject({
+          descriptionRaw: "Surprise gift",
+          payeeId: payee.id,
+        });
+      }
+    }
+
+    const LABEL = "Hidden until 12 Mar 2027";
+    const forB = listAudit(as(b)).filter((r) => r.entityId === id && r.actor === `person:${b}`);
+    expect(forB).toHaveLength(6);
+    for (const row of forB) {
+      for (const json of [row.before, row.after]) {
+        expect(JSON.parse(json ?? "{}")).toMatchObject({
+          descriptionRaw: LABEL,
+          payeeId: LABEL,
+          fingerprint: null,
+          externalId: null,
+        });
+      }
+    }
+    expect(JSON.stringify(forB)).not.toContain("Surprise");
+    expect(JSON.stringify(forB)).not.toContain(payee.id);
+    const forA = listAudit(as(a)).filter((r) => r.entityId === id && r.actor === `person:${b}`);
+    expect(forA).toHaveLength(6);
+    for (const row of forA) {
+      for (const json of [row.before, row.after]) {
+        expect(JSON.parse(json ?? "{}")).toMatchObject({
+          descriptionRaw: "Surprise gift",
+          payeeId: payee.id,
+        });
+      }
+    }
+  });
+
+  it("nulls another person's scoped payee in the partner's audit of a row that is not hidden", () => {
+    const mine = createPayee(as(a), { name: "My florist", originAccountId: privateA });
+    const id = createTransaction(as(a), txn(shared, "Flowers"));
+    // The use cases refuse a scoped payee on a shared account; the row is set directly.
+    db.prepare('UPDATE "transaction" SET payee_id = ? WHERE id = ?').run(mine.id, id);
+    updateTransaction(as(b), { id, notes: "seen" });
+    const byB = (ctx: UseCaseContext) =>
+      listAudit(ctx).filter((r) => r.entityId === id && r.actor === `person:${b}`);
+    expect(byB(as(b))).toHaveLength(1);
+    const [forB] = byB(as(b));
+    for (const json of [forB?.before, forB?.after]) {
+      expect(JSON.parse(json ?? "{}")).toMatchObject({ payeeId: null, descriptionRaw: "Flowers" });
+    }
+    expect(JSON.stringify(byB(as(b)))).not.toContain(mine.id);
+    const [forA] = byB(as(a));
+    for (const json of [forA?.before, forA?.after]) {
+      expect(JSON.parse(json ?? "{}")).toMatchObject({ payeeId: mine.id });
+    }
+  });
+
+  it("gives the partner the placeholder for a hidden row's audit JSON that is not an object", () => {
+    const id = createTransaction(as(a), txn(shared, "Surprise gift"));
+    hide(id, "2027-03-12", a);
+    db.prepare(
+      "INSERT INTO audit_log (id, at, actor, entity, entity_id, account_id, action, before, after) VALUES ('AU7','2026-09-28T00:00:00.000Z','x','transaction',?,?,'update',?,?)",
+    ).run(id, shared, '"Surprise gift"', '["Surprise gift"]');
+    const seen = listAudit(as(b)).find((r) => r.id === "AU7");
+    expect(seen).toMatchObject({
+      before: "Hidden until 12 Mar 2027",
+      after: "Hidden until 12 Mar 2027",
+    });
+    expect(JSON.stringify(seen)).not.toContain("Surprise");
+  });
+
+  it("hides a v1 row's fingerprint and external ID from the partner, and keeps its line fixed", () => {
+    const id = createTransaction(as(a), txn(shared, "Surprise gift"));
+    db.prepare(
+      'UPDATE "transaction" SET external_id = ?, fingerprint = ?, fingerprint_version = 1 WHERE id = ?',
+    ).run("BANK-123", "v1-hash-of-surprise", id);
+    hide(id, "2027-03-12", a);
+    expect(getTransaction(as(b), { id })).toMatchObject({ fingerprint: null, externalId: null });
+    expect(listTransactions(as(b)).find((t) => t.id === id)).toMatchObject({
+      fingerprint: null,
+      externalId: null,
+    });
+    expect(getTransaction(as(a), { id })).toMatchObject({
+      fingerprint: "v1-hash-of-surprise",
+      externalId: "BANK-123",
+    });
+    expect(getTransaction(as(b, "2027-03-12"), { id }).externalId).toBe("BANK-123");
+    expect(() => updateTransaction(as(b), { id, amountCents: -1 })).toThrow(
+      expect.objectContaining({ code: "Conflict" }),
+    );
+    const row = db
+      .prepare('SELECT amount_cents AS amount FROM "transaction" WHERE id = ?')
+      .get(id) as { amount: number };
+    expect(row.amount).toBe(-1250);
   });
 
   it("hides audit rows of a person scope from the other person", () => {

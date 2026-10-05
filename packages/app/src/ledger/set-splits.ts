@@ -13,7 +13,12 @@ import {
   requireCategory,
   requireTaxCategory,
 } from "./split-targets.ts";
-import { auditSnapshot, tagsOf, toLedgerTransaction } from "./transaction-view.ts";
+import {
+  auditSnapshot,
+  storedTransaction,
+  tagsOf,
+  toLedgerTransaction,
+} from "./transaction-view.ts";
 
 export const MAX_SPLITS = 50;
 
@@ -169,6 +174,7 @@ export function setSplits(ctx: UseCaseContext, input: SetSplitsInput): LedgerTra
     const tagsBefore = tagsOf(tx, ctx.viewer, before);
     if (unchanged) return toLedgerTransaction(ctx.viewer, before, tagsBefore);
 
+    const stored = storedTransaction(tx, ctx.viewer, before.id);
     tx.transactions.replaceSplits(before.id, next);
     const after = tx.transactions.findVisible(ctx.viewer, before.id, today);
     if (after === undefined) throw new Error(`Transaction ${before.id} vanished during its update`);
@@ -178,8 +184,8 @@ export function setSplits(ctx: UseCaseContext, input: SetSplitsInput): LedgerTra
       entityId: before.id,
       accountId: before.accountId,
       action: "update",
-      before: auditSnapshot(before, tagsBefore),
-      after: auditSnapshot(after, tagsAfter),
+      before: auditSnapshot(stored, tagsBefore),
+      after: auditSnapshot(storedTransaction(tx, ctx.viewer, before.id), tagsAfter),
     });
     return toLedgerTransaction(ctx.viewer, after, tagsAfter);
   });

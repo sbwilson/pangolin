@@ -269,3 +269,9 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-refactor-sweep-plan.md`
   summary: Declare the `packages/app` test dependency on `@pangolin/db` where it is used (not through the root) once the pnpm task cycle has another answer, extend `testOnly` to other test file names, and remove the remaining `as never` in `seed.test.ts`, `demo.test.ts` and app use-case tests; reword the `objectBody` finding as "one typed cast, Zod is the check".
   evidence: root package.json devDependencies, scripts/check-boundaries.ts `testOnly`, apps/server/src/http/app.ts (review pass 1, low).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-true-audit-history-and-hidden-row-projection-plan.md`
+  summary: Audit snapshots record split tagIds only from the writer's scope (tagsOf → listForSplits(viewer)), so a partner's write omits the other person's scoped tags from the history.
+  evidence: transaction-view.ts tagsOf uses the viewer's scope; a full fix records every tag in the snapshot and filters by scope when the audit is read (story 2.14 review #5).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-true-audit-history-and-hidden-row-projection-plan.md`
+  summary: After an early unhide, audit rows whose snapshots carry the old nameHiddenUntil keep showing the placeholder to the partner until the original date.
+  evidence: auditHiddenUntil takes the max of the live row and the snapshot JSON dates (privacy.ts); product decision whether history should follow the live unhide (story 2.14 review #6).

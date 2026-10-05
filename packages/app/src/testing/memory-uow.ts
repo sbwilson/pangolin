@@ -813,7 +813,7 @@ function requireSplitIdsFree(working: MemoryState, fresh: readonly SplitRow[]): 
 }
 
 function transactionRepo(working: MemoryState, check: () => void): TransactionRepo {
-  const withSplits = (row: VisibleTransaction): VisibleTransaction => ({
+  const withSplits = <T extends { readonly id: string }>(row: T): T & { splits: SplitRow[] } => ({
     ...row,
     splits: working.splits
       .filter((split) => split.transactionId === row.id)
@@ -834,6 +834,8 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
     return withSplits({
       ...row,
       descriptionRaw: hidden ? null : row.descriptionRaw,
+      fingerprint: hidden ? null : row.fingerprint,
+      externalId: hidden ? null : row.externalId,
       payeeId: payee === undefined ? null : row.payeeId,
       payeeName: payee?.name ?? null,
       logoAttachmentId: payee?.logoAttachmentId ?? null,
@@ -882,6 +884,12 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       check();
       const row = visibleRows(viewer).find((r) => r.id === id);
       return row === undefined ? undefined : view(viewer, row, today);
+    },
+    findStored: (viewer, id) => {
+      requireViewer(viewer);
+      check();
+      const row = visibleRows(viewer).find((r) => r.id === id);
+      return row === undefined ? undefined : withSplits({ ...row });
     },
     update: (viewer, change) => {
       requireViewer(viewer);
@@ -1043,7 +1051,7 @@ function auditHiddenUntil(
     txn === undefined ? null : hide(txn.accountId, txn.nameHiddenUntil, txn.nameHiddenBy),
   );
   for (const json of [row.before, row.after]) {
-    const state = json === null ? null : (JSON.parse(json) as Record<string, unknown> | null);
+    const state = parseJson(json) as Record<string, unknown> | null;
     candidates.push(
       state === null || typeof state !== "object"
         ? null
@@ -1054,15 +1062,46 @@ function auditHiddenUntil(
   return found.length === 0 ? null : found.reduce((a, b) => (a >= b ? a : b));
 }
 
+/** `JSON.parse`, or null when `json` is null or not valid JSON (SQLite's `json_valid` guard). */
+function parseJson(json: string | null): unknown {
+  if (json === null) return null;
+  try {
+    return JSON.parse(json) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/** The keys the audit scrub nulls while a name is hidden (mirror of `json_replace`). */
+const HIDDEN_AUDIT_KEYS = ["descriptionRaw", "payeeId", "fingerprint", "externalId"] as const;
+
 function auditRepo(working: MemoryState, check: () => void, failAudit: () => boolean) {
-  const scrub = (json: string | null, hidden: boolean): string | null => {
-    if (json === null || !hidden) return json;
-    const {
-      descriptionRaw: _d,
-      payeeId: _p,
-      ...rest
-    } = JSON.parse(json) as Record<string, unknown>;
-    return JSON.stringify(rest);
+  // Mirror of the SQL scrub: JSON that is not valid comes back null (fail closed); while hidden,
+  // the name keys present are nulled and none is added; a payee the viewer may not see (the
+  // payee scope rule of `visibleTxn`) is nulled the same way.
+  const payeeVisible = (viewer: Viewer, id: string): boolean =>
+    viewer.kind === "system" ||
+    working.payees.some(
+      (p) => p.id === id && (p.scopePersonId === null || p.scopePersonId === viewer.personId),
+    );
+  const scrub = (viewer: Viewer, json: string | null, hidden: boolean): string | null => {
+    if (json === null) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      return null;
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return json;
+    const out: Record<string, unknown> = { ...(parsed as Record<string, unknown>) };
+    if (hidden) {
+      for (const key of HIDDEN_AUDIT_KEYS) if (key in out) out[key] = null;
+    } else if (typeof out.payeeId === "string" && !payeeVisible(viewer, out.payeeId)) {
+      out.payeeId = null;
+    } else {
+      return json;
+    }
+    return JSON.stringify(out);
   };
   return {
     append: (row: AuditRow) => {
@@ -1082,8 +1121,8 @@ function auditRepo(working: MemoryState, check: () => void, failAudit: () => boo
           const hidden = hiddenUntil !== null;
           return {
             ...row,
-            before: scrub(row.before, hidden),
-            after: scrub(row.after, hidden),
+            before: scrub(viewer, row.before, hidden),
+            after: scrub(viewer, row.after, hidden),
             hiddenUntil,
           };
         });

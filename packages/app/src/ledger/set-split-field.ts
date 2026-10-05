@@ -19,7 +19,12 @@ import {
   requireCategory,
   requireTaxCategory,
 } from "./split-targets.ts";
-import { auditSnapshot, tagsOf, toLedgerTransaction } from "./transaction-view.ts";
+import {
+  auditSnapshot,
+  storedTransaction,
+  tagsOf,
+  toLedgerTransaction,
+} from "./transaction-view.ts";
 
 /** The classified fields of a split that carry provenance. `payee_id` lives on the transaction. */
 export const SPLIT_FIELDS = [
@@ -157,6 +162,7 @@ export function setSplitField(ctx: UseCaseContext, input: SetSplitFieldInput): S
       [column.source]: source,
       updatedAt: formatInstant(ctx.clock.now()),
     } as SplitRow;
+    const stored = storedTransaction(tx, ctx.viewer, before.id);
     if (!tx.transactions.updateSplit(row)) {
       throw new Error(`Split ${old.id} vanished during its update`);
     }
@@ -168,8 +174,8 @@ export function setSplitField(ctx: UseCaseContext, input: SetSplitFieldInput): S
       entityId: before.id,
       accountId: before.accountId,
       action: "update",
-      before: auditSnapshot(before, tagsBefore),
-      after: auditSnapshot(after, tagsAfter),
+      before: auditSnapshot(stored, tagsBefore),
+      after: auditSnapshot(storedTransaction(tx, ctx.viewer, before.id), tagsAfter),
     });
     for (const listener of listeners) {
       listener(tx, audit, { transactionId: before.id, splitId: old.id, field, value, source });

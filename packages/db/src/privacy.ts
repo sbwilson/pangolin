@@ -50,6 +50,10 @@ export interface TxnProjection {
   readonly hidden: SQL;
   /** `description_raw`, NULL while hidden. */
   readonly descriptionRaw: SQL;
+  /** `fingerprint`, NULL while hidden (a v1 fingerprint hashes the description). */
+  readonly fingerprint: SQL;
+  /** `external_id`, NULL while hidden. */
+  readonly externalId: SQL;
   /** `payee_id`, NULL while hidden or when the payee is another person's scoped row. */
   readonly payeeId: SQL;
   /** The payee's name, NULL under the same conditions as `payeeId`. */
@@ -121,6 +125,8 @@ export function visibleTxn(viewer: Viewer | undefined, today: string): TxnProjec
     where,
     hidden,
     descriptionRaw: sql`(CASE WHEN ${hidden} = 1 THEN NULL ELSE ${transaction.descriptionRaw} END)`,
+    fingerprint: sql`(CASE WHEN ${hidden} = 1 THEN NULL ELSE ${transaction.fingerprint} END)`,
+    externalId: sql`(CASE WHEN ${hidden} = 1 THEN NULL ELSE ${transaction.externalId} END)`,
     payeeId: sql`(CASE WHEN ${payeeOk} THEN ${transaction.payeeId} ELSE NULL END)`,
     payeeName: sql`(CASE WHEN ${payeeOk} THEN (SELECT ${payee.name} FROM ${payee} WHERE ${payee.id} = ${transaction.payeeId}) ELSE NULL END)`,
     logoAttachmentId: sql`(CASE WHEN ${payeeOk} THEN (SELECT ${payee.logoAttachmentId} FROM ${payee} WHERE ${payee.id} = ${transaction.payeeId}) ELSE NULL END)`,
@@ -156,7 +162,9 @@ export function auditHiddenUntil(viewer: Viewer | undefined, today: string): SQL
   }
   if (viewer.kind === "system") return sql`NULL`;
   const me = viewer.personId;
+  // JSON that is not valid adds no date here (json_extract would throw); `listVisible` nulls it.
   const state = (json: SQLiteColumn) => sql`(CASE
+    WHEN ${json} IS NULL OR NOT json_valid(${json}) THEN NULL
     WHEN json_extract(${json}, '$.nameHiddenUntil') IS NOT NULL
       AND substr(json_extract(${json}, '$.nameHiddenUntil'), 1, 10) > ${today}
       AND json_extract(${json}, '$.nameHiddenBy') IS NOT ${me}
@@ -171,6 +179,19 @@ export function auditHiddenUntil(viewer: Viewer | undefined, today: string): SQL
   return sql`(CASE WHEN ${auditLog.entity} = 'transaction'
     THEN (SELECT max(v) FROM (SELECT ${current} AS v UNION ALL SELECT ${state(auditLog.before)} UNION ALL SELECT ${state(auditLog.after)}))
     END)`;
+}
+
+/**
+ * 1 when the `$.payeeId` of an audit row's `json` (valid JSON) names a payee this viewer may not
+ * see, else 0: the audit counterpart of `visibleTxn`'s payee scope rule (AD-18). Always 0 for a
+ * system viewer. Throws without a viewer.
+ */
+export function auditPayeeHidden(viewer: Viewer | undefined, json: SQLiteColumn): SQL {
+  const scope = visibleScope(payee.scopePersonId, viewer);
+  if (scope === undefined) return sql`0`;
+  return sql`(CASE WHEN json_type(${json}, '$.payeeId') = 'text'
+    AND NOT EXISTS (SELECT 1 FROM ${payee} WHERE ${payee.id} = json_extract(${json}, '$.payeeId') AND ${scope})
+    THEN 1 ELSE 0 END)`;
 }
 
 /**

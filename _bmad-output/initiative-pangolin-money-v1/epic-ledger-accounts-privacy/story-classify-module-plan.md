@@ -77,6 +77,8 @@ context:
 
 ## Plan Change Log
 
+- 2026-10-05 (recorded late, by story 2.14; epic 2 retro I5 and L11): during this story Simon renegotiated the frozen intent so that deleting a payee always soft-deletes it, with no in-use `Conflict`, because an in-use check would reveal hidden transactions (AD-5). Transactions keep their payee id, and its name and logo still show on them; only lists and pickers stop showing the payee. The Decisions line in Boundaries & Constraints records the outcome; this entry records that it was a human change to frozen intent. The `deletePayee` docstring, which still promised a `Conflict`, was corrected in story 2.14. The retro's I4 (deleted payee still shown) is accepted as this behaviour.
+
 ## Review Triage Log
 
 Pass 1 (thorough): 0 high, 1 medium resolved by a user decision, 2 medium and 2 low patches; 11 deferred; 4 rejected.
