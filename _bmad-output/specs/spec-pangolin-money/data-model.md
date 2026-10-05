@@ -77,7 +77,7 @@ Queries never touch `account` or `transaction` directly. They go through `visibl
 - **Private accounts** are seen only by their owner; to the other partner they don't exist. Each person has one view: household totals and net worth cover everything that person can see, including their own private accounts, so the two partners' household figures can differ. Shared figures (shared-beneficiary spending, the shared savings pool, contribution) never include private money and are identical for both. A transfer whose other side is in the partner's private account shows as "Transfer from <owner>" (money in) or "Transfer to <owner>" (money out); the partner can infer the account exists, an accepted residual (AD-4, 2026-10-05).
 - **Hidden transactions** sit in shared or public accounts (e.g. a birthday present).
   - Only the name is hidden from the other partner: payee, description and merchant logo. They see "Hidden until 12 Mar 2027" instead.
-  - Amount, date, category, tags and notes stay visible, so totals and reports stay correct.
+  - Amount, date, category, split memos, tags and notes stay visible, so totals and reports stay correct; the hide action warns the hider of this (2026-10-05).
   - Hiding lasts at most 12 months (`name_hidden_until`), then lifts automatically.
   - A hiding outlives a switch of the account to private (or an owner change): until it expires only the person who hid it sees the name (2026-10-05).
   - A hidden-name row is excluded from the partner's search entirely (by name, amount, notes or any other field) and its name from exports; the owner still finds it.

@@ -56,6 +56,6 @@ The ledger and classification tables in data-model.md, except import_*, rule and
 - Decision (2026-10-05, user, 81): when one side of a transfer is deleted and the survivor sits in the partner's private account, clearing the survivor's group link is allowed as invariant upkeep, audited with owner-only scope (entry 16, I3).
 - Decision (2026-10-05, user, 82): AD-19 is amended to allow the backup manifest's system-level balance read; manifest.ts stays on the read-rule allow-list (entry 18, retro A13).
 - Decision (2026-10-05, user, 83): check-upgrade may use the UTC date for the manifest's balanceDate (entry 17, I7).
-- Decision (2026-10-05): P9 (whether hiding a name also hides split memo and tags, or warns) is deferred to Simon's spec reconciliation (retro action item 7); entries 14–19 do not wait on it.
+- Decision (2026-10-05): P9 settled by Simon: hiding a name does not hide split memos, tags or notes; the hide action warns that they stay visible (UX Transaction sheet, data-model). No server change, so entries 14–19 are unaffected; the warning ships with epic 12 entry 3.
 - Note (2026-10-05): Entry 17 fixes future drill summaries only; the home server's v0.2.0 manifest has an empty accounts section because it holds no ledger rows (docs/release-v0.2.0.md:301), so no stored drill summary can carry account figures; no scrub needed.
 - Decision (2026-10-05): CAP-16 added to this epic's covers (retro action item 5, A12); entries 9, 12, 17 and 19 cover it.
