@@ -19,7 +19,7 @@ sources:
 
 > **Spines win.** This file and `DESIGN.md` win on any conflict with a mock, wireframe or import. Product behaviour (what a feature computes, privacy rules, auth) stays owned by the spec and architecture in `sources:`; this spine owns how it is presented and operated.
 >
-> **Key-screen mocks:** [mockups/index.html](mockups/index.html) (17 `key-*.html` screens, every IA surface; each is also linked at the section it informs). Rules marked **(from mock)** were lifted from them where the spine was silent; they are committed rules, not assumptions. Example property everywhere: **35 Hawthorne St** (Simon 100%); first-session data runs to 30 Sep 2026.
+> **Key-screen mocks:** [mockups/index.html](mockups/index.html) (19 `key-*.html` screens, every IA surface; each is also linked at the section it informs). Rules marked **(from mock)** were lifted from them where the spine was silent; they are committed rules, not assumptions. Example property everywhere: **35 Hawthorne St** (Simon 100%); first-session data runs to 30 Sep 2026.
 >
 > **Visual references:** [wireframes/ia-2026-10-05.excalidraw](wireframes/ia-2026-10-05.excalidraw) (IA, confirmed by Simon) · [wireframes/flow-first-session-2026-10-05.excalidraw](wireframes/flow-first-session-2026-10-05.excalidraw) (first-session flow) · [mockups/direction-calm-cheeky.html](mockups/direction-calm-cheeky.html) (locked direction: Cash flow, Home buying, empty state) · [mockups/color-themes-1.html](mockups/color-themes-1.html) (theme picks; also shows the hidden-name row and duplicate warning) · [imports/inspiration-sharkfin.webp](imports/inspiration-sharkfin.webp) · [imports/inspiration-smartspend.webp](imports/inspiration-smartspend.webp).
 
@@ -61,16 +61,16 @@ Landing after sign-in is **Cash flow**. "Planning" groups everything not directl
 | **Net worth** | `/net-worth` [ASSUMPTION: path] | Sidebar 2 | More | Today's assets, liabilities and trend; link to Forecast (CAP-17) |
 | Spending | `/spending` [ASSUMPTION: path] | Sidebar 3 | More | Income/expense bar lists, category bars, flexible categories, leaks, drill to transactions (CAP-17) |
 | Transactions | `/transactions` (replaces `/ledger`) | Sidebar 4, count badge | Tab 2 | Ledger grouped by date, filters, search, summary line, bulk select, transaction sheet, hidden-name rows, Import (CAP-18) |
-| Needs review | `/review` | Sidebar 5, count badge | Tab 3, badge | Single inbox (AD-17): AI suggestions, rule offers, duplicates, transfers, import hand-offs, set-aside rows, bills, over budget, goal shortfall |
+| Needs review | `/review` | Sidebar 5, count badge | Tab 3, badge | Single inbox (AD-17): AI suggestions, rule offers, duplicates, transfers, import hand-offs, set-aside rows, bills, over budget, large withdrawal, goal shortfall |
 | Accounts | `/accounts` | Sidebar 6 | More | Account rows by type, Properties card, Add loan (CAP-11) |
 | Account detail | `/accounts/:id` | from Accounts | More | Balance, freshness, transactions for one account |
 | Loan detail | `/accounts/:id` (loan type) | from Accounts | More | § Loan Detail, incl. Property section |
 | Property detail | `/accounts/:id` (property type) | from Accounts, Loan detail | More | § Property Detail: value, equity, ownership split, net cash this FY / last FY, gearing, link to its loan (CAP-11) |
 | Budgets | `/planning/budgets` | Planning group | Planning tab | Budget cards, spent vs limit, projection (CAP-4) |
-| Goals | `/planning/goals` | Planning group | Planning tab | Goal cards, active stage, shortfall (CAP-6, CAP-7) |
+| Goals | `/planning/goals` | Planning group | Planning tab | Goal cards with kind badges, active stage, shortfall, Cover an expense (CAP-6, CAP-7) |
 | Home buying | `/planning/home-buying` | Planning group | Planning tab | § Home Buying Planner (spec catch-up) |
 | Forecast | `/planning/forecast` | Planning group | Planning tab | Short-term cash flow + long-term net worth (CAP-8) |
-| Settings | `/settings`, sections at `#appearance` · `#sign-in-security` · `#devices` · `#partner` · `#llm-providers` · `#system-status` | Sidebar (bottom) | More | One long page of cards with a side menu jumping to sections: Appearance · Sign-in & security (passkeys, password + authenticator, recovery codes) · Signed-in devices · Partner · LLM providers · System status (read-only) |
+| Settings | `/settings`, sections at `#appearance` · `#sign-in-security` · `#devices` · `#partner` · `#household` · `#llm-providers` · `#system-status` | Sidebar (bottom) | More | One long page of cards with a side menu jumping to sections: Appearance · Sign-in & security (passkeys, password + authenticator, recovery codes) · Signed-in devices · Partner (Invite <partner>, until both people exist · Reset <partner>'s sign-in) · Household (pay cycles per person, the household pay anchor, and shared attribution: by contribution or 50/50) · LLM providers · System status (read-only) |
 | Later (M4) | — | — | — | Investments & super, Tax pack, Activities (CAP-9, 10, 12, 13). Not designed in this run |
 
 → IA reference: [wireframes/ia-2026-10-05.excalidraw](wireframes/ia-2026-10-05.excalidraw) (surfaces, nav groups and routes). Per-surface mocks: [mockups/index.html](mockups/index.html).
@@ -93,6 +93,7 @@ The single home for privacy behaviour; other sections point here. The rules are 
 | Partner pending | Count of the partner's open items on shared-visible data only ("Carissa: 12 left"); items from the partner's private accounts never contribute. Count only, never contents; hidden at zero. |
 | Transfer to partner's private account | Shows "Transfer from <owner>" (AD-4). |
 | Personal budgets, goals, forecast assumptions | Visible only to their person (AD-22); shared ones to both. |
+| Cover an expense (goal drawdowns) | One pool only. A shared-pool cover lists shared goals only and shows in both partners' Goals history with who confirmed it; a personal-pool cover is visible only to its person. The partner's personal goals are never listed, counted or touched. Large withdrawal items follow AD-22 (§ Needs review item kinds). |
 | Import for partner | Hand-off, never direct import into the partner's accounts (keeps AD-5). |
 | Planning together on one laptop | The signed-in person's view is shown; Home buying follows § Home Buying Planner › Data scope, so the result is the same whoever is signed in. |
 | Partner-assisted reset | Settings › Partner, behind re-auth; the affected person sees a review-item notice. Plain copy, no cheek. |
@@ -112,7 +113,8 @@ Microcopy is a friendly, plain-speaking Aussie mate who's good with money: cheek
 | Nudge | "2 transactions look like duplicates. Check them in Needs review." (plain: a money warning) | "WARNING: duplicates detected" |
 | Over budget | "Eating out's had a big fortnight." — the only money warning with a cheeky line; never shaming, no mascot | "You exceeded your budget" |
 | Goal arrival | "At the current rate, you'll arrive by Mar 2027." | "ETA: 2027-03" |
-| Goal shortfall | Gentle and exact: "Your goals are $320 ahead of what's in the bank. Move $50/fortnight from the buffer?" / "…Push House deposit out to May 2028?" [ASSUMPTION copy] | Red alarm copy, blame |
+| Goal shortfall | Gentle and exact: "Your goals are $320 ahead of what's in the bank. Cover it from your goals?" / "…Or move $50/fortnight from the buffer until it's covered?" [ASSUMPTION copy] | Red alarm copy, blame |
+| Cover an expense | Plain and exact, at most one light header line: "Things break. Here's where it can come from." [ASSUMPTION copy]. No cheek on the protected warning or the can't-cover line. Protected warning: "This takes $1,200 from House deposit, which you've marked Protected. Its arrival moves from Mar 2028 to Apr 2028." [ASSUMPTION copy] | "Uh-oh", a mascot, cheek on the protected warning |
 | Low balance | "Everyday could dip to $140 on 12 Nov, two days before payday." [ASSUMPTION copy] | "Insufficient funds predicted" |
 | Leaks | "Small stuff that quietly adds up. No judgement. Well, a little." | Shaming ("You wasted…") |
 | Planning | "Comfortably, without living on two-minute noodles" · "estimates, not a lender's offer (sadly)" · "What's left if rates misbehave" · "Room for the odd smashed avo" · CGT: "estimate, not tax advice" | Advice framed as a recommendation |
@@ -174,20 +176,23 @@ Mocks: [key-transactions.html](mockups/key-transactions.html) (filters, 3 rows s
 | Bill detected | "Looks like a monthly bill: Origin, about $180" [ASSUMPTION copy] | Confirm bill · Not a bill |
 | Bill alert | "Origin is up 14% ($205)" / "Netflix didn't turn up this month" [ASSUMPTION copy] | Got it · Open transactions |
 | Over budget | "Eating out's had a big fortnight: $460 of $400" | Open budget · Adjust limit · Got it |
-| Goal shortfall | "Your goals are $320 ahead of what's in the bank" | The fix that applies, per Goal card: Move $X/fortnight from the buffer **or** Push <goal> out to <month> · Open goals |
+| Large withdrawal | "$16,400 came out of Shared savings on 29 Sep" plus the transaction row | **Cover it** (primary; opens Cover an expense in large-purchase order) · **It's for a goal** (links it to one goal, as a linked withdrawal) · **Take it from the buffer** (only when the buffer covers it; left as is) · **Not an expense** (for example a move to an offset account). Raised when a withdrawal out of a pool's savings accounts (not to another savings account in the same pool, not already linked to a goal) reaches that pool's threshold ($2,000 by default, editable on Goals). Scope per AD-22: shared pool → both partners; personal pool → that person; private account → its owner only |
+| Goal shortfall | "Your goals are $320 ahead of what's in the bank" | Cover it (opens Cover an expense, shortfall order) · Move $X/fortnight from the buffer (only when the stage gives the buffer a share) · Open goals. While the pool has an open Large withdrawal item, this item points to it instead of offering a second fix |
 | Goal mismatch | "Savings and goals are $85 apart" | Put the difference in the buffer · Open goals |
 | Goal complete / stage change | "Emergency fund's full. On to Stage 2: Build." | Accept new split · Set percentages |
-| Partner reset notice | "Simon reset your sign-in on 3 Oct" | Got it (plain, no cheek) |
+| Partner reset notice | "Simon reset your sign-in on 3 Oct" | Got it · Revoke the link (plain, no cheek) |
 
 ### Planning
 
-Mocks: [key-budgets.html](mockups/key-budgets.html) (budget states, editor sheet) · [key-goals.html](mockups/key-goals.html) (stage card, both shortfall fixes, Undo toast) · [key-forecast.html](mockups/key-forecast.html) (low balance ahead, changed assumption, not enough data)
+Mocks: [key-budgets.html](mockups/key-budgets.html) (budget states, editor sheet) · [key-goals.html](mockups/key-goals.html) (stage card, kind and emergency-fund badges, shortfall line, Undo toast) · [key-cover-expense.html](mockups/key-cover-expense.html) (large purchase and shortfall orders, sliders, protected warning) · [key-cover-expense-phone.html](mockups/key-cover-expense-phone.html) (the same sheet from the bottom on phone) · [key-forecast.html](mockups/key-forecast.html) (low balance ahead, changed assumption, not enough data)
 
 | Component | Behavioural rules |
 |---|---|
 | **Budget card** | Shows spent vs limit for the current period (fortnight or month, anchored to the scope's payday), a pace tick, and the projection to period end ("On track for $380 by 17 Oct"). The mini chart plots current vs projected progress. Over the limit (spent > limit): the bar turns the warning colour, a nudge line appears on the card, and one Over budget item lands in Needs review per budget per period [ASSUMPTION: once per period]. Click opens Transactions filtered to that category and period. Edit (pencil) opens the budget editor. "New budget" (secondary button) beside the summary line opens it empty (from mock). |
 | **Budget editor** | Sheet with: category or group, scope (Shared / Simon / Carissa — only own or shared), period (Fortnight / Month), limit, rollover switch. The limit is **pre-filled with a suggestion from recent average spending** ("You've averaged $410 a fortnight") and is editable. Save creates or updates. Personal budgets are visible only to their person (AD-22). |
-| **Goal card** | Progress bar of balance vs target; "At the current rate, you'll arrive by <month year>" from the server's projection; "—" with "Not enough history yet" when there's no rate. Shortfall shows a warning line (warning colour, never money-out red) with a single one-click fix: **Move $X/fortnight from the buffer** when the buffer has room (the active stage allocates it a share of each fortnight), otherwise **Push <goal> out to <month>**, which delays the active stage's lowest-priority goal. Either applies immediately and offers Undo in a toast. Entry point: "Add a goal" (secondary button) beside the summary line (from mock). Goals page header names the active stage and the projected date of the next stage change. |
+| **Goal card** | Progress bar of balance vs target; "At the current rate, you'll arrive by <month year>" from the server's projection; "—" with "Not enough history yet" when there's no rate. The card shows a **Protected** badge (shield icon plus text) or nothing for Flexible, and an **Emergency fund** badge on the pool's emergency fund (its kind doesn't apply). The pencil opens the goal editor. Shortfall shows a warning line (warning colour, never money-out red) with **Cover it** (opens Cover an expense in shortfall order), and **Move $X/fortnight from the buffer** only when the active stage gives the buffer a share; buffer divert applies immediately, keeps the shortfall flagged with a projected clear date, and offers Undo in a toast. Entry points: "Add a goal" (secondary button) beside the summary line (from mock), and **Cover an expense** (secondary button) beside it. Goals page header names the active stage and the projected date of the next stage change; the stage card also holds the pool's Large withdrawal threshold ("Flag withdrawals of $2,000 or more", editable per pool) [ASSUMPTION: placement]. |
+| **Goal editor** | Sheet, from Add a goal or the card's pencil: name; pool (Shared or own); target; kind, a ToggleGroup **Flexible · Protected** with captions "First to give way when something comes up" / "Only touched as a last resort, with a warning"; and an **Emergency fund** switch, disabled with "Shared savings already has one: Rainy day" when the pool has one. New goals default to Flexible. While the switch is on, the kind toggle is hidden. Save creates or updates (server validates one emergency fund per pool). |
+| **Cover an expense** | Sheet opened from Goals (**Cover an expense**), a Large withdrawal item (**Cover it**) or a shortfall (**Cover it**). Header: amount, label ("Car repair"), pool and reason; typed when opened from Goals, pre-filled when opened from an item. Sections follow the reason's order: large purchase **Emergency fund → Flexible → Protected**; shortfall **Flexible → Emergency fund → Protected**. Each goal row: name and badges, balance, Slider plus amount input (0 to its balance), and its new arrival line from the server. Pangolin pre-fills the proposal (emergency fund up to its full balance; the Flexible split in proportion to each goal's balance); after each change the server returns **Left to cover** and the arrival lines (the web never sums). Protected is collapsed and disabled until every earlier section is at its maximum; then a warning line appears with **Use protected goals**, and only after that click do Protected sliders unlock. **Confirm cover** (primary) is enabled when Left to cover is $0, or when every eligible goal is at its maximum (a partial cover); Protected goals are not eligible while they're locked, so a cover can be confirmed without unlocking them. Whatever goals don't cover stays with the buffer (large purchase) or stays flagged (shortfall). Confirming applies, closes the sheet and offers Undo in a toast. Only goals in the expense's pool appear, never the partner's personal goals. The buffer is never drawn. Each confirmed cover appears in Goals history ("Carissa covered Car repair, 5 Oct") with Undo while its period is open. Mocks: [key-cover-expense.html](mockups/key-cover-expense.html) · [key-cover-expense-phone.html](mockups/key-cover-expense-phone.html). |
 | **Forecast chart** | Segmented control **Cash flow · Net worth**. Cash flow: per-account projected balance for **transaction accounts only** (from mock; savings, loans and cards aren't plotted), horizon 3 / 6 / 12 months [ASSUMPTION: default 3], low-balance threshold per account [ASSUMPTION: editable, value unstated]. The first dip below threshold gets a warning line naming account, amount and date; only the dipping account's threshold is drawn; the rest are listed in the thresholds chip (from mock). Net worth: low / mid / high return lines, horizon 1 / 2 / 5 / 10 years [ASSUMPTION: horizon options; default 2]. Hover/focus a point: tooltip with date and value. "View as table" under each chart. |
 | **Assumption chips** | Each chip is an editable assumption; click opens an inline editor; changed values show a "changed" dot and a reset. Planner and Forecast both use them. Forecast chips: savings rate, return (low/mid/high), mortgage amortisation with offset, super contributions. |
 | **Home buying glimpse** | Shows the most recent saved plan (or live default) at today's rate; rate pills on the card change the figures in place; "Open planner →" carries the selection over [ASSUMPTION]. |
@@ -196,7 +201,7 @@ Mocks: [key-budgets.html](mockups/key-budgets.html) (budget states, editor sheet
 | **Scenario compare** | Up to three named scenarios (A/B/C) side by side; each holds rate, term, and property choices; one is "selected" and drives the hero number [ASSUMPTION: max 3]. |
 | **Property card** | Toggle Use equity / Sell it per property; the hero updates live. Ownership share scales usable equity, rent and sale proceeds. A property needs a value and loan balance to be used [ASSUMPTION]. Which properties and loans count: § Home Buying Planner › Data scope ("Not in shared plans"). |
 | **Ownership split input** | Percentages per person summing to 100 (Save disabled otherwise); default 100% to the account's owner [ASSUMPTION]. |
-| **Saved plan row** | Plans are **shared** by both partners (data scope per § Home Buying Planner). Name, timestamp, snapshot of inputs and outputs. Reopening shows the snapshot beside today's recalculation. |
+| **Saved plan row** | Plans are **shared** by both partners (data scope per § Home Buying Planner). Name, timestamp, the typed inputs and choices, and a headline snapshot (borrow, repayment, left to live on, as both saw them). Reopening shows that headline beside today's recalculation from the saved inputs and currently shared data. Inputs that are no longer shared drop out, with "Some inputs are no longer shared". |
 
 ### Accounts, settings, auth & feedback
 
@@ -210,7 +215,7 @@ Mocks: [key-accounts.html](mockups/key-accounts.html) (grouped rows, one stale a
 | **Settings card** | Content always readable; protected actions open the re-auth dialog first. One action per row (Remove, Change, Sign out, Make new codes); the card's footer caption names which actions ask you to confirm it's you (from mock). |
 | **Appearance card** | Selecting a theme or mode applies instantly and saves for this person. |
 | **Signed-in devices card** | Lists this person's sessions, newest first; "Sign out" ends that session (re-auth not required [ASSUMPTION]). Signing out on "This device" returns to `/sign-in`. |
-| **System status card** | Read-only: health, last backup, last restore drill, failed jobs (kind and time only, AD-9). Failures show a warning line with plain copy. No restore button; caption: "Restores run from the server CLI." |
+| **System status card** | Read-only: health, last backup, last restore drill, failed jobs (kind and time only, AD-9); the recovery-bundle warning until its safe storage is confirmed (AD-27; shipped). Failures show a warning line with plain copy. No restore button; caption: "Restores run from the server CLI." |
 | **Sign-in form** | Passkey first; "Use password instead" → email + password → TOTP code. Success returns to the requested URL or Cash flow. |
 | **Re-auth dialog** | Opens when the server returns `ReauthRequired`; passkey first, password + TOTP fallback; on success the original action retries automatically; cancel leaves state unchanged. |
 | **Import popover** | Steps in § Interaction Primitives; mock [key-import-popover.html](mockups/key-import-popover.html). Includes per-bank export instructions and the note "Re-importing the same file changes nothing." Opened from the header Import (every view) or the secondary Import beside the Transactions search (from mock). |
@@ -219,7 +224,7 @@ Mocks: [key-accounts.html](mockups/key-accounts.html) (grouped rows, one stale a
 | **Warning line** | Inline, non-blocking, links to where to fix it (Needs review, Import, Goals). |
 | **Demo banner** | Demo instance only: "Demo data — nothing here is real" [ASSUMPTION copy]; write actions disabled with a tooltip. |
 | **Offline banner** | Shown while the network is down: "You're offline. Pangolin needs the server to show your numbers." [ASSUMPTION copy]; no cached data shown. |
-| **Toast** | Confirmations and Undo for reversible actions (recategorise, accept suggestion, bulk accept, bulk edits, shortfall fix, confirmed AI-read row) [ASSUMPTION]. Never used for errors that need action — those stay inline. |
+| **Toast** | Confirmations and Undo for reversible actions (recategorise, accept suggestion, bulk accept, bulk edits, shortfall fix, confirmed drawdown, confirmed AI-read row) [ASSUMPTION]. Never used for errors that need action — those stay inline. |
 
 ## State Patterns
 
@@ -295,7 +300,7 @@ Grouped by surface, app-wide states first. Focus, reduced motion and phone layou
 | Not enough history | Goal card | Arrival line "Not enough history yet". |
 | **Goal complete** | Goal card, Needs review | Card tinted with check; celebration banner; review item to accept the rescaled split. |
 | Stage change | Goals header, Needs review | Header shows the new active stage; review item explains it. |
-| **Shortfall** | Goal card, Goals header, Needs review | Warning line with the amount and the fix per Goal card; Undo toast. |
+| **Shortfall** | Goal card, Goals header, Needs review | Warning line (glyph and text, warning colour) with the amount, Cover it, and the buffer divert per Goal card; Undo toast. |
 | Mismatch | Goals header, Needs review | Warning line "Savings and goals are $85 apart" + "Put the difference in the buffer". |
 | Not enough data | Forecast | Names what's missing (pay cycle, confirmed bills, budgets) with a link to each [ASSUMPTION]. |
 | **Low balance ahead** | Forecast (Cash flow), Cash flow page | Warning line with account, amount and date; marked on the chart. Cash flow page shows the same line under the share line [ASSUMPTION]. |
@@ -304,6 +309,21 @@ Grouped by surface, app-wide states first. Focus, reduced motion and phone layou
 | Empty | Home buying | Pre-filled from shared-visible data if any exists; otherwise inputs start blank with prompts to type income and spending. |
 | Empty | Saved plans | "No saved plans yet. Save this one to compare next time." [ASSUMPTION copy] |
 | Recalculating / failed | Planner | Dimmed figures; on failure last figures stay with retry. |
+| **Large withdrawal** | Needs review, Goals header | Item per § Needs review item kinds; resolves when the withdrawal is covered, linked to a goal, or left with the buffer. |
+
+### Cover an expense
+
+| State | Surface | Treatment |
+|---|---|---|
+| Proposed | Cover an expense | Pangolin's split pre-filled; Left to cover from the server. |
+| Adjusted | Cover an expense | Any slider moved: a "Back to Pangolin's split" link appears. |
+| Not covered yet | Cover an expense | Left to cover above $0 in the warning colour; Confirm cover disabled while any eligible goal is below its maximum. |
+| **Protected needed** | Cover an expense | Earlier sections at maximum: warning line naming each Protected goal and its new arrival date, with **Use protected goals**. Plain, no cheek. |
+| Can't cover it all | Cover an expense | Every eligible goal at maximum (Protected goals are not eligible while locked), Left to cover still above $0: "Goals can cover $X of $Y. The rest stays with the buffer." (large purchase) / "…The rest stays flagged." (shortfall); Confirm cover enabled for the partial cover. Unlocking Protected is optional. |
+| Emergency fund below threshold | Cover an expense, Goals header | "Stage 1 comes back until Rainy day is topped up." |
+| Confirmed | Goals, Needs review | Sheet closes; toast with Undo; the item resolves; the cover is listed in Goals history. |
+| Undone | Goals | Every goal balance restored; the item reappears if its condition still holds. |
+| Recalculating | Cover an expense | Figures at 60% opacity until the server answers. |
 
 ### Settings & auth
 
@@ -326,12 +346,12 @@ Grouped by surface, app-wide states first. Focus, reduced motion and phone layou
 2. Account picker: the viewer's own accounts, shared accounts, and **"For Carissa"** (or "For Simon"). The partner's private accounts never appear. Picking an account shows its bank's export instructions.
 3. Import: a progress state polls the batch; summary "142 new, 3 duplicates to review" with a link to Needs review; "Nothing new" when the file was already imported.
 4. Choosing "For Carissa" sends the file to her Needs review as an **import hand-off** item; she picks the account (which may be private). Simon only sees "Handed to Carissa".
-5. **Bad rows don't block the file.** Good rows import. Rows that can't be read are **set aside** (never committed), listed with row number and reason, and gathered into one Set-aside rows item in Needs review, where each can be fixed inline, discarded or handed to AI.
-6. **AI interpretation (optional).** "Ask Pangolin to read these" sends the set-aside lines to the configured LLM provider (providers are set per purpose, and cloud providers are opt-in, per the spec). It proposes a transaction or event — for example a home-loan line "VARIABLE RATE CHANGE 6.49% EFF 01/11" → rate change on Investment home loan from 1 Nov — shown beside the raw line. Nothing is created until the person confirms; Confirm offers Undo.
+5. **Bad rows don't block a CSV, OFX or QIF file.** Good rows import. Rows that can't be read are **set aside** (never committed), listed with row number and reason, and gathered into one Set-aside rows item in Needs review, where each can be fixed inline, discarded or handed to AI. A PDF statement with a failed check still blocks as a whole and shows rows beside the page image.
+6. **AI interpretation (optional).** "Ask Pangolin to read these" sends the set-aside lines to the provider assigned to row reading. That is a local provider by default; a cloud provider is used only if explicitly enabled, and never for a private account's rows. It proposes a transaction or event — for example a home-loan line "VARIABLE RATE CHANGE 6.49% EFF 01/11" → rate change on Investment home loan from 1 Nov — shown beside the raw line. Nothing is created until the person confirms; Confirm offers Undo.
 
 **Date range.** Rules in Component Patterns › Date-range control. Keyboard: arrows step the range when the control is focused [ASSUMPTION].
 
-**Sliders.** Rate, offset balance and extra repayments use shadcn Slider with a paired numeric input; arrow keys step (rate 0.05 pp, money $100 [ASSUMPTION steps]), Page Up/Down step ×10. Outputs update live from debounced server recalculation (the web never sums money) [ASSUMPTION: server computes planner outputs].
+**Sliders.** Rate, offset balance, extra repayments and Cover an expense amounts use shadcn Slider with a paired numeric input; arrow keys step (rate 0.05 pp, money $100 [ASSUMPTION steps]), Page Up/Down step ×10. Outputs update live from debounced server recalculation (the web never sums money) [ASSUMPTION: server computes planner outputs].
 
 **Scenario compare.** Add scenario duplicates the current inputs; rename inline; select one to drive the hero. Removing a scenario asks no confirmation but offers Undo [ASSUMPTION].
 
@@ -351,10 +371,10 @@ WCAG 2.2 AA is the floor (accessibility is a key feature; no specific personal n
 
 - Full keyboard operation of every surface, including the import drop zone (button fallback), sliders, scenario compare, bulk select and the Sankey (focusable nodes in reading order, or the table equivalent).
 - Visible focus via `{components.focus-ring}` (≥ 3:1 in every theme) on keyboard focus of every interactive element.
-- Screen-reader names and roles on every control; page title announced on navigation; live region for import progress, slider outputs (once on settle: "Borrow about $780,000, about $3,764 a month left"), low-balance and over-budget warnings, and celebration text.
+- Screen-reader names and roles on every control; page title announced on navigation; live region for import progress, slider outputs (once on settle: "Borrow about $780,000, about $3,764 a month left"; Cover an expense: "Left to cover: $1,200"), low-balance and over-budget warnings, and celebration text.
 - Reduced motion respected: no Sankey draw-in, confetti, wink, slider easing or springy transitions; state changes are instant.
 - Every chart has a table equivalent: Sankey ↔ P&L table; balance over time, forecast and net worth trend ↔ "View as table"; budget mini chart ↔ its caption figures; stress bars are already a table.
-- Never colour-only: money carries `+`/`−` and labels; over-budget, shortfall and low-balance carry a glyph and text; person dots carry names in text or accessible names.
+- Never colour-only: money carries `+`/`−` and labels; over-budget, shortfall, large-withdrawal, protected-warning and low-balance carry a glyph and text; kind badges always carry text; person dots carry names in text or accessible names.
 - 200% zoom and 320px reflow without horizontal scroll (tables may scroll inside their card).
 - Target size ≥ 24×24 CSS px (2.5.8); phone tab bar and slider thumbs ≥ 44px [ASSUMPTION].
 - Hidden names read as "Hidden until 12 March 2027" to assistive tech, with the wink line as description.
@@ -373,6 +393,7 @@ WCAG 2.2 AA is the floor (accessibility is a key feature; no specific personal n
 | 7 — Forecast | Simon and Carissa | The dip date, and where they'll be in 2 years |
 | 8 — Sign-in, re-auth and recovery | Simon, Carissa | Back in, safely |
 | 9 — Net worth glance | Carissa, on her phone | "We're getting there" |
+| 10 — Car disaster | Simon and Carissa | The deposit barely moves |
 
 ### Flow 1 — First session: "We can afford this much" (Simon and Carissa, on the couch, each on a laptop)
 
@@ -413,7 +434,7 @@ Failure: the loan has no contract terms → "Add the loan's rate and term to see
 
 1. Monthly couch session, signed in as Carissa. They open Planning › Home buying.
 2. Saved plans list shows "First look, Oct 2026 — borrow ~$650,000" (illustrative).
-3. They open it: the snapshot sits beside today's recalculation from fresh shared data.
+3. They open it: the saved headline (borrow, repayment, left to live on) sits beside today's recalculation from the saved inputs and fresh shared data.
 4. **Climax:** "Last time we said $650k" sits beside today's figure, so they can see how far they've moved [ASSUMPTION: a short note says which inputs changed].
 5. They tweak the rate scenarios and save as a new plan; the old one stays for comparison.
 
@@ -443,12 +464,12 @@ Failure: she resolves the item with "Adjust limit" (opens the editor) or "Got it
 
 ### Flow 6 — Deposit goal (Simon and Carissa, together)
 
-1. On Planning › Goals, Simon adds a shared goal "House deposit", target $160,000, linked to the shared savings pool.
+1. On Planning › Goals, Simon adds a shared goal "House deposit", target $160,000, linked to the shared savings pool, and marks it **Protected**.
 2. The goal sits in the active stage ("Stage 1 · Emergency fund first") at its rule share.
 3. After the next import and period close, the card shows a progress bar "$48,200 of $160,000".
 4. **Climax:** "At the current rate, you'll arrive by Mar 2028." — a date they can plan the home purchase around.
-5. Months later a withdrawal leaves goals $320 ahead of the bank. While the buffer has room, the warning line offers **Move $50/fortnight from the buffer**; this stage gives the buffer no share, so it offers **Push House deposit out to May 2028** instead (per Goal card). The same item sits in Needs review.
-6. Simon clicks the fix; the shortfall clears, the arrival line updates, and a toast offers Undo.
+5. Months later small withdrawals leave goals $320 ahead of the bank. The warning line offers **Cover it**. This stage gives the buffer no share, so no buffer option is shown. The same item sits in Needs review.
+6. Simon clicks Cover it. Pangolin proposes $320 across the Flexible goals in proportion to their balances ($267 from Japan trip, $53 from New couch). He confirms, the shortfall clears, House deposit is untouched, and a toast offers Undo.
 
 Failure: not enough history → "Not enough history yet" instead of a date. A savings/goal mismatch (for example a newly flagged account) → "Put the difference in the buffer".
 
@@ -480,6 +501,20 @@ Failure: missing pay cycle or no confirmed bills → "Not enough data" naming ea
 4. She taps "Where will we be in 2 years? →" and lands in Forecast, Net worth mode.
 
 Failure: a property has no valuation → "Add a valuation to count this property"; an account is stale → its row shows the 45-day warning.
+
+### Flow 10 — Car disaster: "The deposit barely moves" (Simon and Carissa)
+
+Mocks: [key-cover-expense.html](mockups/key-cover-expense.html) · [key-cover-expense-phone.html](mockups/key-cover-expense-phone.html).
+
+1. The car needs a new engine. Carissa moves $16,400 from Shared savings to Shared bills and pays the mechanic.
+2. After the next import, a Large withdrawal item lands in both Needs review: "$16,400 came out of Shared savings on 29 Sep".
+3. Carissa clicks **Cover it**. Emergency fund "Rainy day" $8,000 (all of it), then Flexible: Japan trip $6,000 and New couch $1,200 at their maximum. Left to cover: $1,200.
+4. Protected stays locked behind the warning: "This takes $1,200 from House deposit, which you've marked Protected. Its arrival moves from Mar 2028 to Apr 2028." The footer reads "Goals can cover $15,200 of $16,400. The rest stays with the buffer." and Confirm cover is already enabled for that partial cover. She chooses to click **Use protected goals** instead.
+5. Simon would rather keep the couch money. She drags New couch to $0; Left to cover shows $2,400, so she drags House deposit up to $2,400. The arrival line updates from the server.
+6. **Climax:** She confirms. "Rainy day's below 80%. Stage 1 comes back until it's topped up." House deposit moves from Mar 2028 to May 2028, not years, and they can see exactly why.
+7. Carissa's personal "Pilates retreat" goal and Simon's personal goals are never listed or touched. Both see "Carissa covered Car repair, 5 Oct" in Goals history. A toast offers Undo.
+
+Failure: the withdrawal was a move to the offset account → **Not an expense**. They change their minds a day later → Undo from Goals history (period open) restores every goal and re-raises the item.
 
 ## Home Buying Planner
 
@@ -515,7 +550,7 @@ Lives at Planning › Home buying. Captured now; the spec catches up later. Mock
 
 **Scenarios.** Named side-by-side scenarios and a live slider (§ Interaction Primitives).
 
-**Saved plans.** Save with a name ("First look, Oct 2026"); list with name, date and headline figure; reopen to compare snapshot vs today (Flow 3).
+**Saved plans.** Save with a name ("First look, Oct 2026"); a plan keeps its typed inputs and choices plus a headline snapshot (borrow, repayment, left to live on), and everything else is recalculated on open (§ Component Patterns › Saved plan row). List with name, date and headline figure; reopen to compare the saved headline with today (Flow 3).
 
 **Future (post-v1).** The climax extends to show how rate changes pressure savings and flexible categories (for example eating out).
 
@@ -527,7 +562,7 @@ Under Accounts, for every loan (including investment-property loans). Mock: [key
 - **Tiles:** Still owed (of borrowed) · Paid off (date) · Interest paid (sum of entered figures) · Interest still to pay (estimate from rate and term).
 - **Balance over time:** actual (solid), projected (dashed), planned with extras (thin); "View as table".
 - **Where your repayments went:** principal vs interest from **user-entered interest figures** taken from bank statements ("Add from a statement": period + interest amount). Never auto-estimated (spec non-goal). Shows only periods with entered figures.
-- **Lender's plan:** "Import the lender's repayment plan" replaces the estimated schedule when provided.
+- **Schedule:** estimated from the loan's terms and corrected by entered interest figures; the caption reads "Estimate: worked out from the rate and term." Importing a lender's repayment plan is later work (not in v1).
 - **What if I pay extra?** Monthly extra and one-off extra (amount + date), capped at the contract's yearly extra limit when entered; outputs payoff date and interest saved.
 - **Your offset:** benefit tile (interest saved, time saved) and a slider to adjust the offset balance and see the effect.
 - **Who owns this loan:** Ownership split input; scales equity and sale figures in Home buying.
@@ -544,7 +579,7 @@ Under Accounts at `/accounts/:id` for a property (CAP-11), reached from the Prop
 | Header line | "← Accounts" · type ("Investment property") · place · "rented at $480 a week" · owner dot + share |
 | Value | Latest entered valuation with its month; "Update" in the tile and the "Value and loan" card (value + as-of date + Update value). Pangolin doesn't look up prices. Missing → Value and Equity tiles say "Add a valuation to count this property."; rent, costs and net cash still show |
 | Equity | Value − linked loan balance, with the LVR in the caption |
-| Net cash | Per **Term map › Net cash (property)**; loan interest is labelled "entered from statements" wherever it appears. Tiles for **this FY** (to date) and **last FY**, each with its per-month average; monthly chart (rent up, interest and running costs down, net cash line) with "View as table"; a by-FY table itemising rent, loan interest, agent's fees, rates/water/insurance and repairs. Months with no entered interest show interest as missing with "Add from a statement" on Loan detail, never an estimate [ASSUMPTION]. Scaled by ownership share in the viewer's figures |
+| Net cash | Per **Term map › Net cash (property)**; loan interest is labelled "entered from statements" wherever it appears. Tiles for **this FY** (to date) and **last FY**, each with its per-month average; monthly chart (rent up, interest and running costs down, net cash line) with "View as table"; a by-FY table itemising rent, loan interest, agent's fees, rates/water/insurance and repairs. Months with no entered interest show interest as missing with "Add from a statement" on Loan detail, never an estimate [ASSUMPTION]. Shown for the whole property, with a "Your share (X%)" line beneath when the viewer owns part of it; a non-owner sees whole-property figures only |
 | Principal | Shown separately under the FY table as out of pocket ("Principal isn't a cost: it pays down your own loan… Counting it too, the property takes about $X a month out of pocket"); never included in net cash |
 | Gearing | "Negatively geared" / "Positively geared" from last FY's net cash, with the yearly gap and a rent-against-costs bar pair; label only, "estimate, not tax advice" |
 | Ownership split | "Who owns it" card with the Ownership split input; same split feeds net cash, equity and Home buying equity / sell |
@@ -567,7 +602,7 @@ Layout per `DESIGN.md` § Layout & Spacing (from mock).
 |---|---|
 | `≥ lg` (1024px+) | Full sidebar; Cash flow 4-up KPIs, Sankey, two-column lower row; Budgets/Goals two-column grid. |
 | `md` (768–1023px) | Sidebar stays; lower rows stack to one column [ASSUMPTION]. |
-| `< md` (phone) | Bottom tab bar; phone header with compact Import (from mock); single column; Cash flow shows the P&L table instead of the Sankey (v1); KPIs 2-up; budget and goal cards stack; Forecast chart full width with table below; the full Home buying planner works including sliders and scenarios (scenarios stack vertically); loan detail stacks; Transactions hides the Account column and bulk select; Settings side menu becomes a chip row. |
+| `< md` (phone) | Bottom tab bar; phone header with compact Import (from mock); single column; Cash flow shows the P&L table instead of the Sankey (v1); KPIs 2-up; budget and goal cards stack; Forecast chart full width with table below; the full Home buying planner works including sliders and scenarios (scenarios stack vertically); loan detail stacks; the goal editor and Cover an expense open as bottom sheets; Transactions hides the Account column and bulk select; Settings side menu becomes a chip row. |
 
 - PWA installable on phones; no offline data; the page shell is never precached (CSP rule).
 - Phone is for glancing and light categorising: Needs review, Net worth and the transaction sheet must be comfortable one-handed. Split editing on phone is supported but not optimised [ASSUMPTION].
@@ -575,7 +610,7 @@ Layout per `DESIGN.md` § Layout & Spacing (from mock).
 ## Inspiration & Anti-patterns
 
 - **Lifted from SharkFin** ([imports/inspiration-sharkfin.webp](imports/inspiration-sharkfin.webp)): the "Where the money went" Sankey with Groups/Categories/Both and Sankey/P&L toggles; property and Uncategorised nodes; income and expense bar lists with Merchant views; Net worth as a top-level surface; phone P&L table.
-- **Lifted from SmartSpend** ([imports/inspiration-smartspend.webp](imports/inspiration-smartspend.webp)): warm off-white canvas with one warm accent; loan detail (% repaid, balance over time, what-if with yearly cap, lender plan import); transactions grouped by date with net subtotals and a summary line; signed-in devices; "imported up to" freshness with provenance; per-bank export instructions.
+- **Lifted from SmartSpend** ([imports/inspiration-smartspend.webp](imports/inspiration-smartspend.webp)): warm off-white canvas with one warm accent; loan detail (% repaid, balance over time, what-if with yearly cap, lender plan import (deferred)); transactions grouped by date with net subtotals and a summary line; signed-in devices; "imported up to" freshness with provenance; per-bank export instructions.
 - **Kept from Direction C:** copy personality, celebrations, winking pangolin, Biggest little leaks.
 - **Dropped for now:** per-task AI model selection (spec covers per-purpose providers); Telegram weekly review (push deferred); Apple Pay Shortcut tokens.
 - **Parent directions** (merged into the lock, [mockups/direction-calm-cheeky.html](mockups/direction-calm-cheeky.html)): A Calm [.working/direction-calm.html](.working/direction-calm.html) (layout, density, single accent) · C Cheeky [.working/direction-playful.html](.working/direction-playful.html) (copy, mascot, celebrations). Kept in `.working/` as audit trail.
@@ -583,13 +618,13 @@ Layout per `DESIGN.md` § Layout & Spacing (from mock).
 
 ## Spec Catch-up
 
-For `bmad-correct-course` / spec update after UX:
+Handed to correct course on 2026-10-05 (see the [sprint change proposal](../../sprint-change-proposal-2026-10-05.md)). Additional items found: hand-off, set-aside AI purpose, budget suggestion, over-budget item, theme storage, signed-in devices, shared saved plans, and the category and rule management surface (still undesigned).
 
 | # | Item | Touches |
 |---|---|---|
 | 1 | Home buying planner: borrowing power, repayments, lender-style serviceability with accepted defaults, multiple properties (equity at 80% LVR / sell at 2.5% + CGT estimate), saved plans shared and built from shared-visible data only | new capability; AD-22 |
 | 2 | Ownership split on loans and properties, used in equity and sell calculations | data model, CAP-11 |
-| 3 | Loan detail with user-entered interest figures, extra repayments (yearly cap), offset slider, Add loan, lender plan import | CAP-11; stays within the interest/principal non-goal |
+| 3 | Loan detail with user-entered interest figures, extra repayments (yearly cap), offset slider, Add loan (lender plan import deferred beyond v1) | CAP-11; stays within the interest/principal non-goal |
 | 4 | Net worth as a top-level surface (`/net-worth`, after Cash flow) | CAP-17 |
 | 5 | Review item kinds: **over budget**, **import hand-off**, **transfer**, **set-aside rows** | AD-17, CAP-4, import pipeline |
 | 6 | Goal shortfall shown in the warning colour, not red | CAP-7 wording |
@@ -598,9 +633,10 @@ For `bmad-correct-course` / spec update after UX:
 | 9 | Phone bottom tab bar | IA |
 | 10 | WCAG 2.2 AA floor | constraints |
 | 11 | Routes: `/sign-in` (Home becomes Cash flow); `/ledger` → `/transactions`; `/settings` single page with `#section` anchors (replaces `/settings/:section`); `/accounts/:id` also serves property detail | routes |
-| 12 | **Partial import:** good rows commit, bad rows set aside for fixing (replaces all-or-nothing); optional **AI interpretation** of set-aside rows proposing a transaction or event (for example a home-loan rate change) that the person confirms | import pipeline, LLM purposes, AD-17 |
+| 12 | **Partial import:** good rows commit, bad rows set aside for fixing (replaces all-or-nothing for CSV/OFX/QIF; PDF stays all-or-nothing); optional **AI interpretation** of set-aside rows proposing a transaction or event (for example a home-loan rate change) that the person confirms | import pipeline, LLM purposes, AD-17 |
 | 13 | **Property detail** surface: value, equity, ownership split, net cash this FY / last FY (rent − user-entered interest − running costs; principal shown separately), gearing, linked loan; Property section on Loan detail | CAP-11 |
-| 14 | Goal shortfall fix: buffer move when the active stage gives the buffer a share, else push out the active stage's lowest-priority goal (Undo) | CAP-7 |
+| 14 | Goal kinds (Flexible / Protected, one emergency fund per pool); Cover an expense for large purchases and shortfall; Large withdrawal item; buffer divert as a shortfall alternative (Undo) | CAP-6, CAP-7, AD-17, AD-24 |
+| 15 | Large withdrawal review item (threshold per pool, default $2,000 [ASSUMPTION]) | AD-17, AD-24, CAP-7 |
 
 ## Open Questions
 

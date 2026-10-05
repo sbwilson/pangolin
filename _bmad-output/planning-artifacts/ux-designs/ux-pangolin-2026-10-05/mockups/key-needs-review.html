@@ -14,6 +14,11 @@
    confidence display on AI suggestions; 'Transfer' review kind (not in the kinds table).
    Set-aside rows (.memlog decision: partial import, bad rows set aside, AI may interpret one and propose an event the
    user confirms) — a new item kind [Spec catch-up]; same row + AI proposal as key-import-popover.html.
+   Large withdrawal (sprint change proposal 2026-10-05 U-12, SP-7, SP-12; Flow 10 step 2): a warning-colour icon with the
+   withdrawal row inside; actions Cover it (primary; Cover an expense, large-purchase order, key-cover-expense.html) ·
+   It's for a goal · Take it from the buffer (only when the buffer covers it) · Not an expense. Threshold $2,000 per pool
+   [ASSUMPTION]. Shown as its own section (Flow 10 scenario) so the canonical 8-item inbox count stays unchanged.
+   Date moved from Flow 10's 12 Nov to 29 Sep to sit inside "imported up to 30 Sep".
 */
 :root{--background:#F6EFE6;--foreground:#2A1F17;--card:#FFFAF3;--muted:#F6EFE6;--muted-foreground:#6A594B;--border:#E3D6C5;--ring:#B85A1E;--primary:#A3441D;--primary-foreground:#FFFFFF;--accent:#F6E8DE;--destructive:#A3283A;--sidebar:#F6EFE6;--money-in:#3D6B2D;--money-out:#A3283A;--warning:#8A5600;--warning-bg:#F0E5D3;--person-simon:#2C6681;--person-carissa:#9C4277;--mascot-scale-1:#BD785C;--mascot-scale-2:#D1A28E;--mascot-ink:#1F2328;--chart-1:#6F8A3D;--chart-2:#B5562B;--chart-3:#D9A13B;--chart-4:#2E8C88;--chart-5:#C97B63;--chart-6:#8A5A7A;--chart-7:#7E6A4F;--chart-8:#4F5D85;--chart-9:#A3B18A}
 
@@ -197,6 +202,9 @@ main{padding:28px 36px 36px;min-width:0}
 .sa .ai dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:6px 0 0}
 .sa .ai dt{color:var(--muted-foreground)}
 .sa .ai dd{margin:0;font-weight:600;font-variant-numeric:tabular-nums}
+.lwh{max-width:1060px}
+.lwh .acts .btn.ghost{padding-left:6px;padding-right:6px}
+.lwnote{max-width:1060px;font-size:12px;color:var(--muted-foreground);margin:10px 0 0}
 .side-note{font-size:12px;color:var(--muted-foreground);margin-top:8px}
 
 </style></head><body><div class="wrap">
@@ -247,8 +255,8 @@ main{padding:28px 36px 36px;min-width:0}
  <div class="ih"><span class="ki " aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></svg></span><div class="sum">Looks like a transfer between your accounts
   <small>Transfers are left out of Cash flow so nothing gets counted twice.</small></div>
   <div class="acts"><span class="btn">Not a transfer</span><span class="btn pri">Yes, it&#8217;s a transfer</span></div></div>
- <div class="rowi"><span class="d">27 Sep</span><span class="m"><span class="disc">U</span><i class="pd simon"></i><span>To Rainy day</span><span class="chip unc">Uncategorised</span></span><span class="ac">Spending &#183; Up</span><span class="amt out">−$250.00</span></div>
- <div class="rowi"><span class="d">27 Sep</span><span class="m"><span class="disc">U</span><i class="pd simon"></i><span>From Spending</span><span class="chip unc">Uncategorised</span></span><span class="ac">Rainy day &#183; Up</span><span class="amt in">+$250.00</span></div>
+ <div class="rowi"><span class="d">27 Sep</span><span class="m"><span class="disc">U</span><i class="pd simon"></i><span>To Up Saver</span><span class="chip unc">Uncategorised</span></span><span class="ac">Spending &#183; Up</span><span class="amt out">−$250.00</span></div>
+ <div class="rowi"><span class="d">27 Sep</span><span class="m"><span class="disc">U</span><i class="pd simon"></i><span>From Spending</span><span class="chip unc">Uncategorised</span></span><span class="ac">Up Saver &#183; Up</span><span class="amt in">+$250.00</span></div>
 </div><div class="item">
  <div class="ih"><span class="ki w" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></svg></span><div class="sum">Eating out&#8217;s had a big fortnight: $460 of $400
   <small>Shared budget &#183; fortnight to 7 Oct &#183; 9 Uber Eats orders did a lot of the lifting.</small></div>
@@ -257,5 +265,15 @@ main{padding:28px 36px 36px;min-width:0}
   <span class="fig"><b>$460</b> of $400 &#183; <span style="color:var(--warning);font-weight:600">$60 over</span></span></div>
 </div></div>
 <p class="side-note">&#8220;Carissa: 12 left&#8221; counts only her items on accounts you can both see. Her private accounts never add to it.</p>
-</main></div></div>
+</main></div></div><div class="lbl">Item kind &#183; Large withdrawal (Flow 10 &#8220;Car disaster&#8221;) &#8212; seen by both partners, Shared savings pool</div><div class="items lwh"><div class="item">
+ <div class="ih"><span class="ki w" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></svg></span><div class="sum">$16,400 came out of Shared savings on 29 Sep. Cover it from your goals?
+  <small>Over the $2,000 large-withdrawal line for Shared savings, and not linked to a goal. The buffer can&#8217;t cover it.</small></div>
+  <div class="acts"><span class="btn ghost">Not an expense</span><span class="btn">It&#8217;s for a goal</span><span class="btn pri">Cover it</span></div></div>
+ <div class="rowi"><span class="d">29 Sep</span><span class="m"><span class="disc">H</span><i class="pd carissa"></i><span>To Shared bills</span><span class="chip">Transfer</span></span><span class="ac">House deposit &#183; ubank</span><span class="amt out">−$16,400.00</span></div>
+</div><div class="item">
+ <div class="ih"><span class="ki w" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></svg></span><div class="sum">$2,350 came out of Shared savings on 30 Sep. Cover it from your goals?
+  <small>Over the $2,000 line, not linked to a goal. The buffer holds $3,100, so it can take this one.</small></div>
+  <div class="acts"><span class="btn ghost">Not an expense</span><span class="btn">Take it from the buffer</span><span class="btn">It&#8217;s for a goal</span><span class="btn pri">Cover it</span></div></div>
+ <div class="rowi"><span class="d">30 Sep</span><span class="m"><span class="disc">H</span><i class="pd carissa"></i><span>To Joint Everyday</span><span class="chip">Transfer</span></span><span class="ac">House deposit &#183; ubank</span><span class="amt out">−$2,350.00</span></div>
+</div></div><p class="lwnote">Cover it opens Cover an expense in large-purchase order (emergency fund, Flexible, then Protected behind a warning): see key-cover-expense. It&#8217;s for a goal links the withdrawal to one goal. Take it from the buffer shows only when the buffer covers the whole amount (second item). Not an expense is for moves such as a top-up of the offset account.</p>
 </div></body></html>

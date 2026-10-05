@@ -7,12 +7,12 @@
    'Where your repayments went' stacked bars principal primary / interest muted-foreground for entered periods only
    + 'Add from a statement', 'What if I pay extra?' with yearly-cap caption, offset card with slider);
    § Planning › Slider, Ownership split input, Stat tile; § Components › projection-line token.
-   EXPERIENCE.md § Loan Detail (header line, tiles, chart + View as table, user-entered interest only, lender's
-   plan import, extras capped at yearly limit, offset benefit + slider, what-ifs not saved [ASSUMPTION]);
+   EXPERIENCE.md § Loan Detail (header line, tiles, chart + View as table, user-entered interest only, schedule
+   estimated from terms (lender-plan import deferred beyond v1, SCP U-6 / D6), extras capped at yearly limit, offset benefit + slider, what-ifs not saved [ASSUMPTION]);
    § Component Patterns › Slider, Ownership split input; § Interaction Primitives › Sliders (steps $100);
    Flow 2 steps 2-6; § Accessibility Floor (chart has a table equivalent).
    .memlog: loan detail decision; user-entered interest figures (not auto-estimated); ownership split
-   enterable (Simon 100%); reconcile keep n,o,p,q (header line, lender plan import, yearly cap, % repaid + next).
+   enterable (Simon 100%); reconcile keep n,o,p,q (header line, yearly cap, % repaid + next; lender plan import dropped per SCP 2026-10-05 D6).
    Property section (.memlog: Property detail page + a Property section on Loan detail linking to it): value, net cash this
    FY, gearing, link "View property". Header carries Import only (no date-range control: nothing here filters by range).
    The pending set-aside row (VARIATION INT RATE 6.24% TO 5.99%) is flagged under the estimate line; the rate stays 6.24%
@@ -214,7 +214,7 @@ svg.ch .gl{stroke:var(--border)}
  <span style="display:inline-flex;align-items:center;gap:6px"><i class="pd simon"></i>Yours: 100%</span></div>
 <div class="progl"><div class="track" role="img" aria-label="15% repaid"><i style="width:15%"></i></div>
  <span><b>15% repaid</b> &#183; next $3,426.17 on 1 Nov</span></div>
-<p class="est">Estimate: the schedule is worked out from the rate and term. <span class="link">Import the lender&#8217;s repayment plan</span> to replace it.</p>
+<p class="est">Estimate: worked out from the rate and term.</p>
 <p class="pend"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></svg><span>A set-aside row from your 30 Sep import looks like a rate change to 5.99%. Nothing changes here until you confirm it.</span><span class="link">Check it in Needs review</span></p>
 
 <div class="kpis">
