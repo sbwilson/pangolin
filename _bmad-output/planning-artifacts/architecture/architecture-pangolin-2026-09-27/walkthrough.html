@@ -85,7 +85,7 @@ footer{padding-top:28px;font-size:14px;color:var(--muted)}
 
 <div class="wrap">
 <header class="hero">
-  <div class="eyebrow">Pangolin Money v1 · architecture walkthrough · 27 Sep 2026</div>
+  <div class="eyebrow">Pangolin Money v1 · architecture walkthrough · 5 Oct 2026</div>
   <h1>How Pangolin Money works</h1>
   <p class="lede">A plain-language tour of the design for our household finance app. It covers where the data lives, who can see what, how money gets counted, and how we get it all back if the server dies.</p>
   <nav class="toc" aria-label="Sections">
@@ -122,6 +122,7 @@ flowchart LR
     <li><strong>One path for every change.</strong> Importing a statement, editing a split, a job saving an LLM suggestion and a password reset all follow the same route. That route checks permissions and records who did what.</li>
     <li><strong>The maths is kept separate.</strong> Budget pace, capital gains and goal allocation are plain calculations with no database or network in them. They can be tested against hand-worked figures.</li>
     <li><strong>Slow things happen first.</strong> Talking to the LLM or fetching prices happens before any data is written, so a slow network never holds the database.</li>
+    <li><strong>Usable by everyone, in your own look.</strong> Every screen meets WCAG 2.2 AA, and every chart has a table version. Each of us picks a theme and light or dark mode; the choice is saved with our own preferences.</li>
   </ul>
 </section>
 
@@ -152,7 +153,8 @@ flowchart LR
   <ul class="points">
     <li><strong>Household totals are personal.</strong> Your net worth includes your private accounts, so the two of us can see different household numbers. That's intended.</li>
     <li><strong>Shared figures never include private money.</strong> A split in a private account can't be marked "shared". Shared budgets, the shared savings pool and the "who contributed what" split are therefore the same for both of us, and leak nothing.</li>
-    <li><strong>Personal plans stay personal.</strong> Your own budgets, goals, pay details and tax pack are yours alone. Anything worked out from a private account is scoped to its owner.</li>
+    <li><strong>Personal plans stay personal.</strong> Your own budgets, goals, pay details, planning settings, preferences and tax pack are yours alone. Anything worked out from a private account is scoped to its owner.</li>
+    <li><strong>Shared plans use only shared money.</strong> The home-buying plan we build together reads only public accounts. A private property or loan shows to its owner as "Not in shared plans" and never feeds a figure.</li>
     <li><strong>Hidden really means hidden.</strong> A hidden name is removed before searching, sorting, grouping, rule matching or exporting. It isn't just blanked on screen, so search results can't give it away.</li>
     <li><strong>Payees and rules follow the same rule.</strong> A payee or rule created from a private transaction stays yours until you use it on a public account.</li>
   </ul>
@@ -168,7 +170,8 @@ flowchart LR
     <li><span><strong>Match transfers.</strong> Money moving between our own accounts is linked, so it doesn't count as spending.</span></li>
     <li><span><strong>Check the balance.</strong> Each statement balance must agree with the one before it plus everything in between. Any gap goes to the review inbox.</span></li>
   </ol>
-  <p style="margin-top:14px">Everything that needs a human lands in one <strong>review inbox</strong>: odd duplicates, low-confidence guesses, a missed bill, a savings shortfall, a failed backup. Items clear themselves once the underlying problem is fixed.</p>
+  <p style="margin-top:14px">Rows the importer can't place are set aside. The local LLM can propose how to read them, but nothing is written until one of us confirms it. Either of us can also <strong>hand a file to the other</strong> to import; the sender never learns which account or batch it went into.</p>
+  <p style="margin-top:14px">Everything that needs a human lands in one <strong>review inbox</strong>: odd duplicates, low-confidence guesses, a missed bill, a savings shortfall, a large withdrawal, a failed backup. Items clear themselves once the underlying problem is fixed. Each item records who caused it, and the count of the other partner's pending items only includes items both of us can see. Failed background jobs are also listed in Settings › System status.</p>
 </section>
 
 <section id="counting">
@@ -190,6 +193,7 @@ flowchart LR
     <li><strong>Splitting cents always adds up.</strong> When a figure is divided (goal shares, a 60/40 contribution split, a partly deductible expense), the parts always sum exactly to the whole.</li>
     <li><strong>Pay periods follow real paydays.</strong> Each of us picks either calendar fortnights or "whenever the pay actually lands". Budgets and goals in the same pool always agree on what "this fortnight" means. Financial years run July to June: FY2025 is 1 Jul 2024 to 30 Jun 2025.</li>
     <li><strong>One balance per account.</strong> Cash accounts start from the latest statement balance. Shares are units times price, and super is units times that day's unit price. Every report uses the same figure.</li>
+    <li><strong>Loans keep their own terms.</strong> Each loan records its terms, rate changes and interest entries. A property's net cash counts the loan's interest, not the whole repayment; principal is shown separately and is never a cost.</li>
   </ul>
 </section>
 
@@ -199,23 +203,25 @@ flowchart LR
   <ul class="points">
     <li><strong>Pools follow ownership.</strong> A savings account with two owners feeds the shared pool, and a single-owner account feeds that person's pool.</li>
     <li><strong>Goals don't shrink when we overspend.</strong> A bad fortnight draws down the buffer only. If the buffer runs out, the goals page shows the shortfall in red.</li>
-    <li><strong>A goal only goes down when we say so.</strong> Only a withdrawal from its savings account that we link to the goal reduces it. Spending on the Japan trip card doesn't touch the goal until the money is actually moved.</li>
+    <li><strong>A goal only goes down when we say so.</strong> Only a withdrawal from its savings account that we link to the goal, or a drawdown we confirm, reduces it. Spending on the Japan trip card doesn't touch the goal until the money is actually moved.</li>
+    <li><strong>Covering a big withdrawal.</strong> When a large amount leaves a savings account, Pangolin proposes which goals in that pool cover it, for a big purchase or a shortfall. We adjust and confirm; it never touches the other person's personal goals, and the whole drawdown can be undone in one step.</li>
     <li><strong>Closed periods stay closed.</strong> If an old transaction turns up later, the difference goes into this period's buffer as a logged adjustment. Past allocations never change.</li>
+    <li><strong>Planning a home together.</strong> The home-buying planner works out what we could borrow, the repayment and what's left to live on, all on the server. A saved plan keeps our inputs and those three headline figures as we saw them; everything else is worked out fresh from today's shared data.</li>
   </ul>
 </section>
 
 <section id="outside">
   <h2>What leaves the server</h2>
-  <p>By default, nothing about our money leaves the house. Only the background jobs can reach the network, and only these hosts, which the VM's firewall also enforces:</p>
+  <p>By default, nothing about our money leaves the house. Only the background jobs can reach the network, and only these hosts, which the VM's firewall enforces:</p>
   <div class="figure">
     <table>
       <thead><tr><th>Destination</th><th>What it gets</th></tr></thead>
       <tbody>
         <tr><td>Ollama on our GPU box</td><td>Transactions to categorise and PDF statements to read. It's on our own network.</td></tr>
-        <tr><td>A cloud LLM, only if we turn one on</td><td>Description, amount, date and the category list. Never names, accounts, or anything from a private account. PDFs stay local unless we explicitly allow it.</td></tr>
+        <tr><td>A cloud LLM, only if we turn one on</td><td>Description, amount, date and the category list. Never names, accounts, or anything from a private account. PDFs and set-aside import rows stay local unless we explicitly allow it.</td></tr>
         <tr><td>Yahoo Finance, fund unit-price pages</td><td>A ticker or fund code, to fetch prices</td></tr>
         <tr><td>Merchant websites, through a single proxy</td><td>One request per confirmed shop, for its logo, which is then stored locally. Your browser never contacts them.</td></tr>
-        <tr><td>TrueNAS, over WireGuard</td><td>Encrypted nightly backups, which the app can add to but never delete</td></tr>
+        <tr><td>TrueNAS backup server</td><td>Encrypted nightly backups, which the app can add to but never delete</td></tr>
       </tbody>
     </table>
   </div>
@@ -224,7 +230,7 @@ flowchart LR
 <section id="recovery">
   <h2>If things go wrong</h2>
   <ul class="points">
-    <li><strong>Lost phone or passkey.</strong> Use one of your ten recovery codes, or have the other partner issue a 24-hour re-enrolment link. The partner issuing that link could in theory use it themselves. We accepted that trade-off, and it's written down.</li>
+    <li><strong>Lost phone or passkey.</strong> Use one of your ten recovery codes, or have the other partner issue a 24-hour re-enrolment link. Notices about it appear in the app; there are no emails in this version. The partner issuing that link could in theory use it themselves. We accepted that trade-off, and it's written down.</li>
     <li><strong>Server dies.</strong> At install you get a recovery bundle: the app key, login secret and backup password. Keep it offline, somewhere safe. CI proves on every release that a restore onto a clean machine works from that bundle alone, receipts and authenticator codes included.</li>
     <li><strong>Bad upgrade.</strong> The upgrade takes a snapshot first. If the new version fails its health check, it rolls back to the old version and the snapshot automatically.</li>
     <li><strong>What the design can't protect against.</strong> Whoever has admin access to the VM can read everything. Privacy between the two of us holds inside the app, not against the server's administrator.</li>
@@ -232,7 +238,7 @@ flowchart LR
 </section>
 
 <footer>
-  Source: <code>ARCHITECTURE-SPINE.md</code> (decisions AD-1 to AD-27) in <code>_bmad-output/planning-artifacts/architecture/</code>. The spec remains the contract for what each feature does.
+  Source: <code>ARCHITECTURE-SPINE.md</code> (decisions AD-1 to AD-28) in <code>_bmad-output/planning-artifacts/architecture/</code>. The spec remains the contract for what each feature does.
 </footer>
 </div>
 

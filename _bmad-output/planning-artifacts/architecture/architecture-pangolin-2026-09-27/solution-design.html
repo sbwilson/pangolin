@@ -78,11 +78,11 @@ li{margin-bottom:4px}
 <header>
   <div class="eyebrow">Solution design · C4 views</div>
   <h1>Pangolin Money v1</h1>
-  <p>A self-hosted, two-person household finance app for everyday banking, investments, super and an Australian tax pack. It runs as one Node process over one SQLite file on our own VM.</p>
+  <p>A self-hosted, two-person household finance app for everyday banking, loans and property, home-buying plans, investments, super and an Australian tax pack. It runs as one Node process over one SQLite file on our own VM.</p>
   <div class="meta">
-    <span><b>Status</b> final, spine AD-1 to AD-27</span>
-    <span><b>Updated</b> 27 Sep 2026</span>
-    <span><b>Governing spine</b> <code>ARCHITECTURE-SPINE.md</code>, AD-1 to AD-27</span>
+    <span><b>Status</b> final, spine AD-1 to AD-28</span>
+    <span><b>Updated</b> 5 Oct 2026</span>
+    <span><b>Governing spine</b> <code>ARCHITECTURE-SPINE.md</code>, AD-1 to AD-28</span>
     <span><b>Feature contract</b> <code>specs/spec-pangolin-money/SPEC.md</code></span>
   </div>
 </header>
@@ -110,7 +110,7 @@ flowchart TB
   B -- uses PWA --> PM
   A -. exports files by hand .-> NB
   B -. exports files by hand .-> NB
-  PM -- categorise, extract PDFs --> LLM
+  PM -- categorise, extract PDFs, interpret set-aside rows --> LLM
   PM -- fetch prices --> PR
   PM -- encrypted nightly backup --> BK
   PM -- one favicon per confirmed payee --> WEB
@@ -127,9 +127,9 @@ flowchart TB
   <div class="figure">
 <pre class="mermaid">
 flowchart LR
-  U([Partners]) --> RP[Reverse proxy<br/>Nginx Proxy Manager, or Caddy or Tailscale]
+  U([Partners]) --> RP[Reverse proxy<br/>Nginx Proxy Manager]
   subgraph APPC[pangolin container · Node 26 · non-root · read-only root]
-    PWA[Static PWA<br/>React 19, TanStack, ECharts]
+    PWA[Static PWA<br/>React 19, TanStack, ECharts<br/>app shell, themes]
     HTTP[HTTP entry<br/>Hono API, better-auth]
     JOBS[Jobs entry<br/>outbox runner, lanes llm, net, local]
     ADMIN[Admin entry<br/>Unix socket on /run]
@@ -145,9 +145,9 @@ flowchart LR
   CLI[pangolin CLI on host] --> ADMIN
   EGR[Egress proxy container]
   JOBS --> EGR
-  JOBS --> EXT[LLM · prices · TrueNAS · SMTP]
+  JOBS --> EXT[LLM · prices · TrueNAS]
 </pre>
-    <div class="caption">One application container is the only writer. The egress proxy is the only route for logo fetches. The CLI never opens the database itself (AD-16).</div>
+    <div class="caption">One application container is the only writer. The egress proxy is the only route for logo fetches. The CLI never opens the database itself (AD-16). Nginx Proxy Manager is the one proxy mode in this version; bundled Caddy and Tailscale-only are deferred.</div>
   </div>
 </section>
 
@@ -162,12 +162,12 @@ flowchart TB
     AD[admin/**<br/>SystemViewer, fixed commands]
   end
   subgraph App[packages/app · use cases]
-    ID[identity]
-    AC[accounts<br/>balanceAsOf, poolOf, setPrivacy]
+    ID[identity<br/>passkeys, recovery, person_preference]
+    AC[accounts<br/>balanceAsOf, poolOf, setPrivacy, loan terms]
     LE[ledger<br/>setSplitField, transfers]
     CL[classify<br/>payees, rules, suggestions]
-    IM[imports]
-    PL[planning<br/>pay anchors, budgets, goals]
+    IM[imports<br/>batches, rows, hand-offs]
+    PL[planning<br/>pay anchors, budgets, goals,<br/>drawdowns, home plans]
     IN[invest]
     SU[super]
     PRP[property]
@@ -177,11 +177,11 @@ flowchart TB
     PORTS{{ports}}
   end
   subgraph Core[packages/domain + shared]
-    DOM[pure calculations<br/>dedupe, flowKind, allocation, lots, CGT, forecast]
+    DOM[pure calculations<br/>dedupe, flowKind, allocation, lots, CGT, forecast,<br/>planner, amortise]
     SH[shared<br/>Cents, allocate, toCents, period, temporal]
   end
   subgraph Adapters
-    DBA[db<br/>repositories, visibleAccounts, visibleTxn]
+    DBA[db<br/>repositories, visibleAccounts, visibleTxn, sharedScope]
     IMP[importers<br/>OFX, QIF, CSV, PDF]
     CON[connectors<br/>prices, unit prices, logos]
     LL[llm<br/>OpenAI- and Anthropic-style]
@@ -197,7 +197,7 @@ flowchart TB
   CON -. implements .-> PORTS
   LL -. implements .-> PORTS
 </pre>
-    <div class="caption">Each module owns its tables (AD-10). Reports read across all of them but write nothing. Repository ports are synchronous; outbound ports are async and run before a write transaction opens (AD-2).</div>
+    <div class="caption">Each module owns its tables (AD-10). Reports read across all of them but write nothing. Repository ports are synchronous; outbound ports are async and run before a write transaction opens (AD-2). The web app's shell and themes read the viewer's <code>person_preference</code> through <code>identity</code>.</div>
   </div>
 </section>
 
@@ -211,7 +211,6 @@ flowchart LR
       subgraph VM[Debian 13 VM · LUKS data disk via Clevis and Tang]
         C1[pangolin container]
         C2[egress proxy]
-        C3[Caddy, optional profile]
       end
     end
     NPM[Nginx Proxy Manager]
@@ -223,20 +222,20 @@ flowchart LR
   VM -- pull, verify cosign --> GHCR
   NPM --> C1
   VM -. unlock at boot .-> TANG
-  C1 -- WireGuard --> NAS
+  C1 -- backup --> NAS
   C1 --> GPU
 </pre>
   </div>
   <div class="tablewrap"><table>
     <thead><tr><th>Environment</th><th>Runs</th><th>Data</th><th>Network</th></tr></thead>
     <tbody>
-      <tr><td>Live</td><td>Signed release image on the VM</td><td>Our real data</td><td>Firewall allowlist generated from the app's allowlist config</td></tr>
+      <tr><td>Live</td><td>Signed release image on the VM</td><td>Our real data</td><td>Firewall rules generated from the allowlist config, the only enforcement in this version</td></tr>
       <tr><td>Local dev</td><td>Vite dev server plus the server in watch mode</td><td>Deterministic seed household</td><td>Mock LLM and mock price servers</td></tr>
-      <tr><td>CI</td><td>The release image</td><td>Seed; previous release's DB for the migration test</td><td>Offline; restore test on a clean host using only the recovery bundle</td></tr>
+      <tr><td>CI</td><td>The release image</td><td>Seed; every push migrates an empty DB, and the release workflow also migrates the DB the previous release's image creates (<code>migrate-previous</code>)</td><td>Offline; restore test on a clean host using only the recovery bundle</td></tr>
       <tr><td>Demo</td><td>Release image, read-only</td><td>Seed</td><td>Offline</td></tr>
     </tbody>
   </table></div>
-  <p><strong>Upgrade:</strong> pull and verify the signed image, snapshot the DB, migrate, health-check. If the check fails, roll back to the previous image and the snapshot; there are never down-migrations. <code>/healthz</code> means migrations applied, database writable and the job-runner lease held.</p>
+  <p><strong>Upgrade:</strong> pull and verify the signed image, snapshot the DB, migrate, health-check. If the check fails, roll back to the previous image and the snapshot; there are never down-migrations. <code>/healthz</code> means migrations applied, database writable and the job runner live (ticked recently). <code>/api/system/health</code> reports status, schema version and whether the database is writable, without a session; the signed-in status routes are <code>/api/system/jobs</code>, <code>/api/system/backup</code> and <code>/api/system/recovery-bundle</code>.</p>
 </section>
 
 <section id="flows">
@@ -257,6 +256,7 @@ sequenceDiagram
   H->>IM: stageImport(viewer, file)
   IM->>PA: parse (async, before any transaction)
   Note over IM,PA: PDF: enqueue pdf_extract job instead, llm lane, local provider only
+  Note over IM,PA: set-aside rows: row_interpret job proposes, a person confirms
   IM->>IM: BEGIN · write import_batch and rows · audit · COMMIT
   P->>H: review and commit batch
   H->>IM: commitBatch(viewer, batchId)
@@ -268,7 +268,7 @@ sequenceDiagram
   LE-->>IM: COMMIT
   H-->>P: batch status (polled by the UI)
 </pre>
-    <div class="caption">AD-1, AD-2, AD-8, AD-10, AD-12, AD-17, AD-19, AD-20.</div>
+    <div class="caption">AD-1, AD-2, AD-6, AD-8, AD-10, AD-12, AD-17, AD-19, AD-20. A partner can also hand a file to the other through an <code>import_handoff</code>; the file is stored as an encrypted attachment (AD-21), and the sender never learns which account or batch the recipient chose (AD-5).</div>
   </div>
 
   <h3>LLM categorisation job</h3>
@@ -313,10 +313,26 @@ sequenceDiagram
   <h3>Period close for goals</h3>
   <ul>
     <li>A <code>local</code>-lane job runs per pool and <code>period_start</code>, idempotent on that pair (AD-8, AD-11).</li>
-    <li>It resolves the pool's <code>PayCalendar</code> and computes new savings in the pool's savings accounts (<code>poolOf</code>), excluding interest and linked withdrawals (AD-14, AD-24, AD-26).</li>
+    <li>It resolves the pool's <code>PayCalendar</code> and computes new savings in the pool's savings accounts (<code>poolOf</code>), excluding interest, linked withdrawals and withdrawals covered by a drawdown (AD-14, AD-24, AD-26).</li>
     <li>It splits positive savings with <code>allocate()</code> by the active stage's shares, freezes the period's boundaries and records any stage change (AD-13).</li>
     <li>It checks that goals plus buffer equal the pool's balance (<code>balanceAsOf</code>). A shortfall or mismatch raises a review item, scoped to the pool's person for a personal pool (AD-17, AD-19, AD-22).</li>
     <li>Later backdated changes land as an audited adjustment in the current buffer (AD-11).</li>
+  </ul>
+
+  <h3>Covering a withdrawal from goals</h3>
+  <ul>
+    <li>A large withdrawal from a pool's savings account raises a <code>large_withdrawal</code> review item, registered by <code>planning</code> and scoped per AD-22 (AD-17).</li>
+    <li><code>domain</code> proposes the order by reason and kind, and the split across goals. <code>app/planning</code> checks every amount is between 0 and the goal's balance and the total doesn't exceed the amount to cover; the web never sums (AD-24).</li>
+    <li>Confirming writes one <code>goal_drawdown</code> with one <code>goal_adjustment</code> per goal (reason <code>large_purchase</code> or <code>shortfall</code>), audited and undone as a whole. It debits goals in a single pool and never another person's personal-pool goal (AD-22, AD-26).</li>
+    <li>The review item resolves when the withdrawal is covered, linked to a goal, or left with the buffer.</li>
+  </ul>
+
+  <h3>A shared home-buying plan</h3>
+  <ul>
+    <li>Planner reads use <code>sharedScope()</code>: public accounts only, the intersection of both partners' visible accounts. A private property or loan shows to its owner as "Not in shared plans" and never feeds a figure (AD-28).</li>
+    <li>All planner maths runs server-side in <code>domain/planner</code> through <code>toCents</code> and <code>allocate</code>; slider changes are debounced server calls (AD-13).</li>
+    <li><code>home_plan</code> has no <code>person_id</code> and is visible to both. It stores typed inputs and choices plus a headline snapshot (borrow, repayment, left to live on) as both saw it at save time; everything else is recomputed on read (AD-11, AD-22).</li>
+    <li>Inputs from data that is no longer shared drop out, and the plan shows "Some inputs are no longer shared".</li>
   </ul>
 
   <h3>Restore</h3>
@@ -340,16 +356,17 @@ sequenceDiagram
     <div class="card">
       <h3>Privacy scope</h3>
       <ul>
-        <li>Anything tied to an account takes that account's scope (AD-3).</li>
+        <li>Anything tied to an account takes that account's scope (AD-3). A property takes the most restrictive scope of its value and loan accounts.</li>
         <li>Rows belonging to a person are visible only to that person. A derived row takes the most restrictive scope of its inputs (AD-22).</li>
         <li>Classification rows keep the scope they were created in until the owner uses them on a public account (AD-18).</li>
+        <li>Shared plans read only public accounts and are visible to both (AD-28).</li>
       </ul>
     </div>
     <div class="card">
       <h3>Derived vs stored</h3>
       <ul>
         <li>Balances, budgets, reports, forecasts and tax figures are computed when read.</li>
-        <li>The stored exceptions form a closed list: allocations, lots (rebuilt from events), recurring series, suggestions, review items, FTS indexes and closed-period boundaries (AD-11).</li>
+        <li>The stored exceptions form a closed list: allocations, lots (rebuilt from events), recurring series, suggestions, review items, FTS indexes, closed-period boundaries, the <code>home_plan</code> headline snapshot, goal drawdowns and adjustments, and time-boxed shortfall overrides on <code>goal_rule</code> (AD-11).</li>
       </ul>
     </div>
     <div class="card">
@@ -361,7 +378,7 @@ sequenceDiagram
       </ul>
     </div>
   </div>
-  <p style="margin-top:14px">The full table catalogue is in the spec's <code>data-model.md</code>. Tables the spine adds: <code>review_item</code>, <code>pay_anchor</code>, <code>goal_link</code>, <code>stage_event</code>, <code>forecast_assumption</code>, <code>fy_config</code>, <code>distribution_component</code>, and scope columns (<code>person_id</code>, and <code>account_id</code> on <code>audit_log</code>).</p>
+  <p style="margin-top:14px">The full table catalogue is in the spec's <code>data-model.md</code>. Tables the spine adds: <code>review_item</code>, <code>pay_anchor</code>, <code>goal_link</code>, <code>stage_event</code>, <code>forecast_assumption</code>, <code>fy_config</code>, <code>distribution_component</code>, <code>loan_terms</code>, <code>loan_rate_change</code>, <code>loan_interest_entry</code>, <code>import_handoff</code>, <code>home_plan</code>, <code>goal_drawdown</code>, <code>goal_adjustment</code>, <code>planning_setting</code>, <code>person_preference</code>, and scope and attribution columns (<code>person_id</code>, <code>account_id</code> on <code>audit_log</code>, <code>actor_person_id</code> on <code>review_item</code>).</p>
 </section>
 
 <section id="quality">
@@ -369,12 +386,13 @@ sequenceDiagram
   <div class="tablewrap"><table>
     <thead><tr><th>Attribute</th><th>Mechanism</th><th>Verified by</th></tr></thead>
     <tbody>
-      <tr><td>Privacy between partners</td><td>Viewer in SQL, hidden-name projection, one <code>redact()</code>, NotFound for private IDs, per-person scope</td><td>A test per scoped table; B's responses byte-identical when only A's private data changes</td></tr>
-      <tr><td>Data stays home</td><td>Outbound calls only from jobs; one allowlist for both code and firewall; egress proxy for logos; per-purpose LLM rules</td><td>Offline CI with mock servers; firewall generated at install</td></tr>
+      <tr><td>Privacy between partners</td><td>Viewer in SQL, hidden-name projection, one <code>redact()</code>, NotFound for private IDs, per-person scope, <code>sharedScope()</code> for shared plans</td><td>A test per scoped table; B's responses byte-identical when only A's private data changes</td></tr>
+      <tr><td>Data stays home</td><td>Outbound calls only from jobs; one allowlist config that generates the firewall; egress proxy for logos; per-purpose LLM rules</td><td>Offline CI with mock servers; firewall generated at install</td></tr>
       <tr><td>Correct totals</td><td>Integer cents, two rounding functions, one <code>flowKind</code>, one <code>balanceAsOf</code>, snapshot-chain check</td><td>Seed <code>expectations</code> for every hand-computed success criterion</td></tr>
       <tr><td>Idempotent import</td><td>Dual unique keys, probable-duplicate review, frozen normaliser versions, file hash per account</td><td>Re-import and overlap tests on each committed sample</td></tr>
       <tr><td>Recoverability</td><td>Append-only restic, recovery bundle, manifest verification, snapshot-and-rollback upgrades</td><td>CI restore onto a clean host on every release; monthly live drill</td></tr>
       <tr><td>Web attack surface</td><td>Passkeys, nonce CSP, Origin checks, strict cookies, re-auth window per action</td><td>e2e fails on any CSP violation; auth test suite</td></tr>
+      <tr><td>Accessibility</td><td>WCAG 2.2 AA; every canvas chart has a table equivalent; themes compiled to tokens, no inline styles</td><td>axe e2e check on every route fails CI</td></tr>
     </tbody>
   </table></div>
 </section>
@@ -388,11 +406,11 @@ sequenceDiagram
       <tr><td class="id">AD-2</td><td>No <code>await</code> inside a write transaction</td></tr>
       <tr><td class="id">AD-3</td><td>Visibility is a Viewer applied in SQL; one view per viewer</td></tr>
       <tr><td class="id">AD-4</td><td>Hidden names removed in a SQL projection; <code>redact()</code> formats at the boundary</td></tr>
-      <tr><td class="id">AD-5</td><td>Private accounts return NotFound; IDs generated on the server only</td></tr>
-      <tr><td class="id">AD-6</td><td>SystemViewer unreachable from HTTP; LLM data rules per purpose; "local" derived from the address</td></tr>
+      <tr><td class="id">AD-5</td><td>Private accounts return NotFound; IDs generated on the server only; a hand-off never reveals the recipient's account or batch</td></tr>
+      <tr><td class="id">AD-6</td><td>SystemViewer unreachable from HTTP; LLM data rules per purpose, including <code>row_interpret</code>; "local" derived from the address</td></tr>
       <tr><td class="id">AD-7</td><td>Private splits are never shared</td></tr>
       <tr><td class="id">AD-8</td><td>Jobs are an outbox of idempotent rows in lanes</td></tr>
-      <tr><td class="id">AD-9</td><td>The UI polls entity status, never jobs</td></tr>
+      <tr><td class="id">AD-9</td><td>The UI polls entity status, never jobs; dead jobs show in Settings › System status</td></tr>
       <tr><td class="id">AD-10</td><td>One owning module per table; <code>setSplitField</code> precedence</td></tr>
       <tr><td class="id">AD-11</td><td>Derived on read; a closed list of stored exceptions; closed periods immutable</td></tr>
       <tr><td class="id">AD-12</td><td>One sign convention</td></tr>
@@ -400,17 +418,18 @@ sequenceDiagram
       <tr><td class="id">AD-14</td><td>Clock, pay calendar, FY labels, one Temporal import</td></tr>
       <tr><td class="id">AD-15</td><td>Seed modules are deterministic and go through the real pipeline</td></tr>
       <tr><td class="id">AD-16</td><td>The CLI is never a second writer; restore is the one exception to AD-1</td></tr>
-      <tr><td class="id">AD-17</td><td>One stored review inbox with registered kinds</td></tr>
+      <tr><td class="id">AD-17</td><td>One stored review inbox with registered kinds; actor attribution and a partner-pending count</td></tr>
       <tr><td class="id">AD-18</td><td>Classification rows inherit privacy from their origin</td></tr>
       <tr><td class="id">AD-19</td><td>One balance definition per account type</td></tr>
       <tr><td class="id">AD-20</td><td>Import dedupe keys and probable-duplicate review</td></tr>
-      <tr><td class="id">AD-21</td><td>Attachments are encrypted, HMAC-named and inherit visibility</td></tr>
+      <tr><td class="id">AD-21</td><td>Attachments are encrypted, HMAC-named and inherit visibility; built in epic 3</td></tr>
       <tr><td class="id">AD-22</td><td>Derived rows take the most restrictive scope of their inputs</td></tr>
-      <tr><td class="id">AD-23</td><td>One <code>flowKind</code> decides what counts as spending</td></tr>
-      <tr><td class="id">AD-24</td><td>Goals are drawn down only by linked withdrawals</td></tr>
+      <tr><td class="id">AD-23</td><td>One <code>flowKind</code> decides what counts as spending; property net cash takes interest from entered figures, not repayments</td></tr>
+      <tr><td class="id">AD-24</td><td>Goals are drawn down only by linked withdrawals or a confirmed drawdown</td></tr>
       <tr><td class="id">AD-25</td><td>One income model on <code>pay_anchor</code></td></tr>
       <tr><td class="id">AD-26</td><td><code>poolOf</code> decides the savings pool</td></tr>
       <tr><td class="id">AD-27</td><td>Trust boundary and recovery bundle</td></tr>
+      <tr><td class="id">AD-28</td><td>Shared plans read only what both partners can see</td></tr>
     </tbody>
   </table></div>
 </section>
@@ -424,13 +443,13 @@ sequenceDiagram
     <li>Node 26 becomes LTS on 28 Oct 2026, before M0 ships.</li>
     <li>Drizzle 1.0: move from 0.45 once 1.0 final ships.</li>
     <li>The CSP depends on ECharts' rich-text tooltips and nonce'd style elements. The e2e CSP test guards against regressions.</li>
+    <li>In this version the generated firewall is the only allowlist enforcement; a check in code and re-authentication to change the list come in the next version.</li>
+    <li>Email (SMTP) notification is deferred; recovery notices are in-app only.</li>
   </ul>
-  <h3>Update before incepting the affected epics</h3>
+  <h3>Propagation</h3>
   <ul>
-    <li>Spec: remove the separate shared/household view; ULIDs are server-generated; record the reset residual risk.</li>
-    <li>Epic 3: drop CMC Invest (now in epic 9). Epic 6: owns pay-deposit detection, not the period helpers. Epic 4: Done-when #2.</li>
-    <li><code>tickets.toml</code>: epic 9 comes after epic 6; epic 7 no longer needs epic 6 for period helpers.</li>
-    <li>Allowlist: add the Yahoo Finance cookie/crumb handshake hosts.</li>
+    <li>All spine changes were propagated to the spec and epics by 3 Oct 2026.</li>
+    <li>5 Oct 2026: the sprint change proposal (A-1 to A-9) was applied, adding AD-28.</li>
   </ul>
 </section>
 </main>
