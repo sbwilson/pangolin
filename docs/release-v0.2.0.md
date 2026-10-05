@@ -279,28 +279,28 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | `check:upgrade` on a v0.1.2 database | Not run: no Docker on the agent's host, so `previous-db.sh` could not make one (CI's `migrate-previous` does this on the tag) |
 | `check:upgrade` on a local substitute | SUBSTITUTE, not a v0.1.2 database: migrations 0000 to 0007 plus 2 persons, 5 audit rows, 1 job, 1 review item; output `migrated 8 -> 11; integrity, manifest, schema ok`, 2026-10-05 |
 | **Human, before the tag** | |
-| `check:upgrade` on pang-dev's copy (step 2) | |
+| `check:upgrade` on pang-dev's copy (step 2) | `migrated 11 -> 11; integrity, manifest, schema ok`, run on the Mac against a read-only copy of pang-dev's database, 2026-10-05. The copy was already at schema 11: pang-dev ran a local build of `develop` (`4df1f99`, `PANGOLIN_IMAGE=pangolin:local`), not the v0.1.2 release, so the 8 to 11 rebuilds had already been applied to these rows by that build |
 | Manual backup snapshot ID (step 3) | |
 | **Release** | |
-| Tag and commit (step 4) | |
-| Release run URL (step 5) | |
-| `ci` job | |
-| `image` job | |
-| `upgrade-test` job | |
-| `migrate-previous` job | |
-| `publish` job; GitHub release and `latest` moved | |
-| Signed image digest (step 6) | |
+| Tag and commit (step 4) | `v0.2.0` (annotated) on `e0d24d297e2f934a4ad29a3aaade771b3b192098`: the tip of `story-2-12-release-and-deploy`, i.e. the candidate `93a3f19` plus this document and the plan. `git diff 93a3f19 e0d24d2` is those two files only, so there is no code difference. The commit is not yet on `develop` or any remote branch |
+| Release run URL (step 5) | https://github.com/sbwilson/pangolin/actions/runs/37269540771: success |
+| `ci` job | success (Lint, types, tests, STRICT; Secret scan; Container and end-to-end) |
+| `image` job | success |
+| `upgrade-test` job | success |
+| `migrate-previous` job | success |
+| `publish` job; GitHub release and `latest` moved | `publish` success; GitHub release `v0.2.0` exists with `cosign.pub`, `install.sh`, `uninstall.sh` attached; `latest` not independently checked |
+| Signed image digest (step 6) | `sha256:60af95ac20ca02282425a97e74887e58c1682c69a005aac64ef4e788b0655cb1` (`docker buildx imagetools inspect ghcr.io/sbwilson/pangolin:v0.2.0`; the same digest `pangolin upgrade` pinned and verified) |
 | **Upgrade on pang-dev** | |
-| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | |
-| `pangolin upgrade` output (step 7) | |
-| `/healthz` (step 8) | |
-| `pangolin status` showing the tag and schema 11 of 11 (step 9) | |
+| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | 2026-10-05, `PANGOLIN_UPGRADE_TIMEOUT=180` |
+| `pangolin upgrade` output (step 7) | `Pulling ghcr.io/sbwilson/pangolin:v0.2.0...`, `Verifying ghcr.io/sbwilson/pangolin@sha256:60af95ac…cb1...`, stack stopped and started, `Upgrade to v0.2.0 successful. Old image was pangolin:local.` Pre-upgrade copy: `/srv/pangolin/upgrade-copies/pre-upgrade-20261005171624` (root, 0700) |
+| `/healthz` (step 8) | `{"ok":true,"warnings":["recovery-bundle-unconfirmed"]}` (the warning pre-dates the upgrade; `sudo pangolin confirm-bundle` clears it) |
+| `pangolin status` showing the tag and schema 11 of 11 (step 9) | `Pangolin Money v0.2.0`, `Schema: 11 (this build expects 11)`, `Readiness: ok`; 1 dead job (`backup-push`, 2026-10-02, pre-existing) |
 | **After the upgrade** | |
-| First backup: snapshot ID (step 10) | |
-| First backup: manifest `format` | |
-| First backup: per-account counts, sums, `balanceAsOf` | |
-| Format-1 restore to a scratch location: snapshot, `"format": 1`, integrity result (step 11) | |
-| Scratch directory deleted | |
+| First backup: snapshot ID (step 10) | `8351365c14d32fcb66e8282b3618105214370679d544f4ad930ec2b388b4b4d1`, 2026-10-05T06:18:09Z, `pangolin backup` by `v0.2.0` |
+| First backup: manifest `format` | `"format": 2`, `schemaVersion` 11, migrations through `0010_split_provenance` (read with `restic dump` from the repository) |
+| First backup: per-account counts, sums, `balanceAsOf` | PENDING: the `account` table has 0 rows on pang-dev (no ledger accounts yet), so the per-account section is expected to be empty; the tail of the manifest has not yet been read |
+| Format-1 restore to a scratch location: snapshot, `"format": 1`, integrity result (step 11) | Snapshot `1c69b789366f8841af07dffcca5cdcae384e2cbfa769c5fcfa3b76dae482fdcb` (2026-10-04, written by build `4df1f99`), `restic restore` to `/root/scratch-restore`: `"format": 1`, schema 11, `PRAGMA integrity_check` `ok`. This proves the old backup is intact and restorable; `v0.2.0`'s reading of a format-1 manifest by `pangolin restore` is covered by the db-level tests only, not exercised on the host |
+| Scratch directory deleted | PENDING: `rm -rf /root/scratch-restore` was part of the same paste; confirm with `ls /root/scratch-restore` |
 | **Decision** | |
 | Outcome (accepted / failed) and reason | |
 | Accepted by the human (name, date) | |
