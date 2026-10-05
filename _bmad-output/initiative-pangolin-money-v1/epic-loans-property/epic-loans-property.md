@@ -50,6 +50,7 @@ Each of us sees what our loans cost and what our properties really earn, from fi
 - Decision (2026-10-05, G2): a non-owner sees whole-property figures; a part-owner also sees a "Your share (X%)" line.
 - Later work (beyond v1): import a lender's repayment plan to replace the estimated schedule (no file format defined; D6, 2026-10-05).
 - Handoff (2026-10-04, epic 2 inception; moved from epic-tax-activities-property 2026-10-05): `split.property_id` is created nullable with no foreign key by epic-ledger-accounts-privacy; this epic adds the `property` table and the foreign key.
+- Handoff (2026-10-05, epic 2 retro): epic-ledger-accounts-privacy entry 16 makes setSplits refuse a non-null propertyId; lift that refusal when this epic adds the foreign key.
 - Assumption: epic-llm-categorisation-pdf's `row_interpret` ships transaction proposals only; the loan rate-change proposal target is wired here, once `loan_rate_change` exists.
 - Waits on epic-spending-insight because: the net-worth page and report queries carry loans and properties.
 - Waits on epic-ledger-accounts-privacy because: loans and properties hang off accounts and their owners and shares.

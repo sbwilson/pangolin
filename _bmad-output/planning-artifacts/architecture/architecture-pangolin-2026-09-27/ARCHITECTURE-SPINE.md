@@ -93,6 +93,7 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
   - Search excludes a hidden row from the partner's results entirely while it is hidden: no match by name, amount, notes or any other field. The owner's search is unaffected (2026-10-05).
   - Attachments on a hidden transaction stay hidden from the partner until the hiding expires.
   - Hiding expires at read time; no job clears it.
+  - A hiding outlives a switch of the account to private, or an owner change: until it expires the name stays hidden from everyone but the person who hid it (2026-10-05, epic 2 retro P1/P6).
   - A transfer whose counterpart sits in the other partner's private account shows as "Transfer from <owner>". The partner can still infer the account exists by elimination; that residual is accepted.
 
 ### AD-5 — Private accounts don't exist for the other partner
@@ -289,6 +290,7 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
 
   - A **snapshot-chain check** (previous snapshot + transactions in between = next snapshot) runs after every import. Any gap raises a `review_item`.
   - The backup manifest lists, per account, the transaction count, Σ `amount_cents` and `balanceAsOf`, all computed under `SystemViewer`.
+  - Amended 2026-10-05 (epic 2 retro A13): the backup manifest's own system-level balance read (db `balanceAsOf`, raw SQL under the system) is allowed and stays on the read-rule allow-list.
 
 ### AD-20 — Import dedupe keys
 

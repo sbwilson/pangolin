@@ -142,3 +142,77 @@ covers = ["CAP-16"]
 after = [11]
 hitl = true
 risk = "low"
+
+# Remediation from the epic 2 retrospective (rejected, 2026-10-05), action items 1–2; finding ids (P, I, V, A) are that document's.
+
+[[entry]]
+id = 14
+type = "story"
+title = "True audit history and hidden-row projection"
+description = "Builds every ledger audit before/after from the stored row through a viewer-checked read instead of the actor's projected VisibleTransaction, so a partner's write on a hidden row records the real description and payee (I1); makes redact's scrubJson replace only keys present and fail closed on unparseable JSON, with json_valid guarding the SQL scrub (I2); projects fingerprint and externalId to NULL while a row is hidden, in visibleTxn, the memory mirror and the audit scrub (P2); adds the deleted_at filter to payeeOk in SQL and the memory mirror so a soft-deleted payee's name and logo stop showing (I4); and corrects deletePayee's docstring to the always-soft-delete behaviour decided in 2.5 (I5), recording that decision in story-classify-module-plan.md's Plan Change Log."
+verify = "A test where A hides a name and B edits notes, splits and transfer links shows the stored audit rows carrying the real descriptionRaw and payeeId while listAudit as B still shows the placeholder (SQLite and memory); a malformed audit JSON value yields the placeholder, not raw text, tested on redact/scrubJson directly and in the memory mirror (SQLite's audit_log json_valid CHECKs reject such rows, so the SQL json_valid guard is defence in depth); B's row for a hidden imported (v1-fingerprint) transaction has fingerprint and externalId null; a deleted payee's name no longer appears on its transactions; and story-classify-module-plan.md's Plan Change Log records the 2.5 always-soft-delete decision."
+covers = ["CAP-3"]
+after = [7]
+hitl = false
+risk = "high"
+unknown = "Whether the stored-row audit read needs a new viewer-first repository method or an existing read can serve it."
+
+[[entry]]
+id = 15
+type = "story"
+title = "Account ownership and privacy switches"
+description = "Keeps a hidden name hidden from everyone but the person who hid it whatever the account's privacy or owners, so a hiding outlives a switch to private and only the hider sees the name until it expires, by dropping the is_private = 0 condition from visibleTxn's hidden rule and from auditHiddenUntil's current-row and before/after branches in SQL (packages/db/src/privacy.ts) and the memory mirror (packages/app/src/testing/memory-uow.ts), and renaming the test \"does not hide anything in a private account\" (packages/db/src/privacy.test.ts) to match (P1, P6); makes setPrivacy(public) stamp person_id = the sole owner on that account's audit_log rows whose person_id is null, in the same transaction and mirrored in the memory unit of work, so rows recorded while it was private, including those written on v0.2.0, stay owner-only (decision 80); makes updateAccount refuse an owner change that removes a person other than the viewer, so only a person can remove themselves (P1); makes setPrivacy(private) also refuse while any split's beneficiary is a person other than the sole owner (P6, AD-7); and makes setPrivacy(public) refuse with Conflict while the account carries owner-scoped payees, tags or activities, naming them and the account's owners (P5, AD-18)."
+verify = "Privacy tests in SQLite and memory show: A removing B from a joint account is refused; after B removes themself and A makes the account private, B's earlier hidden names stay hidden to A until expiry in transactions and in listAudit as A, which still shows the placeholder after this takeover path; setPrivacy(private) is refused with a partner-beneficiary split; setPrivacy(public) is refused, naming the owners, while a scoped payee, tag or activity is used and succeeds once the scoped reference is removed (promotion is epic 3's); and after setPrivacy(public) the private-era audit rows carry the sole owner's person_id and listAudit as B shows none of them."
+covers = ["CAP-3", "CAP-14"]
+after = [14]
+hitl = false
+risk = "high"
+unknown = "How the system viewer (seed, admin) fits the only-remove-yourself owner rule, and whether requireKnownPeople and that rule still hold once a person can be deactivated."
+
+[[entry]]
+id = 16
+type = "story"
+title = "Cross-partner split and transfer guards"
+description = "Makes setSplitField and setSplits refuse an owner-scoped activity on a public account as tags and payees already do (P4, AD-18); makes deleteTransferGroup require every live member to be visible to the viewer, with transferGroups.members taking the viewer and filtering deleted_at (P7, AD-5); makes hideTransactionName require the viewer to own the account, matching the seed rule (P8); makes deleting one side of a transfer clear the group from the surviving member and delete the group, audited, where clearing a survivor in the partner's private account is allowed as invariant upkeep, reading the survivor through a dedicated viewerless upkeep repository read rather than SystemViewer on the HTTP path (AD-6), and audited with owner-only scope (I3, decision 81); and makes setSplits refuse a non-null propertyId until epic-loans-property adds properties (I6)."
+verify = "Tests show A's scoped activity on a shared split is Conflict with no audit row; B deleting a group with a member in A's private account is NotFound and A's row is unchanged; a non-owner hide is refused; after one side is deleted the survivor can join a new transfer group, and a survivor in A's private account is unlinked with an audit row only A sees; a propertyId is refused with Validation; and the privacy suite's knownGaps count drops by the closed gaps."
+covers = ["CAP-3", "CAP-14", "CAP-18"]
+after = [15]
+hitl = false
+risk = "medium"
+unknown = "None known; decision 81 settles the private-survivor case."
+
+[[entry]]
+id = 17
+type = "story"
+title = "Backup manifest privacy"
+description = "Makes a manifest verification failure store and return a summary that names only the failed check kind, with no account IDs, table row counts, account counts, sums or balances, in the stored drill summary, GET /api/system/backup and the audit row, including the paths in apps/server/src/jobs/backup.ts that pass error.message through, while verifySnapshot and compareManifests in manifest.ts keep their detailed message for the operator paths (admin/restore.ts, check-upgrade) and jobs/backup.ts maps the verdict to its check kind before it stores, returns or audits the summary (P3); and makes buildManifest and writeSnapshot require balanceDate for format 2 through a discriminated option type, so the format-1 rebuild in packages/db/src/manifest.ts still compiles, passed from the household clock's today on every path, with check-upgrade (packages/db/src/cli/check-upgrade.ts) explicitly using the UTC date (I7, decision 83)."
+verify = "A drill whose private-account sum differs, and one whose restore throws, stores and returns a summary naming only the failed check kind with no account ID, row count or figure; a format-2 buildManifest call without balanceDate fails type-checking while the format-1 rebuild compiles; every caller passes the clock's today and check-upgrade the UTC date; and the change touches only packages/db/src/manifest.ts, apps/server/src/jobs/backup.ts, apps/server/src/backup/snapshot*, packages/db/src/cli/check-upgrade.ts and their tests."
+covers = ["CAP-3", "CAP-16"]
+after = [9]
+hitl = false
+risk = "medium"
+unknown = "None known; check-upgrade uses the UTC date per decision 83."
+
+[[entry]]
+id = 18
+type = "story"
+title = "Widen the read rule and privacy suite"
+description = "Extends the read rule (Done when 2) to every AD-3 account-scoped table's schema import (split, split_tag, balance_snapshot, review_item, transfer_group, account_owner), adds a test that flags raw SQL naming account, transaction or audit_log outside an explicit allow-list (balance.ts, manifest.ts under the amended AD-19, the privacy harness, and entry 16's viewerless upkeep read for decision 81, each with a reason), and makes every TxRepos read of a scoped table take the viewer first or sit on the allow-list with a reason (V1); and extends the two-world differential to hidden names (worlds differing in a hidden description and payee on the same shared, payee-bearing, imported transaction), to B's own writes on hidden rows, to worlds differing by an owner change and by setPrivacy in each direction (P1, P5, P6), to audit reads through the listAudit use case (packages/app/src/system/list-audit.ts) rather than an HTTP route, which stays pending for epic 12 entries 6 and 7, and to a failed backup drill (V2)."
+verify = "The rule fails on a deliberate raw-SQL read and on a viewer-less scoped read outside the allow-list; the suite fails when any privacy fix (P1, P2, P3, P4, P5, P6, P7, P8, I1, I2, I4 or decision 80) is reverted, shown by a temporary revert run recorded in the plan, with I3, I5, I6 and I7 outside this check."
+covers = ["CAP-3"]
+after = [14, 15, 16, 17]
+hitl = false
+risk = "medium"
+unknown = "Whether the allow-list is complete, since a scoped read the rule does not recognise would pass unflagged."
+
+[[entry]]
+id = 19
+type = "story"
+title = "Release v0.2.1 and deploy"
+description = "Cuts v0.2.1 with the privacy fixes and pangolin-upgrades the home server from the v0.2.0 tag, following the checklist in docs/release-v0.2.0.md, carried into docs/release-v0.2.1.md, including the manual pre-upgrade backup, with CI green on the tag."
+verify = "The release run is green on its tag; the home server reports v0.2.1 and a healthy /healthz, upgraded from the v0.2.0 tag rather than a develop build; the evidence record names the deployed build and the backup taken before the upgrade; docs/release-v0.2.1.md is reviewed; and each human change is logged in the plan's Plan Change Log."
+covers = ["CAP-16"]
+after = [18]
+hitl = true
+risk = "low"
+unknown = "Whether the real upgrade from v0.2.0 runs cleanly on the home server."

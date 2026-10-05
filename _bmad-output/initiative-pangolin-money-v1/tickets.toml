@@ -10,7 +10,7 @@ covers = ["CAP-16", "CAP-15"]
 id = 2
 slug = "epic-ledger-accounts-privacy"
 title = "Ledger core and privacy"
-covers = ["CAP-3", "CAP-18", "CAP-14"]
+covers = ["CAP-3", "CAP-18", "CAP-14", "CAP-16"]
 after = [{ epic = 1, needs = "schema and migration tooling, auth sessions, service layer with audit_log, seed generator" }]
 
 [[epic]]

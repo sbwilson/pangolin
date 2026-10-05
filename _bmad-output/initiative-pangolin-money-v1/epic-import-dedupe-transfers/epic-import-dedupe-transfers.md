@@ -46,6 +46,8 @@ packages/importers and the import, payee-matching, rules and transfer stages in 
 - Unknown: pre-FY2026 CommBank history must be exported from NetBank before the M1 gate; a person does it.
 - Decision: the cross-epic contracts this epic adopts are settled in the architecture spine (final, 2026-09-27); see References.
 - Handoff (2026-10-04, epic 2 inception): the review inbox UI and promoting AD-18-scoped payees, aliases, tags and activities to shared are this epic's; epic-ledger-accounts-privacy builds the tables, scope and visibility only.
+- Handoff (2026-10-05, epic 2 retro): promoting scoped payees, tags and activities to shared must satisfy epic-ledger-accounts-privacy entry 15's setPrivacy(public) guard, which refuses while an account carries owner-scoped references.
+- Handoff (2026-10-05, epic 2 retro): dedupe must not read fingerprints through a person viewer's projection; epic-ledger-accounts-privacy entry 14 projects fingerprint and externalId to NULL while a row's name is hidden.
 - Decision (2026-10-05, D5): partial import for CSV, OFX and QIF only; PDF stays all-or-nothing. Set-aside rows can be read by the LLM (`row_interpret`), which epic-llm-categorisation-pdf adds.
 - Decision (2026-10-05): import for the partner is a hand-off, never direct; the sender never learns the account or batch she chose (AD-5).
 - Decision (2026-10-05): attachment storage moves here from epic-llm-categorisation-pdf (AD-21); identity notices migrate to review items when the inbox UI ships (AD-17).
