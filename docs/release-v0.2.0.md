@@ -298,7 +298,7 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | **After the upgrade** | |
 | First backup: snapshot ID (step 10) | `8351365c14d32fcb66e8282b3618105214370679d544f4ad930ec2b388b4b4d1`, 2026-10-05T06:18:09Z, `pangolin backup` by `v0.2.0` |
 | First backup: manifest `format` | `"format": 2`, `schemaVersion` 11, migrations through `0010_split_provenance` (read with `restic dump` from the repository) |
-| First backup: per-account counts, sums, `balanceAsOf` | PENDING: the `account` table has 0 rows on pang-dev (no ledger accounts yet), so the per-account section is expected to be empty; the tail of the manifest has not yet been read |
+| First backup: per-account counts, sums, `balanceAsOf` | The manifest ends with `"balanceDate": "2026-10-05"`, `"accounts": []`, `"takenAt": "2026-10-05T06:18:06.984Z"` (5343 bytes). The section exists and is empty because pang-dev has no ledger accounts (`account`: 0 rows, `transaction`: 0 rows); `category` 65, `category_group` 13 and `tax_category` 8 rows are the seeded defaults. No real per-account entry has been seen on a host; the db tests cover it |
 | Format-1 restore to a scratch location: snapshot, `"format": 1`, integrity result (step 11) | Snapshot `1c69b789366f8841af07dffcca5cdcae384e2cbfa769c5fcfa3b76dae482fdcb` (2026-10-04, written by build `4df1f99`), `restic restore` to `/root/scratch-restore`: `"format": 1`, schema 11, `PRAGMA integrity_check` `ok`. This proves the old backup is intact and restorable; `v0.2.0`'s reading of a format-1 manifest by `pangolin restore` is covered by the db-level tests only, not exercised on the host |
 | Scratch directory deleted | Yes: `ls /root/scratch-restore` reports no such file or directory, 2026-10-05 |
 | **Decision** | |
