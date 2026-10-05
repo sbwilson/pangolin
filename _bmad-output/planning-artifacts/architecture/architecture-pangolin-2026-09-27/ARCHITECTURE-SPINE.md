@@ -7,8 +7,8 @@ paradigm: 'hexagonal (ports and adapters) with a functional core'
 scope: 'Pangolin Money v1, the whole system: the contracts that keep its 10 epics (M0–M4) consistent'
 status: final
 created: '2026-09-27'
-updated: '2026-09-27'
-binds: [CAP-1, CAP-2, CAP-3, CAP-4, CAP-5, CAP-6, CAP-7, CAP-8, CAP-9, CAP-10, CAP-11, CAP-12, CAP-13, CAP-14, CAP-15, CAP-16, CAP-17, CAP-18]
+updated: '2026-10-05'
+binds: [CAP-1, CAP-2, CAP-3, CAP-4, CAP-5, CAP-6, CAP-7, CAP-8, CAP-9, CAP-10, CAP-11, CAP-12, CAP-13, CAP-14, CAP-15, CAP-16, CAP-17, CAP-18, CAP-19, CAP-20, CAP-21]
 sources:
   - ../../../specs/spec-pangolin-money/SPEC.md
   - ../../../specs/spec-pangolin-money/ (all companions)
@@ -71,12 +71,12 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
 
 ### AD-3 — Visibility is a `Viewer` applied in SQL
 
-- **Binds:** CAP-3, CAP-11, CAP-12, CAP-14, CAP-17, CAP-18; epics 2–10
+- **Binds:** CAP-3, CAP-11, CAP-12, CAP-14, CAP-17, CAP-18, CAP-20; epics 2–10 and 14
 - **Prevents:** a report or search filtering in memory after it has already summed, which gives wrong totals or leaks private rows. It also stops each epic defining "household" differently.
 - **Rule:**
   - Every use case takes a `Viewer` whose fields are all required.
   - **Account-scoped tables** are every table with a direct or transitive `account_id`: `transaction`, `split`, `balance_snapshot`, `import_batch`, `import_row`, `recurring_series`, `suggestion`, `investment_event`, `lot`, `super_holding`, `contribution`, linked attachments, `review_item` and `audit_log`.
-  - `property` takes the scope of its loan account. With no loan account, it takes the scope of its owner.
+  - `property` takes the most restrictive scope of its value account and its loan account (AD-22). `loan_terms`, `loan_rate_change`, `loan_interest_entry` and `import_handoff` are added to the scoped tables; `import_handoff` is person-scoped to its sender and recipient.
   - Person-scoped rows follow AD-22.
   - Every repository read of a scoped table takes the `Viewer` first. It composes `visibleAccounts(viewer)`, a raw SQL fragment that throws when given no viewer, into the query itself, including aggregates, FTS5 search and exports.
   - Drizzle table objects are not exported outside `packages/db`. A lint rule enforces this, and one test per scoped table proves a missing viewer throws.
@@ -101,6 +101,7 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
 - **Rule:**
   - When a non-owner addresses a private account, or anything under it, by ID, the result is `NotFound`, for reads and writes alike.
   - IDs are generated only on the server, never accepted from a client.
+  - An import hand-off never reveals to its sender the account or batch the recipient chose.
 
 ### AD-6 — System access is unreachable from HTTP; LLM data rules are per purpose
 
@@ -113,6 +114,7 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
     - Few-shot examples come only from accounts visible to *every* viewer of the target transaction, whatever the provider.
     - `categorise` on a non-local provider sends only description, amount, date and the category list, and never a transaction from a private account.
     - `pdf_extract` runs only on a local provider unless that provider has an explicit `cloud_pdf` opt-in.
+    - `row_interpret` (set-aside import rows) runs only on a local provider unless that provider has an explicit `cloud_rows` opt-in. It never sends a private account's row to a non-local provider. Its output is a proposal, and nothing is written until a person confirms it.
   - A provider is local only when its `base_url` resolves into the configured LAN address ranges; the flag is derived, not typed in. Changing a provider needs re-authentication.
   - The request preview in Settings is produced by the same request builder as the real call.
 
@@ -146,7 +148,7 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
 - **Prevents:** the UI coupling to job internals, and each epic inventing its own push channel.
 - **Rule:**
   - The UI polls the owning entity's status (for example `import_batch.status`) with TanStack Query. It never reads the `job` table. v1 has no server-sent events or websockets.
-  - A dead job that needs a person raises a `review_item` (AD-17). Every dead job appears on the status page with its kind and time only, never its payload or error text.
+  - A dead job that needs a person raises a `review_item` (AD-17). Every dead job appears in Settings › System status with its kind and time only, never its payload or error text.
 
 ### AD-10 — Every table has one owning module
 
@@ -164,7 +166,7 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
 
 ### AD-11 — Derived on read, with a closed list of stored exceptions
 
-- **Binds:** CAP-4 to CAP-10, CAP-17; epics 4 and 6–10
+- **Binds:** CAP-4 to CAP-10, CAP-17, CAP-20; epics 4, 6–10 and 14
 - **Prevents:** stored totals drifting from the splits, stale cost bases after a backdated event, and closed periods changing underneath their allocations.
 - **Rule:**
   - Balances (AD-19), budgets, reports, contribution shares, forecasts and tax figures are computed when read.
@@ -172,7 +174,10 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
     - `goal_allocation`, `goal.completed_at` and `stage_event`;
     - `lot`, `recurring_series` and `suggestion`;
     - `review_item` and the `needs_review` flag;
-    - `import_batch` counts, FTS5 indexes and closed-period boundaries.
+    - `import_batch` counts, FTS5 indexes and closed-period boundaries;
+    - the `home_plan` headline snapshot (borrow, repayment and left to live on at save time — an allowed exception to AD-7's recompute-on-read; see AD-28);
+    - `goal_drawdown` and `goal_adjustment` rows;
+    - time-boxed `goal_rule` shortfall overrides.
 
     Anything new must be added here.
   - Every condition-based review item (over-commitment, mismatch, a missed bill) is re-evaluated by its owning module's check, which resolves it when the condition clears.
@@ -241,7 +246,7 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
 
 ### AD-17 — One review inbox, stored
 
-- **Binds:** CAP-2, CAP-5, CAP-7, CAP-10, CAP-18; epics 2, 3 and 5–9
+- **Binds:** CAP-1, CAP-2, CAP-4, CAP-5, CAP-7, CAP-10, CAP-15, CAP-18; epics 2, 3, 5–9 and 13
 - **Prevents:** each epic inventing its own "needs attention" state, badge count or dismissal rule.
 - **Rule:**
   - `review_item` (`kind`, `account_id?`, `person_id?`, `entity_ref`, `dedupe_key`, `resolved_at`, `resolution`) is owned by `system`.
@@ -253,6 +258,9 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
     - with `person_id`, only that person;
     - with neither, both partners.
   - Items are redacted (AD-4). In-app notifications (a partner-assisted reset, a bill alert) are review-item kinds.
+  - `review_item` carries `actor_person_id` (attribution, not scope).
+  - A **partner-pending count** for viewer V counts the partner's open items whose scope is visible to both partners (a public `account_id` and no `person_id`, or neither). It is never computed from items V can't see.
+  - Identity notices (`/api/identity/notices`) migrate to review-item kinds when the inbox UI ships.
 
 ### AD-18 — Classification rows inherit privacy from their origin
 
@@ -304,14 +312,15 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
   - A backup takes the database snapshot first, then copies the attachments.
   - Visibility follows the linked entity (AD-3, AD-4).
   - Deleting an attachment is a `system` use case that needs re-authentication.
-  - Epic 5 builds attachment storage first.
+  - Epic 3 builds attachment storage first (import hand-off files); epic 5 adds statements and logos.
 
 ### AD-22 — Derived rows take the most restrictive scope of their inputs
 
 - **Binds:** CAP-3, CAP-4, CAP-6, CAP-7, CAP-12; epics 6–10
 - **Prevents:** a personal plan, allocation, tax figure or alert built from private data being shown to the partner because it has no `account_id`.
 - **Rule:**
-  - Rows scoped to a person (`pay_anchor`, personal `budget`, personal-pool `goal`, `goal_rule`, `goal_allocation`, `stage_event`, the WFH log, depreciable assets, `forecast_assumption`, per-person tax figures) carry `person_id`, and only that person sees them.
+  - Rows scoped to a person (`pay_anchor`, personal `budget`, personal-pool `goal`, `goal_rule`, `goal_allocation`, personal-pool `goal_drawdown` and `goal_adjustment`, `planning_setting` (personal pool), `stage_event`, the WFH log, depreciable assets, `forecast_assumption`, per-person tax figures, `person_preference`, `import_handoff` (its sender and recipient), and the personal `over_budget` and `large_withdrawal` review items) carry `person_id`, and only that person sees them.
+  - `home_plan` is shared by rule (AD-28).
   - Shared-pool rows carry no `person_id` and are visible to both.
   - Every derived or job-written row takes the most restrictive scope of its inputs. A row computed from any private account is scoped to that account's owner.
   - A personal-pool review item carries the person's `person_id`.
@@ -320,7 +329,7 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
 
 ### AD-23 — One `flowKind` decides what counts as spending
 
-- **Binds:** CAP-4, CAP-8, CAP-11, CAP-14, CAP-17; epics 3, 4, 6, 8, 9 and 10
+- **Binds:** CAP-4, CAP-8, CAP-11, CAP-14, CAP-17, CAP-20; epics 3, 4, 6, 8, 9, 10 and 14
 - **Prevents:** reports, budgets, forecasts, contribution and property views excluding transfers in different ways.
 - **Rule:**
   - Every split has exactly one `flowKind`: `income`, `expense`, `transfer` or `investing`. It is computed by one `domain` function, exposed to SQL as one `db` expression, and used by every aggregate.
@@ -333,17 +342,21 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
     | A category in a group of kind `transfer`, with no link | `transfer` |
     | Otherwise | `income` if positive, `expense` if negative |
 
+  - The property net-cash figure (CAP-11) is the one exception: it takes loan interest from `loan_interest_entry`, not from repayment splits. Principal is reported separately and never as a cost.
   - Category-group kind is a stable field, so renaming a group never changes flows.
   - Spending, budgets and P&L count only `expense`. Contribution counts transfers into public shared accounts plus shared `expense` paid from personal accounts (AD-7).
 
-### AD-24 — Goals are drawn down only by linked withdrawals
+### AD-24 — Goals are drawn down only by linked withdrawals or a confirmed drawdown
 
 - **Binds:** CAP-6, CAP-7, CAP-13; epics 7 and 10
 - **Prevents:** two ways of linking an activity to a goal, and a goal being debited twice, which would break "goals + buffer = savings".
 - **Rule:**
   - `goal_link` (owned by `planning`) is the only link from a goal to transactions or activities.
-  - A goal's balance goes down only through a linked withdrawal *from its pool's savings account*. Spending on a card or transaction account never debits a goal directly.
-  - Period close excludes linked withdrawals when computing new savings.
+  - A goal's balance goes down only through a linked withdrawal *from its pool's savings account*, or through a user-confirmed drawdown (`goal_drawdown` with one `goal_adjustment` per goal; reason `large_purchase` or `shortfall`; audited; undone as a whole; CAP-7). Spending on a card or transaction account never debits a goal directly.
+  - A drawdown debits goals in a single pool: the pool of the covered withdrawal (AD-26), or the pool chosen. It never debits another person's personal-pool goal (AD-22).
+  - The order by reason and kind, and the proposed split, are computed in `domain`. `app/planning` validates that every amount is between 0 and the goal's balance and that the total does not exceed the amount to cover. The web never sums.
+  - Period close excludes linked withdrawals when computing new savings. It excludes a withdrawal covered by a drawdown the same way.
+  - `planning` registers the `large_withdrawal` review-item kind (AD-17), scoped per AD-22. It resolves when the withdrawal is covered, linked to a goal, or left with the buffer.
 
 ### AD-25 — One income model
 
@@ -376,6 +389,16 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
   - `install.sh` produces a **recovery bundle** for offline storage: the application key, auth secret and restic password. `pangolin status` warns until its safe storage is confirmed.
   - CI restores onto a clean host using only the bundle, and proves it by decrypting a sample attachment and logging in with TOTP.
 
+### AD-28 — Shared plans read only what both partners can see
+
+- **Binds:** CAP-19; epic-home-buying-planner
+- **Prevents:** a shared home-buying plan revealing one partner's private property, loan or balances to the other, a saved plan drifting from current data, and planner maths being done outside `domain`.
+- **Rule:**
+  - Planner reads use `sharedScope()`: public accounts only, which is the intersection of both viewers' visible accounts. A viewer's private property or loan appears to them as "Not in shared plans" and never feeds a figure.
+  - `home_plan` carries no `person_id` and is visible to both.
+  - A saved plan stores only typed inputs and choices, plus a headline snapshot: borrow, repayment, and left to live on, as both saw them at save time. This headline is the one allowed exception to AD-7's "recomputed on read" (listed in AD-11). Every other figure is recomputed on read from currently shared-visible data. Inputs that came from data no longer shared drop out, and the plan shows "Some inputs are no longer shared".
+  - All planner maths is server-side in `domain/planner`, through `shared.toCents`/`allocate`. Slider recalculation is debounced server calls.
+
 ## Consistency Conventions
 
 | Concern | Convention |
@@ -398,6 +421,9 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
 | Logging | Structured JSON; tokens, amounts and descriptions redacted by default; no third-party error tracking |
 | Config and secrets | Environment variables parsed by one Zod schema at startup; the application key is read from a key file outside the database (AD-27); LLM keys are encrypted at rest and never sent to the browser |
 | Frontend state | Server state only in TanStack Query; filters and paging in URL search params; the web app never sums money |
+| Accessibility | WCAG 2.2 AA. An axe e2e check on every route fails CI. Every canvas chart has a table equivalent |
+| Theming | A `data-theme` and mode attribute on `<html>`, with all tokens compiled (no inline styles). The choice is read from `person_preference` and cached locally only as a slug |
+| Routes | `/` redirects to the landing page (`/transactions` until Cash flow ships, then `/cash-flow`) |
 | Tests | Domain tests take plain values; use-case tests run on a real SQLite database; every format ships an anonymised sample; e2e runs on the seed, offline. Privacy test: partner B's responses are byte-identical when only partner A's private data changes |
 
 ## Stack
@@ -470,12 +496,12 @@ NPM is the one proxy mode in this version. Bundled Caddy and Tailscale-only are 
 
 | `app` module | Owns (writes) |
 | --- | --- |
-| `identity` | better-auth tables (through its hooks), `person`, recovery codes, re-enrolment links |
-| `accounts` | `institution`, `account`, `account_owner`, `balance_snapshot` |
+| `identity` | better-auth tables (through its hooks), `person`, recovery codes, re-enrolment links, `person_preference` |
+| `accounts` | `institution`, `account`, `account_owner`, `balance_snapshot`, `loan_terms`, `loan_rate_change`, `loan_interest_entry` |
 | `ledger` | `transaction`, `split`, `transfer_group`, `split_tag`, `transaction_attachment` |
 | `classify` | `category_group`, `category`, `tag`, `payee`, `payee_alias`, `rule`, `activity`, `suggestion`, `tax_category` |
-| `imports` | `import_profile`, `import_batch`, `import_row` |
-| `planning` | `pay_anchor`, `budget`, `recurring_series`, `goal`, `goal_rule`, `goal_allocation`, `allocation_stage`, `goal_link`, `stage_event`, closed-period boundaries, `forecast_assumption` |
+| `imports` | `import_profile`, `import_batch`, `import_row`, `import_handoff` |
+| `planning` | `pay_anchor`, `budget`, `recurring_series`, `goal`, `goal_rule` (with its `effective_until`/`source` shortfall-override columns), `goal_allocation`, `allocation_stage`, `goal_link`, `stage_event`, closed-period boundaries, `forecast_assumption`, `home_plan`, `goal_drawdown`, `goal_adjustment`, `planning_setting` |
 | `invest` | `security`, `investment_event`, `lot`, `price`, `distribution_component` |
 | `super` | `super_option`, `super_holding`, `unit_price`, `contribution` |
 | `property` | `property` |
@@ -512,10 +538,15 @@ The full table catalogue stays in the spec's `data-model.md` until the code owns
 | CAP-16 install and DR | `deploy/`, `system` jobs, `admin` entry | AD-8, AD-9, AD-16, AD-19, AD-27 |
 | CAP-17 insight | read-only report queries | AD-3, AD-11, AD-12, AD-19, AD-23 |
 | CAP-18 ledger workspace | `apps/web`, `app/ledger` | AD-3, AD-4, AD-9, AD-17 |
+| CAP-19 home buying | `app/planning`, `domain/planner` | AD-3, AD-7, AD-11, AD-13, AD-28 |
+| CAP-20 loans | `app/accounts` (loan tables), `domain/amortise` | AD-3, AD-11, AD-23 |
+| CAP-21 shell and themes | `app/identity` (`person_preference`), `apps/web` shell | Consistency Conventions (accessibility, theming) |
 
 ## Pending Propagation
 
 All propagation was applied by 2026-10-03.
+
+2026-10-05: applied sprint change proposal 2026-10-05 (A-1 to A-9, new AD-28).
 
 ## Deferred
 
@@ -526,7 +557,7 @@ All propagation was applied by 2026-10-03.
 | Multi-currency | v1 requires account currency = base currency; the ledger is already currency-agnostic |
 | Partner settlement | v1.1; AD-7, AD-13 and AD-23 already give it clean shared figures |
 | Library picks inside one epic | Logging (epic 1), OFX/QIF parsers (epic 3), ULID library (epic 1), egress proxy (epic 5), PDF-bundle generator (epic 10); the seed's PDF renderer reuses epic 10's generator once it exists |
-| Interest/principal split, Monte Carlo, Betashares statement parsing, bank APIs | Spec non-goals; the connector port stays open |
+| Automatic interest/principal split, Monte Carlo, Betashares statement parsing, bank APIs | Spec non-goals; the connector port stays open |
 | Application-level database encryption (SQLCipher) | Host disk encryption per the spec; revisit only for shared hosting |
 | Drizzle 1.0 | Move once 1.0 final ships; migrations are committed SQL |
 | Ubuntu 26.04 and Rocky Linux 10 as hosts | Add to `install.sh` after Debian 13 is proven |
