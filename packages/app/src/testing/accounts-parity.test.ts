@@ -1,5 +1,5 @@
-// The memory mirror answers balanceAsOf, shared-split checks and account views as SQLite does,
-// through the accounts use cases. It sits beside the memory unit of work, which is not exported
+// The memory mirror answers balanceAsOf, shared-split checks, account views and the ownership
+// and privacy switches (story 2.15) as SQLite does, through the use cases. It sits beside the memory unit of work, which is not exported
 // from the package: a test file here may import the adapter.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,13 +20,21 @@ import {
   balanceAsOf as accountBalanceAsOf,
   createAccount,
   createIdGenerator,
+  createPayee,
   createPerson,
+  createTag,
   createTransaction,
   deleteTransaction,
   getAccount,
+  getTransaction,
+  hideTransactionName,
+  listAudit,
+  listTransactions,
   personViewer,
   recordBalanceSnapshot,
   setPrivacy,
+  setSplitField,
+  setSplitTags,
   type UseCaseContext,
   updateAccount,
 } from "../index.ts";
@@ -112,10 +120,19 @@ describe("memory mirror parity", () => {
         (date) => accountBalanceAsOf(A, { accountId: acct, date }),
       );
       const view: AccountView = getAccount(A, { id: acct });
-      const edited = outcome(() => updateAccount(A, { id: acct, owners: own(pa) }));
+      const removedOther = outcome(() => updateAccount(A, { id: acct, owners: own(pa) }));
+      const edited = outcome(() => updateAccount(ctxs.as(pb), { id: acct, owners: own(pa) }));
       const pooled = getAccount(A, { id: acct }).pool;
       const madePrivate = outcome(() => setPrivacy(A, { id: acct, isPrivate: true }));
-      return { balances, pool: view.pool, owners: view.owners, edited, pooled, madePrivate };
+      return {
+        balances,
+        pool: view.pool,
+        owners: view.owners,
+        removedOther,
+        edited,
+        pooled,
+        madePrivate,
+      };
     };
     const sqlite = run({ sys, as }, a, b);
 
@@ -145,9 +162,248 @@ describe("memory mirror parity", () => {
     ] as const) {
       expect(result.balances, who).toEqual([0, 5000, 4800, 4100, 4125]);
       expect(result.pool, who).toBe("shared");
+      expect(result.removedOther, who).toBe("Validation");
       expect(result.edited, who).toBe("ok");
       expect(result.pooled, who).not.toBe("shared");
       expect(result.madePrivate, who).toBe("Conflict");
+    }
+  });
+});
+
+/** Contexts for one adapter: the system, and a person on a day (default the fixed today). */
+interface Ctxs {
+  readonly sys: UseCaseContext;
+  readonly as: (id: Id<"Person">, day?: string) => UseCaseContext;
+}
+
+function sqliteCtxs(db: Db): Ctxs {
+  migrate(db, loadMigrations(packageMigrationsDir));
+  let ms = now.epochMilliseconds;
+  const base = {
+    clock: { now: () => now, today: () => now.toZonedDateTimeISO("UTC").toPlainDate() },
+    newId: createIdGenerator({ now: () => ++ms, random: Math.random }),
+    uow: createUnitOfWork(db),
+  };
+  return contexts(base);
+}
+
+function memoryCtxs(): Ctxs {
+  let n = 0;
+  return contexts({
+    clock: { now: () => now, today: () => now.toZonedDateTimeISO("UTC").toPlainDate() },
+    newId: (<B extends string>() =>
+      `M${String(++n).padStart(6, "0")}` as Id<B>) as UseCaseContext["newId"],
+    uow: memoryUnitOfWork(),
+  });
+}
+
+function contexts(base: Omit<UseCaseContext, "viewer">): Ctxs {
+  return {
+    sys: { ...base, viewer: systemViewer("cli:test") },
+    as: (id, day) => ({
+      ...base,
+      clock:
+        day === undefined
+          ? base.clock
+          : { now: () => now, today: () => Temporal.PlainDate.from(day) },
+      viewer: personViewer(id, now),
+    }),
+  };
+}
+
+/** The I/O matrix of story 2.15 on one adapter; a transcript with person IDs as PA/PB/PC. */
+function switches(ctxs: Ctxs) {
+  const { sys } = ctxs;
+  const pa = createPerson(sys, { displayName: "A", colour: "#000000" });
+  const pb = createPerson(sys, { displayName: "B", colour: "#ffffff" });
+  const pc = createPerson(sys, { displayName: "C", colour: "#888888" });
+  const A = ctxs.as(pa);
+  const B = ctxs.as(pb);
+  const joint = (owners: [Id<"Person">, number][]) =>
+    createAccount(sys, {
+      name: "Joint",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: owners.map(([personId, shareBp]) => ({ personId, shareBp })),
+    });
+  const out: Record<string, unknown> = {};
+
+  // Only a person can remove themselves; adding someone while leaving is fine; system exempt.
+  const three = joint([
+    [pa, 5000],
+    [pb, 5000],
+  ]);
+  const swap = [
+    { personId: pa, shareBp: 5000 },
+    { personId: pc, shareBp: 5000 },
+  ];
+  out.aSwapsBForC = outcome(() => updateAccount(A, { id: three, owners: swap }));
+  out.bSwapsSelfForC = outcome(() => updateAccount(B, { id: three, owners: swap }));
+  out.afterSwap = getAccount(A, { id: three }).owners;
+  out.systemRemovesC = outcome(() => updateAccount(sys, { id: three, owners: own(pa) }));
+  const mine = createAccount(A, {
+    name: "Mine",
+    type: "transaction",
+    currency: "AUD",
+    isPrivate: true,
+    owners: own(pa),
+  });
+  out.selfFromPrivate = outcome(() => updateAccount(A, { id: mine, owners: own(pb) }));
+  out.privateOwners = getAccount(A, { id: mine }).owners;
+
+  // The takeover path: B hid a name on the joint account, left it, and A made it private.
+  const acct = joint([
+    [pa, 5000],
+    [pb, 5000],
+  ]);
+  const gift = createTransaction(B, {
+    accountId: acct,
+    postedOn: "2026-09-01",
+    amountCents: -500,
+    description: "Gift for A",
+  });
+  hideTransactionName(B, { id: gift, until: "2027-03-12" });
+  const splitId = getTransaction(B, { id: gift }).splits[0]?.id ?? "";
+  out.removeOther = outcome(() => updateAccount(A, { id: acct, owners: own(pa) }));
+  out.removeSelf = outcome(() => updateAccount(B, { id: acct, owners: own(pa) }));
+  out.privateWhileShared = outcome(() => setPrivacy(A, { id: acct, isPrivate: true }));
+  const beneficiary = (value: string) =>
+    setSplitField(A, { transactionId: gift, splitId, field: "beneficiary", value });
+  beneficiary(pb);
+  out.privateWithPartner = outcome(() => setPrivacy(A, { id: acct, isPrivate: true }));
+  beneficiary(pa);
+  out.madePrivate = outcome(() => setPrivacy(A, { id: acct, isPrivate: true }));
+  const nameFor = (ctx: UseCaseContext) =>
+    listTransactions(ctx).find((t) => t.id === gift)?.descriptionRaw;
+  out.aSeesWhilePrivate = nameFor(A);
+  out.aAuditLeaks = JSON.stringify(listAudit(A)).includes("Gift");
+  out.aSeesOnTheDay = nameFor(ctxs.as(pa, "2027-03-12"));
+
+  // Private era: a scoped payee and tag block the public switch, by name, until removed.
+  const payee = createPayee(A, { name: "Chemist", originAccountId: acct });
+  const tag = createTag(A, { name: "health", originAccountId: acct });
+  const priv = createTransaction(A, {
+    accountId: acct,
+    postedOn: "2026-09-02",
+    amountCents: -900,
+    description: "Private era",
+    payeeId: payee.id,
+  });
+  const privSplit = getTransaction(A, { id: priv }).splits[0]?.id ?? "";
+  setSplitTags(A, { transactionId: priv, splitId: privSplit, tagIds: [tag.id] });
+  try {
+    setPrivacy(A, { id: acct, isPrivate: false });
+    out.publicRefused = "ok";
+  } catch (error) {
+    const e = error as { code: string; message: string; details: unknown };
+    out.publicRefused = [e.code, e.message, e.details];
+  }
+  out.stillPrivate = getAccount(A, { id: acct }).isPrivate;
+  deleteTransaction(A, { id: priv });
+  out.madePublic = outcome(() => setPrivacy(A, { id: acct, isPrivate: false }));
+
+  // B sees the joint-era rows and both flips, never the private era; A sees everything.
+  const privateEra = new Set<string>([priv, payee.id, tag.id]);
+  const label = (row: { entity: string; action: string; entityId: string }) =>
+    `${row.entity}:${row.action}${privateEra.has(row.entityId) ? ":private-era" : ""}`;
+  const auditOf = (ctx: UseCaseContext) =>
+    listAudit(ctx)
+      .filter((row) => row.accountId === acct)
+      .map(label);
+  out.auditA = auditOf(A);
+  out.auditB = auditOf(B);
+  // A redundant private → private switch does not restart the private era.
+  const again = joint([
+    [pa, 5000],
+    [pb, 5000],
+  ]);
+  updateAccount(B, { id: again, owners: own(pa) });
+  out.againPrivate = outcome(() => setPrivacy(A, { id: again, isPrivate: true }));
+  const eraRow = createTransaction(A, {
+    accountId: again,
+    postedOn: "2026-09-03",
+    amountCents: -700,
+    description: "Before the repeat",
+  });
+  out.againRepeat = outcome(() => setPrivacy(A, { id: again, isPrivate: true }));
+  out.againPublic = outcome(() => setPrivacy(A, { id: again, isPrivate: false }));
+  const againFor = (ctx: UseCaseContext) => listAudit(ctx).filter((row) => row.accountId === again);
+  out.againBSeesEra = againFor(B).some((row) => row.entityId === eraRow);
+  out.againBLeaks = JSON.stringify(againFor(B)).includes("Before the repeat");
+  out.againASeesEra = againFor(A).some((row) => row.entityId === eraRow);
+  out.againBFlips = againFor(B).filter((row) => row.action === "set_privacy").length;
+  out.bSeesOwnName = nameFor(B);
+  out.aSeesAfterPublic = nameFor(A);
+  const named: [string, string][] = [
+    [pa, "PA"],
+    [pb, "PB"],
+    [pc, "PC"],
+    [payee.id, "PAYEE"],
+    [tag.id, "TAG"],
+  ];
+  return JSON.parse(
+    named.reduce((json, [id, name]) => json.replaceAll(id, name), JSON.stringify(out)),
+  ) as Record<string, unknown>;
+}
+
+describe("ownership and privacy switches (story 2.15)", () => {
+  it("answers the I/O matrix the same on SQLite and memory", () => {
+    const sqlite = switches(sqliteCtxs(db));
+    const memory = switches(memoryCtxs());
+    expect(memory).toEqual(sqlite);
+    for (const [who, out] of [
+      ["sqlite", sqlite],
+      ["memory", memory],
+    ] as const) {
+      expect(out.aSwapsBForC, who).toBe("Validation");
+      expect(out.bSwapsSelfForC, who).toBe("ok");
+      expect(out.afterSwap, who).toEqual([
+        { personId: "PA", shareBp: 5000 },
+        { personId: "PC", shareBp: 5000 },
+      ]);
+      expect(out.systemRemovesC, who).toBe("ok");
+      expect(out.selfFromPrivate, who).toBe("Validation");
+      expect(out.privateOwners, who).toEqual([{ personId: "PA", shareBp: 10000 }]);
+      expect(out.removeOther, who).toBe("Validation");
+      expect(out.removeSelf, who).toBe("ok");
+      expect(out.privateWhileShared, who).toBe("Conflict");
+      expect(out.privateWithPartner, who).toBe("Conflict");
+      expect(out.madePrivate, who).toBe("ok");
+      expect(out.aSeesWhilePrivate, who).toBe("Hidden until 12 Mar 2027");
+      expect(out.aAuditLeaks, who).toBe(false);
+      expect(out.aSeesOnTheDay, who).toBe("Gift for A");
+      const [code, message, details] = out.publicRefused as [string, string, unknown];
+      expect(code, who).toBe("Conflict");
+      expect(message, who).toContain('payee "Chemist", tag "health"');
+      expect(message, who).toContain("private to A");
+      expect(details, who).toEqual({
+        payees: [{ id: "PAYEE", name: "Chemist" }],
+        tags: [{ id: "TAG", name: "health" }],
+        activities: [],
+        owners: [{ personId: "PA", displayName: "A" }],
+      });
+      expect(out.stillPrivate, who).toBe(true);
+      expect(out.madePublic, who).toBe("ok");
+      const auditA = out.auditA as string[];
+      const auditB = out.auditB as string[];
+      expect(auditA.filter((l) => l.endsWith(":private-era")).length, who).toBeGreaterThan(0);
+      expect(auditB, who).toEqual(auditA.filter((l) => !l.endsWith(":private-era")));
+      expect(
+        auditB.filter((l) => l === "account:set_privacy"),
+        who,
+      ).toHaveLength(2);
+      expect(auditB, who).toContain("transaction:create");
+      expect(out.bSeesOwnName, who).toBe("Gift for A");
+      expect(out.againPrivate, who).toBe("ok");
+      expect(out.againRepeat, who).toBe("ok");
+      expect(out.againPublic, who).toBe("ok");
+      expect(out.againBSeesEra, who).toBe(false);
+      expect(out.againBLeaks, who).toBe(false);
+      expect(out.againASeesEra, who).toBe(true);
+      // The two transitions; the redundant switch was inside the private era, so it is A's.
+      expect(out.againBFlips, who).toBe(2);
+      expect(out.aSeesAfterPublic, who).toBe("Hidden until 12 Mar 2027");
     }
   });
 });

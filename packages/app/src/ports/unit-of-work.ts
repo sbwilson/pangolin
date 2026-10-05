@@ -297,10 +297,29 @@ export interface AccountRepo {
   /** Replaces every owner of an account with `owners`. */
   replaceOwners(accountId: string, owners: readonly AccountOwnerRow[]): void;
   /**
-   * Whether any split of a live transaction of the account has `beneficiary = shared` (AD-7).
-   * Soft-deleted transactions do not count.
+   * Whether any split of a live transaction of the account has a beneficiary other than
+   * `ownerId`: `shared` or another person (AD-7). Soft-deleted transactions do not count.
    */
-  hasSharedSplit(accountId: string): boolean;
+  hasSplitForOthers(accountId: string, ownerId: string): boolean;
+  /**
+   * The owner-scoped payees, tags and activities (AD-18) that live transactions of the account
+   * use: a transaction's payee, a split's activity, a split's tags. A soft-deleted scoped row
+   * still counts while a live transaction uses it. Each list is distinct, sorted by name then ID.
+   */
+  scopedReferences(accountId: string): ScopedReferences;
+}
+
+/** An owner-scoped classification row that an account's transactions use. */
+export interface ScopedReference {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** What `AccountRepo.scopedReferences` returns. */
+export interface ScopedReferences {
+  readonly payees: readonly ScopedReference[];
+  readonly tags: readonly ScopedReference[];
+  readonly activities: readonly ScopedReference[];
 }
 
 /** `transaction`: one bank line. */
@@ -981,6 +1000,14 @@ export interface AuditRepo {
    * viewer can see and rows scoped to the viewer. Throws when given no viewer.
    */
   listVisible(viewer: Viewer, today: string): AuditView[];
+  /**
+   * Scopes the account's unscoped audit rows recorded while it was private to `personId`: the
+   * rows after its most recent `set_privacy` row that switched it from public to private (before
+   * `isPrivate: false`, after `isPrivate: true`; by `at`, then `id`), or all its rows when there
+   * is none (it was created private). Rows from a
+   * joint period stay unscoped. Sets `person_id` only, never the content. Write-only.
+   */
+  scopeToPerson(accountId: string, personId: string): void;
 }
 
 /** Repositories bound to one open transaction. They throw once that transaction has ended. */

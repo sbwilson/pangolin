@@ -6,7 +6,7 @@ import type {
   TxRepos,
   UnitOfWork,
 } from "@pangolin/app";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { type BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { createBackupSnapshotRepo } from "./backup-snapshot-repo.ts";
@@ -140,6 +140,37 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
           .where(and(visible))
           .orderBy(asc(auditLog.at), asc(auditLog.id))
           .all() as AuditView[];
+      },
+      // The only UPDATE of audit_log anywhere: it narrows a row's scope (person_id) and never
+      // touches its content. Private-era rows are those after the most recent switch from public
+      // to private (by at, then id), or every row when the account was created private (none).
+      scopeToPerson: (accountId, personId) => {
+        guard(scope);
+        const flip = orm
+          .select({ at: auditLog.at, id: auditLog.id })
+          .from(auditLog)
+          .where(
+            and(
+              eq(auditLog.accountId, accountId),
+              eq(auditLog.entity, "account"),
+              eq(auditLog.action, "set_privacy"),
+              // A transition only: a redundant private → private switch does not restart the era.
+              sql`json_valid(${auditLog.before}) AND json_extract(${auditLog.before}, '$.isPrivate') = 0`,
+              sql`json_valid(${auditLog.after}) AND json_extract(${auditLog.after}, '$.isPrivate') = 1`,
+            ),
+          )
+          .orderBy(desc(auditLog.at), desc(auditLog.id))
+          .limit(1)
+          .get();
+        const since =
+          flip === undefined
+            ? undefined
+            : sql`(${auditLog.at} > ${flip.at} OR (${auditLog.at} = ${flip.at} AND ${auditLog.id} > ${flip.id}))`;
+        orm
+          .update(auditLog)
+          .set({ personId })
+          .where(and(eq(auditLog.accountId, accountId), isNull(auditLog.personId), since))
+          .run();
       },
     },
     jobs: createJobRepo(orm, () => guard(scope)),

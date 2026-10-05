@@ -7,17 +7,22 @@ import {
   balanceAsOf as accountBalanceAsOf,
   closeAccount,
   createAccount,
+  createActivity,
   createIdGenerator,
   createInstitution,
+  createPayee,
   createPerson,
   createTransaction,
+  deleteTransaction,
   getAccount,
+  getTransaction,
   listAccounts,
   listBalanceSnapshots,
   listInstitutions,
   personViewer,
   recordBalanceSnapshot,
   setPrivacy,
+  setSplitField,
   type UseCaseContext,
   updateAccount,
   updateInstitution,
@@ -178,9 +183,9 @@ describe("updateAccount", () => {
     });
   });
 
-  it("moves the pool to the sole owner when edited down to one person", () => {
+  it("moves the pool to the sole owner when the other removes themself", () => {
     const id = make(as(a));
-    expect(updateAccount(as(a), { id, owners: own(a) }).pool).toBe(a);
+    expect(updateAccount(as(b), { id, owners: own(a) }).pool).toBe(a);
   });
 
   it("refuses another currency, a type change, bad owners and a private account's second owner", () => {
@@ -197,6 +202,21 @@ describe("updateAccount", () => {
       expect(() => updateAccount(as(a), input as never)).toThrow(code("Validation"));
     }
     expect(updateAccount(as(a), { id, currency: "AUD" }).currency).toBe("AUD");
+  });
+
+  it("lets a person remove only themself from the owners; the system may remove anyone", () => {
+    const id = make(as(a));
+    expect(() => updateAccount(as(a), { id, owners: own(a) })).toThrow(
+      expect.objectContaining({
+        code: "Validation",
+        message: "You can only remove yourself from an account's owners",
+      }),
+    );
+    expect(getAccount(as(a), { id }).owners).toEqual(joint());
+    expect(auditFor("account", id).map((row) => row.action)).toEqual(["create"]);
+    expect(updateAccount(as(b), { id, owners: own(a) }).owners).toEqual(own(a));
+    const other = make(as(a));
+    expect(updateAccount(sys, { id: other, owners: own(b) }).owners).toEqual(own(b));
   });
 
   it("reopens an account when closedOn is cleared", () => {
@@ -248,13 +268,76 @@ describe("setPrivacy", () => {
   it("is refused with Validation for a two-owner account, until it is edited down", () => {
     const id = make(as(a));
     expect(() => setPrivacy(as(a), { id, isPrivate: true })).toThrow(code("Validation"));
-    updateAccount(as(a), { id, owners: own(a) });
+    updateAccount(as(b), { id, owners: own(a) });
     expect(setPrivacy(as(a), { id, isPrivate: true })).toMatchObject({ isPrivate: true, pool: a });
   });
 
   it("lets a person make only their own account private", () => {
     const id = make(as(a), { owners: own(b) });
     expect(() => setPrivacy(as(a), { id, isPrivate: true })).toThrow(code("Validation"));
+  });
+
+  it("is refused with Conflict while a live split is for the partner", () => {
+    const id = make(as(a), { owners: own(a) });
+    const t = txn(as(a), id, "2026-09-01", -100);
+    const splitId = getTransaction(as(a), { id: t }).splits[0]?.id ?? "";
+    const set = (value: string) =>
+      setSplitField(as(a), { transactionId: t, splitId, field: "beneficiary", value });
+    set(b);
+    expect(() => setPrivacy(as(a), { id, isPrivate: true })).toThrow(code("Conflict"));
+    expect(getAccount(as(a), { id }).isPrivate).toBe(false);
+    set(a);
+    expect(setPrivacy(as(a), { id, isPrivate: true }).isPrivate).toBe(true);
+  });
+
+  it("refuses public while owner-scoped rows are in use, naming them, then scopes the history", () => {
+    const id = make(as(a), { isPrivate: true, owners: own(a) });
+    const payee = createPayee(as(a), { name: "Chemist", originAccountId: id });
+    const activity = createActivity(as(a), { name: "Bali", originAccountId: id });
+    const t = createTransaction(as(a), {
+      accountId: id,
+      postedOn: "2026-09-01",
+      amountCents: -100,
+      description: "x",
+      payeeId: payee.id,
+    });
+    const splitId = getTransaction(as(a), { id: t }).splits[0]?.id ?? "";
+    setSplitField(as(a), { transactionId: t, splitId, field: "activity", value: activity.id });
+    const refused = (() => {
+      try {
+        setPrivacy(as(a), { id, isPrivate: false });
+      } catch (error) {
+        return error as { code: string; message: string; details: unknown };
+      }
+      return undefined;
+    })();
+    expect(refused?.code).toBe("Conflict");
+    expect(refused?.message).toContain('payee "Chemist", activity "Bali"');
+    expect(refused?.details).toEqual({
+      payees: [{ id: payee.id, name: "Chemist" }],
+      tags: [],
+      activities: [{ id: activity.id, name: "Bali" }],
+      owners: [{ personId: a, displayName: "A" }],
+    });
+    expect(getAccount(as(a), { id }).isPrivate).toBe(true);
+    deleteTransaction(as(a), { id: t });
+    expect(setPrivacy(as(a), { id, isPrivate: false }).isPrivate).toBe(false);
+    const scopes = db
+      .prepare("SELECT action, person_id FROM audit_log WHERE account_id = ? ORDER BY at, id")
+      .all(id) as { action: string; person_id: string | null }[];
+    expect(scopes.at(-1)).toEqual({ action: "set_privacy", person_id: null });
+    expect(scopes.slice(0, -1).every((row) => row.person_id === a)).toBe(true);
+  });
+
+  it("leaves an already public account and its history alone", () => {
+    const id = make(as(a));
+    txn(as(a), id, "2026-09-01", -100);
+    expect(setPrivacy(as(b), { id, isPrivate: false }).isPrivate).toBe(false);
+    const scoped = db
+      .prepare("SELECT count(*) FROM audit_log WHERE account_id = ? AND person_id IS NOT NULL")
+      .pluck()
+      .get(id);
+    expect(scoped).toBe(0);
   });
 
   it("makes an account public with no split rule", () => {

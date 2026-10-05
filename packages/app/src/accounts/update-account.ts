@@ -3,11 +3,13 @@ import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
-import type { AccountRow } from "../ports/unit-of-work.ts";
+import type { AccountOwnerRow, AccountRow } from "../ports/unit-of-work.ts";
+import type { Viewer } from "../viewer.ts";
 import { write } from "../write.ts";
 import {
   dayInput,
   idInput,
+  type OwnersInput,
   ownerRows,
   ownersInput,
   requireDatesInOrder,
@@ -41,7 +43,8 @@ export type UpdateAccountInput = z.input<typeof updateAccountInput>;
  * `accounts.updateAccount`: changes the fields it is given (an omitted field stays; `null` clears
  * an institution or date). The type, currency and privacy never change here: the currency must
  * match, and `setPrivacy` owns privacy. Clearing `closedOn` reopens the account. Owners are
- * replaced as a whole and take effect from the next open period (AD-26). Another person's
+ * replaced as a whole and take effect from the next open period (AD-26); a person may remove
+ * only themselves from them, never another owner (the system viewer is exempt). Another person's
  * private account is `NotFound`. Audited as one `update` of `account` with its `accountId`.
  */
 export function updateAccount(ctx: UseCaseContext, input: UpdateAccountInput): AccountView {
@@ -56,6 +59,7 @@ export function updateAccount(ctx: UseCaseContext, input: UpdateAccountInput): A
     if (parsed.owners !== undefined) {
       validateOwners(parsed.owners, before.isPrivate, ctx.viewer);
       requireKnownPeople(tx, parsed.owners);
+      requireOnlySelfRemoved(ctx.viewer, beforeOwners, parsed.owners);
     }
     const institutionId =
       parsed.institutionId === undefined
@@ -91,4 +95,23 @@ export function updateAccount(ctx: UseCaseContext, input: UpdateAccountInput): A
     });
     return accountView(after, afterOwners);
   });
+}
+
+/**
+ * Throws `Validation` when a person's new owner list drops anyone but themselves: only a person
+ * can remove themselves from an account's owners (epic 2 retro P1). The system viewer is exempt,
+ * as it is from `validateOwners`.
+ */
+function requireOnlySelfRemoved(
+  viewer: Viewer,
+  before: readonly AccountOwnerRow[],
+  owners: OwnersInput,
+): void {
+  if (viewer.kind !== "person") return;
+  const kept = new Set(owners.map((owner) => owner.personId));
+  for (const owner of before) {
+    if (!kept.has(owner.personId) && owner.personId !== viewer.personId) {
+      throw new AppError("Validation", "You can only remove yourself from an account's owners");
+    }
+  }
 }

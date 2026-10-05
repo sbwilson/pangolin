@@ -13,6 +13,7 @@ import {
   createTag,
   createTransaction,
   createTransferGroup,
+  deleteTransaction,
   fixedClockAt,
   hideTransactionName,
   personViewer,
@@ -819,19 +820,81 @@ describe("/api/accounts", () => {
     expect((await send(db, "GET", `/api/accounts/${joint}/balance?asOf=`)).status).toBe(400);
   });
 
-  it("makes an account private only when no live split is shared", async () => {
+  it("lets a person remove only themself from the owners, with a Validation body", async () => {
     const db = openDb();
-    const { joint, mine } = seed(db);
-    expect(
-      (
-        await send(db, "PATCH", `/api/accounts/${joint}`, {
-          owners: [{ personId: alex, shareBp: 10000 }],
-        })
-      ).status,
-    ).toBe(200);
-    expect(
-      (await send(db, "POST", `/api/accounts/${joint}/privacy`, { isPrivate: true })).status,
-    ).toBe(409);
+    const { joint, sam, sys } = seed(db);
+    type Body = { error: { code: string; message: string } };
+    const removeSam = await send(db, "PATCH", `/api/accounts/${joint}`, {
+      owners: [{ personId: alex, shareBp: 10000 }],
+    });
+    expect(removeSam.status).toBe(400);
+    expect((await removeSam.json()) as Body).toEqual({
+      error: {
+        code: "Validation",
+        message: "You can only remove yourself from an account's owners",
+      },
+    });
+    const owners = (id: string) =>
+      db.prepare("SELECT person_id FROM account_owner WHERE account_id = ?").pluck().all(id);
+    expect(owners(joint)).toHaveLength(2);
+    const other = createAccount(sys, {
+      name: "Other joint",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [
+        { personId: alex, shareBp: 5000 },
+        { personId: sam, shareBp: 5000 },
+      ],
+    });
+    const leave = await send(db, "PATCH", `/api/accounts/${other}`, {
+      owners: [{ personId: sam, shareBp: 10000 }],
+    });
+    expect(leave.status).toBe(200);
+    expect(owners(other)).toEqual([sam]);
+  });
+
+  it("guards both privacy switches with Conflict bodies", async () => {
+    const db = openDb();
+    const { mine, sys } = seed(db);
+    type Body = { error: { code: string; message: string; details?: unknown } };
+    const solo = createAccount(sys, {
+      name: "Solo",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [{ personId: alex, shareBp: 10000 }],
+    });
+    createTransaction(sys, {
+      accountId: solo,
+      postedOn: "2026-09-01",
+      amountCents: -1,
+      description: "s",
+    });
+    const toPrivate = await send(db, "POST", `/api/accounts/${solo}/privacy`, { isPrivate: true });
+    expect(toPrivate.status).toBe(409);
+    expect(((await toPrivate.json()) as Body).error.code).toBe("Conflict");
+
+    const payee = createPayee(sys, { name: "Chemist", originAccountId: mine });
+    const used = createTransaction(sys, {
+      accountId: mine,
+      postedOn: "2026-09-01",
+      amountCents: -1,
+      description: "p",
+      payeeId: payee.id,
+    });
+    const toPublic = await send(db, "POST", `/api/accounts/${mine}/privacy`, { isPrivate: false });
+    expect(toPublic.status).toBe(409);
+    const body = (await toPublic.json()) as Body;
+    expect(body.error.code).toBe("Conflict");
+    expect(body.error.message).toContain('payee "Chemist"');
+    expect(body.error.details).toEqual({
+      payees: [{ id: payee.id, name: "Chemist" }],
+      tags: [],
+      activities: [],
+      owners: [{ personId: alex, displayName: "Alex" }],
+    });
+    deleteTransaction(sys, { id: used });
     expect(
       (await send(db, "POST", `/api/accounts/${mine}/privacy`, { isPrivate: false })).status,
     ).toBe(200);

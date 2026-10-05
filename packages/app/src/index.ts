@@ -435,6 +435,8 @@ export {
   type PayeeAliasRow,
   type PayeeRepo,
   type PayeeRow,
+  type ScopedReference,
+  type ScopedReferences,
   type ScopedRows,
   SPLIT_SOURCES,
   type SplitRow,

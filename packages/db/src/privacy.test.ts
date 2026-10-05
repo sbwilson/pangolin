@@ -19,10 +19,12 @@ import {
   listReviewItems,
   listTransactions,
   personViewer,
+  setPrivacy,
   setSplitField,
   setSplits,
   setSplitTags,
   type UseCaseContext,
+  updateAccount,
   updateTransaction,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
@@ -150,7 +152,7 @@ describe("hidden names", () => {
     expect(raw(as(a))).toEqual([["x", "P1", "Shop", "logo1"]]);
   });
 
-  it("does not hide anything in a private account, which the partner never sees", () => {
+  it("keeps a private account's rows from the partner entirely; the hider sees their name", () => {
     const id = createTransaction(as(a), txn(privateA, "private"));
     hide(id, "2027-03-12", a);
     expect(names(as(b))).toEqual([]);
@@ -158,6 +160,29 @@ describe("hidden names", () => {
       undefined,
     );
     expect(listTransactions(as(a))[0]?.nameHidden).toBe(false);
+  });
+
+  it("keeps a partner's hiding after they leave and the account turns private (takeover)", () => {
+    const id = createTransaction(as(b), txn(shared, "Gift for Alex"));
+    hideTransactionName(as(b), { id, until: "2027-03-12" });
+    const splitId = getTransaction(as(b), { id }).splits[0]?.id ?? "";
+    setSplitField(as(b), { transactionId: id, splitId, field: "beneficiary", value: a });
+    expect(() =>
+      updateAccount(as(a), { id: shared, owners: [{ personId: a, shareBp: 10000 }] }),
+    ).toThrow(expect.objectContaining({ code: "Validation" }));
+    updateAccount(as(b), { id: shared, owners: [{ personId: a, shareBp: 10000 }] });
+    setPrivacy(as(a), { id: shared, isPrivate: true });
+    const row = listTransactions(as(a)).find((t) => t.id === id);
+    expect(row?.descriptionRaw).toBe("Hidden until 12 Mar 2027");
+    expect(row?.nameHidden).toBe(true);
+    const audit = listAudit(as(a)).filter((r) => r.entityId === id);
+    expect(audit.length).toBeGreaterThan(0);
+    expect(audit.every((r) => r.hiddenUntil === "2027-03-12")).toBe(true);
+    expect(JSON.stringify(listAudit(as(a)))).not.toContain("Gift for Alex");
+    expect(listTransactions(as(a, "2027-03-12")).find((t) => t.id === id)?.descriptionRaw).toBe(
+      "Gift for Alex",
+    );
+    expect(listTransactions(as(b)).length).toBe(0);
   });
 
   it("nulls a scoped payee's id for the other person", () => {
@@ -241,6 +266,31 @@ describe("audit read", () => {
       JSON.parse(listAudit(as(b, "2027-03-12")).find((r) => r.entityId === id)?.after ?? "{}")
         .descriptionRaw,
     ).toBe("Surprise gift");
+  });
+
+  it("after joint, private, public: the partner keeps joint-era rows and flips only", () => {
+    const joint = createTransaction(as(a), txn(shared, "Joint era"));
+    const splitId = getTransaction(as(a), { id: joint }).splits[0]?.id ?? "";
+    setSplitField(as(a), { transactionId: joint, splitId, field: "beneficiary", value: a });
+    updateAccount(as(b), { id: shared, owners: [{ personId: a, shareBp: 10000 }] });
+    setPrivacy(as(a), { id: shared, isPrivate: true });
+    const privateEra = createTransaction(as(a), txn(shared, "Private era"));
+    setPrivacy(as(a), { id: shared, isPrivate: false });
+    const scopes = db
+      .prepare(
+        "SELECT entity_id, action, person_id FROM audit_log WHERE account_id = ? ORDER BY at, id",
+      )
+      .all(shared) as { entity_id: string; action: string; person_id: string | null }[];
+    expect(
+      scopes.filter((r) => r.person_id !== null).map((r) => [r.entity_id, r.person_id]),
+    ).toEqual([[privateEra, a]]);
+    const forB = listAudit(as(b)).filter((r) => r.accountId === shared);
+    expect(forB.some((r) => r.entityId === privateEra)).toBe(false);
+    expect(forB.some((r) => r.entityId === joint)).toBe(true);
+    expect(forB.filter((r) => r.action === "set_privacy")).toHaveLength(2);
+    expect(JSON.stringify(forB)).not.toContain("Private era");
+    const forA = listAudit(as(a)).filter((r) => r.accountId === shared);
+    expect(forA).toHaveLength(forB.length + 1);
   });
 
   it("redacts from an audit row's own before/after state once the live hide is gone", () => {
