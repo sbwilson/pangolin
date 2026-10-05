@@ -209,7 +209,7 @@ Mocks: [key-accounts.html](mockups/key-accounts.html) (grouped rows, one stale a
 
 | Component | Behavioural rules |
 |---|---|
-| **Account row** | Click opens Account detail (Loan detail for loans, Property detail for property rows). Rows group Cash · Savings · Cards · Loans, then a separate Properties card (from mock). Stale (newest import > 45 days old) shows the freshness caption in the warning colour and an "Import" shortcut. Private lock shows to the owner only. |
+| **Account row** | Click opens Account detail (Loan detail for loans, Property detail for property rows). Rows group Cash (transaction, offset) · Savings · Cards · Loans · Investments (brokerage, super) · Other (vehicle, other), then a separate Properties card (from mock). Stale (newest import > 45 days old) shows the freshness caption in the warning colour and an "Import" shortcut. Private lock shows to the owner only. |
 | **Loan detail** | Rules in § Loan Detail. |
 | **Settings section menu** | Side menu ("On this page") links jump to `/settings#<section>` and the highlight follows the scroll; the section in view is marked `aria-current="location"` (from mock); opening a URL with a hash scrolls to that card. Old `/settings/:section` links redirect to the anchor. |
 | **Settings card** | Content always readable; protected actions open the re-auth dialog first. One action per row (Remove, Change, Sign out, Make new codes); the card's footer caption names which actions ask you to confirm it's you (from mock). |

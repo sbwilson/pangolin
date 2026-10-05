@@ -42,6 +42,7 @@ All are settled.
 | Cover an expense (2026-10-05) | Large purchase draws the emergency fund, then Flexible, then Protected (warned); shortfall draws Flexible, then the emergency fund, then Protected (warned); split proposed by Pangolin, adjusted by us; one pool; audited; undoable. Replaces push-out (D2) |
 | Large withdrawal (2026-10-05) | A savings withdrawal at or above the pool threshold raises a review item |
 | Shortfall buffer divert (2026-10-05) | Kept as an alternative when the stage gives the buffer a share (D8) |
+| Hidden rows and search (2026-10-05) | A hidden-name row is excluded from the partner's search entirely, not only its name |
 
 ## Periods where spend exceeds income: option A chosen
 

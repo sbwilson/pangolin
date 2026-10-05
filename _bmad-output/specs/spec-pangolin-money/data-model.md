@@ -79,4 +79,4 @@ Queries never touch `account` or `transaction` directly. They go through `visibl
   - Only the name is hidden from the other partner: payee, description and merchant logo. They see "Hidden until 12 Mar 2027" instead.
   - Amount, date, category, tags and notes stay visible, so totals and reports stay correct.
   - Hiding lasts at most 12 months (`name_hidden_until`), then lifts automatically.
-  - Hidden names are excluded from the partner's search results and exports.
+  - A hidden-name row is excluded from the partner's search entirely (by name, amount, notes or any other field) and its name from exports; the owner still finds it.

@@ -90,6 +90,7 @@ Arrows point from a package to what it may import. Anything not drawn is forbidd
 - **Rule:**
   - Transactions are read through `visibleTxn(viewer)`, a SQL projection that sets payee, description and logo to null for the partner while `name_hidden_until > clock.today()`. Every filter, `GROUP BY`, `ORDER BY`, FTS5 search, rule or alias evaluation, and match-count preview runs on that projection.
   - `redact(viewer, rows)` runs once at the `app` boundary on everything leaving it: API responses, exports, audit-log reads and review items. It renders the placeholder "Hidden until <date>", including in the partner's own audit entries.
+  - Search excludes a hidden row from the partner's results entirely while it is hidden: no match by name, amount, notes or any other field. The owner's search is unaffected (2026-10-05).
   - Attachments on a hidden transaction stay hidden from the partner until the hiding expires.
   - Hiding expires at read time; no job clears it.
   - A transfer whose counterpart sits in the other partner's private account shows as "Transfer from <owner>". The partner can still infer the account exists by elimination; that residual is accepted.
