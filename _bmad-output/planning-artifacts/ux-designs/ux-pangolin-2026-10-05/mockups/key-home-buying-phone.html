@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pangolin · Home buying (phone)</title>
+<style>
+/* key-home-buying-phone — Planning › Home buying on phone (< md), full planner incl. sliders.
+   Governing spine sections:
+   EXPERIENCE.md § Foundation (phone in scope; full Home buying planner incl. sliders must work on phone)
+                 § Responsive & Platform (< md: bottom tab bar, single column, scenarios stack vertically)
+                 § IA › Phone shell (tabs Cash flow · Transactions · Needs review · Planning · More; Import in phone header [ASSUMPTION])
+                 § Accessibility Floor (tab bar and slider thumbs >= 44px touch target [ASSUMPTION]); § Home Buying Planner; Flow 3 (saved plan row)
+   DESIGN.md     § Components › Bottom tab bar (spine-only), Planning components; § Layout › Phone (16px gutter [ASSUMPTION])
+   Shown as three frames of one continuous scroll (same page, scrolled).
+*/
+:root{--background:#F6EFE6;--foreground:#2A1F17;--card:#FFFAF3;--muted:#F6EFE6;--muted-foreground:#6A594B;--border:#E3D6C5;--ring:#B85A1E;--primary:#A3441D;--primary-foreground:#FFFFFF;--accent:#F6E8DE;--destructive:#A3283A;--sidebar:#F6EFE6;--money-in:#3D6B2D;--money-out:#A3283A;--warning:#8A5600;--warning-bg:#F0E5D3;--person-simon:#2C6681;--person-carissa:#9C4277;--mascot-scale-1:#BD785C;--mascot-scale-2:#D1A28E;--mascot-ink:#1F2328;--chart-1:#6F8A3D;--chart-2:#B5562B;--chart-3:#D9A13B;--chart-4:#2E8C88;--chart-5:#C97B63;--chart-6:#8A5A7A;--chart-7:#7E6A4F;--chart-8:#4F5D85;--chart-9:#A3B18A}
+
+*{box-sizing:border-box}
+body{margin:0;background:#E7E0D6;color:var(--foreground);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;padding:32px 16px 72px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto}
+.lbl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#5E4F42;font-weight:600;margin:34px 0 10px}
+.lbl:first-child{margin-top:0}
+.intro{max-width:900px;margin:0 0 6px;color:#5E4F42;font-size:13px}
+.statehint{display:block;font-size:10.5px;color:var(--primary);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin:0 0 4px}
+/* frame */
+.browser{background:var(--background);border-radius:12px;overflow:hidden;border:1px solid #D6C9B8;box-shadow:0 24px 60px -24px rgba(60,40,20,.28)}
+.chrome{height:38px;background:#EFE6DA;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;position:relative}
+.dots i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:7px;background:#DCCFBE}
+.url{position:absolute;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:7px;padding:3px 110px;font-size:12px;color:var(--muted-foreground);white-space:nowrap}
+.app{display:grid;grid-template-columns:232px minmax(0,1fr)}
+/* sidebar */
+.side{background:var(--sidebar);border-right:1px solid var(--border);padding:20px 14px 14px;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:9px;font-weight:650;font-size:16px;padding:0 8px 20px}
+.nav{display:flex;align-items:center;gap:11px;padding:7px 10px;border-radius:8px;color:var(--muted-foreground);margin-bottom:2px;font-size:14px}
+.nav.on{background:var(--accent);color:var(--primary);font-weight:600}
+.nbadge{margin-left:auto;background:var(--warning-bg);color:var(--warning);font-size:11px;border-radius:9999px;padding:1px 7px;font-weight:600;font-variant-numeric:tabular-nums}
+.nbadge.zero{background:var(--accent);color:var(--primary);width:20px;height:20px;padding:0;display:grid;place-items:center}
+.navsep{height:1px;background:var(--border);margin:10px 10px 12px}
+.navlbl{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);padding:0 10px 6px}
+.sidefoot{margin-top:auto;padding-top:18px}
+.me{display:flex;align-items:center;gap:10px;padding:12px 10px 6px;border-top:1px solid var(--border);margin-top:8px;font-size:13px}
+.me small{display:block;color:var(--muted-foreground);font-size:12px}
+.signout{display:flex;align-items:center;gap:8px;padding:4px 10px;color:var(--muted-foreground);font-size:13px}
+.pd{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
+.pd.simon{background:var(--person-simon)}.pd.carissa{background:var(--person-carissa)}
+/* main + header */
+main{padding:28px 36px 36px;min-width:0}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:18px}
+.hl{min-width:0}
+.greet{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted-foreground);margin-bottom:2px}
+.head h1{margin:0;font-size:26px;font-weight:600;line-height:1.15;letter-spacing:-.01em}
+.fresh{margin:5px 0 0;color:var(--muted-foreground);font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ctrl{display:flex;gap:8px;align-items:center;flex:none}
+.drange{display:flex;gap:6px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--card);color:var(--foreground);border-radius:8px;padding:6px 12px;font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.btn.ic{padding:6px 7px}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:var(--primary-foreground);font-weight:600}
+.btn.sec{background:var(--card)}
+.seg{display:inline-flex;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:2px;white-space:nowrap}
+.seg span{padding:4px 10px;border-radius:6px;font-size:12.5px;color:var(--muted-foreground)}
+.seg span.on{background:var(--card);color:var(--foreground);box-shadow:0 1px 2px rgba(0,0,0,.08);font-weight:600}
+.link{color:var(--primary);font-size:13px;font-weight:600;white-space:nowrap}
+.pchip{display:inline-flex;align-items:center;gap:6px;background:var(--background);border:1px solid var(--border);border-radius:9999px;padding:1px 9px;font-size:12px;color:var(--foreground)}
+/* cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 22px}
+.card h3{margin:0;font-size:15px;font-weight:600;line-height:1.3}
+.card .sub{margin:2px 0 0;color:var(--muted-foreground);font-size:13px}
+.cardhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
+.cardhead .ctrl{flex-wrap:wrap;justify-content:flex-end}
+.foot{font-size:12px;color:var(--muted-foreground);border-top:1px solid var(--border);margin-top:8px;padding-top:10px}
+.mt{margin-top:16px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.kpis.k3{grid-template-columns:repeat(3,1fr)}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px}
+.kpi .k{font-size:12px;color:var(--muted-foreground)}
+.kpi .v{font-size:24px;font-weight:600;line-height:1.2;margin-top:4px;font-variant-numeric:tabular-nums;letter-spacing:-.01em;white-space:nowrap}
+.kpi .n{font-size:12px;color:var(--muted-foreground);margin-top:2px}
+.v.in{color:var(--money-in)}.v.out{color:var(--money-out)}.v.acc{color:var(--primary)}
+.share{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 16px;font-size:13px;color:var(--muted-foreground)}
+.share>span:first-child{display:flex;align-items:center;gap:8px}
+.share b{color:var(--foreground);font-weight:600;font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:16px;margin-top:16px}
+.grid2.even{grid-template-columns:1fr 1fr}
+.amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.amt.in{color:var(--money-in);font-weight:600}.amt.out{color:var(--money-out)}
+.chip{display:inline-flex;align-items:center;font-size:12px;border:1px solid var(--border);color:var(--muted-foreground);border-radius:6px;padding:1px 7px;white-space:nowrap}
+.chip.unc{color:var(--warning);background:var(--warning-bg);border-color:var(--warning-bg)}
+.sq{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}
+.warnline{display:flex;align-items:center;gap:10px;background:var(--warning-bg);color:var(--warning);border-radius:8px;padding:8px 12px;font-size:13px}
+.warnline>b{width:18px;height:18px;border-radius:50%;border:1.6px solid currentColor;display:grid;place-items:center;font-size:11px;flex:none}
+.warnline .link{margin-left:auto;color:var(--warning);text-decoration:underline}
+.stat{background:var(--background);border:1px solid var(--border);border-radius:10px;padding:10px 14px}
+.stat .k{font-size:12px;color:var(--muted-foreground)}
+.stat .v{font-size:19px;font-weight:600;line-height:1.25;white-space:nowrap;font-variant-numeric:tabular-nums}
+.stat .n{font-size:12px;color:var(--muted-foreground)}
+.track{height:8px;background:var(--border);border-radius:9999px;overflow:hidden}
+.track i{display:block;height:100%;border-radius:9999px}
+/* celebration */
+.party{position:relative;overflow:hidden;background:var(--accent);border-radius:12px;padding:8px 14px 8px 8px;display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.party .conf{position:absolute;inset:0;pointer-events:none}
+.party .conf i{position:absolute;width:8px;height:3px;border-radius:2px;opacity:.75}
+.party .conf i.c{width:5px;height:5px;border-radius:50%}
+.party .conf i.s{width:7px;height:7px;background:transparent!important;border:1.5px solid;border-radius:2px}
+.party .txt{position:relative}
+.party b{font-size:15px;font-weight:600}
+.party p{margin:0;color:var(--foreground);font-size:13px}
+.party .count{position:relative;margin-left:auto;background:var(--card);border-radius:9999px;padding:4px 12px;font-size:13px;font-variant-numeric:tabular-nums;color:var(--muted-foreground);white-space:nowrap}
+.party .count strong{color:var(--primary)}
+.party .x{position:relative;color:var(--muted-foreground);display:grid;place-items:center}
+/* sankey */
+.sankey{display:block}
+.sankey .sk-n{font:600 12.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;fill:var(--foreground)}
+.sankey .sk-v{font:400 11.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;fill:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.sankey .ld{stroke:var(--border);fill:none}
+/* phone */
+.phones{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.phonewrap{margin:0}
+.pcap{font-size:12px;color:#5E4F42;margin:0 0 8px;font-weight:600}
+.phone{width:390px;height:844px;border-radius:46px;border:10px solid #2A1F17;background:var(--background);position:relative;overflow:hidden;box-shadow:0 24px 60px -24px rgba(60,40,20,.35);display:flex;flex-direction:column}
+.status{height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 26px 0 30px;font-size:14px;flex:none}
+.status span{font-size:11px;letter-spacing:1px}
+.pscroll{flex:1;overflow:hidden;padding:6px 16px 16px}
+.tabs{flex:none;display:grid;grid-template-columns:repeat(5,1fr);background:var(--card);border-top:1px solid var(--border);padding:6px 4px 24px}
+.tab{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--muted-foreground);min-height:44px;justify-content:center;text-align:center;line-height:1.15}
+.tab.on{color:var(--primary);font-weight:600}
+.ti{position:relative;display:block}
+.tbadge{position:absolute;top:-5px;left:15px;background:var(--warning-bg);color:var(--warning);font-size:10px;border-radius:9999px;padding:0 5px;font-weight:600;border:1.5px solid var(--card)}
+.tbadge.zero{background:var(--accent);color:var(--primary);width:16px;height:16px;padding:0;display:grid;place-items:center}
+.homebar{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);width:130px;height:5px;border-radius:3px;background:#2A1F17}
+
+
+.scope{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted-foreground);border:1px solid var(--border);border-radius:6px;padding:1px 7px;white-space:nowrap}
+.stag{display:inline-block;font-size:12px;color:var(--muted-foreground);background:var(--background);border-radius:6px;padding:1px 7px;white-space:nowrap}
+.btn.dis{opacity:.5}
+.btn.full{width:100%;justify-content:center;padding:10px 12px;font-size:14px}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted-foreground)}
+.focus{box-shadow:0 0 0 2px var(--background),0 0 0 4px var(--ring)}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.field>label,.field>.fl{font-size:13px;font-weight:600}
+.input{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:14px;min-height:36px;font-variant-numeric:tabular-nums}
+.input .pre,.input .suf{color:var(--muted-foreground)}
+.input .chev{margin-left:auto;color:var(--muted-foreground);display:flex}
+.input.dis{opacity:.55}
+.hint{font-size:13px;color:var(--muted-foreground);line-height:1.4}
+.cap{font-size:12px;color:var(--muted-foreground);line-height:1.35}
+.switch{display:inline-block;width:36px;height:20px;border-radius:9999px;background:var(--border);position:relative;flex:none}
+.switch::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--card);box-shadow:0 1px 2px rgba(0,0,0,.18)}
+.switch.on{background:var(--primary)}.switch.on::after{left:18px}
+.toast{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px 10px 16px;font-size:13.5px;box-shadow:0 10px 30px -10px rgba(60,40,20,.3)}
+.overlay{position:absolute;inset:38px 0 0 0}
+.scrim{position:absolute;inset:0;background:rgba(42,31,23,.38)}
+.rel{position:relative}
+.ok{color:var(--money-in)}
+.mut{color:var(--muted-foreground)}.wrn{color:var(--warning)}
+
+.note{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted-foreground);margin:-6px 0 16px}
+.note svg{flex:none}
+.hbgrid{display:grid;grid-template-columns:1.1fr 1fr;gap:16px}
+.lead{font-size:14px;color:var(--muted-foreground)}
+.hero{font-size:52px;font-weight:600;letter-spacing:-.025em;line-height:1.05;margin:4px 0 6px;font-variant-numeric:tabular-nums}
+.climax{font-size:15px;margin:0 0 4px}
+.climax b{font-weight:600}
+.dep{font-size:13px;color:var(--muted-foreground);margin:0}
+.dep b{color:var(--foreground);font-weight:600}
+.rate{margin-top:16px}
+.rate .rl{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600;margin-bottom:8px}
+.slider{display:grid;grid-template-columns:1fr 92px;gap:14px;align-items:center}
+.sl{position:relative;height:20px}
+.sl .t{position:absolute;left:0;right:0;top:8px;height:4px;border-radius:9999px;background:var(--border)}
+.sl .r{position:absolute;left:0;top:8px;height:4px;border-radius:9999px;background:var(--primary)}
+.sl .th{position:absolute;top:1px;width:18px;height:18px;margin-left:-9px;border-radius:50%;background:var(--card);border:2px solid var(--primary);box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.sl .mm{position:absolute;top:22px;font-size:11.5px;color:var(--muted-foreground)}
+.slider .input{justify-content:flex-end;padding:5px 10px;min-height:32px}
+.pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:22px}
+.pill{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:9999px;padding:4px 12px;font-size:13px;font-variant-numeric:tabular-nums;background:var(--card)}
+.pill small{font-size:11px;opacity:.85}
+.pill.on{background:var(--primary);border-color:var(--primary);color:var(--primary-foreground);font-weight:600}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.stat .v.p{color:var(--primary)}
+.sb{display:grid;grid-template-columns:96px 1fr 74px;gap:10px;align-items:center;font-size:13px;margin:12px 0;font-variant-numeric:tabular-nums;color:var(--muted-foreground)}
+.sb .tr{height:10px;background:var(--background);border:1px solid var(--border);border-radius:9999px;overflow:hidden}
+.sb .tr i{display:block;height:100%;background:var(--border);border-radius:9999px}
+.sb.on{color:var(--foreground);font-weight:600}.sb.on .tr i{background:var(--primary)}
+.sb.stress .tr i{background:repeating-linear-gradient(135deg,var(--border) 0 4px,var(--background) 4px 8px)}
+.sb b{text-align:right;font-weight:600;color:var(--foreground)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.achip{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;background:var(--background);border:1px solid var(--border);border-radius:6px;padding:4px 9px;color:var(--foreground);white-space:nowrap}
+.achip .k{color:var(--muted-foreground)}
+.achip .dot{width:6px;height:6px;border-radius:50%;background:var(--primary)}
+.achip.pass{background:var(--accent);border-color:var(--accent);color:var(--primary);font-weight:600}
+.svc{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+.scen{display:grid;grid-template-columns:repeat(3,1fr) 150px;gap:16px}
+.sc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px}
+.sc.sel{border:2px solid var(--primary);padding:13px 17px}
+.sc .sh{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.sc .sh b{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--background);border:1px solid var(--border);font-size:12px}
+.sc.sel .sh b{background:var(--primary);color:var(--primary-foreground);border-color:var(--primary)}
+.sc .sh .nm{font-weight:600;font-size:14px}
+.sc .sh .ed{margin-left:auto;color:var(--muted-foreground);display:flex}
+.sc dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:13px}
+.sc dt{color:var(--muted-foreground)}
+.sc dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.sc .drv{margin-top:10px;font-size:12px;color:var(--primary);font-weight:600}
+.sc .pick{margin-top:10px;font-size:12px;color:var(--muted-foreground)}
+.addsc{border:1px dashed var(--border);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:13px;color:var(--muted-foreground);text-align:center;padding:12px}
+.ingrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px}
+.ingrid .field{margin-bottom:10px}
+.src{font-size:11.5px;color:var(--muted-foreground);font-weight:400;margin-left:6px}
+.src.pg{color:var(--primary)}
+.calc{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px}
+.prop .ph{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.prop .ph .ic{color:var(--muted-foreground);display:flex}
+.prop dl{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}
+.prop dt{font-size:12px;color:var(--muted-foreground)}
+.prop dd{margin:0;font-weight:600;font-variant-numeric:tabular-nums}
+.prop .res{font-size:13px;margin-top:10px}
+.propbox{background:var(--background);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.propbox+.propbox{margin-top:10px}
+.save{display:flex;gap:8px;align-items:center}
+.save .input{flex:1}
+.plan{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--border)}
+.plan .pn{font-size:15px;font-weight:600}
+.plan .pm{font-size:13px;color:var(--muted-foreground)}
+.plan .go{margin-left:auto;color:var(--muted-foreground);display:flex}
+.empty{font-size:13px;color:var(--muted-foreground);padding:14px 0 2px;border-top:1px solid var(--border);margin-top:14px}
+.sect{margin-top:16px}
+
+.phone .card{padding:14px 14px;border-radius:12px;margin-bottom:12px}
+.phone .hero{font-size:44px}
+.phone .two{grid-template-columns:1fr 1fr;gap:8px}
+.phone .stat{padding:8px 10px}
+.phone .stat .v{font-size:17px}
+.phone .sb{grid-template-columns:84px 1fr 60px;gap:8px}
+.phone .svc{grid-template-columns:1fr}
+.phone .scen{gap:10px}
+.phone .ingrid{grid-template-columns:1fr}
+.phone .slider{grid-template-columns:1fr 80px}
+.phone .sl{height:44px}
+.phone .sl .t,.phone .sl .r{top:20px}
+.phone .sl .th{top:10px!important}
+.phone .sl .mm{top:40px}
+.phone .pills{margin-top:16px}
+.phone .pill{min-height:32px}
+.phone .note{margin:0 0 12px;align-items:flex-start;font-size:12.5px}
+.phone .prop .ph{gap:8px}
+.phone .prop .ph span[style]{margin-left:0!important}
+.phone .save{flex-wrap:wrap}
+.phone .save .btn{width:100%;justify-content:center}
+.phone .cardhead{flex-wrap:wrap}
+.phead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin:4px 0 12px}
+.phead h1{margin:0;font-size:22px;font-weight:600;letter-spacing:-.01em;line-height:1.2}
+.phead .fresh{font-size:12px}
+.phead .btn{padding:6px 10px}
+.shift{display:block}
+.phone .achip{white-space:normal}
+.wrap{max-width:1780px}
+.phones{gap:36px}
+
+</style></head><body><div class="wrap">
+<p class="intro">Home buying on a phone: the whole planner, sliders included, in one column with the bottom tab bar (Planning active). Five frames of one scroll. The slider thumb is drawn 24px with a 44px touch target; scenarios stack. Frame 5 shows the saved-plan list as it looks on a later visit.</p>
+<div class="lbl">Home buying · phone — full planner, one continuous scroll</div>
+<div class="phones"><figure class="phonewrap"><div class="pcap">1 · Top: the climax, slider and rate pills</div><div class="phone"><div class="status"><b>9:41</b><span>&#9679;&#9679;&#9679; 5G &#9646;</span></div><div class="pscroll"><div class="shift" style="margin-top:-0px"><div class="phead"><div><div class="greet"><svg class="pango" width="24" height="17" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>G&#8217;day, Simon</span></div><h1>How much can we borrow?</h1><p class="fresh">Estimates, not a lender&#8217;s offer (sadly)</p></div><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Import</span></div><div class="note"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 19a5.5 5.5 0 0 1 11 0M10.5 19a5.5 5.5 0 0 1 11 0"/></svg><span>Built only from what you can both see: shared accounts, the shared deposit goal and shared properties. Private accounts never feed a plan.</span></div><div class="card">
+ <div class="cap">Comfortably, without living on two-minute noodles</div><div class="lead" style="color:var(--foreground);margin-top:2px">You could borrow about</div>
+ <div class="hero">$780,000</div>
+ <p class="climax">At 6.09% you&#8217;d still have <b class="acc">$3,506 a fortnight</b> to live on.</p>
+ <p class="dep">That&#8217;s a place up to about <b>$943,000</b> with your $163,000 deposit.</p>
+ <div class="rate"><div class="rl"><span>Interest rate</span><span class="cap" style="font-weight:400">Slide or type</span></div><div class="slider"><div class="sl" role="slider" aria-valuemin="4" aria-valuemax="10" aria-valuenow="6.09" aria-label="Interest rate"><i class="t"></i><i class="r" style="width:34.8%"></i><i class="th" style="left:34.8%;width:24px;height:24px;margin-left:-12px;top:-2px"></i><span class="mm" style="left:0">4%</span><span class="mm" style="right:0">10%</span></div><div class="input"><span>6.09</span><span class="suf">%</span></div></div></div>
+ <div class="pills" role="group" aria-label="Quick rates"><span class="pill">5.59%</span><span class="pill on">6.09%<small>today</small></span><span class="pill">6.59%</span><span class="pill">7.09%</span></div>
+ <div class="two">
+  <div class="stat"><div class="k">Repayments</div><div class="v">$4,722 / mo</div><div class="n">or $2,179 a fortnight, lined up with pay day</div></div>
+  <div class="stat"><div class="k">Left for actual life</div><div class="v p">$7,596 / mo</div><div class="n">After rates &amp; insurance. Room for the odd smashed avo.</div></div>
+ </div>
+</div><div class="card"><h3>What&#8217;s left if rates misbehave</h3><p class="sub" style="margin-bottom:4px">Monthly, after repayments and home costs</p>
+ <div class="sb on"><span>A · 6.09%</span><div class="tr"><i style="width:100.0%"></i></div><b>$7,596</b></div><div class="sb"><span>B · 7.09%</span><div class="tr"><i style="width:93.2%"></i></div><b>$7,081</b></div><div class="sb"><span>C · 8.09%</span><div class="tr"><i style="width:86.2%"></i></div><b>$6,546</b></div><div class="sb stress"><span>+3% · 9.09%</span><div class="tr"><i style="width:78.9%"></i></div><b>$5,991</b></div>
+ <div class="chips" style="margin-top:14px"><span class="achip pass"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Survives a 3% rate jump (9.09%)</span></div>
+ <p class="cap" style="margin:12px 0 0">The hatched row is the lender&#8217;s test rate: Scenario A plus 3%. Every row keeps the same loan, $780,000 over 30 years.</p>
+</div><div class="card">
+ <div class="cardhead"><div><h3>Lender-style estimate</h3><p class="sub">What a bank is likely to say, using rules lenders use. Estimates, not a lender&#8217;s offer (sadly). Click any assumption to change it.</p></div></div>
+ <div class="chips">
+  <span class="achip"><span class="k">Assessment buffer</span>+3% (tests at 9.09%)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Living expenses</span>higher of yours ($3,832) or HEM ($3,410)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Rent counted at</span>80%<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Card limits</span>3.8% a month ($10,000 → $380)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Debt-to-income cap</span>6×<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+ </div>
+ <div class="svc">
+  <div class="stat"><div class="k">Simple calculator</div><div class="v">$812,000</div><div class="n">Income, spending and rate only</div></div>
+  <div class="stat"><div class="k">Lender-style estimate</div><div class="v p">$780,000</div><div class="n">Used for the number above</div></div>
+  <div class="stat"><div class="k">Debt-to-income</div><div class="v">5.1×</div><div class="n">Under the 6× cap, incl. the 35 Hawthorne St loan</div></div>
+ </div>
+</div><div class="card"><div class="cardhead"><div><h3>Scenarios</h3><p class="sub">Side by side. Pick one to drive the big number.</p></div></div><div class="scen" style="grid-template-columns:1fr"><div class="sc sel"><div class="sh"><b>A</b><span class="nm">Today&#8217;s rate</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>6.09%</dd><dt>Repayments</dt><dd>$4,722 / mo</dd><dt>Left for actual life</dt><dd>$3,506 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ <div class="drv">Drives the number above</div></div><div class="sc"><div class="sh"><b>B</b><span class="nm">Plus 1%</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>7.09%</dd><dt>Repayments</dt><dd>$5,237 / mo</dd><dt>Left for actual life</dt><dd>$3,268 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ </div><div class="sc"><div class="sh"><b>C</b><span class="nm">Plus 2%</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>8.09%</dd><dt>Repayments</dt><dd>$5,772 / mo</dd><dt>Left for actual life</dt><dd>$3,021 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ </div></div></div><div class="card"><div class="cardhead"><div><h3>Properties you already own</h3><p class="sub">Use the equity or model selling. The big number updates as you flip.</p></div><span class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add a property</span></div><div class="propbox prop"><div class="ph"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/></svg></span><b>35 Hawthorne St</b><span style="margin-left:auto"><span class="seg" role="group" aria-label="35 Hawthorne St in this plan"><span class="on">Use equity</span><span class="">Sell it</span></span></span></div><dl style="grid-template-columns:1fr 1fr"><div><dt>Value</dt><dd>$760,000</dd></div><div><dt>Loan</dt><dd>$493,241</dd></div><div><dt>Rent</dt><dd>$2,080 / mo</dd></div><div><dt>Yours</dt><dd>100% Simon</dd></div></dl><div class="res">Usable equity <b>$114,800</b> (80% of value, less the loan) goes to the deposit. Rent counts as income at 80%.</div></div></div><div class="card"><div class="cardhead"><div><h3>Saved plans</h3><p class="sub">Shared: either of you can reopen a plan and see it beside today&#8217;s numbers.</p></div></div>
+ <div class="save"><div class="input focus">Two months on, Dec 2026</div><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></svg>Save plan</span></div>
+ <div class="plan"><div><div class="pn">First look, Oct 2026</div><div class="pm">Saved 5 Oct 2026, 9:42 pm · borrow ~$780,000 at 6.09%</div></div><span class="go"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></div>
+</div><div class="card"><div class="cardhead"><div><h3>What we&#8217;re working with</h3><p class="sub">Pulled from your shared data where we can. Change anything.</p></div></div>
+ <div class="ingrid" style="grid-template-columns:1fr">
+  <div class="field"><label>Take-home pay<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>5,925<span class=suf> a fortnight</span></div></div>
+  <div class="field"><label>Usual spending<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>3,832<span class=suf> a month</span></div></div>
+  <div class="field"><label>Deposit<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>163,000</div></div>
+  <div class="field"><label>Card limits<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>10,000</div></div>
+  <div class="field"><label>Home costs<span class="src">typed</span></label><div class="input"><span class=pre>$</span>520<span class=suf> a month</span></div></div>
+  <div class="field"><label>Loan term<span class="src">typed</span></label><div class="input">30<span class=suf> years, principal &amp; interest</span></div></div>
+ </div>
+ <p class="cap" style="margin:2px 0 0">Deposit = House deposit goal $48,200 + usable equity in 35 Hawthorne St $114,800. Take-home is both pays; home costs are rates and insurance; pay and spending use the last 6 months.</p>
+</div><div class="card"><div class="cardhead"><div><h3>Repayment calculator</h3><p class="sub">Any amount, any rate.</p></div></div>
+ <div class="calc" style="grid-template-columns:1fr">
+  <div class="field"><label>Loan amount</label><div class="input"><span class="pre">$</span>650,000</div></div>
+  <div class="field"><label>Rate</label><div class="input">6.09<span class="suf">%</span></div></div>
+ </div>
+ <div class="two" style="margin-top:4px"><div class="stat"><div class="k">Monthly</div><div class="v">$3,935</div><div class="n">over 30 years</div></div>
+ <div class="stat"><div class="k">Fortnightly</div><div class="v">$1,816</div><div class="n">lined up with pay day</div></div></div>
+</div></div></div><nav class="tabs"><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20V4M4 7l3-3 3 3M17 4v16M14 17l3 3 3-3"/></svg></span><span>Cash flow</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></svg></span><span>Transactions</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg><b class="tbadge zero" aria-label="All clear"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></b></span><span>Needs review</span></a><a class="tab on" aria-current="page"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></span><span>Planning</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg></span><span>More</span></a></nav><i class="homebar"></i></div></figure><figure class="phonewrap"><div class="pcap">2 · Stress test, lender-style estimate</div><div class="phone"><div class="status"><b>9:41</b><span>&#9679;&#9679;&#9679; 5G &#9646;</span></div><div class="pscroll"><div class="shift" style="margin-top:-700px"><div class="phead"><div><div class="greet"><svg class="pango" width="24" height="17" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>G&#8217;day, Simon</span></div><h1>How much can we borrow?</h1><p class="fresh">Estimates, not a lender&#8217;s offer (sadly)</p></div><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Import</span></div><div class="note"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 19a5.5 5.5 0 0 1 11 0M10.5 19a5.5 5.5 0 0 1 11 0"/></svg><span>Built only from what you can both see: shared accounts, the shared deposit goal and shared properties. Private accounts never feed a plan.</span></div><div class="card">
+ <div class="cap">Comfortably, without living on two-minute noodles</div><div class="lead" style="color:var(--foreground);margin-top:2px">You could borrow about</div>
+ <div class="hero">$780,000</div>
+ <p class="climax">At 6.09% you&#8217;d still have <b class="acc">$3,506 a fortnight</b> to live on.</p>
+ <p class="dep">That&#8217;s a place up to about <b>$943,000</b> with your $163,000 deposit.</p>
+ <div class="rate"><div class="rl"><span>Interest rate</span><span class="cap" style="font-weight:400">Slide or type</span></div><div class="slider"><div class="sl" role="slider" aria-valuemin="4" aria-valuemax="10" aria-valuenow="6.09" aria-label="Interest rate"><i class="t"></i><i class="r" style="width:34.8%"></i><i class="th" style="left:34.8%;width:24px;height:24px;margin-left:-12px;top:-2px"></i><span class="mm" style="left:0">4%</span><span class="mm" style="right:0">10%</span></div><div class="input"><span>6.09</span><span class="suf">%</span></div></div></div>
+ <div class="pills" role="group" aria-label="Quick rates"><span class="pill">5.59%</span><span class="pill on">6.09%<small>today</small></span><span class="pill">6.59%</span><span class="pill">7.09%</span></div>
+ <div class="two">
+  <div class="stat"><div class="k">Repayments</div><div class="v">$4,722 / mo</div><div class="n">or $2,179 a fortnight, lined up with pay day</div></div>
+  <div class="stat"><div class="k">Left for actual life</div><div class="v p">$7,596 / mo</div><div class="n">After rates &amp; insurance. Room for the odd smashed avo.</div></div>
+ </div>
+</div><div class="card"><h3>What&#8217;s left if rates misbehave</h3><p class="sub" style="margin-bottom:4px">Monthly, after repayments and home costs</p>
+ <div class="sb on"><span>A · 6.09%</span><div class="tr"><i style="width:100.0%"></i></div><b>$7,596</b></div><div class="sb"><span>B · 7.09%</span><div class="tr"><i style="width:93.2%"></i></div><b>$7,081</b></div><div class="sb"><span>C · 8.09%</span><div class="tr"><i style="width:86.2%"></i></div><b>$6,546</b></div><div class="sb stress"><span>+3% · 9.09%</span><div class="tr"><i style="width:78.9%"></i></div><b>$5,991</b></div>
+ <div class="chips" style="margin-top:14px"><span class="achip pass"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Survives a 3% rate jump (9.09%)</span></div>
+ <p class="cap" style="margin:12px 0 0">The hatched row is the lender&#8217;s test rate: Scenario A plus 3%. Every row keeps the same loan, $780,000 over 30 years.</p>
+</div><div class="card">
+ <div class="cardhead"><div><h3>Lender-style estimate</h3><p class="sub">What a bank is likely to say, using rules lenders use. Estimates, not a lender&#8217;s offer (sadly). Click any assumption to change it.</p></div></div>
+ <div class="chips">
+  <span class="achip"><span class="k">Assessment buffer</span>+3% (tests at 9.09%)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Living expenses</span>higher of yours ($3,832) or HEM ($3,410)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Rent counted at</span>80%<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Card limits</span>3.8% a month ($10,000 → $380)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Debt-to-income cap</span>6×<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+ </div>
+ <div class="svc">
+  <div class="stat"><div class="k">Simple calculator</div><div class="v">$812,000</div><div class="n">Income, spending and rate only</div></div>
+  <div class="stat"><div class="k">Lender-style estimate</div><div class="v p">$780,000</div><div class="n">Used for the number above</div></div>
+  <div class="stat"><div class="k">Debt-to-income</div><div class="v">5.1×</div><div class="n">Under the 6× cap, incl. the 35 Hawthorne St loan</div></div>
+ </div>
+</div><div class="card"><div class="cardhead"><div><h3>Scenarios</h3><p class="sub">Side by side. Pick one to drive the big number.</p></div></div><div class="scen" style="grid-template-columns:1fr"><div class="sc sel"><div class="sh"><b>A</b><span class="nm">Today&#8217;s rate</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>6.09%</dd><dt>Repayments</dt><dd>$4,722 / mo</dd><dt>Left for actual life</dt><dd>$3,506 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ <div class="drv">Drives the number above</div></div><div class="sc"><div class="sh"><b>B</b><span class="nm">Plus 1%</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>7.09%</dd><dt>Repayments</dt><dd>$5,237 / mo</dd><dt>Left for actual life</dt><dd>$3,268 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ </div><div class="sc"><div class="sh"><b>C</b><span class="nm">Plus 2%</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>8.09%</dd><dt>Repayments</dt><dd>$5,772 / mo</dd><dt>Left for actual life</dt><dd>$3,021 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ </div></div></div><div class="card"><div class="cardhead"><div><h3>Properties you already own</h3><p class="sub">Use the equity or model selling. The big number updates as you flip.</p></div><span class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add a property</span></div><div class="propbox prop"><div class="ph"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/></svg></span><b>35 Hawthorne St</b><span style="margin-left:auto"><span class="seg" role="group" aria-label="35 Hawthorne St in this plan"><span class="on">Use equity</span><span class="">Sell it</span></span></span></div><dl style="grid-template-columns:1fr 1fr"><div><dt>Value</dt><dd>$760,000</dd></div><div><dt>Loan</dt><dd>$493,241</dd></div><div><dt>Rent</dt><dd>$2,080 / mo</dd></div><div><dt>Yours</dt><dd>100% Simon</dd></div></dl><div class="res">Usable equity <b>$114,800</b> (80% of value, less the loan) goes to the deposit. Rent counts as income at 80%.</div></div></div><div class="card"><div class="cardhead"><div><h3>Saved plans</h3><p class="sub">Shared: either of you can reopen a plan and see it beside today&#8217;s numbers.</p></div></div>
+ <div class="save"><div class="input focus">Two months on, Dec 2026</div><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></svg>Save plan</span></div>
+ <div class="plan"><div><div class="pn">First look, Oct 2026</div><div class="pm">Saved 5 Oct 2026, 9:42 pm · borrow ~$780,000 at 6.09%</div></div><span class="go"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></div>
+</div><div class="card"><div class="cardhead"><div><h3>What we&#8217;re working with</h3><p class="sub">Pulled from your shared data where we can. Change anything.</p></div></div>
+ <div class="ingrid" style="grid-template-columns:1fr">
+  <div class="field"><label>Take-home pay<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>5,925<span class=suf> a fortnight</span></div></div>
+  <div class="field"><label>Usual spending<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>3,832<span class=suf> a month</span></div></div>
+  <div class="field"><label>Deposit<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>163,000</div></div>
+  <div class="field"><label>Card limits<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>10,000</div></div>
+  <div class="field"><label>Home costs<span class="src">typed</span></label><div class="input"><span class=pre>$</span>520<span class=suf> a month</span></div></div>
+  <div class="field"><label>Loan term<span class="src">typed</span></label><div class="input">30<span class=suf> years, principal &amp; interest</span></div></div>
+ </div>
+ <p class="cap" style="margin:2px 0 0">Deposit = House deposit goal $48,200 + usable equity in 35 Hawthorne St $114,800. Take-home is both pays; home costs are rates and insurance; pay and spending use the last 6 months.</p>
+</div><div class="card"><div class="cardhead"><div><h3>Repayment calculator</h3><p class="sub">Any amount, any rate.</p></div></div>
+ <div class="calc" style="grid-template-columns:1fr">
+  <div class="field"><label>Loan amount</label><div class="input"><span class="pre">$</span>650,000</div></div>
+  <div class="field"><label>Rate</label><div class="input">6.09<span class="suf">%</span></div></div>
+ </div>
+ <div class="two" style="margin-top:4px"><div class="stat"><div class="k">Monthly</div><div class="v">$3,935</div><div class="n">over 30 years</div></div>
+ <div class="stat"><div class="k">Fortnightly</div><div class="v">$1,816</div><div class="n">lined up with pay day</div></div></div>
+</div></div></div><nav class="tabs"><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20V4M4 7l3-3 3 3M17 4v16M14 17l3 3 3-3"/></svg></span><span>Cash flow</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></svg></span><span>Transactions</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg><b class="tbadge zero" aria-label="All clear"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></b></span><span>Needs review</span></a><a class="tab on" aria-current="page"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></span><span>Planning</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg></span><span>More</span></a></nav><i class="homebar"></i></div></figure><figure class="phonewrap"><div class="pcap">3 · Scenarios, stacked</div><div class="phone"><div class="status"><b>9:41</b><span>&#9679;&#9679;&#9679; 5G &#9646;</span></div><div class="pscroll"><div class="shift" style="margin-top:-1400px"><div class="phead"><div><div class="greet"><svg class="pango" width="24" height="17" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>G&#8217;day, Simon</span></div><h1>How much can we borrow?</h1><p class="fresh">Estimates, not a lender&#8217;s offer (sadly)</p></div><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Import</span></div><div class="note"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 19a5.5 5.5 0 0 1 11 0M10.5 19a5.5 5.5 0 0 1 11 0"/></svg><span>Built only from what you can both see: shared accounts, the shared deposit goal and shared properties. Private accounts never feed a plan.</span></div><div class="card">
+ <div class="cap">Comfortably, without living on two-minute noodles</div><div class="lead" style="color:var(--foreground);margin-top:2px">You could borrow about</div>
+ <div class="hero">$780,000</div>
+ <p class="climax">At 6.09% you&#8217;d still have <b class="acc">$3,506 a fortnight</b> to live on.</p>
+ <p class="dep">That&#8217;s a place up to about <b>$943,000</b> with your $163,000 deposit.</p>
+ <div class="rate"><div class="rl"><span>Interest rate</span><span class="cap" style="font-weight:400">Slide or type</span></div><div class="slider"><div class="sl" role="slider" aria-valuemin="4" aria-valuemax="10" aria-valuenow="6.09" aria-label="Interest rate"><i class="t"></i><i class="r" style="width:34.8%"></i><i class="th" style="left:34.8%;width:24px;height:24px;margin-left:-12px;top:-2px"></i><span class="mm" style="left:0">4%</span><span class="mm" style="right:0">10%</span></div><div class="input"><span>6.09</span><span class="suf">%</span></div></div></div>
+ <div class="pills" role="group" aria-label="Quick rates"><span class="pill">5.59%</span><span class="pill on">6.09%<small>today</small></span><span class="pill">6.59%</span><span class="pill">7.09%</span></div>
+ <div class="two">
+  <div class="stat"><div class="k">Repayments</div><div class="v">$4,722 / mo</div><div class="n">or $2,179 a fortnight, lined up with pay day</div></div>
+  <div class="stat"><div class="k">Left for actual life</div><div class="v p">$7,596 / mo</div><div class="n">After rates &amp; insurance. Room for the odd smashed avo.</div></div>
+ </div>
+</div><div class="card"><h3>What&#8217;s left if rates misbehave</h3><p class="sub" style="margin-bottom:4px">Monthly, after repayments and home costs</p>
+ <div class="sb on"><span>A · 6.09%</span><div class="tr"><i style="width:100.0%"></i></div><b>$7,596</b></div><div class="sb"><span>B · 7.09%</span><div class="tr"><i style="width:93.2%"></i></div><b>$7,081</b></div><div class="sb"><span>C · 8.09%</span><div class="tr"><i style="width:86.2%"></i></div><b>$6,546</b></div><div class="sb stress"><span>+3% · 9.09%</span><div class="tr"><i style="width:78.9%"></i></div><b>$5,991</b></div>
+ <div class="chips" style="margin-top:14px"><span class="achip pass"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Survives a 3% rate jump (9.09%)</span></div>
+ <p class="cap" style="margin:12px 0 0">The hatched row is the lender&#8217;s test rate: Scenario A plus 3%. Every row keeps the same loan, $780,000 over 30 years.</p>
+</div><div class="card">
+ <div class="cardhead"><div><h3>Lender-style estimate</h3><p class="sub">What a bank is likely to say, using rules lenders use. Estimates, not a lender&#8217;s offer (sadly). Click any assumption to change it.</p></div></div>
+ <div class="chips">
+  <span class="achip"><span class="k">Assessment buffer</span>+3% (tests at 9.09%)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Living expenses</span>higher of yours ($3,832) or HEM ($3,410)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Rent counted at</span>80%<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Card limits</span>3.8% a month ($10,000 → $380)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Debt-to-income cap</span>6×<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+ </div>
+ <div class="svc">
+  <div class="stat"><div class="k">Simple calculator</div><div class="v">$812,000</div><div class="n">Income, spending and rate only</div></div>
+  <div class="stat"><div class="k">Lender-style estimate</div><div class="v p">$780,000</div><div class="n">Used for the number above</div></div>
+  <div class="stat"><div class="k">Debt-to-income</div><div class="v">5.1×</div><div class="n">Under the 6× cap, incl. the 35 Hawthorne St loan</div></div>
+ </div>
+</div><div class="card"><div class="cardhead"><div><h3>Scenarios</h3><p class="sub">Side by side. Pick one to drive the big number.</p></div></div><div class="scen" style="grid-template-columns:1fr"><div class="sc sel"><div class="sh"><b>A</b><span class="nm">Today&#8217;s rate</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>6.09%</dd><dt>Repayments</dt><dd>$4,722 / mo</dd><dt>Left for actual life</dt><dd>$3,506 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ <div class="drv">Drives the number above</div></div><div class="sc"><div class="sh"><b>B</b><span class="nm">Plus 1%</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>7.09%</dd><dt>Repayments</dt><dd>$5,237 / mo</dd><dt>Left for actual life</dt><dd>$3,268 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ </div><div class="sc"><div class="sh"><b>C</b><span class="nm">Plus 2%</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>8.09%</dd><dt>Repayments</dt><dd>$5,772 / mo</dd><dt>Left for actual life</dt><dd>$3,021 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ </div></div></div><div class="card"><div class="cardhead"><div><h3>Properties you already own</h3><p class="sub">Use the equity or model selling. The big number updates as you flip.</p></div><span class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add a property</span></div><div class="propbox prop"><div class="ph"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/></svg></span><b>35 Hawthorne St</b><span style="margin-left:auto"><span class="seg" role="group" aria-label="35 Hawthorne St in this plan"><span class="on">Use equity</span><span class="">Sell it</span></span></span></div><dl style="grid-template-columns:1fr 1fr"><div><dt>Value</dt><dd>$760,000</dd></div><div><dt>Loan</dt><dd>$493,241</dd></div><div><dt>Rent</dt><dd>$2,080 / mo</dd></div><div><dt>Yours</dt><dd>100% Simon</dd></div></dl><div class="res">Usable equity <b>$114,800</b> (80% of value, less the loan) goes to the deposit. Rent counts as income at 80%.</div></div></div><div class="card"><div class="cardhead"><div><h3>Saved plans</h3><p class="sub">Shared: either of you can reopen a plan and see it beside today&#8217;s numbers.</p></div></div>
+ <div class="save"><div class="input focus">Two months on, Dec 2026</div><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></svg>Save plan</span></div>
+ <div class="plan"><div><div class="pn">First look, Oct 2026</div><div class="pm">Saved 5 Oct 2026, 9:42 pm · borrow ~$780,000 at 6.09%</div></div><span class="go"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></div>
+</div><div class="card"><div class="cardhead"><div><h3>What we&#8217;re working with</h3><p class="sub">Pulled from your shared data where we can. Change anything.</p></div></div>
+ <div class="ingrid" style="grid-template-columns:1fr">
+  <div class="field"><label>Take-home pay<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>5,925<span class=suf> a fortnight</span></div></div>
+  <div class="field"><label>Usual spending<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>3,832<span class=suf> a month</span></div></div>
+  <div class="field"><label>Deposit<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>163,000</div></div>
+  <div class="field"><label>Card limits<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>10,000</div></div>
+  <div class="field"><label>Home costs<span class="src">typed</span></label><div class="input"><span class=pre>$</span>520<span class=suf> a month</span></div></div>
+  <div class="field"><label>Loan term<span class="src">typed</span></label><div class="input">30<span class=suf> years, principal &amp; interest</span></div></div>
+ </div>
+ <p class="cap" style="margin:2px 0 0">Deposit = House deposit goal $48,200 + usable equity in 35 Hawthorne St $114,800. Take-home is both pays; home costs are rates and insurance; pay and spending use the last 6 months.</p>
+</div><div class="card"><div class="cardhead"><div><h3>Repayment calculator</h3><p class="sub">Any amount, any rate.</p></div></div>
+ <div class="calc" style="grid-template-columns:1fr">
+  <div class="field"><label>Loan amount</label><div class="input"><span class="pre">$</span>650,000</div></div>
+  <div class="field"><label>Rate</label><div class="input">6.09<span class="suf">%</span></div></div>
+ </div>
+ <div class="two" style="margin-top:4px"><div class="stat"><div class="k">Monthly</div><div class="v">$3,935</div><div class="n">over 30 years</div></div>
+ <div class="stat"><div class="k">Fortnightly</div><div class="v">$1,816</div><div class="n">lined up with pay day</div></div></div>
+</div></div></div><nav class="tabs"><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20V4M4 7l3-3 3 3M17 4v16M14 17l3 3 3-3"/></svg></span><span>Cash flow</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></svg></span><span>Transactions</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg><b class="tbadge zero" aria-label="All clear"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></b></span><span>Needs review</span></a><a class="tab on" aria-current="page"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></span><span>Planning</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg></span><span>More</span></a></nav><i class="homebar"></i></div></figure><figure class="phonewrap"><div class="pcap">4 · 35 Hawthorne St: use equity or sell it</div><div class="phone"><div class="status"><b>9:41</b><span>&#9679;&#9679;&#9679; 5G &#9646;</span></div><div class="pscroll"><div class="shift" style="margin-top:-2060px"><div class="phead"><div><div class="greet"><svg class="pango" width="24" height="17" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>G&#8217;day, Simon</span></div><h1>How much can we borrow?</h1><p class="fresh">Estimates, not a lender&#8217;s offer (sadly)</p></div><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Import</span></div><div class="note"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 19a5.5 5.5 0 0 1 11 0M10.5 19a5.5 5.5 0 0 1 11 0"/></svg><span>Built only from what you can both see: shared accounts, the shared deposit goal and shared properties. Private accounts never feed a plan.</span></div><div class="card">
+ <div class="cap">Comfortably, without living on two-minute noodles</div><div class="lead" style="color:var(--foreground);margin-top:2px">You could borrow about</div>
+ <div class="hero">$780,000</div>
+ <p class="climax">At 6.09% you&#8217;d still have <b class="acc">$3,506 a fortnight</b> to live on.</p>
+ <p class="dep">That&#8217;s a place up to about <b>$943,000</b> with your $163,000 deposit.</p>
+ <div class="rate"><div class="rl"><span>Interest rate</span><span class="cap" style="font-weight:400">Slide or type</span></div><div class="slider"><div class="sl" role="slider" aria-valuemin="4" aria-valuemax="10" aria-valuenow="6.09" aria-label="Interest rate"><i class="t"></i><i class="r" style="width:34.8%"></i><i class="th" style="left:34.8%;width:24px;height:24px;margin-left:-12px;top:-2px"></i><span class="mm" style="left:0">4%</span><span class="mm" style="right:0">10%</span></div><div class="input"><span>6.09</span><span class="suf">%</span></div></div></div>
+ <div class="pills" role="group" aria-label="Quick rates"><span class="pill">5.59%</span><span class="pill on">6.09%<small>today</small></span><span class="pill">6.59%</span><span class="pill">7.09%</span></div>
+ <div class="two">
+  <div class="stat"><div class="k">Repayments</div><div class="v">$4,722 / mo</div><div class="n">or $2,179 a fortnight, lined up with pay day</div></div>
+  <div class="stat"><div class="k">Left for actual life</div><div class="v p">$7,596 / mo</div><div class="n">After rates &amp; insurance. Room for the odd smashed avo.</div></div>
+ </div>
+</div><div class="card"><h3>What&#8217;s left if rates misbehave</h3><p class="sub" style="margin-bottom:4px">Monthly, after repayments and home costs</p>
+ <div class="sb on"><span>A · 6.09%</span><div class="tr"><i style="width:100.0%"></i></div><b>$7,596</b></div><div class="sb"><span>B · 7.09%</span><div class="tr"><i style="width:93.2%"></i></div><b>$7,081</b></div><div class="sb"><span>C · 8.09%</span><div class="tr"><i style="width:86.2%"></i></div><b>$6,546</b></div><div class="sb stress"><span>+3% · 9.09%</span><div class="tr"><i style="width:78.9%"></i></div><b>$5,991</b></div>
+ <div class="chips" style="margin-top:14px"><span class="achip pass"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Survives a 3% rate jump (9.09%)</span></div>
+ <p class="cap" style="margin:12px 0 0">The hatched row is the lender&#8217;s test rate: Scenario A plus 3%. Every row keeps the same loan, $780,000 over 30 years.</p>
+</div><div class="card">
+ <div class="cardhead"><div><h3>Lender-style estimate</h3><p class="sub">What a bank is likely to say, using rules lenders use. Estimates, not a lender&#8217;s offer (sadly). Click any assumption to change it.</p></div></div>
+ <div class="chips">
+  <span class="achip"><span class="k">Assessment buffer</span>+3% (tests at 9.09%)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Living expenses</span>higher of yours ($3,832) or HEM ($3,410)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Rent counted at</span>80%<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Card limits</span>3.8% a month ($10,000 → $380)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Debt-to-income cap</span>6×<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+ </div>
+ <div class="svc">
+  <div class="stat"><div class="k">Simple calculator</div><div class="v">$812,000</div><div class="n">Income, spending and rate only</div></div>
+  <div class="stat"><div class="k">Lender-style estimate</div><div class="v p">$780,000</div><div class="n">Used for the number above</div></div>
+  <div class="stat"><div class="k">Debt-to-income</div><div class="v">5.1×</div><div class="n">Under the 6× cap, incl. the 35 Hawthorne St loan</div></div>
+ </div>
+</div><div class="card"><div class="cardhead"><div><h3>Scenarios</h3><p class="sub">Side by side. Pick one to drive the big number.</p></div></div><div class="scen" style="grid-template-columns:1fr"><div class="sc sel"><div class="sh"><b>A</b><span class="nm">Today&#8217;s rate</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>6.09%</dd><dt>Repayments</dt><dd>$4,722 / mo</dd><dt>Left for actual life</dt><dd>$3,506 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ <div class="drv">Drives the number above</div></div><div class="sc"><div class="sh"><b>B</b><span class="nm">Plus 1%</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>7.09%</dd><dt>Repayments</dt><dd>$5,237 / mo</dd><dt>Left for actual life</dt><dd>$3,268 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ </div><div class="sc"><div class="sh"><b>C</b><span class="nm">Plus 2%</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>8.09%</dd><dt>Repayments</dt><dd>$5,772 / mo</dd><dt>Left for actual life</dt><dd>$3,021 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ </div></div></div><div class="card"><div class="cardhead"><div><h3>Properties you already own</h3><p class="sub">Use the equity or model selling. The big number updates as you flip.</p></div><span class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add a property</span></div><div class="propbox prop"><div class="ph"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/></svg></span><b>35 Hawthorne St</b><span style="margin-left:auto"><span class="seg" role="group" aria-label="35 Hawthorne St in this plan"><span class="on">Use equity</span><span class="">Sell it</span></span></span></div><dl style="grid-template-columns:1fr 1fr"><div><dt>Value</dt><dd>$760,000</dd></div><div><dt>Loan</dt><dd>$493,241</dd></div><div><dt>Rent</dt><dd>$2,080 / mo</dd></div><div><dt>Yours</dt><dd>100% Simon</dd></div></dl><div class="res">Usable equity <b>$114,800</b> (80% of value, less the loan) goes to the deposit. Rent counts as income at 80%.</div></div></div><div class="card"><div class="cardhead"><div><h3>Saved plans</h3><p class="sub">Shared: either of you can reopen a plan and see it beside today&#8217;s numbers.</p></div></div>
+ <div class="save"><div class="input focus">Two months on, Dec 2026</div><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></svg>Save plan</span></div>
+ <div class="plan"><div><div class="pn">First look, Oct 2026</div><div class="pm">Saved 5 Oct 2026, 9:42 pm · borrow ~$780,000 at 6.09%</div></div><span class="go"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></div>
+</div><div class="card"><div class="cardhead"><div><h3>What we&#8217;re working with</h3><p class="sub">Pulled from your shared data where we can. Change anything.</p></div></div>
+ <div class="ingrid" style="grid-template-columns:1fr">
+  <div class="field"><label>Take-home pay<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>5,925<span class=suf> a fortnight</span></div></div>
+  <div class="field"><label>Usual spending<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>3,832<span class=suf> a month</span></div></div>
+  <div class="field"><label>Deposit<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>163,000</div></div>
+  <div class="field"><label>Card limits<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>10,000</div></div>
+  <div class="field"><label>Home costs<span class="src">typed</span></label><div class="input"><span class=pre>$</span>520<span class=suf> a month</span></div></div>
+  <div class="field"><label>Loan term<span class="src">typed</span></label><div class="input">30<span class=suf> years, principal &amp; interest</span></div></div>
+ </div>
+ <p class="cap" style="margin:2px 0 0">Deposit = House deposit goal $48,200 + usable equity in 35 Hawthorne St $114,800. Take-home is both pays; home costs are rates and insurance; pay and spending use the last 6 months.</p>
+</div><div class="card"><div class="cardhead"><div><h3>Repayment calculator</h3><p class="sub">Any amount, any rate.</p></div></div>
+ <div class="calc" style="grid-template-columns:1fr">
+  <div class="field"><label>Loan amount</label><div class="input"><span class="pre">$</span>650,000</div></div>
+  <div class="field"><label>Rate</label><div class="input">6.09<span class="suf">%</span></div></div>
+ </div>
+ <div class="two" style="margin-top:4px"><div class="stat"><div class="k">Monthly</div><div class="v">$3,935</div><div class="n">over 30 years</div></div>
+ <div class="stat"><div class="k">Fortnightly</div><div class="v">$1,816</div><div class="n">lined up with pay day</div></div></div>
+</div></div></div><nav class="tabs"><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20V4M4 7l3-3 3 3M17 4v16M14 17l3 3 3-3"/></svg></span><span>Cash flow</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></svg></span><span>Transactions</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg><b class="tbadge zero" aria-label="All clear"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></b></span><span>Needs review</span></a><a class="tab on" aria-current="page"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></span><span>Planning</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg></span><span>More</span></a></nav><i class="homebar"></i></div></figure><figure class="phonewrap"><div class="pcap">5 · Saved plans (a later visit, Flow 3), inputs</div><div class="phone"><div class="status"><b>9:41</b><span>&#9679;&#9679;&#9679; 5G &#9646;</span></div><div class="pscroll"><div class="shift" style="margin-top:-2560px"><div class="phead"><div><div class="greet"><svg class="pango" width="24" height="17" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>G&#8217;day, Simon</span></div><h1>How much can we borrow?</h1><p class="fresh">Estimates, not a lender&#8217;s offer (sadly)</p></div><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Import</span></div><div class="note"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 19a5.5 5.5 0 0 1 11 0M10.5 19a5.5 5.5 0 0 1 11 0"/></svg><span>Built only from what you can both see: shared accounts, the shared deposit goal and shared properties. Private accounts never feed a plan.</span></div><div class="card">
+ <div class="cap">Comfortably, without living on two-minute noodles</div><div class="lead" style="color:var(--foreground);margin-top:2px">You could borrow about</div>
+ <div class="hero">$780,000</div>
+ <p class="climax">At 6.09% you&#8217;d still have <b class="acc">$3,506 a fortnight</b> to live on.</p>
+ <p class="dep">That&#8217;s a place up to about <b>$943,000</b> with your $163,000 deposit.</p>
+ <div class="rate"><div class="rl"><span>Interest rate</span><span class="cap" style="font-weight:400">Slide or type</span></div><div class="slider"><div class="sl" role="slider" aria-valuemin="4" aria-valuemax="10" aria-valuenow="6.09" aria-label="Interest rate"><i class="t"></i><i class="r" style="width:34.8%"></i><i class="th" style="left:34.8%;width:24px;height:24px;margin-left:-12px;top:-2px"></i><span class="mm" style="left:0">4%</span><span class="mm" style="right:0">10%</span></div><div class="input"><span>6.09</span><span class="suf">%</span></div></div></div>
+ <div class="pills" role="group" aria-label="Quick rates"><span class="pill">5.59%</span><span class="pill on">6.09%<small>today</small></span><span class="pill">6.59%</span><span class="pill">7.09%</span></div>
+ <div class="two">
+  <div class="stat"><div class="k">Repayments</div><div class="v">$4,722 / mo</div><div class="n">or $2,179 a fortnight, lined up with pay day</div></div>
+  <div class="stat"><div class="k">Left for actual life</div><div class="v p">$7,596 / mo</div><div class="n">After rates &amp; insurance. Room for the odd smashed avo.</div></div>
+ </div>
+</div><div class="card"><h3>What&#8217;s left if rates misbehave</h3><p class="sub" style="margin-bottom:4px">Monthly, after repayments and home costs</p>
+ <div class="sb on"><span>A · 6.09%</span><div class="tr"><i style="width:100.0%"></i></div><b>$7,596</b></div><div class="sb"><span>B · 7.09%</span><div class="tr"><i style="width:93.2%"></i></div><b>$7,081</b></div><div class="sb"><span>C · 8.09%</span><div class="tr"><i style="width:86.2%"></i></div><b>$6,546</b></div><div class="sb stress"><span>+3% · 9.09%</span><div class="tr"><i style="width:78.9%"></i></div><b>$5,991</b></div>
+ <div class="chips" style="margin-top:14px"><span class="achip pass"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Survives a 3% rate jump (9.09%)</span></div>
+ <p class="cap" style="margin:12px 0 0">The hatched row is the lender&#8217;s test rate: Scenario A plus 3%. Every row keeps the same loan, $780,000 over 30 years.</p>
+</div><div class="card">
+ <div class="cardhead"><div><h3>Lender-style estimate</h3><p class="sub">What a bank is likely to say, using rules lenders use. Estimates, not a lender&#8217;s offer (sadly). Click any assumption to change it.</p></div></div>
+ <div class="chips">
+  <span class="achip"><span class="k">Assessment buffer</span>+3% (tests at 9.09%)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Living expenses</span>higher of yours ($3,832) or HEM ($3,410)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Rent counted at</span>80%<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Card limits</span>3.8% a month ($10,000 → $380)<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+  <span class="achip"><span class="k">Debt-to-income cap</span>6×<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span>
+ </div>
+ <div class="svc">
+  <div class="stat"><div class="k">Simple calculator</div><div class="v">$812,000</div><div class="n">Income, spending and rate only</div></div>
+  <div class="stat"><div class="k">Lender-style estimate</div><div class="v p">$780,000</div><div class="n">Used for the number above</div></div>
+  <div class="stat"><div class="k">Debt-to-income</div><div class="v">5.1×</div><div class="n">Under the 6× cap, incl. the 35 Hawthorne St loan</div></div>
+ </div>
+</div><div class="card"><div class="cardhead"><div><h3>Scenarios</h3><p class="sub">Side by side. Pick one to drive the big number.</p></div></div><div class="scen" style="grid-template-columns:1fr"><div class="sc sel"><div class="sh"><b>A</b><span class="nm">Today&#8217;s rate</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>6.09%</dd><dt>Repayments</dt><dd>$4,722 / mo</dd><dt>Left for actual life</dt><dd>$3,506 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ <div class="drv">Drives the number above</div></div><div class="sc"><div class="sh"><b>B</b><span class="nm">Plus 1%</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>7.09%</dd><dt>Repayments</dt><dd>$5,237 / mo</dd><dt>Left for actual life</dt><dd>$3,268 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ </div><div class="sc"><div class="sh"><b>C</b><span class="nm">Plus 2%</span><span class="ed" aria-label="Rename"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <dl><dt>Rate</dt><dd>8.09%</dd><dt>Repayments</dt><dd>$5,772 / mo</dd><dt>Left for actual life</dt><dd>$3,021 / fn</dd></dl>
+ <div class="pick">30 years · 35 Hawthorne St: use equity</div>
+ </div></div></div><div class="card"><div class="cardhead"><div><h3>Properties you already own</h3><p class="sub">Use the equity or model selling. The big number updates as you flip.</p></div><span class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add a property</span></div><div class="propbox prop"><div class="ph"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/></svg></span><b>35 Hawthorne St</b><span style="margin-left:auto"><span class="seg" role="group" aria-label="35 Hawthorne St in this plan"><span class="on">Use equity</span><span class="">Sell it</span></span></span></div><dl style="grid-template-columns:1fr 1fr"><div><dt>Value</dt><dd>$760,000</dd></div><div><dt>Loan</dt><dd>$493,241</dd></div><div><dt>Rent</dt><dd>$2,080 / mo</dd></div><div><dt>Yours</dt><dd>100% Simon</dd></div></dl><div class="res">Usable equity <b>$114,800</b> (80% of value, less the loan) goes to the deposit. Rent counts as income at 80%.</div></div></div><div class="card"><div class="cardhead"><div><h3>Saved plans</h3><p class="sub">Shared: either of you can reopen a plan and see it beside today&#8217;s numbers.</p></div></div>
+ <div class="save"><div class="input focus">Two months on, Dec 2026</div><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></svg>Save plan</span></div>
+ <div class="plan"><div><div class="pn">First look, Oct 2026</div><div class="pm">Saved 5 Oct 2026, 9:42 pm · borrow ~$780,000 at 6.09%</div></div><span class="go"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></div>
+</div><div class="card"><div class="cardhead"><div><h3>What we&#8217;re working with</h3><p class="sub">Pulled from your shared data where we can. Change anything.</p></div></div>
+ <div class="ingrid" style="grid-template-columns:1fr">
+  <div class="field"><label>Take-home pay<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>5,925<span class=suf> a fortnight</span></div></div>
+  <div class="field"><label>Usual spending<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>3,832<span class=suf> a month</span></div></div>
+  <div class="field"><label>Deposit<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>163,000</div></div>
+  <div class="field"><label>Card limits<span class="src pg">from Pangolin</span></label><div class="input"><span class=pre>$</span>10,000</div></div>
+  <div class="field"><label>Home costs<span class="src">typed</span></label><div class="input"><span class=pre>$</span>520<span class=suf> a month</span></div></div>
+  <div class="field"><label>Loan term<span class="src">typed</span></label><div class="input">30<span class=suf> years, principal &amp; interest</span></div></div>
+ </div>
+ <p class="cap" style="margin:2px 0 0">Deposit = House deposit goal $48,200 + usable equity in 35 Hawthorne St $114,800. Take-home is both pays; home costs are rates and insurance; pay and spending use the last 6 months.</p>
+</div><div class="card"><div class="cardhead"><div><h3>Repayment calculator</h3><p class="sub">Any amount, any rate.</p></div></div>
+ <div class="calc" style="grid-template-columns:1fr">
+  <div class="field"><label>Loan amount</label><div class="input"><span class="pre">$</span>650,000</div></div>
+  <div class="field"><label>Rate</label><div class="input">6.09<span class="suf">%</span></div></div>
+ </div>
+ <div class="two" style="margin-top:4px"><div class="stat"><div class="k">Monthly</div><div class="v">$3,935</div><div class="n">over 30 years</div></div>
+ <div class="stat"><div class="k">Fortnightly</div><div class="v">$1,816</div><div class="n">lined up with pay day</div></div></div>
+</div></div></div><nav class="tabs"><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20V4M4 7l3-3 3 3M17 4v16M14 17l3 3 3-3"/></svg></span><span>Cash flow</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></svg></span><span>Transactions</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg><b class="tbadge zero" aria-label="All clear"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></b></span><span>Needs review</span></a><a class="tab on" aria-current="page"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></span><span>Planning</span></a><a class="tab"><span class="ti"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg></span><span>More</span></a></nav><i class="homebar"></i></div></figure></div>
+
+</div></body></html>

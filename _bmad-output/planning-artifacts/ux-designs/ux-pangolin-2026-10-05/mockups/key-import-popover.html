@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pangolin · Import popover</title>
+<style>
+/* Key screen: Import popover open over Transactions (desktop), Simon's view.
+   Governs: DESIGN.md § Components › Feedback & primitives › Import popover (dashed drop zone rounded.lg,
+   accent on drag-over, account Select, collapsible "How to export from <bank>" note, primary Import);
+   § Elevation & Depth (popovers keep shadcn default shadow); § Components › Shell › Page header (Import button).
+   EXPERIENCE.md § Interaction Primitives › Import popover steps 1-4 (drop zone, picker = own + shared +
+   'For Carissa', progress/summary, hand-off); § Component Patterns › Import popover ("Re-importing the same
+   file changes nothing."); § State Patterns › Import in progress, Nothing new, Unsupported file, Error (import),
+   Import hand-off pending [ASSUMPTION]; § Voice and Tone › Errors (plain, exact, no mascot);
+   § Privacy & Partner Awareness › Import for partner (hand-off keeps AD-5); Flow 1 step 1; Flow 4 steps 1-2.
+   .memlog: import entry decision; hand-off (b); reconcile keep s (per-bank export instructions).
+   Bad rows (.memlog decision, supersedes the spine's all-or-nothing error): good rows import, bad rows are set aside to
+   fix, named by row number; AI can read a set-aside row and propose what it means (e.g. a CommBank home-loan rate
+   variation line -> rate change on the 35 Hawthorne St loan), which Simon confirms, edits or ignores. Set-aside rows also
+   wait in Needs review (key-needs-review.html). [Spec catch-up: partial import + AI bad-row interpretation]
+*/
+:root{--background:#F6EFE6;--foreground:#2A1F17;--card:#FFFAF3;--muted:#F6EFE6;--muted-foreground:#6A594B;--border:#E3D6C5;--ring:#B85A1E;--primary:#A3441D;--primary-foreground:#FFFFFF;--accent:#F6E8DE;--destructive:#A3283A;--sidebar:#F6EFE6;--money-in:#3D6B2D;--money-out:#A3283A;--warning:#8A5600;--warning-bg:#F0E5D3;--person-simon:#2C6681;--person-carissa:#9C4277;--mascot-scale-1:#BD785C;--mascot-scale-2:#D1A28E;--mascot-ink:#1F2328;--chart-1:#6F8A3D;--chart-2:#B5562B;--chart-3:#D9A13B;--chart-4:#2E8C88;--chart-5:#C97B63;--chart-6:#8A5A7A;--chart-7:#7E6A4F;--chart-8:#4F5D85;--chart-9:#A3B18A}
+
+*{box-sizing:border-box}
+body{margin:0;background:#E7E0D6;color:var(--foreground);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;padding:32px 16px 72px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto}
+.lbl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#5E4F42;font-weight:600;margin:34px 0 10px}
+.lbl:first-child{margin-top:0}
+.intro{max-width:900px;margin:0 0 6px;color:#5E4F42;font-size:13px}
+.statehint{display:block;font-size:10.5px;color:var(--primary);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin:0 0 4px}
+/* frame */
+.browser{background:var(--background);border-radius:12px;overflow:hidden;border:1px solid #D6C9B8;box-shadow:0 24px 60px -24px rgba(60,40,20,.28)}
+.chrome{height:38px;background:#EFE6DA;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;position:relative}
+.dots i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:7px;background:#DCCFBE}
+.url{position:absolute;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:7px;padding:3px 110px;font-size:12px;color:var(--muted-foreground);white-space:nowrap}
+.app{display:grid;grid-template-columns:232px minmax(0,1fr)}
+/* sidebar */
+.side{background:var(--sidebar);border-right:1px solid var(--border);padding:20px 14px 14px;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:9px;font-weight:650;font-size:16px;padding:0 8px 20px}
+.nav{display:flex;align-items:center;gap:11px;padding:7px 10px;border-radius:8px;color:var(--muted-foreground);margin-bottom:2px;font-size:14px}
+.nav.on{background:var(--accent);color:var(--primary);font-weight:600}
+.nbadge{margin-left:auto;background:var(--warning-bg);color:var(--warning);font-size:11px;border-radius:9999px;padding:1px 7px;font-weight:600;font-variant-numeric:tabular-nums}
+.nbadge.zero{background:var(--accent);color:var(--primary);width:20px;height:20px;padding:0;display:grid;place-items:center}
+.navsep{height:1px;background:var(--border);margin:10px 10px 12px}
+.navlbl{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);padding:0 10px 6px}
+.sidefoot{margin-top:auto;padding-top:18px}
+.me{display:flex;align-items:center;gap:10px;padding:12px 10px 6px;border-top:1px solid var(--border);margin-top:8px;font-size:13px}
+.me small{display:block;color:var(--muted-foreground);font-size:12px}
+.signout{display:flex;align-items:center;gap:8px;padding:4px 10px;color:var(--muted-foreground);font-size:13px}
+.pd{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
+.pd.simon{background:var(--person-simon)}.pd.carissa{background:var(--person-carissa)}
+/* main + header */
+main{padding:28px 36px 36px;min-width:0}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:18px}
+.hl{min-width:0}
+.greet{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted-foreground);margin-bottom:2px}
+.head h1{margin:0;font-size:26px;font-weight:600;line-height:1.15;letter-spacing:-.01em}
+.fresh{margin:5px 0 0;color:var(--muted-foreground);font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ctrl{display:flex;gap:8px;align-items:center;flex:none}
+.drange{display:flex;gap:6px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--card);color:var(--foreground);border-radius:8px;padding:6px 12px;font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.btn.ic{padding:6px 7px}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:var(--primary-foreground);font-weight:600}
+.btn.sec{background:var(--card)}
+.seg{display:inline-flex;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:2px;white-space:nowrap}
+.seg span{padding:4px 10px;border-radius:6px;font-size:12.5px;color:var(--muted-foreground)}
+.seg span.on{background:var(--card);color:var(--foreground);box-shadow:0 1px 2px rgba(0,0,0,.08);font-weight:600}
+.link{color:var(--primary);font-size:13px;font-weight:600;white-space:nowrap}
+.pchip{display:inline-flex;align-items:center;gap:6px;background:var(--background);border:1px solid var(--border);border-radius:9999px;padding:1px 9px;font-size:12px;color:var(--foreground)}
+/* cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 22px}
+.card h3{margin:0;font-size:15px;font-weight:600;line-height:1.3}
+.card .sub{margin:2px 0 0;color:var(--muted-foreground);font-size:13px}
+.cardhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
+.cardhead .ctrl{flex-wrap:wrap;justify-content:flex-end}
+.foot{font-size:12px;color:var(--muted-foreground);border-top:1px solid var(--border);margin-top:8px;padding-top:10px}
+.mt{margin-top:16px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.kpis.k3{grid-template-columns:repeat(3,1fr)}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px}
+.kpi .k{font-size:12px;color:var(--muted-foreground)}
+.kpi .v{font-size:24px;font-weight:600;line-height:1.2;margin-top:4px;font-variant-numeric:tabular-nums;letter-spacing:-.01em;white-space:nowrap}
+.kpi .n{font-size:12px;color:var(--muted-foreground);margin-top:2px}
+.v.in{color:var(--money-in)}.v.out{color:var(--money-out)}.v.acc{color:var(--primary)}
+.share{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 16px;font-size:13px;color:var(--muted-foreground)}
+.share>span:first-child{display:flex;align-items:center;gap:8px}
+.share b{color:var(--foreground);font-weight:600;font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:16px;margin-top:16px}
+.grid2.even{grid-template-columns:1fr 1fr}
+.amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.amt.in{color:var(--money-in);font-weight:600}.amt.out{color:var(--money-out)}
+.chip{display:inline-flex;align-items:center;font-size:12px;border:1px solid var(--border);color:var(--muted-foreground);border-radius:6px;padding:1px 7px;white-space:nowrap}
+.chip.unc{color:var(--warning);background:var(--warning-bg);border-color:var(--warning-bg)}
+.sq{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}
+.warnline{display:flex;align-items:center;gap:10px;background:var(--warning-bg);color:var(--warning);border-radius:8px;padding:8px 12px;font-size:13px}
+.warnline>b{width:18px;height:18px;border-radius:50%;border:1.6px solid currentColor;display:grid;place-items:center;font-size:11px;flex:none}
+.warnline .link{margin-left:auto;color:var(--warning);text-decoration:underline}
+.stat{background:var(--background);border:1px solid var(--border);border-radius:10px;padding:10px 14px}
+.stat .k{font-size:12px;color:var(--muted-foreground)}
+.stat .v{font-size:19px;font-weight:600;line-height:1.25;white-space:nowrap;font-variant-numeric:tabular-nums}
+.stat .n{font-size:12px;color:var(--muted-foreground)}
+.track{height:8px;background:var(--border);border-radius:9999px;overflow:hidden}
+.track i{display:block;height:100%;border-radius:9999px}
+/* celebration */
+.party{position:relative;overflow:hidden;background:var(--accent);border-radius:12px;padding:8px 14px 8px 8px;display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.party .conf{position:absolute;inset:0;pointer-events:none}
+.party .conf i{position:absolute;width:8px;height:3px;border-radius:2px;opacity:.75}
+.party .conf i.c{width:5px;height:5px;border-radius:50%}
+.party .conf i.s{width:7px;height:7px;background:transparent!important;border:1.5px solid;border-radius:2px}
+.party .txt{position:relative}
+.party b{font-size:15px;font-weight:600}
+.party p{margin:0;color:var(--foreground);font-size:13px}
+.party .count{position:relative;margin-left:auto;background:var(--card);border-radius:9999px;padding:4px 12px;font-size:13px;font-variant-numeric:tabular-nums;color:var(--muted-foreground);white-space:nowrap}
+.party .count strong{color:var(--primary)}
+.party .x{position:relative;color:var(--muted-foreground);display:grid;place-items:center}
+/* sankey */
+.sankey{display:block}
+.sankey .sk-n{font:600 12.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;fill:var(--foreground)}
+.sankey .sk-v{font:400 11.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;fill:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.sankey .ld{stroke:var(--border);fill:none}
+/* phone */
+.phones{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.phonewrap{margin:0}
+.pcap{font-size:12px;color:#5E4F42;margin:0 0 8px;font-weight:600}
+.phone{width:390px;height:844px;border-radius:46px;border:10px solid #2A1F17;background:var(--background);position:relative;overflow:hidden;box-shadow:0 24px 60px -24px rgba(60,40,20,.35);display:flex;flex-direction:column}
+.status{height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 26px 0 30px;font-size:14px;flex:none}
+.status span{font-size:11px;letter-spacing:1px}
+.pscroll{flex:1;overflow:hidden;padding:6px 16px 16px}
+.tabs{flex:none;display:grid;grid-template-columns:repeat(5,1fr);background:var(--card);border-top:1px solid var(--border);padding:6px 4px 24px}
+.tab{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--muted-foreground);min-height:44px;justify-content:center;text-align:center;line-height:1.15}
+.tab.on{color:var(--primary);font-weight:600}
+.ti{position:relative;display:block}
+.tbadge{position:absolute;top:-5px;left:15px;background:var(--warning-bg);color:var(--warning);font-size:10px;border-radius:9999px;padding:0 5px;font-weight:600;border:1.5px solid var(--card)}
+.tbadge.zero{background:var(--accent);color:var(--primary);width:16px;height:16px;padding:0;display:grid;place-items:center}
+.homebar{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);width:130px;height:5px;border-radius:3px;background:#2A1F17}
+
+
+/* batch-2 primitives (shadcn defaults on Clay & Linen tokens) */
+.cb{width:16px;height:16px;border:1.5px solid #BFAE98;border-radius:4px;background:var(--card);display:inline-grid;place-items:center;flex:none;color:var(--primary-foreground)}
+.cb.on{background:var(--primary);border-color:var(--primary)}
+.cb.mixed{background:var(--primary);border-color:var(--primary)}
+.cb.mixed::after{content:"";width:8px;height:2px;background:var(--primary-foreground);border-radius:1px}
+.sel{display:inline-flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--border);background:var(--card);border-radius:8px;padding:5px 10px;font-size:13px;white-space:nowrap}
+.inp{display:flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);border-radius:8px;padding:6px 10px;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.inp .ph{color:var(--muted-foreground)}
+.focus{box-shadow:0 0 0 2px var(--background),0 0 0 4px var(--ring)}
+.tag{display:inline-flex;font-size:11.5px;color:var(--muted-foreground);background:var(--background);border:1px solid var(--border);border-radius:6px;padding:0 6px;line-height:17px;white-space:nowrap}
+.disc{width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--primary);display:grid;place-items:center;font-size:12px;font-weight:700;flex:none}
+.cap{font-size:12px;color:var(--muted-foreground)}
+.hint{display:block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--primary);font-weight:600}
+.btn.sm{padding:4px 10px;font-size:12.5px}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted-foreground)}
+.btn.wide{justify-content:center}
+.chip.on{background:var(--accent);color:var(--primary);border-color:var(--accent);font-weight:600}
+.pbar i{background:var(--primary)}
+
+.app{min-height:900px}
+main.dimless{opacity:1}
+.pop{position:absolute;top:112px;right:36px;width:420px;background:var(--popover,var(--card));border:1px solid var(--border);border-radius:12px;
+ box-shadow:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.1);padding:16px 18px;z-index:5}
+.pop::before{content:"";position:absolute;top:-7px;right:36px;width:12px;height:12px;background:var(--card);border-left:1px solid var(--border);border-top:1px solid var(--border);transform:rotate(45deg)}
+.pop h4{margin:0;font-size:15px;font-weight:600}
+.pop .lead{margin:2px 0 12px;font-size:13px;color:var(--muted-foreground)}
+.drop{border:1.5px dashed var(--border);border-radius:12px;padding:16px;text-align:center;font-size:13px;color:var(--muted-foreground);background:var(--background)}
+.drop.over{background:var(--accent);border-color:var(--primary);color:var(--primary)}
+.drop.has{display:flex;align-items:center;gap:10px;text-align:left;padding:12px 14px}
+.drop.has .fn{font-weight:600;color:var(--foreground)}
+.drop.has .ok{width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--primary);display:grid;place-items:center;flex:none}
+.drop .big{display:block;color:var(--foreground);font-weight:600;font-size:14px;margin:6px 0 2px}
+.fl{font-size:12px;font-weight:600;color:var(--foreground);margin:14px 0 6px;display:block}
+.pop .sel{display:flex;width:100%}
+.how{margin-top:12px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--background)}
+.how summary,.how .sm{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;list-style:none}
+.how ol{margin:8px 0 0;padding-left:18px;font-size:12px;color:var(--muted-foreground);line-height:1.5}
+.how .cap{margin-top:6px}
+.pf{display:flex;align-items:center;gap:8px;margin-top:14px}
+.pf .cap{flex:1}
+/* background page */
+.bgrows .tx{display:grid;grid-template-columns:50px minmax(0,1fr) 190px 110px;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:14px}
+.bgrows .d{color:var(--muted-foreground);font-size:12.5px}
+.bgrows .m{display:flex;gap:9px;align-items:center}
+.bgrows .acct{font-size:13px;color:var(--muted-foreground)}
+.dg{display:flex;justify-content:space-between;padding:14px 0 6px;border-bottom:1px solid var(--border)}
+.dg span{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground)}
+.dg b{font-size:13px;font-variant-numeric:tabular-nums}
+.filters{display:flex;gap:8px;align-items:center}
+.filters .inp{flex:1}
+.summary{font-size:13px;color:var(--muted-foreground);margin:14px 0 2px}
+/* states grid */
+.states{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
+.states .pop{position:relative;top:auto;right:auto;width:auto}
+.states .pop::before{display:none}
+.lb{background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 15px -3px rgba(0,0,0,.1);margin-top:4px;padding:4px}
+.lb .g{font-size:11.5px;font-weight:600;color:var(--muted-foreground);padding:6px 8px 2px;letter-spacing:.04em;text-transform:uppercase}
+.lb .o{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:13px}
+.lb .o .cap{margin-left:auto}
+.lb .o.on{background:var(--accent);color:var(--primary);font-weight:600}
+.lb .sep{height:1px;background:var(--border);margin:4px 6px}
+.res{display:flex;gap:10px;align-items:flex-start;margin-top:4px}
+.res .ok{width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--primary);display:grid;place-items:center;flex:none}
+.counts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.counts .stat .v{font-size:19px}
+.errbox{border:1px solid var(--border);border-radius:8px;margin-top:10px;font-size:13px;overflow:hidden}
+.errbox div{display:grid;grid-template-columns:62px 1fr;gap:8px;padding:7px 10px;border-top:1px solid var(--border)}
+.errbox div:first-child{border-top:0}
+.errbox b{font-variant-numeric:tabular-nums;font-weight:600}
+.errbox code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--background);border-radius:4px;padding:0 4px}
+.prog{margin-top:12px}
+.sa{border:1px solid var(--border);border-radius:10px;margin-top:10px;overflow:hidden}
+.sa .row{padding:9px 12px;border-top:1px solid var(--border);font-size:13px}
+.sa .row:first-child{border-top:0}
+.sa .rh{display:flex;align-items:baseline;gap:8px}
+.sa .rh b{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.sa .rh .why{color:var(--muted-foreground);font-size:12.5px}
+.sa code,.raw code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--background);border-radius:4px;padding:0 4px;overflow-wrap:anywhere}
+.sa .ai{display:flex;gap:8px;align-items:flex-start;background:var(--accent);border-radius:8px;padding:7px 10px;margin-top:7px;font-size:12.5px}
+.sa .ai svg{color:var(--primary);flex:none;margin-top:2px}
+.sa .ai b{color:var(--primary);font-weight:600}
+.sa .acts{display:flex;justify-content:flex-end;gap:6px;margin-top:7px}
+.raw{border:1px solid var(--border);border-radius:8px;background:var(--background);padding:8px 10px;margin-top:10px;font-size:12px;color:var(--muted-foreground)}
+.raw code{display:block;margin-top:3px;color:var(--foreground);background:transparent;padding:0}
+.prop2{border:1px solid var(--accent);background:var(--accent);border-radius:10px;padding:10px 12px;margin-top:10px;font-size:13px}
+.prop2 .pt{display:flex;align-items:center;gap:6px;font-weight:600;color:var(--primary);font-size:12.5px}
+.prop2 dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:8px 0 0}
+.prop2 dt{color:var(--muted-foreground)}
+.prop2 dd{margin:0;font-weight:600;font-variant-numeric:tabular-nums}
+.counts .stat .v.w{color:var(--warning)}
+.prog .track i{background:var(--primary)}
+
+</style></head><body><div class="wrap">
+<div class="lbl">Key screen &#183; Import popover over Transactions, desktop &#8212; file dropped, shared account picked</div><div class="browser "><div class="chrome"><span class="dots"><i></i><i></i><i></i></span><span class="url">pangolin.local/transactions</span></div><div class="app" style="position:relative"><aside class="side"><div class="brand"><svg class="pango logo" width="30" height="22" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>Pangolin</span></div><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20V4M4 7l3-3 3 3M17 4v16M14 17l3 3 3-3"/></svg><span>Cash flow</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 5-5"/></svg><span>Net worth</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.6A9 9 0 0 1 20.4 9H15z"/></svg><span>Spending</span></a><a class="nav on" aria-current="page"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></svg><span>Transactions</span><b class="nbadge">2</b></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg><span>Needs review</span><b class="nbadge">8</b></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18L12 4z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg><span>Accounts</span></a><div class="navsep"></div><div class="navlbl">Planning</div><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h16a2 2 0 0 1 2 2v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M5 7l3-3h9v3M16 13h2"/></svg><span>Budgets</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg><span>Goals</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5M10 20v-6h4v6"/></svg><span>Home buying</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><span>Forecast</span></a><div class="sidefoot"><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Settings</span></a><div class="me"><i class="pd simon"></i><div>Simon<small>Signed in with passkey</small></div></div><a class="signout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></a></div></aside><main><div class="head"><div class="hl"><div class="greet"><svg class="pango" width="26" height="19" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>G&#8217;day, Simon</span></div><h1>Transactions</h1><p class="fresh">Jul – Sep 2026 &#183; imported up to 30 Sep from CommBank CSV, 9:14 pm</p></div><div class="ctrl"><div class="drange"><span class="btn ic" aria-label="Previous quarter"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></span><span class="btn">Jul – Sep 2026</span><span class="btn ic" aria-label="Next quarter"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span><span class="seg"><span class="on">Quarter</span><span class="">FY to date</span><span class="">Custom</span></span></div><span class="btn pri" aria-expanded="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Import</span></div></div><div class="card">
+ <div class="filters"><span class="inp"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span class="ph">Search merchant, notes, category or amount</span></span><span class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Import</span></div>
+ <div class="summary">186 transactions &#183; <span class="amt in">+$47,901.40</span> in &#183; <span class="amt out">−$30,027.29</span> out &#183; <span class="link">2 need review</span></div>
+ <div class="bgrows">
+  <div class="dg"><span>Wed 30 Sep 2026</span><b class="amt out">&#8722;$190.85</b></div>
+  <div class="tx"><span class="d">30 Sep</span><span class="m"><span class="disc">W</span><i class="pd carissa"></i>Woolworths Newtown<span class="chip">Groceries</span></span><span class="acct">Spend &#183; ubank</span><span class="amt out">−$142.85</span></div>
+  <div class="tx"><span class="d">30 Sep</span><span class="m"><span class="disc">U</span><i class="pd simon"></i>Uber Eats<span class="chip">Eating out</span></span><span class="acct">Spending &#183; Up</span><span class="amt out">−$48.00</span></div>
+  <div class="dg"><span>Tue 29 Sep 2026</span><b class="amt out">&#8722;$553.90</b></div>
+  <div class="tx"><span class="d">29 Sep</span><span class="m"><span class="disc">G</span><i class="pd simon"></i>Gelato Messina Newtown<span class="chip">Eating out</span></span><span class="acct">Spending &#183; Up</span><span class="amt out">−$14.90</span></div>
+  <div class="tx"><span class="d">29 Sep</span><span class="m"><span class="disc">O</span><i class="pd simon"></i>Opal top-up<span class="chip">Transport</span></span><span class="acct">Spending &#183; Up</span><span class="amt out">−$50.00</span></div>
+  <div class="tx"><span class="d">29 Sep</span><span class="m"><span class="disc">B</span><i class="pd carissa"></i>Bunnings Warehouse Alexandria<span class="chip unc">Uncategorised</span></span><span class="acct">Joint Everyday &#183; CommBank</span><span class="amt out">−$100.00</span></div>
+  <div class="dg"><span>Sat 26 Sep 2026</span><b class="amt in">+$1,543.80</b></div>
+  <div class="tx"><span class="d">26 Sep</span><span class="m"><span class="disc">N</span><i class="pd simon"></i>Northwind Pty Ltd &#183; Pay<span class="chip">Simon&#8217;s pay</span></span><span class="acct">Joint Everyday &#183; CommBank</span><span class="amt in">+$3,180.00</span></div>
+  <div class="tx"><span class="d">26 Sep</span><span class="m"><span class="disc">O</span><i class="pd simon"></i>Origin Energy<span class="chip">Utilities</span></span><span class="acct">Joint Everyday &#183; CommBank</span><span class="amt out">−$186.30</span></div>
+  <div class="tx"><span class="d">26 Sep</span><span class="m"><span class="disc">R</span><i class="pd carissa"></i>Ray White Newtown &#183; Rent<span class="chip">Housing</span></span><span class="acct">Joint Everyday &#183; CommBank</span><span class="amt out">−$1,440.00</span></div>
+ </div></div></main><div class="pop" role="dialog" aria-label="Import a bank file">
+ <h4>Import a bank file</h4><p class="lead">CSV, OFX, QIF or PDF. Your data stays on this server.</p>
+ <div class="drop has"><span class="ok"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span><span class="fn">cba-joint-oct.csv</span><br><span class="cap">23 KB &#183; drop another file to replace it</span></span></div>
+ <span class="fl">Which account is this for?</span>
+ <span class="sel focus">Joint Everyday &#183; CommBank &#183; Shared <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
+ <div class="how"><div class="sm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>How to export from CommBank</div>
+ <ol><li>In NetBank on the web, open <b>Joint Everyday</b>.</li><li>Choose <b>Export</b>, pick <b>CSV</b>, and set the dates from your last import (30 Sep) to today.</li><li>Drop the file above.</li></ol>
+ <div class="cap">Re-importing the same file changes nothing.</div></div>
+ <div class="pf"><span class="cap">Esc to close</span><span class="btn ghost">Cancel</span><span class="btn pri">Import</span></div>
+</div></div></div><div class="lbl">Popover states &#8212; drag-over, picker, progress, clean result, partial result, hand-off, then fixing set-aside rows (incl. one AI reads)</div><div class="states"><div class="pop"><span class="hint">Drag-over</span><h4 style="margin-top:6px">Import a bank file</h4><p class="lead">CSV, OFX, QIF or PDF. Your data stays on this server.</p>
+ <div class="drop over"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg><span class="big" style="color:var(--primary)">Let go to load cba-joint-oct.csv</span>or drop it anywhere on the page</div>
+ <div class="drop" style="margin-top:12px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg><span class="big">Drop a bank file here</span>or <span class="link">choose a file</span> (keyboard: Enter)</div>
+ <div class="cap" style="margin-top:6px">Above: dragging over. Below: at rest.</div></div><div class="pop"><span class="hint">Account picker open</span>
+ <span class="fl">Which account is this for?</span>
+ <span class="sel focus">Joint Everyday &#183; CommBank <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
+ <div class="lb" role="listbox">
+  <div class="g">Yours</div>
+  <div class="o"><i class="pd simon"></i>Spending &#183; Up</div>
+  <div class="o"><i class="pd simon"></i>Rainy day &#183; Up<span class="cap"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> only you</span></div>
+  <div class="o"><i class="pd simon"></i>Offset &#183; CommBank</div>
+  <div class="o"><i class="pd simon"></i>Low Rate Mastercard &#183; CommBank</div>
+  <div class="g">Shared</div>
+  <div class="o on"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Joint Everyday &#183; CommBank</div>
+  <div class="o"><span style="width:13px"></span>House deposit &#183; ubank</div>
+  <div class="sep"></div>
+  <div class="o"><i class="pd carissa"></i>For Carissa<span class="cap">waits in her Needs review</span></div>
+ </div>
+ <div class="cap" style="margin-top:8px">Carissa&#8217;s accounts never show here; &#8220;For Carissa&#8221; lets her pick.</div></div><div class="pop" role="status" aria-live="polite"><span class="hint">In progress</span>
+ <h4 style="margin-top:6px">Checking for duplicates&#8230;</h4><div class="cap">cba-joint-oct.csv &#8594; Joint Everyday</div>
+ <div class="prog"><div class="track"><i style="width:64%"></i></div></div>
+ <div class="cap" style="margin-top:8px">Reading file &#10003; &#183; Checking for duplicates &#183; Saving</div>
+ <div class="cap" style="margin-top:4px">You can keep going; we&#8217;ll tell you when it&#8217;s done.</div></div><div class="pop" role="status"><span class="hint">Result</span>
+ <div class="res" style="margin-top:6px"><span class="ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><div><h4>Done. Joint Everyday is up to 5 Oct.</h4><div class="cap">cba-joint-oct.csv &#183; 148 rows read</div></div></div>
+ <div class="counts"><div class="stat"><div class="k">New</div><div class="v">142</div><div class="n">in Transactions now</div></div>
+  <div class="stat"><div class="k">Look like duplicates</div><div class="v" style="color:var(--warning)">3</div><div class="n">waiting in Needs review</div></div></div>
+ <div class="pf"><span class="cap"></span><span class="btn">Import another</span><span class="btn pri">Open Needs review</span></div></div><div class="pop" role="status"><span class="hint">Result &#183; some rows set aside</span>
+ <div class="res" style="margin-top:6px"><span class="ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><div><h4>139 imported &#183; 3 set aside to fix</h4><div class="cap">cba-joint-oct.csv &#183; 142 rows read &#183; Joint Everyday is up to 5 Oct</div></div></div>
+ <div class="counts"><div class="stat"><div class="k">Imported</div><div class="v">139</div><div class="n">in Transactions now</div></div>
+  <div class="stat"><div class="k">Set aside</div><div class="v w">3</div><div class="n">rows we couldn&#8217;t read</div></div></div>
+ <div class="errbox">
+  <div><b>Row 14</b><span>Has a date we can&#8217;t read: <code>31/09/2026</code></span></div>
+  <div><b>Row 87</b><span>Has no amount.</span></div>
+  <div><b>Row 112</b><span>Has text in the amount column: <code>n/a</code></span></div>
+ </div>
+ <div class="cap" style="margin-top:8px">The rest went in fine. Set-aside rows wait in Needs review until you fix or ignore them.</div>
+ <div class="pf"><span class="cap"></span><span class="btn">Done</span><span class="btn pri">Fix 3 rows</span></div></div><div class="pop" role="status"><span class="hint">Hand-off</span>
+ <div class="res" style="margin-top:6px"><span class="ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.4l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/></svg></span><div><h4>Handed to Carissa. It&#8217;ll wait in her Needs review.</h4><div class="cap">up-carissa-sep.csv &#183; 54 rows</div></div></div>
+ <div class="drop has" style="margin-top:12px"><i class="pd carissa"></i><span><span class="fn">Waiting for Carissa to pick an account</span><br><span class="cap">She chooses where it goes. You won&#8217;t see which account.</span></span></div>
+ <div class="pf"><span class="cap"></span><span class="btn">Done</span></div></div><div class="pop" role="dialog" aria-label="Fix set-aside rows"><span class="hint">Set-aside rows &#183; fixing</span>
+ <h4 style="margin-top:6px">3 rows set aside from cba-joint-oct.csv</h4><div class="cap">Fix one, ignore one, or leave them for later.</div>
+ <div class="sa">
+  <div class="row"><div class="rh"><b>Row 14</b><span class="why">Date we can&#8217;t read</span></div><code>31/09/2026, BWS NEWTOWN, -36.00</code>
+   <div class="ai"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg><span><b>Probably 30 Sep 2026.</b> September has 30 days; the rows either side are 30 Sep.</span></div>
+   <div class="acts"><span class="btn sm ghost">Ignore</span><span class="btn sm">Edit</span><span class="btn sm pri">Confirm</span></div></div>
+  <div class="row"><div class="rh"><b>Row 87</b><span class="why">No amount</span></div><code>17/09/2026, TRANSFER FROM 062-000 ...</code>
+   <div class="acts"><span class="btn sm ghost">Ignore</span><span class="btn sm">Edit</span></div></div>
+  <div class="row"><div class="rh"><b>Row 112</b><span class="why">Text in the amount</span></div><code>04/09/2026, CARD FEE REVERSAL, n/a</code>
+   <div class="acts"><span class="btn sm ghost">Ignore</span><span class="btn sm">Edit</span></div></div>
+ </div></div><div class="pop" role="dialog" aria-label="Set-aside row read by AI"><span class="hint">Set-aside row &#183; AI reads it</span>
+ <h4 style="margin-top:6px">This one isn&#8217;t a transaction</h4><div class="cap">cba-home-loan-sep.csv &#8594; Investment home loan &#183; 12 imported, 1 set aside</div>
+ <div class="raw">Row 9, as it is in the file<code>30/09/2026, VARIATION INT RATE 6.24% TO 5.99%, 0.00</code></div>
+ <div class="prop2"><div class="pt"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Looks like a rate change on your loan<span class="conf" style="margin-left:auto;font-weight:400;color:var(--muted-foreground)">Fairly sure &#183; 84%</span></div>
+  <dl><dt>Loan</dt><dd>Investment home loan &#183; 35 Hawthorne St</dd><dt>Rate</dt><dd>6.24% &#8594; 5.99%</dd><dt>From</dt><dd>30 Sep 2026</dd></dl></div>
+ <div class="cap" style="margin-top:8px">Confirm and Loan detail re-works the schedule at 5.99%. Nothing is changed until you do.</div>
+ <div class="pf"><span class="cap"></span><span class="btn ghost">Ignore</span><span class="btn">Edit</span><span class="btn pri">Confirm</span></div></div></div>
+</div></body></html>

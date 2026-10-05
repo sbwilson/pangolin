@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pangolin · Needs review</title>
+<style>
+/* Key screen: Needs review (desktop), Simon's view, 8 open items.
+   Governs: DESIGN.md § Components › Transactions & review (Needs review item, Partner pending chip,
+   Transaction row, Category chip, Warning line); § Colors (warning for over budget; person colours);
+   § Brand & Style › Mascot (none in money warnings).
+   EXPERIENCE.md § IA (Needs review /review, single inbox AD-17); § Component Patterns › Needs review item,
+   Needs review item kinds (AI suggestion, Rule offer, Duplicate pair, Import hand-off, Over budget),
+   Partner pending chip (shared-visible only); § State Patterns › Partner pending, Duplicates, Over budget;
+   § Voice and Tone (Nudge, Over budget); Flow 1 step 2; Flow 4 step 3 (hand-off, seen here from Simon's side
+   as recipient); Flow 5 step 7.
+   [ASSUMPTION] bulk accept for high-confidence suggestions (spine). Spine gaps rendered minimally:
+   confidence display on AI suggestions; 'Transfer' review kind (not in the kinds table).
+   Set-aside rows (.memlog decision: partial import, bad rows set aside, AI may interpret one and propose an event the
+   user confirms) — a new item kind [Spec catch-up]; same row + AI proposal as key-import-popover.html.
+*/
+:root{--background:#F6EFE6;--foreground:#2A1F17;--card:#FFFAF3;--muted:#F6EFE6;--muted-foreground:#6A594B;--border:#E3D6C5;--ring:#B85A1E;--primary:#A3441D;--primary-foreground:#FFFFFF;--accent:#F6E8DE;--destructive:#A3283A;--sidebar:#F6EFE6;--money-in:#3D6B2D;--money-out:#A3283A;--warning:#8A5600;--warning-bg:#F0E5D3;--person-simon:#2C6681;--person-carissa:#9C4277;--mascot-scale-1:#BD785C;--mascot-scale-2:#D1A28E;--mascot-ink:#1F2328;--chart-1:#6F8A3D;--chart-2:#B5562B;--chart-3:#D9A13B;--chart-4:#2E8C88;--chart-5:#C97B63;--chart-6:#8A5A7A;--chart-7:#7E6A4F;--chart-8:#4F5D85;--chart-9:#A3B18A}
+
+*{box-sizing:border-box}
+body{margin:0;background:#E7E0D6;color:var(--foreground);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;padding:32px 16px 72px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto}
+.lbl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#5E4F42;font-weight:600;margin:34px 0 10px}
+.lbl:first-child{margin-top:0}
+.intro{max-width:900px;margin:0 0 6px;color:#5E4F42;font-size:13px}
+.statehint{display:block;font-size:10.5px;color:var(--primary);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin:0 0 4px}
+/* frame */
+.browser{background:var(--background);border-radius:12px;overflow:hidden;border:1px solid #D6C9B8;box-shadow:0 24px 60px -24px rgba(60,40,20,.28)}
+.chrome{height:38px;background:#EFE6DA;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;position:relative}
+.dots i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:7px;background:#DCCFBE}
+.url{position:absolute;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:7px;padding:3px 110px;font-size:12px;color:var(--muted-foreground);white-space:nowrap}
+.app{display:grid;grid-template-columns:232px minmax(0,1fr)}
+/* sidebar */
+.side{background:var(--sidebar);border-right:1px solid var(--border);padding:20px 14px 14px;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:9px;font-weight:650;font-size:16px;padding:0 8px 20px}
+.nav{display:flex;align-items:center;gap:11px;padding:7px 10px;border-radius:8px;color:var(--muted-foreground);margin-bottom:2px;font-size:14px}
+.nav.on{background:var(--accent);color:var(--primary);font-weight:600}
+.nbadge{margin-left:auto;background:var(--warning-bg);color:var(--warning);font-size:11px;border-radius:9999px;padding:1px 7px;font-weight:600;font-variant-numeric:tabular-nums}
+.nbadge.zero{background:var(--accent);color:var(--primary);width:20px;height:20px;padding:0;display:grid;place-items:center}
+.navsep{height:1px;background:var(--border);margin:10px 10px 12px}
+.navlbl{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);padding:0 10px 6px}
+.sidefoot{margin-top:auto;padding-top:18px}
+.me{display:flex;align-items:center;gap:10px;padding:12px 10px 6px;border-top:1px solid var(--border);margin-top:8px;font-size:13px}
+.me small{display:block;color:var(--muted-foreground);font-size:12px}
+.signout{display:flex;align-items:center;gap:8px;padding:4px 10px;color:var(--muted-foreground);font-size:13px}
+.pd{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
+.pd.simon{background:var(--person-simon)}.pd.carissa{background:var(--person-carissa)}
+/* main + header */
+main{padding:28px 36px 36px;min-width:0}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:18px}
+.hl{min-width:0}
+.greet{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted-foreground);margin-bottom:2px}
+.head h1{margin:0;font-size:26px;font-weight:600;line-height:1.15;letter-spacing:-.01em}
+.fresh{margin:5px 0 0;color:var(--muted-foreground);font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ctrl{display:flex;gap:8px;align-items:center;flex:none}
+.drange{display:flex;gap:6px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--card);color:var(--foreground);border-radius:8px;padding:6px 12px;font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.btn.ic{padding:6px 7px}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:var(--primary-foreground);font-weight:600}
+.btn.sec{background:var(--card)}
+.seg{display:inline-flex;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:2px;white-space:nowrap}
+.seg span{padding:4px 10px;border-radius:6px;font-size:12.5px;color:var(--muted-foreground)}
+.seg span.on{background:var(--card);color:var(--foreground);box-shadow:0 1px 2px rgba(0,0,0,.08);font-weight:600}
+.link{color:var(--primary);font-size:13px;font-weight:600;white-space:nowrap}
+.pchip{display:inline-flex;align-items:center;gap:6px;background:var(--background);border:1px solid var(--border);border-radius:9999px;padding:1px 9px;font-size:12px;color:var(--foreground)}
+/* cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 22px}
+.card h3{margin:0;font-size:15px;font-weight:600;line-height:1.3}
+.card .sub{margin:2px 0 0;color:var(--muted-foreground);font-size:13px}
+.cardhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
+.cardhead .ctrl{flex-wrap:wrap;justify-content:flex-end}
+.foot{font-size:12px;color:var(--muted-foreground);border-top:1px solid var(--border);margin-top:8px;padding-top:10px}
+.mt{margin-top:16px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.kpis.k3{grid-template-columns:repeat(3,1fr)}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px}
+.kpi .k{font-size:12px;color:var(--muted-foreground)}
+.kpi .v{font-size:24px;font-weight:600;line-height:1.2;margin-top:4px;font-variant-numeric:tabular-nums;letter-spacing:-.01em;white-space:nowrap}
+.kpi .n{font-size:12px;color:var(--muted-foreground);margin-top:2px}
+.v.in{color:var(--money-in)}.v.out{color:var(--money-out)}.v.acc{color:var(--primary)}
+.share{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 16px;font-size:13px;color:var(--muted-foreground)}
+.share>span:first-child{display:flex;align-items:center;gap:8px}
+.share b{color:var(--foreground);font-weight:600;font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:16px;margin-top:16px}
+.grid2.even{grid-template-columns:1fr 1fr}
+.amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.amt.in{color:var(--money-in);font-weight:600}.amt.out{color:var(--money-out)}
+.chip{display:inline-flex;align-items:center;font-size:12px;border:1px solid var(--border);color:var(--muted-foreground);border-radius:6px;padding:1px 7px;white-space:nowrap}
+.chip.unc{color:var(--warning);background:var(--warning-bg);border-color:var(--warning-bg)}
+.sq{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}
+.warnline{display:flex;align-items:center;gap:10px;background:var(--warning-bg);color:var(--warning);border-radius:8px;padding:8px 12px;font-size:13px}
+.warnline>b{width:18px;height:18px;border-radius:50%;border:1.6px solid currentColor;display:grid;place-items:center;font-size:11px;flex:none}
+.warnline .link{margin-left:auto;color:var(--warning);text-decoration:underline}
+.stat{background:var(--background);border:1px solid var(--border);border-radius:10px;padding:10px 14px}
+.stat .k{font-size:12px;color:var(--muted-foreground)}
+.stat .v{font-size:19px;font-weight:600;line-height:1.25;white-space:nowrap;font-variant-numeric:tabular-nums}
+.stat .n{font-size:12px;color:var(--muted-foreground)}
+.track{height:8px;background:var(--border);border-radius:9999px;overflow:hidden}
+.track i{display:block;height:100%;border-radius:9999px}
+/* celebration */
+.party{position:relative;overflow:hidden;background:var(--accent);border-radius:12px;padding:8px 14px 8px 8px;display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.party .conf{position:absolute;inset:0;pointer-events:none}
+.party .conf i{position:absolute;width:8px;height:3px;border-radius:2px;opacity:.75}
+.party .conf i.c{width:5px;height:5px;border-radius:50%}
+.party .conf i.s{width:7px;height:7px;background:transparent!important;border:1.5px solid;border-radius:2px}
+.party .txt{position:relative}
+.party b{font-size:15px;font-weight:600}
+.party p{margin:0;color:var(--foreground);font-size:13px}
+.party .count{position:relative;margin-left:auto;background:var(--card);border-radius:9999px;padding:4px 12px;font-size:13px;font-variant-numeric:tabular-nums;color:var(--muted-foreground);white-space:nowrap}
+.party .count strong{color:var(--primary)}
+.party .x{position:relative;color:var(--muted-foreground);display:grid;place-items:center}
+/* sankey */
+.sankey{display:block}
+.sankey .sk-n{font:600 12.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;fill:var(--foreground)}
+.sankey .sk-v{font:400 11.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;fill:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.sankey .ld{stroke:var(--border);fill:none}
+/* phone */
+.phones{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.phonewrap{margin:0}
+.pcap{font-size:12px;color:#5E4F42;margin:0 0 8px;font-weight:600}
+.phone{width:390px;height:844px;border-radius:46px;border:10px solid #2A1F17;background:var(--background);position:relative;overflow:hidden;box-shadow:0 24px 60px -24px rgba(60,40,20,.35);display:flex;flex-direction:column}
+.status{height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 26px 0 30px;font-size:14px;flex:none}
+.status span{font-size:11px;letter-spacing:1px}
+.pscroll{flex:1;overflow:hidden;padding:6px 16px 16px}
+.tabs{flex:none;display:grid;grid-template-columns:repeat(5,1fr);background:var(--card);border-top:1px solid var(--border);padding:6px 4px 24px}
+.tab{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--muted-foreground);min-height:44px;justify-content:center;text-align:center;line-height:1.15}
+.tab.on{color:var(--primary);font-weight:600}
+.ti{position:relative;display:block}
+.tbadge{position:absolute;top:-5px;left:15px;background:var(--warning-bg);color:var(--warning);font-size:10px;border-radius:9999px;padding:0 5px;font-weight:600;border:1.5px solid var(--card)}
+.tbadge.zero{background:var(--accent);color:var(--primary);width:16px;height:16px;padding:0;display:grid;place-items:center}
+.homebar{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);width:130px;height:5px;border-radius:3px;background:#2A1F17}
+
+
+/* batch-2 primitives (shadcn defaults on Clay & Linen tokens) */
+.cb{width:16px;height:16px;border:1.5px solid #BFAE98;border-radius:4px;background:var(--card);display:inline-grid;place-items:center;flex:none;color:var(--primary-foreground)}
+.cb.on{background:var(--primary);border-color:var(--primary)}
+.cb.mixed{background:var(--primary);border-color:var(--primary)}
+.cb.mixed::after{content:"";width:8px;height:2px;background:var(--primary-foreground);border-radius:1px}
+.sel{display:inline-flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--border);background:var(--card);border-radius:8px;padding:5px 10px;font-size:13px;white-space:nowrap}
+.inp{display:flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);border-radius:8px;padding:6px 10px;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.inp .ph{color:var(--muted-foreground)}
+.focus{box-shadow:0 0 0 2px var(--background),0 0 0 4px var(--ring)}
+.tag{display:inline-flex;font-size:11.5px;color:var(--muted-foreground);background:var(--background);border:1px solid var(--border);border-radius:6px;padding:0 6px;line-height:17px;white-space:nowrap}
+.disc{width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--primary);display:grid;place-items:center;font-size:12px;font-weight:700;flex:none}
+.cap{font-size:12px;color:var(--muted-foreground)}
+.hint{display:block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--primary);font-weight:600}
+.btn.sm{padding:4px 10px;font-size:12.5px}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted-foreground)}
+.btn.wide{justify-content:center}
+.chip.on{background:var(--accent);color:var(--primary);border-color:var(--accent);font-weight:600}
+.pbar i{background:var(--primary)}
+
+.toprow{display:flex;align-items:center;gap:12px;margin-bottom:14px;font-size:13px;color:var(--muted-foreground)}
+.toprow .sp{flex:1}
+.items{display:flex;flex-direction:column;gap:12px}
+.item{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px}
+.ih{display:flex;align-items:center;gap:10px}
+.ki{width:30px;height:30px;border-radius:8px;background:var(--background);border:1px solid var(--border);display:grid;place-items:center;color:var(--muted-foreground);flex:none}
+.ki.w{color:var(--warning);background:var(--warning-bg);border-color:var(--warning-bg)}
+.ki.p{color:var(--primary);background:var(--accent);border-color:var(--accent)}
+.ih .sum{font-size:14px;font-weight:600}
+.ih .sum small{display:block;font-weight:400;font-size:12px;color:var(--muted-foreground)}
+.ih .acts{margin-left:auto;display:flex;gap:8px;flex:none;align-items:center}
+.conf{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground);font-weight:400;margin-left:8px}
+.meter{display:inline-block;width:42px;height:6px;border-radius:9999px;background:var(--border);overflow:hidden;vertical-align:middle}
+.meter i{display:block;height:100%;background:var(--primary)}
+.rowi{display:grid;grid-template-columns:50px minmax(0,1fr) 170px 100px;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--border);font-size:14px;margin-top:10px}
+.rowi+.rowi{margin-top:0}
+.rowi .d{color:var(--muted-foreground);font-size:12.5px}
+.rowi .m{display:flex;gap:9px;align-items:center;min-width:0}
+.rowi .ac{font-size:13px;color:var(--muted-foreground);white-space:nowrap}
+.rule{display:flex;align-items:center;gap:10px;background:var(--accent);border-radius:8px;padding:8px 12px;margin-top:8px;font-size:13px}
+.rule b{color:var(--primary);font-weight:600}
+.rule .acts{margin-left:auto;display:flex;gap:8px}
+.bulkl{margin-top:10px;border-top:1px solid var(--border)}
+.bulkl .rowi{grid-template-columns:22px 50px minmax(0,1fr) 150px 170px 100px;margin-top:0}
+.bulkl .rowi:first-child{border-top:0}
+.arrow{color:var(--muted-foreground)}
+.dupe{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+.dupe .side2{border:1px solid var(--border);border-radius:10px;padding:8px 12px;background:var(--background);font-size:13px}
+.dupe .side2 .t{display:flex;justify-content:space-between;font-weight:600;font-size:14px}
+.dupe .side2 .cap{margin-top:2px}
+.ho{display:flex;gap:10px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:13px}
+.ho .file{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--background);border-radius:8px;padding:5px 10px}
+.ho .sel{min-width:250px}
+.ob{margin-top:10px;display:flex;align-items:center;gap:14px}
+.ob .track{flex:1;max-width:420px}
+.ob .track i{background:var(--warning)}
+.ob .fig{font-variant-numeric:tabular-nums;font-size:13px;white-space:nowrap}
+.ob .fig b{font-size:15px}
+.who{display:inline-flex;align-items:center;gap:6px}
+.sa{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-top:10px}
+.sa .raw{border:1px solid var(--border);border-radius:10px;background:var(--background);padding:8px 12px;font-size:12.5px;color:var(--muted-foreground)}
+.sa code{display:block;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--foreground);margin-top:3px}
+.sa .ai{background:var(--accent);border-radius:10px;padding:8px 12px;font-size:13px}
+.sa .ai .pt{display:flex;align-items:center;gap:6px;font-weight:600;color:var(--primary);font-size:12.5px}
+.sa .ai dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:6px 0 0}
+.sa .ai dt{color:var(--muted-foreground)}
+.sa .ai dd{margin:0;font-weight:600;font-variant-numeric:tabular-nums}
+.side-note{font-size:12px;color:var(--muted-foreground);margin-top:8px}
+
+</style></head><body><div class="wrap">
+<div class="lbl">Key screen &#183; Needs review, desktop &#8212; Simon&#8217;s view, 8 open items</div><div class="browser "><div class="chrome"><span class="dots"><i></i><i></i><i></i></span><span class="url">pangolin.local/review</span></div><div class="app"><aside class="side"><div class="brand"><svg class="pango logo" width="30" height="22" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>Pangolin</span></div><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20V4M4 7l3-3 3 3M17 4v16M14 17l3 3 3-3"/></svg><span>Cash flow</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 5-5"/></svg><span>Net worth</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.6A9 9 0 0 1 20.4 9H15z"/></svg><span>Spending</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></svg><span>Transactions</span><b class="nbadge">2</b></a><a class="nav on" aria-current="page"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg><span>Needs review</span><b class="nbadge">8</b></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18L12 4z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg><span>Accounts</span></a><div class="navsep"></div><div class="navlbl">Planning</div><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h16a2 2 0 0 1 2 2v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M5 7l3-3h9v3M16 13h2"/></svg><span>Budgets</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg><span>Goals</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5M10 20v-6h4v6"/></svg><span>Home buying</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><span>Forecast</span></a><div class="sidefoot"><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Settings</span></a><div class="me"><i class="pd simon"></i><div>Simon<small>Signed in with passkey</small></div></div><a class="signout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></a></div></aside><main><div class="head"><div class="hl"><div class="greet"><svg class="pango" width="26" height="19" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>G&#8217;day, Simon</span></div><h1>Needs review</h1><p class="fresh">Imported up to 30 Sep from CommBank CSV, 9:14 pm</p></div><div class="ctrl"><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Import</span></div></div>
+<div class="toprow"><span>8 things need you. Most take one click.</span><span class="sp"></span>
+ <span class="cap">Waiting on Carissa</span><span class="pchip"><i class="pd carissa"></i>Carissa: 12 left</span></div>
+<div class="items"><div class="item">
+ <div class="ih"><span class="ki p" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.4l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/></svg></span><div class="sum"><span class="who"><i class="pd carissa"></i>Carissa handed you a file: up-spending-sep.csv</span>
+  <small>She dropped it in for you on 4 Oct, 8:02 pm. Pick which of your accounts it belongs to.</small></div></div>
+ <div class="ho"><span class="file"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>up-spending-sep.csv &#183; 61 rows</span>
+  <span class="sel focus">Pick an account&#8230; <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
+  <span style="flex:1"></span><span class="btn ghost">Dismiss</span><span class="btn pri">Import</span></div>
+</div><div class="item">
+ <div class="ih"><span class="ki w" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg></span><div class="sum">Set-aside row: 1 line from your home-loan file didn&#8217;t import
+  <small>cba-home-loan-sep.csv &#183; row 9 &#183; imported 30 Sep, 9:14 pm. Pangolin had a go at reading it.</small></div>
+  <div class="acts"><span class="btn ghost">Ignore</span><span class="btn">Edit</span><span class="btn pri">Confirm rate change</span></div></div>
+ <div class="sa">
+  <div class="raw">As it is in the file<code>30/09/2026, VARIATION INT RATE 6.24% TO 5.99%, 0.00</code></div>
+  <div class="ai"><div class="pt"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Looks like a rate change<span class="conf" style="margin-left:auto">Fairly sure &#183; 84%</span></div>
+   <dl><dt>Loan</dt><dd>Investment home loan &#183; 35 Hawthorne St</dd><dt>Rate</dt><dd>6.24% &#8594; 5.99% from 30 Sep</dd></dl></div>
+ </div>
+</div><div class="item">
+ <div class="ih"><span class="ki p" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></span><div class="sum">Bunnings Warehouse &#8594; Home &amp; garden?<span class="conf"><span class="meter"><i style="width:78%"></i></span>Fairly sure &#183; 78%</span>
+  <small>Pangolin&#8217;s guess from the merchant and what you&#8217;ve picked before.</small></div>
+  <div class="acts"><span class="btn">Change</span><span class="btn pri">Accept</span></div></div>
+ <div class="rowi"><span class="d">29 Sep</span><span class="m"><span class="disc">B</span><i class="pd carissa"></i><span>Bunnings Warehouse Alexandria</span><span class="chip unc">Uncategorised</span></span><span class="ac">Joint Everyday &#183; CommBank</span><span class="amt out">−$100.00</span></div>
+ <div class="rule"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg><span><b>Always do this for Bunnings?</b> Future Bunnings rows go straight to Home &amp; garden.</span>
+  <span class="acts"><span class="btn sm">Just this once</span><span class="btn sm pri">Yes, always</span></span></div>
+</div><div class="item">
+ <div class="ih"><span class="ki p" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></span><div class="sum">2 more we&#8217;re very sure about<span class="conf"><span class="meter"><i style="width:94%"></i></span>Very sure &#183; 90%+</span>
+  <small>Untick any you&#8217;d rather check one by one.</small></div>
+  <div class="acts"><span class="btn pri">Accept both</span></div></div>
+ <div class="bulkl">
+  <div class="rowi"><span class="cb on"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span class="d">30 Sep</span><span class="m"><span class="disc">W</span><i class="pd carissa"></i><span>Woolworths Metro Erskineville</span></span><span class="m"><span class="arrow">&#8594;</span><span class="chip">Groceries</span><span class="cap">96%</span></span><span class="ac">Spend &#183; ubank</span><span class="amt out">−$38.20</span></div>
+  <div class="rowi"><span class="cb on"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span class="d">28 Sep</span><span class="m"><span class="disc">C</span><i class="pd simon"></i><span>Coles Express Newtown</span></span><span class="m"><span class="arrow">&#8594;</span><span class="chip">Transport</span><span class="cap">93%</span></span><span class="ac">Spending &#183; Up</span><span class="amt out">−$71.45</span></div>
+ </div>
+</div><div class="item">
+ <div class="ih"><span class="ki w" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg></span><div class="sum">These two look the same
+  <small>Same amount, same day, different files. We never merge them without asking.</small></div>
+  <div class="acts"><span class="btn">Keep both</span><span class="btn pri">It&#8217;s a duplicate</span></div></div>
+ <div class="dupe">
+  <div class="side2"><div class="t"><span>Origin Energy</span><span class="amt out">−$186.30</span></div>
+   <div class="cap">26 Sep &#183; Joint Everyday &#183; from cba-joint-sep.csv (30 Sep, 9:14 pm)</div></div>
+  <div class="side2"><div class="t"><span>ORIGIN ENERGY HOLDINGS</span><span class="amt out">−$186.30</span></div>
+   <div class="cap">26 Sep &#183; Joint Everyday &#183; from cba-joint-q1.ofx (2 Oct, 7:40 pm)</div></div>
+ </div>
+</div><div class="item">
+ <div class="ih"><span class="ki " aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/></svg></span><div class="sum">Looks like a transfer between your accounts
+  <small>Transfers are left out of Cash flow so nothing gets counted twice.</small></div>
+  <div class="acts"><span class="btn">Not a transfer</span><span class="btn pri">Yes, it&#8217;s a transfer</span></div></div>
+ <div class="rowi"><span class="d">27 Sep</span><span class="m"><span class="disc">U</span><i class="pd simon"></i><span>To Rainy day</span><span class="chip unc">Uncategorised</span></span><span class="ac">Spending &#183; Up</span><span class="amt out">−$250.00</span></div>
+ <div class="rowi"><span class="d">27 Sep</span><span class="m"><span class="disc">U</span><i class="pd simon"></i><span>From Spending</span><span class="chip unc">Uncategorised</span></span><span class="ac">Rainy day &#183; Up</span><span class="amt in">+$250.00</span></div>
+</div><div class="item">
+ <div class="ih"><span class="ki w" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></svg></span><div class="sum">Eating out&#8217;s had a big fortnight: $460 of $400
+  <small>Shared budget &#183; fortnight to 7 Oct &#183; 9 Uber Eats orders did a lot of the lifting.</small></div>
+  <div class="acts"><span class="btn ghost">Got it</span><span class="btn">Adjust limit</span><span class="btn pri">Open budget</span></div></div>
+ <div class="ob"><span class="track" role="img" aria-label="Spent $460 of $400, over by $60"><i style="width:100%"></i></span>
+  <span class="fig"><b>$460</b> of $400 &#183; <span style="color:var(--warning);font-weight:600">$60 over</span></span></div>
+</div></div>
+<p class="side-note">&#8220;Carissa: 12 left&#8221; counts only her items on accounts you can both see. Her private accounts never add to it.</p>
+</main></div></div>
+</div></body></html>

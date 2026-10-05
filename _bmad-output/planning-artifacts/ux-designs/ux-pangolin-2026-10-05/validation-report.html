@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>UX Design Validation: pangolin</title>
+<style>
+  :root {
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --border: #e7e5e4;
+    --text: #1c1917;
+    --muted: #78716c;
+
+    --verdict-strong: #16a34a;
+    --verdict-adequate: #65a30d;
+    --verdict-thin: #d97706;
+    --verdict-broken: #dc2626;
+
+    --sev-low: #64748b;
+    --sev-medium: #ca8a04;
+    --sev-high: #ea580c;
+    --sev-critical: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+
+  header.report-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .title h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .title .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  .synthesis {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--muted);
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin-bottom: 24px;
+    font-size: 15.5px;
+  }
+  .synthesis p { margin: 0 0 10px; }
+  .synthesis p:last-child { margin-bottom: 0; }
+
+  .dimension-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .dim-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .dim-card .dim-name { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .dim-card .dim-verdict { font-size: 14px; font-weight: 600; }
+
+  section.dimension, section.reviewer-section { margin-bottom: 14px; }
+  section.dimension details, section.reviewer-section details {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  section summary {
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  section summary::-webkit-details-marker { display: none; }
+  section summary::before {
+    content: "▸";
+    display: inline-block;
+    color: var(--muted);
+    transition: transform 0.15s ease;
+  }
+  section details[open] summary::before { transform: rotate(90deg); }
+  section summary h2 {
+    display: inline;
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    flex: 1;
+  }
+  .verdict-pill {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: white;
+  }
+  .verdict-strong { background: var(--verdict-strong); }
+  .verdict-adequate { background: var(--verdict-adequate); }
+  .verdict-thin { background: var(--verdict-thin); }
+  .verdict-broken { background: var(--verdict-broken); }
+
+  .dim-body { padding: 4px 20px 18px; }
+  .dim-judgment { color: var(--text); font-size: 14.5px; }
+  .dim-judgment p { margin: 0 0 10px; }
+
+  .findings-list { padding: 0 20px 4px; }
+  article.finding {
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+  }
+  article.finding:first-child { border-top: none; }
+  article.finding header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .badge {
+    font-size: 10.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+  }
+  .badge-sev-low { background: rgba(100, 116, 139, 0.12); color: var(--sev-low); }
+  .badge-sev-medium { background: rgba(202, 138, 4, 0.14); color: var(--sev-medium); }
+  .badge-sev-high { background: rgba(234, 88, 12, 0.14); color: var(--sev-high); }
+  .badge-sev-critical { background: rgba(220, 38, 38, 0.14); color: var(--sev-critical); }
+  .finding-title { margin: 0; font-size: 15px; font-weight: 500; flex: 1; min-width: 200px; }
+  .finding-location { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; color: var(--muted); }
+  .finding-note, .finding-fix { margin-top: 6px; font-size: 14px; }
+  .finding-fix strong { color: var(--muted); font-weight: 500; }
+
+  .reviewer-source {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  .mechanical {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-top: 24px;
+    font-size: 14px;
+  }
+  .mechanical h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .mechanical ul { margin: 0; padding-left: 20px; }
+  .mechanical li { margin-bottom: 4px; color: var(--text); }
+
+  footer.report-footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  footer .meta { display: flex; gap: 24px; flex-wrap: wrap; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.92em; }
+  .sev-counts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .resolved { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--verdict-strong); border-radius: 8px; padding: 16px 20px; margin-bottom: 24px; font-size: 14px; }
+  .resolved h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .resolved p { margin: 0 0 8px; }
+  .resolved ul { margin: 0; padding-left: 20px; }
+  .resolved li { margin-bottom: 6px; }
+  .badge-resolved { background: rgba(22, 163, 74, 0.12); color: var(--verdict-strong); }
+  @media (max-width: 600px) { .container { padding: 20px 16px 48px; } header.report-header { flex-direction: column; } }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header class="report-header">
+      <div class="title">
+        <h1>pangolin — UX Design Validation Report</h1>
+        <div class="subtitle">/Users/sim/dev/pangolin/_bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md<br>/Users/sim/dev/pangolin/_bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md</div>
+        <div class="sev-counts"><span class="badge badge-sev-critical">critical 1</span><span class="badge badge-sev-high">high 8</span><span class="badge badge-sev-medium">medium 15</span><span class="badge badge-sev-low">low 11</span></div>
+      </div>
+    </header>
+    <div class="synthesis">
+      <p>The visual contract is close to source-extractable: every {token} reference resolves (66 in DESIGN.md, 2 in EXPERIENCE.md), every colour has a hex value with a light/dark pair across six themes, all the contrast figures the reviewer recomputed match, and every .working/ and imports/ link resolves. The behavioural contract is lopsided. Cash flow, import, Needs review, Home buying and Loan detail are specified in depth. Budgets (named a priority feature), Goals, Forecast, Settings and Sign-in have only an IA row and an empty state. Three privacy and architecture commitments (partner pending count, in-app restore, ownership split) are either contradicted or missing. Story-dev can start on the Cash flow, ledger and planner epics now. It can't start on Planning (budgets, goals, forecast) or Settings without another pass.</p>
+    </div>
+    <div class="resolved">
+      <h3>Resolved since review</h3>
+      <p>These decisions were logged in .memlog.md after the review started. The findings stay listed because the spines haven't been updated yet; each resolves once the decision is written into DESIGN.md / EXPERIENCE.md.</p>
+      <ul>
+        <li><strong>Partner pending chip counts private-account items (Inheritance, high)</strong> — Decision: partner-pending indicator counts only items both partners can see (shared accounts); private-account items never contribute.</li>
+        <li><strong>Ownership split on loans/properties not in either spine (Inheritance, high)</strong> — Decision confirmed: ownership split must be enterable (Simon owns/pays 100% of the investment property).</li>
+        <li><strong>Saved plan visibility uncommitted (Inheritance, medium)</strong> — Decision: saved plans are shared between both partners and use only data both can see; private accounts never feed a saved plan.</li>
+        <li><strong>"Where your repayments went" contradicts the interest/principal non-goal (Inheritance, medium)</strong> — Decision: principal/interest figures are user-entered from bank statements, not auto-estimated; the card shows only periods with entered figures.</li>
+      </ul>
+    </div>
+    <div class="dimension-summary">
+      <div class="dim-card">
+        <div class="dim-name">Flow coverage</div>
+        <div class="dim-verdict" style="color: var(--verdict-thin)">thin</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Token completeness</div>
+        <div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Component coverage</div>
+        <div class="dim-verdict" style="color: var(--verdict-thin)">thin</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">State coverage</div>
+        <div class="dim-verdict" style="color: var(--verdict-thin)">thin</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Visual reference coverage</div>
+        <div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Bloat &amp; overspecification</div>
+        <div class="dim-verdict" style="color: var(--verdict-adequate)">adequate</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Inheritance discipline</div>
+        <div class="dim-verdict" style="color: var(--verdict-thin)">thin</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Shape fit</div>
+        <div class="dim-verdict" style="color: var(--verdict-strong)">strong</div>
+      </div>
+    </div>
+    <section class="dimension">
+      <details open>
+        <summary>
+          <h2>Flow coverage</h2>
+          <span class="verdict-pill verdict-thin">thin</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Checked: the CAP-1…CAP-18 names from SPEC.md (the spec has no UJs; capabilities are the requirement names), plus the journeys the memlog commits to, against Key Flows. Flows 1–4 each have a named protagonist, numbered steps, a bold climax and a failure path. Covered: CAP-1, CAP-2, CAP-3 (Flow 4), CAP-17, plus the spec catch-up surfaces (planner, loan detail, saved plans). CAP-9, 10, 12 and 13 are deferred to M4 (EXPERIENCE § IA, "Later (M4)"), which is defensible.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-critical">critical</span>
+              <h3 class="finding-title">Budgeting (CAP-4) has no flow, components or non-empty states</h3>
+              <span class="finding-location">EXPERIENCE § Key Flows; § IA row "Budgets"</span>
+            </header>
+            <div class="finding-note">Budgeting was named a priority feature in the memlog. It has no flow beyond one sentence (Flow 1 step 6, "Each sets their own budgets and goals"), no component in either spine, and no non-empty state. Spent / pace / projected, the payday-anchored fortnight/month cycle, rollover, per-person vs shared caps and AI-suggested amounts have no presentation. Story-dev would have to invent the whole surface.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add a "Set and track a budget" flow (protagonist, steps, climax at the pace/projected read-out, failure path for going over budget), plus a Budget card/row in both component tables.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span>
+              <h3 class="finding-title">Goals with staged allocation and reconciliation (CAP-6, CAP-7) have no flow</h3>
+              <span class="finding-location">EXPERIENCE § IA "Goals"; DESIGN § Colors</span>
+            </header>
+            <div class="finding-note">The spec's required "red shortfall on the goals page and review inbox" and the "one-click buffer adjustment" are absent, and DESIGN § Colors forbids red except for amounts, so the shortfall colour is undecided.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add a goals flow (allocation after an import → stage transition → over-commitment shortfall → buffer fix) and choose the shortfall token.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span>
+              <h3 class="finding-title">Forecast (CAP-8) has no flow and no low-balance warning</h3>
+              <span class="finding-location">EXPERIENCE § IA "Forecast"; § State Patterns</span>
+            </header>
+            <div class="finding-note">Nothing covers the low-balance warning, which is the capability's success signal. The only treatment is an empty state.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add a forecast flow ending on the low-balance warning date, and specify the projection chart, the assumption editing and its table equivalent.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span>
+              <h3 class="finding-title">CAP-14's always-visible apportioned share of reports is missing</h3>
+              <span class="finding-location">both spines; DESIGN § Layout &amp; Spacing</span>
+            </header>
+            <div class="finding-note">Not mentioned anywhere in either spine. The Cash flow grid has no slot for it.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Decide where the apportioned share sits on Cash flow and Spending, and add it to the layout and to KPI tile or header patterns.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Sign-in, recovery and partner-assisted reset (CAP-15) have no flow</h3>
+              <span class="finding-location">EXPERIENCE § IA rows Sign in / Recover; § Privacy</span>
+            </header>
+            <div class="finding-note">States and a re-auth dialog exist, but recovery-code sign-in that forces a new passkey, and the 24-hour partner reset link, are never walked.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add a short recovery flow with its failure paths (expired link, used code).</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Recurring bills (CAP-5) appear only as an alert item kind</h3>
+              <span class="finding-location">EXPERIENCE § Component Patterns "Needs review item"</span>
+            </header>
+            <div class="finding-note">Detect, one-click confirm, and missed or +10% alert have no specified treatment.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Specify the confirm-a-detected-bill item and the bill-alert item copy and actions.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Property (CAP-11) has no surface</h3>
+              <span class="finding-location">EXPERIENCE § IA "Accounts"</span>
+            </header>
+            <div class="finding-note">Net cash position per month and FY, and gearing, have no surface beyond "properties (incl. investment)" in the Accounts row. The planner's Property card is a different thing.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add a property detail treatment, or state that it lives in Loan detail.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Flow 1 preamble step range is off by one</h3>
+              <span class="finding-location">EXPERIENCE Flow 1</span>
+            </header>
+            <div class="finding-note">The preamble says "steps 7–10 on one laptop together", but step 11 (Save plan) is also on that laptop.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Change to "7–11".</div>
+          </article>
+        </div>
+      </details>
+    </section>
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>Token completeness</h2>
+          <span class="verdict-pill verdict-adequate">adequate</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Checked: all 73 colour keys (36 light/dark pairs, plus mascot-ink, fixed by design), 13 typography roles, 5 radii, 15 spacing tokens and 22 component token groups. Every {path} reference resolves. Recomputed WCAG ratios match the stated table figures (for example Fern light ring 3.19 vs stated 3.2).</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Only Clay &amp; Linen is in the YAML frontmatter</h3>
+              <span class="finding-location">DESIGN § Theme sets</span>
+            </header>
+            <div class="finding-note">The other five themes, and Clay's own chart ramp, exist only as markdown tables, so a token generator reading the frontmatter gets one theme of six.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Either commit the five themes as frontmatter tokens (for example harbour-morning.primary) or state explicitly that the tables are the machine source and give their parse shape.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Derivation rule omits destructive-foreground and several shadcn semantic tokens</h3>
+              <span class="finding-location">DESIGN line 359, line 283</span>
+            </header>
+            <div class="finding-note">Clay defines destructive-foreground; the other five themes don't. secondary/secondary-foreground and sidebar-foreground/border/accent/primary are never defined. "Unlisted shadcn tokens inherit defaults" would pull neutral greys into warm themes.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Extend the derivation rule, for example destructive-foreground = primary-foreground, secondary = background, sidebar-* = foreground/border/accent/primary.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Contrast not stated for warning-on-warning-bg and primary-on-accent</h3>
+              <span class="finding-location">DESIGN § Colors contrast table</span>
+            </header>
+            <div class="finding-note">Used by nav-badge, warning-line, nav-item-active and hidden-name-row. All 12 theme-modes pass when recomputed (minimum 4.72 and 4.57), but the spine doesn't commit to it.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add two columns to the contrast table.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Several pixel values have no token</h3>
+              <span class="finding-location">DESIGN § Components, § Elevation</span>
+            </header>
+            <div class="finding-note">Logo "16px/650" (weight 650 isn't in the type ramp), the 50px date column, the 10px stress track and the segmented-control shadow literal.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Tokenise them or tag them as fixed.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+    <section class="dimension">
+      <details open>
+        <summary>
+          <h2>Component coverage</h2>
+          <span class="verdict-pill verdict-thin">thin</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Checked: every component named in DESIGN § Components (35 rows plus 19 shadcn as-is) against EXPERIENCE § Component Patterns (28 rows), and every component named in the IA, states and flows.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span>
+              <h3 class="finding-title">Components for in-scope surfaces missing from both spines</h3>
+              <span class="finding-location">DESIGN § Components; EXPERIENCE § Component Patterns</span>
+            </header>
+            <div class="finding-note">Budget card/row, Goal card, Forecast chart and assumption editor, Account list row, Transactions filter chips and search, Spending category bars and flexible categories, Settings cards (Sign-in &amp; security, Recovery codes, Partner, LLM providers, System status), the sign-in form, and the Demo and Offline banners.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add a visual row and a behavioural row for each, or explicitly mark ones as shadcn as-is with their behaviour.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Component names drift between the files</h3>
+              <span class="finding-location">both § Components</span>
+            </header>
+            <div class="finding-note">"Sankey card" vs "Sankey"; "Transaction sheet &amp; split editor" vs "Split editor" (the sheet itself has no behavioural row); "Planner result" + "Rate stress bars" vs "Planner result / stress table"; "Rate pill" + slider vs "Rate pills / slider"; "Saved plan row" vs "Saved plan"; "Loan detail" vs "Loan detail cards".</div>
+            <div class="finding-fix"><strong>Fix:</strong> Use one canonical name per component in both tables.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Some rows defer elsewhere instead of giving a rule</h3>
+              <span class="finding-location">DESIGN line 459; EXPERIENCE lines 100, 109</span>
+            </header>
+            <div class="finding-note">Category chip is a one-word visual spec with no states. Import popover and Loan detail cards in Component Patterns say "See …" with no rules of their own.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Give category chip its idle/editable/selected appearance and keep the cross-references, but name the rules they point to.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Toast, Stat tile and Person dot lack a counterpart row</h3>
+              <span class="finding-location">EXPERIENCE line 112; DESIGN line 444</span>
+            </header>
+            <div class="finding-note">Toast has behavioural rules but only "Toast (Sonner)" visually; Stat tile and Person dot have no behavioural row. Acceptable as presentational, but say so.</div>
+            <div class="finding-fix"><strong>Fix:</strong> State that they are presentational.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Unreferenced frontmatter component tokens</h3>
+              <span class="finding-location">DESIGN frontmatter</span>
+            </header>
+            <div class="finding-note">button-secondary, card, amount-in and amount-out are never referenced in prose.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Reference them from the matching component rows.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+    <section class="dimension">
+      <details open>
+        <summary>
+          <h2>State coverage</h2>
+          <span class="verdict-pill verdict-thin">thin</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Checked each IA surface for empty, cold-load, error, no-results, permission/not-found, offline and domain states.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span>
+              <h3 class="finding-title">Budgets, Goals and Forecast have only empty states</h3>
+              <span class="finding-location">EXPERIENCE § State Patterns rows 121, 124</span>
+            </header>
+            <div class="finding-note">Over budget, ahead/behind pace, goal complete with stage change, goal shortfall, and the forecast low-balance warning are all missing — the states the spec's success signals test.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add the domain states, together with the components from the Component coverage finding.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Live planner recalculation has no pending state</h3>
+              <span class="finding-location">EXPERIENCE § Interaction Primitives "Sliders"</span>
+            </header>
+            <div class="finding-note">Outputs come from debounced server recalculation, but nothing says what the hero shows while a request is in flight or if it fails.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Specify the stale/pending treatment (for example dimmed figure plus a live-region update on settle) and the error fallback.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">No no-results or empty-range states</h3>
+              <span class="finding-location">EXPERIENCE § State Patterns</span>
+            </header>
+            <div class="finding-note">Transactions has no state for a filter or search with no results, though URL-held filters are CAP-18's core. Cash flow and Spending have no state for a zero-row range when imports exist.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add "no matches" (with clear filters) and "nothing in this range" states.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Idempotent re-import and unsupported file outcomes unspecified</h3>
+              <span class="finding-location">EXPERIENCE § Interaction Primitives "Import popover"</span>
+            </header>
+            <div class="finding-note">The popover's result for "0 new" isn't specified, and neither is an unsupported file type.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add both outcomes with copy.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Settings System status, /recover and /setup lack error states</h3>
+              <span class="finding-location">EXPERIENCE § IA "Settings", rows Setup/Recover</span>
+            </header>
+            <div class="finding-note">No states for a failed backup, failed restore drill or dead jobs; no error states for used or invalid code or expired partner link.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add them, in plain no-cheek copy.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>Visual reference coverage</h2>
+          <span class="verdict-pill verdict-adequate">adequate</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Checked imports/ (2 files) and .working/ (6 HTML, 2 excalidraw). All 10 are linked and every link resolves. mockups/ and wireframes/ don't exist yet (promotion pending), which is expected. "Spines win" is stated in both files.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">IA excalidraw linked only in the header</h3>
+              <span class="finding-location">EXPERIENCE line 22, § IA</span>
+            </header>
+            <div class="finding-note">ia-2026-10-05.excalidraw isn't linked inline in § Information Architecture.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add an inline "→ IA reference" line under the IA table.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">All links point into .working/</h3>
+              <span class="finding-location">both headers</span>
+            </header>
+            <div class="finding-note">They'll break when artifacts are promoted to mockups/ and wireframes/.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Re-point the links at promotion.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>Bloat &amp; overspecification</h2>
+          <span class="verdict-pill verdict-adequate">adequate</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>The spines are mostly lean. The large theme and contrast tables carry the code contract, so they aren't bloat.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Home buying glimpse described in three places</h3>
+              <span class="finding-location">DESIGN Components; EXPERIENCE Component Patterns; EXPERIENCE § Home Buying Planner</span>
+            </header>
+            <div class="finding-note">Triple description invites drift.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Keep the visual spec in DESIGN and the behaviour in Component Patterns, and drop the third.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Spec Catch-up List is a process hand-off</h3>
+              <span class="finding-location">EXPERIENCE § Spec Catch-up List</span>
+            </header>
+            <div class="finding-note">It's for bmad-correct-course, not a downstream consumer.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Move it to the memlog or a separate hand-off note.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Mock example figures disagree</h3>
+              <span class="finding-location">EXPERIENCE Accessibility Floor; Outputs; Flow 1 climax</span>
+            </header>
+            <div class="finding-note">"$7,596 a month left", "~$3,764 spare" and "$Y a fortnight" invite readers to treat them as specs.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Use one consistent worked example or mark them as illustrative.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+    <section class="dimension">
+      <details open>
+        <summary>
+          <h2>Inheritance discipline</h2>
+          <span class="verdict-pill verdict-thin">thin</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Checked: all sources resolve (7 in DESIGN, 9 in EXPERIENCE); CAP and AD citations match the architecture spine; memlog decisions against the spines.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span> <span class="badge badge-resolved">resolved since review</span>
+              <h3 class="finding-title">Partner pending chip counts private-account items</h3>
+              <span class="finding-location">EXPERIENCE § Component Patterns "Partner pending chip"; § State Patterns "Private"; Open Q5</span>
+            </header>
+            <div class="finding-note">Counting all of the partner's review items leaks private-account activity, contradicting the spine's own Private rule and AD-5/AD-22. Scope left as Open Question 5.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Commit to counting shared/public items only (AD-22 most-restrictive scope), or drop the chip.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span> <span class="badge badge-resolved">resolved since review</span>
+              <h3 class="finding-title">Ownership split on loans/properties not in either spine</h3>
+              <span class="finding-location">memlog; DESIGN "Property card"; EXPERIENCE § Home Buying Planner</span>
+            </header>
+            <div class="finding-note">The memlog decision that ownership split must be enterable isn't reflected. The Property card and the planner's equity/sell maths ignore ownership share.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add an ownership-share input to the Property card and loan setup, and say how it feeds usable equity and rent.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span>
+              <h3 class="finding-title">CAP-17 current net worth has no surface</h3>
+              <span class="finding-location">EXPERIENCE § IA; Open Q6</span>
+            </header>
+            <div class="finding-note">An in-scope capability has nowhere to go in the IA.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Decide the surface, for example a Net worth card on Cash flow or a section in Forecast.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">In-app restore contradicts AD-16</h3>
+              <span class="finding-location">EXPERIENCE lines 57, 167</span>
+            </header>
+            <div class="finding-note">Re-auth and Settings list restore as an in-app action; AD-16 makes restore CLI-only on a stopped stack. "Recovery codes" also isn't in the architecture's re-auth list.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Make restore read-only in Settings (drill status, last backup), remove it from re-auth triggers, and reconcile recovery codes.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span> <span class="badge badge-resolved">resolved since review</span>
+              <h3 class="finding-title">"Where your repayments went" contradicts the interest/principal non-goal</h3>
+              <span class="finding-location">EXPERIENCE § Loan Detail; Open Q1</span>
+            </header>
+            <div class="finding-note">The card designs an interest/principal split the spec excludes; Open Q1 flags it but it isn't decided.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Decide before stories are cut; mark the card as conditional.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span> <span class="badge badge-resolved">resolved since review</span>
+              <h3 class="finding-title">Saved plan visibility uncommitted</h3>
+              <span class="finding-location">EXPERIENCE § Privacy; Open Q4</span>
+            </header>
+            <div class="finding-note">Saved plan scope and the one-laptop planning view leave data visibility for plans uncommitted, which shapes the data model.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Commit to "personal plan, owner's view" or "shared plan, shared inputs only".</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">27 reconcile ideas have no keep/drop decision</h3>
+              <span class="finding-location">reconcile-sharkfin.md §3; reconcile-smartspend.md §3</span>
+            </header>
+            <div class="finding-note">Two are real gaps: where Sign out lives, and how uncategorised money appears in the Sankey/P&amp;L.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Record keep/drop decisions, and specify sign-out and the uncategorised node.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">No glossary</h3>
+              <span class="finding-location">EXPERIENCE Foundation</span>
+            </header>
+            <div class="finding-note">Spine terms ("Needs review", "Kept", "Transactions") rename source terms ("review inbox", saved, "ledger") without a mapping.</div>
+            <div class="finding-fix"><strong>Fix:</strong> Add a short term map in Foundation.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>Shape fit</h2>
+          <span class="verdict-pill verdict-strong">strong</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>DESIGN.md sections are in canonical order. EXPERIENCE.md has all eight defaults in order, plus Responsive &amp; Platform and Inspiration &amp; Anti-patterns (both triggered). Invented sections (Home Buying Planner, Loan Detail, Privacy &amp; Partner Awareness, Theming) cover net-new or cross-cutting behaviour and earn their place. Open Questions is load-bearing. Spec Catch-up List is addressed under Bloat.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+        </div>
+      </details>
+    </section>
+    <div class="mechanical">
+      <h3>Mechanical notes</h3>
+      <ul>
+        <li>DESIGN Empty state says "{typography.card-title}-scale headline at 19px", but card-title is 15px and 19px is figure-stat. The two are contradictory. (DESIGN line 464)</li>
+        <li>{components.sankey.linkOpacityLight} / "-Dark" uses shorthand; the actual key is linkOpacityDark. (DESIGN line 455)</li>
+        <li>The climax gives money left per fortnight; the "Left for actual life" output is monthly. Pick the period the hero shows. (EXPERIENCE Flow 1 step 10 vs § Home Buying Planner Outputs)</li>
+        <li>The Glimpse stat tile label is "Spare after usual spending" (DESIGN line 465), while elsewhere it's "Left for actual life". These should be one label.</li>
+        <li>The memlog says light ramp contrast is "1.7-2.7:1"; DESIGN says 1.69–2.36:1, and the table supports DESIGN.</li>
+        <li>The memlog estimates ~40 [ASSUMPTION] tags; there are 67 (11 DESIGN, 56 EXPERIENCE). Several are load-bearing, for example the planner being server-computed, routes, and the review bulk-accept.</li>
+        <li>Frontmatter in both files is complete (name, status, dates, sources); status: draft. Neither file has Mermaid.</li>
+      </ul>
+    </div>
+    <footer class="report-footer">
+      <div class="meta">
+        <span>Rubric: /Users/sim/dev/pangolin/_bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/review-rubric.md</span>
+        <span>Generated: 2026-10-05T03:19:37Z</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

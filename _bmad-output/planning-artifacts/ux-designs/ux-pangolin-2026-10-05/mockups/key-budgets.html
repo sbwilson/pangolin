@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pangolin · Budgets</title>
+<style>
+/* key-budgets — Planning › Budgets (/planning/budgets), Simon's view, mock date Mon 5 Oct 2026; data imported up to Wed 30 Sep (day 7 of the fortnight), so 'today' on the cards is the data edge, 30 Sep.
+   Governing spine sections:
+   DESIGN.md  § Layout & Spacing (Budgets / Goals: two-column card grid, page-level summary line above)
+              § Components › Planning › Budget card, Budget editor; Shell › App sidebar, Page header (Import only: each budget
+              runs on its own period, so the quarter date-range control would filter nothing — .memlog date-range decision)
+              § Colors (warning / warning-bg for over budget; primary fill; never money-out red for warnings)
+              frontmatter components: progress-track, progress-fill, progress-fill-over, projection-line, warning-line
+   EXPERIENCE.md § Component Patterns › Planning › Budget card, Budget editor
+              § State Patterns: On track / ahead of pace, Projected over, Over budget, New period (rollover)
+              § Voice and Tone › Over budget ("Eating out's had a big fortnight.") — no mascot on money warnings
+              § Key Flows › Flow 5 (Budgets), § Privacy (personal budgets visible only to their person, AD-22)
+   [ASSUMPTION]s followed: progress-track 8px; one Over budget review item per budget per period.
+*/
+:root{--background:#F6EFE6;--foreground:#2A1F17;--card:#FFFAF3;--muted:#F6EFE6;--muted-foreground:#6A594B;--border:#E3D6C5;--ring:#B85A1E;--primary:#A3441D;--primary-foreground:#FFFFFF;--accent:#F6E8DE;--destructive:#A3283A;--sidebar:#F6EFE6;--money-in:#3D6B2D;--money-out:#A3283A;--warning:#8A5600;--warning-bg:#F0E5D3;--person-simon:#2C6681;--person-carissa:#9C4277;--mascot-scale-1:#BD785C;--mascot-scale-2:#D1A28E;--mascot-ink:#1F2328;--chart-1:#6F8A3D;--chart-2:#B5562B;--chart-3:#D9A13B;--chart-4:#2E8C88;--chart-5:#C97B63;--chart-6:#8A5A7A;--chart-7:#7E6A4F;--chart-8:#4F5D85;--chart-9:#A3B18A}
+
+*{box-sizing:border-box}
+body{margin:0;background:#E7E0D6;color:var(--foreground);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;padding:32px 16px 72px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto}
+.lbl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#5E4F42;font-weight:600;margin:34px 0 10px}
+.lbl:first-child{margin-top:0}
+.intro{max-width:900px;margin:0 0 6px;color:#5E4F42;font-size:13px}
+.statehint{display:block;font-size:10.5px;color:var(--primary);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin:0 0 4px}
+/* frame */
+.browser{background:var(--background);border-radius:12px;overflow:hidden;border:1px solid #D6C9B8;box-shadow:0 24px 60px -24px rgba(60,40,20,.28)}
+.chrome{height:38px;background:#EFE6DA;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;position:relative}
+.dots i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:7px;background:#DCCFBE}
+.url{position:absolute;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:7px;padding:3px 110px;font-size:12px;color:var(--muted-foreground);white-space:nowrap}
+.app{display:grid;grid-template-columns:232px minmax(0,1fr)}
+/* sidebar */
+.side{background:var(--sidebar);border-right:1px solid var(--border);padding:20px 14px 14px;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:9px;font-weight:650;font-size:16px;padding:0 8px 20px}
+.nav{display:flex;align-items:center;gap:11px;padding:7px 10px;border-radius:8px;color:var(--muted-foreground);margin-bottom:2px;font-size:14px}
+.nav.on{background:var(--accent);color:var(--primary);font-weight:600}
+.nbadge{margin-left:auto;background:var(--warning-bg);color:var(--warning);font-size:11px;border-radius:9999px;padding:1px 7px;font-weight:600;font-variant-numeric:tabular-nums}
+.nbadge.zero{background:var(--accent);color:var(--primary);width:20px;height:20px;padding:0;display:grid;place-items:center}
+.navsep{height:1px;background:var(--border);margin:10px 10px 12px}
+.navlbl{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);padding:0 10px 6px}
+.sidefoot{margin-top:auto;padding-top:18px}
+.me{display:flex;align-items:center;gap:10px;padding:12px 10px 6px;border-top:1px solid var(--border);margin-top:8px;font-size:13px}
+.me small{display:block;color:var(--muted-foreground);font-size:12px}
+.signout{display:flex;align-items:center;gap:8px;padding:4px 10px;color:var(--muted-foreground);font-size:13px}
+.pd{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
+.pd.simon{background:var(--person-simon)}.pd.carissa{background:var(--person-carissa)}
+/* main + header */
+main{padding:28px 36px 36px;min-width:0}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:18px}
+.hl{min-width:0}
+.greet{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted-foreground);margin-bottom:2px}
+.head h1{margin:0;font-size:26px;font-weight:600;line-height:1.15;letter-spacing:-.01em}
+.fresh{margin:5px 0 0;color:var(--muted-foreground);font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ctrl{display:flex;gap:8px;align-items:center;flex:none}
+.drange{display:flex;gap:6px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--card);color:var(--foreground);border-radius:8px;padding:6px 12px;font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.btn.ic{padding:6px 7px}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:var(--primary-foreground);font-weight:600}
+.btn.sec{background:var(--card)}
+.seg{display:inline-flex;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:2px;white-space:nowrap}
+.seg span{padding:4px 10px;border-radius:6px;font-size:12.5px;color:var(--muted-foreground)}
+.seg span.on{background:var(--card);color:var(--foreground);box-shadow:0 1px 2px rgba(0,0,0,.08);font-weight:600}
+.link{color:var(--primary);font-size:13px;font-weight:600;white-space:nowrap}
+.pchip{display:inline-flex;align-items:center;gap:6px;background:var(--background);border:1px solid var(--border);border-radius:9999px;padding:1px 9px;font-size:12px;color:var(--foreground)}
+/* cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 22px}
+.card h3{margin:0;font-size:15px;font-weight:600;line-height:1.3}
+.card .sub{margin:2px 0 0;color:var(--muted-foreground);font-size:13px}
+.cardhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
+.cardhead .ctrl{flex-wrap:wrap;justify-content:flex-end}
+.foot{font-size:12px;color:var(--muted-foreground);border-top:1px solid var(--border);margin-top:8px;padding-top:10px}
+.mt{margin-top:16px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.kpis.k3{grid-template-columns:repeat(3,1fr)}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px}
+.kpi .k{font-size:12px;color:var(--muted-foreground)}
+.kpi .v{font-size:24px;font-weight:600;line-height:1.2;margin-top:4px;font-variant-numeric:tabular-nums;letter-spacing:-.01em;white-space:nowrap}
+.kpi .n{font-size:12px;color:var(--muted-foreground);margin-top:2px}
+.v.in{color:var(--money-in)}.v.out{color:var(--money-out)}.v.acc{color:var(--primary)}
+.share{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 16px;font-size:13px;color:var(--muted-foreground)}
+.share>span:first-child{display:flex;align-items:center;gap:8px}
+.share b{color:var(--foreground);font-weight:600;font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:16px;margin-top:16px}
+.grid2.even{grid-template-columns:1fr 1fr}
+.amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.amt.in{color:var(--money-in);font-weight:600}.amt.out{color:var(--money-out)}
+.chip{display:inline-flex;align-items:center;font-size:12px;border:1px solid var(--border);color:var(--muted-foreground);border-radius:6px;padding:1px 7px;white-space:nowrap}
+.chip.unc{color:var(--warning);background:var(--warning-bg);border-color:var(--warning-bg)}
+.sq{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}
+.warnline{display:flex;align-items:center;gap:10px;background:var(--warning-bg);color:var(--warning);border-radius:8px;padding:8px 12px;font-size:13px}
+.warnline>b{width:18px;height:18px;border-radius:50%;border:1.6px solid currentColor;display:grid;place-items:center;font-size:11px;flex:none}
+.warnline .link{margin-left:auto;color:var(--warning);text-decoration:underline}
+.stat{background:var(--background);border:1px solid var(--border);border-radius:10px;padding:10px 14px}
+.stat .k{font-size:12px;color:var(--muted-foreground)}
+.stat .v{font-size:19px;font-weight:600;line-height:1.25;white-space:nowrap;font-variant-numeric:tabular-nums}
+.stat .n{font-size:12px;color:var(--muted-foreground)}
+.track{height:8px;background:var(--border);border-radius:9999px;overflow:hidden}
+.track i{display:block;height:100%;border-radius:9999px}
+/* celebration */
+.party{position:relative;overflow:hidden;background:var(--accent);border-radius:12px;padding:8px 14px 8px 8px;display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.party .conf{position:absolute;inset:0;pointer-events:none}
+.party .conf i{position:absolute;width:8px;height:3px;border-radius:2px;opacity:.75}
+.party .conf i.c{width:5px;height:5px;border-radius:50%}
+.party .conf i.s{width:7px;height:7px;background:transparent!important;border:1.5px solid;border-radius:2px}
+.party .txt{position:relative}
+.party b{font-size:15px;font-weight:600}
+.party p{margin:0;color:var(--foreground);font-size:13px}
+.party .count{position:relative;margin-left:auto;background:var(--card);border-radius:9999px;padding:4px 12px;font-size:13px;font-variant-numeric:tabular-nums;color:var(--muted-foreground);white-space:nowrap}
+.party .count strong{color:var(--primary)}
+.party .x{position:relative;color:var(--muted-foreground);display:grid;place-items:center}
+/* sankey */
+.sankey{display:block}
+.sankey .sk-n{font:600 12.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;fill:var(--foreground)}
+.sankey .sk-v{font:400 11.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;fill:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.sankey .ld{stroke:var(--border);fill:none}
+/* phone */
+.phones{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.phonewrap{margin:0}
+.pcap{font-size:12px;color:#5E4F42;margin:0 0 8px;font-weight:600}
+.phone{width:390px;height:844px;border-radius:46px;border:10px solid #2A1F17;background:var(--background);position:relative;overflow:hidden;box-shadow:0 24px 60px -24px rgba(60,40,20,.35);display:flex;flex-direction:column}
+.status{height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 26px 0 30px;font-size:14px;flex:none}
+.status span{font-size:11px;letter-spacing:1px}
+.pscroll{flex:1;overflow:hidden;padding:6px 16px 16px}
+.tabs{flex:none;display:grid;grid-template-columns:repeat(5,1fr);background:var(--card);border-top:1px solid var(--border);padding:6px 4px 24px}
+.tab{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--muted-foreground);min-height:44px;justify-content:center;text-align:center;line-height:1.15}
+.tab.on{color:var(--primary);font-weight:600}
+.ti{position:relative;display:block}
+.tbadge{position:absolute;top:-5px;left:15px;background:var(--warning-bg);color:var(--warning);font-size:10px;border-radius:9999px;padding:0 5px;font-weight:600;border:1.5px solid var(--card)}
+.tbadge.zero{background:var(--accent);color:var(--primary);width:16px;height:16px;padding:0;display:grid;place-items:center}
+.homebar{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);width:130px;height:5px;border-radius:3px;background:#2A1F17}
+
+
+.scope{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted-foreground);border:1px solid var(--border);border-radius:6px;padding:1px 7px;white-space:nowrap}
+.stag{display:inline-block;font-size:12px;color:var(--muted-foreground);background:var(--background);border-radius:6px;padding:1px 7px;white-space:nowrap}
+.btn.dis{opacity:.5}
+.btn.full{width:100%;justify-content:center;padding:10px 12px;font-size:14px}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted-foreground)}
+.focus{box-shadow:0 0 0 2px var(--background),0 0 0 4px var(--ring)}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.field>label,.field>.fl{font-size:13px;font-weight:600}
+.input{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:14px;min-height:36px;font-variant-numeric:tabular-nums}
+.input .pre,.input .suf{color:var(--muted-foreground)}
+.input .chev{margin-left:auto;color:var(--muted-foreground);display:flex}
+.input.dis{opacity:.55}
+.hint{font-size:13px;color:var(--muted-foreground);line-height:1.4}
+.cap{font-size:12px;color:var(--muted-foreground);line-height:1.35}
+.switch{display:inline-block;width:36px;height:20px;border-radius:9999px;background:var(--border);position:relative;flex:none}
+.switch::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--card);box-shadow:0 1px 2px rgba(0,0,0,.18)}
+.switch.on{background:var(--primary)}.switch.on::after{left:18px}
+.toast{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px 10px 16px;font-size:13.5px;box-shadow:0 10px 30px -10px rgba(60,40,20,.3)}
+.overlay{position:absolute;inset:38px 0 0 0}
+.scrim{position:absolute;inset:0;background:rgba(42,31,23,.38)}
+.rel{position:relative}
+.ok{color:var(--money-in)}
+.mut{color:var(--muted-foreground)}.wrn{color:var(--warning)}
+
+.sumrow{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 14px;font-size:13px;color:var(--muted-foreground)}
+.sumrow b{color:var(--foreground);font-weight:600}
+.bgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.bud .bt{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bud .bt h3{margin-right:2px}
+.bud .per{font-size:12px;color:var(--muted-foreground)}
+.bud .edit{margin-left:auto;color:var(--muted-foreground);display:grid;place-items:center;width:28px;height:28px;border-radius:8px;border:1px solid transparent}
+.bud .fig{display:flex;align-items:baseline;gap:6px;margin:10px 0 8px}
+.bud .fig .v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+.bud .fig .of{color:var(--muted-foreground);font-size:13px}
+.bud .fig .left{margin-left:auto;font-size:13px;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.bar{position:relative;height:8px;background:var(--border);border-radius:9999px}
+.bar .fill{position:absolute;left:0;top:0;bottom:0;background:var(--primary);border-radius:9999px}
+.bar .proj{position:absolute;top:0;bottom:0;border-radius:0 9999px 9999px 0;background:repeating-linear-gradient(135deg,var(--primary) 0 2px,transparent 2px 5px);opacity:.55}
+.bar .tick{position:absolute;top:-4px;width:2px;height:16px;background:var(--foreground);border-radius:1px}
+.bud.over .bar .fill{background:var(--warning)}
+.bud.over .bar .proj,.bud.pover .bar .proj{background:repeating-linear-gradient(135deg,var(--warning) 0 2px,transparent 2px 5px)}
+.bud .pace{display:flex;justify-content:space-between;gap:10px;margin-top:8px;font-size:13px}
+.bud .pace .wrn{font-weight:600}
+.bud .wl{margin-top:12px}
+.mini{display:block;width:100%;height:64px;margin-top:12px}
+.mini .lim{stroke:var(--border);stroke-width:1.5}
+.mini .act{stroke:var(--primary);stroke-width:2;fill:none}
+.mini .prj{stroke:var(--muted-foreground);stroke-width:1.5;stroke-dasharray:4 3;fill:none}
+.mini .lt{font:400 11px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;fill:var(--muted-foreground)}
+.axis{display:flex;justify-content:space-between;font-size:12px;color:var(--muted-foreground);margin-top:2px}
+.rollo{font-size:12px;color:var(--muted-foreground)}
+/* sheet (Budget editor) */
+.sheet{position:absolute;top:0;right:0;bottom:0;width:420px;background:var(--card);border-left:1px solid var(--border);box-shadow:-12px 0 40px -16px rgba(60,40,20,.35);padding:22px 24px;display:flex;flex-direction:column}
+.sheet h2{margin:0;font-size:19px;font-weight:600}
+.sheet .shead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+.sheet .x{color:var(--muted-foreground)}
+.sheet .seg{align-self:flex-start}
+.sheet .sfoot{margin-top:auto;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--border);padding-top:14px}
+.sug{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted-foreground)}
+.rollrow{display:flex;align-items:flex-start;gap:12px;justify-content:space-between}
+
+</style></head><body><div class="wrap">
+<p class="intro">Budgets, Simon&#8217;s view: shared budgets plus his own (Carissa&#8217;s personal budgets never show here). States on the cards: <b>over budget</b> (Eating out), <b>on track</b> (Groceries), <b>projected over</b> (Transport), <b>monthly with rollover</b> (Lifestyle).</p>
+<div class="lbl">Budgets · desktop — over budget, on track, projected over</div>
+<div class="browser "><div class="chrome"><span class="dots"><i></i><i></i><i></i></span><span class="url">pangolin.local/planning/budgets</span></div><div class="app"><aside class="side"><div class="brand"><svg class="pango logo" width="30" height="22" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>Pangolin</span></div><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20V4M4 7l3-3 3 3M17 4v16M14 17l3 3 3-3"/></svg><span>Cash flow</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 5-5"/></svg><span>Net worth</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.6A9 9 0 0 1 20.4 9H15z"/></svg><span>Spending</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></svg><span>Transactions</span><b class="nbadge">9</b></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg><span>Needs review</span><b class="nbadge">8</b></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18L12 4z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg><span>Accounts</span></a><div class="navsep"></div><div class="navlbl">Planning</div><a class="nav on" aria-current="page"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h16a2 2 0 0 1 2 2v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M5 7l3-3h9v3M16 13h2"/></svg><span>Budgets</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg><span>Goals</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5M10 20v-6h4v6"/></svg><span>Home buying</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><span>Forecast</span></a><div class="sidefoot"><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Settings</span></a><div class="me"><i class="pd simon"></i><div>Simon<small>Signed in with passkey</small></div></div><a class="signout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></a></div></aside><main><div class="head"><div class="hl"><div class="greet"><svg class="pango" width="26" height="19" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>G&#8217;day, Simon</span></div><h1>Budgets</h1><p class="fresh">Fortnight 24 Sep – 7 Oct · imported up to 30 Sep from CommBank CSV, 9:14 pm</p></div><div class="ctrl"><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Import</span></div></div><div class="sumrow"><span><b>4 budgets</b> you can see · 1 over · 1 heading over · 2 on track</span><span class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New budget</span></div>
+<div class="bgrid"><div class="card bud over">
+ <div class="bt"><h3>Eating out</h3><span class="scope"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 19a5.5 5.5 0 0 1 11 0M10.5 19a5.5 5.5 0 0 1 11 0"/></svg>Shared</span><span class="per">Fortnight to 7 Oct</span><span class="edit" aria-label="Edit Eating out budget"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <div class="fig"><span class="v">$460.00</span><span class="of">of $400</span><span class="left"><span class="wrn">$60 over</span></span></div>
+ <div class="bar" role="img" aria-label="Eating out: $460.00 of $400, 30 Sep marked"><i class="fill" style="width:100.0%"></i><i class="tick" style="left:calc(50.0% - 1px)"></i></div>
+ <div class="pace"><span class="wrn">Heading for $920 by 7 Oct</span><span></span></div>
+ <svg class="mini" viewBox="0 0 300 64" preserveAspectRatio="none" role="img" aria-label="Spent $460 so far, projected $920 by period end, limit $400"><line class="lim" x1="0" x2="300" y1="37.4" y2="37.4"/><polyline class="act" points="0.0,58.0 21.4,56.0 42.9,52.8 64.3,51.6 85.7,46.7 107.1,44.6 128.6,38.4 150.0,34.4"/><line class="prj" x1="150.0" y1="34.4" x2="300" y2="10.7"/></svg>
+ <div class="axis"><span>24 Sep</span><span>to 30 Sep</span><span>7 Oct</span></div>
+ <div class="wl"><div class="warnline" role="status"><b aria-hidden="true">!</b><span>Eating out&#8217;s had a big fortnight.</span><a class="link">Open in Needs review</a></div></div>
+</div><div class="card bud">
+ <div class="bt"><h3>Groceries</h3><span class="scope"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 19a5.5 5.5 0 0 1 11 0M10.5 19a5.5 5.5 0 0 1 11 0"/></svg>Shared</span><span class="per">Fortnight to 7 Oct</span><span class="edit" aria-label="Edit Groceries budget"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <div class="fig"><span class="v">$280.00</span><span class="of">of $600</span><span class="left">$320 left</span></div>
+ <div class="bar" role="img" aria-label="Groceries: $280.00 of $600, 30 Sep marked"><i class="fill" style="width:46.7%"></i><i class="proj" style="left:46.7%;width:46.7%"></i><i class="tick" style="left:calc(50.0% - 1px)"></i></div>
+ <div class="pace"><span class="mut">On track for $560 by 7 Oct</span><span></span></div>
+ <svg class="mini" viewBox="0 0 300 64" preserveAspectRatio="none" role="img" aria-label="Spent $280 so far, projected $560 by period end, limit $600"><line class="lim" x1="0" x2="300" y1="10.7" y2="10.7"/><polyline class="act" points="0.0,58.0 21.4,46.7 42.9,46.7 64.3,46.7 85.7,46.7 107.1,39.8 128.6,39.8 150.0,35.9"/><line class="prj" x1="150.0" y1="35.9" x2="300" y2="13.9"/></svg>
+ <div class="axis"><span>24 Sep</span><span>to 30 Sep</span><span>7 Oct</span></div>
+ 
+</div><div class="card bud pover">
+ <div class="bt"><h3>Transport</h3><span class="scope"><i class="pd simon"></i>Simon</span><span class="per">Fortnight to 7 Oct</span><span class="edit" aria-label="Edit Transport budget"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <div class="fig"><span class="v">$140.00</span><span class="of">of $180</span><span class="left">$40 left</span></div>
+ <div class="bar" role="img" aria-label="Transport: $140.00 of $180, 30 Sep marked"><i class="fill" style="width:77.8%"></i><i class="proj" style="left:77.8%;width:22.2%"></i><i class="tick" style="left:calc(50.0% - 1px)"></i></div>
+ <div class="pace"><span class="wrn">Heading for $280 by 7 Oct</span><span></span></div>
+ <svg class="mini" viewBox="0 0 300 64" preserveAspectRatio="none" role="img" aria-label="Spent $140 so far, projected $280 by period end, limit $180"><line class="lim" x1="0" x2="300" y1="27.6" y2="27.6"/><polyline class="act" points="0.0,58.0 21.4,49.6 42.9,49.6 64.3,47.4 85.7,47.4 107.1,39.0 128.6,39.0 150.0,34.4"/><line class="prj" x1="150.0" y1="34.4" x2="300" y2="10.7"/></svg>
+ <div class="axis"><span>24 Sep</span><span>to 30 Sep</span><span>7 Oct</span></div>
+ 
+</div><div class="card bud">
+ <div class="bt"><h3>Lifestyle</h3><span class="scope"><i class="pd simon"></i>Simon</span><span class="per">Month to 15 Oct</span><span class="edit" aria-label="Edit Lifestyle budget"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <div class="fig"><span class="v">$82.00</span><span class="of">of $250</span><span class="left">$168 left</span></div>
+ <div class="bar" role="img" aria-label="Lifestyle: $82.00 of $250, 30 Sep marked"><i class="fill" style="width:32.8%"></i><i class="proj" style="left:32.8%;width:32.8%"></i><i class="tick" style="left:calc(50.0% - 1px)"></i></div>
+ <div class="pace"><span class="mut">On track for $160 by 15 Oct</span><span class="rollo">+ $40 rolled over</span></div>
+ <svg class="mini" viewBox="0 0 300 64" preserveAspectRatio="none" role="img" aria-label="Spent $82 so far, projected $164 by period end, limit $250"><line class="lim" x1="0" x2="300" y1="10.7" y2="10.7"/><polyline class="act" points="0.0,58.0 10.0,58.0 20.0,58.0 30.0,53.5 40.0,53.5 50.0,53.5 60.0,53.5 70.0,53.5 80.0,46.1 90.0,46.1 100.0,46.1 110.0,46.1 120.0,42.5 130.0,42.5 140.0,42.5 150.0,42.5"/><line class="prj" x1="150.0" y1="42.5" x2="300" y2="27.0"/></svg>
+ <div class="axis"><span>16 Sep</span><span>to 30 Sep</span><span>15 Oct</span></div>
+ 
+</div></div></main></div></div>
+<div class="lbl">Budget editor (Sheet) · New budget, limit pre-filled from average spending</div>
+<div class="browser rel"><div class="chrome"><span class="dots"><i></i><i></i><i></i></span><span class="url">pangolin.local/planning/budgets</span></div><div class="app"><aside class="side"><div class="brand"><svg class="pango logo" width="30" height="22" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>Pangolin</span></div><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20V4M4 7l3-3 3 3M17 4v16M14 17l3 3 3-3"/></svg><span>Cash flow</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 5-5"/></svg><span>Net worth</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.6A9 9 0 0 1 20.4 9H15z"/></svg><span>Spending</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></svg><span>Transactions</span><b class="nbadge">9</b></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg><span>Needs review</span><b class="nbadge">8</b></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18L12 4z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg><span>Accounts</span></a><div class="navsep"></div><div class="navlbl">Planning</div><a class="nav on" aria-current="page"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h16a2 2 0 0 1 2 2v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M5 7l3-3h9v3M16 13h2"/></svg><span>Budgets</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg><span>Goals</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5M10 20v-6h4v6"/></svg><span>Home buying</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><span>Forecast</span></a><div class="sidefoot"><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Settings</span></a><div class="me"><i class="pd simon"></i><div>Simon<small>Signed in with passkey</small></div></div><a class="signout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></a></div></aside><main><div class="head"><div class="hl"><div class="greet"><svg class="pango" width="26" height="19" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>G&#8217;day, Simon</span></div><h1>Budgets</h1><p class="fresh">Fortnight 24 Sep – 7 Oct · imported up to 30 Sep from CommBank CSV, 9:14 pm</p></div><div class="ctrl"><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Import</span></div></div><div class="sumrow"><span><b>4 budgets</b> you can see · 1 over · 1 heading over · 2 on track</span><span class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New budget</span></div>
+<div class="bgrid"><div class="card bud over">
+ <div class="bt"><h3>Eating out</h3><span class="scope"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 19a5.5 5.5 0 0 1 11 0M10.5 19a5.5 5.5 0 0 1 11 0"/></svg>Shared</span><span class="per">Fortnight to 7 Oct</span><span class="edit" aria-label="Edit Eating out budget"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <div class="fig"><span class="v">$460.00</span><span class="of">of $400</span><span class="left"><span class="wrn">$60 over</span></span></div>
+ <div class="bar" role="img" aria-label="Eating out: $460.00 of $400, 30 Sep marked"><i class="fill" style="width:100.0%"></i><i class="tick" style="left:calc(50.0% - 1px)"></i></div>
+ <div class="pace"><span class="wrn">Heading for $920 by 7 Oct</span><span></span></div>
+ <svg class="mini" viewBox="0 0 300 64" preserveAspectRatio="none" role="img" aria-label="Spent $460 so far, projected $920 by period end, limit $400"><line class="lim" x1="0" x2="300" y1="37.4" y2="37.4"/><polyline class="act" points="0.0,58.0 21.4,56.0 42.9,52.8 64.3,51.6 85.7,46.7 107.1,44.6 128.6,38.4 150.0,34.4"/><line class="prj" x1="150.0" y1="34.4" x2="300" y2="10.7"/></svg>
+ <div class="axis"><span>24 Sep</span><span>to 30 Sep</span><span>7 Oct</span></div>
+ <div class="wl"><div class="warnline" role="status"><b aria-hidden="true">!</b><span>Eating out&#8217;s had a big fortnight.</span><a class="link">Open in Needs review</a></div></div>
+</div><div class="card bud">
+ <div class="bt"><h3>Groceries</h3><span class="scope"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 19a5.5 5.5 0 0 1 11 0M10.5 19a5.5 5.5 0 0 1 11 0"/></svg>Shared</span><span class="per">Fortnight to 7 Oct</span><span class="edit" aria-label="Edit Groceries budget"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <div class="fig"><span class="v">$280.00</span><span class="of">of $600</span><span class="left">$320 left</span></div>
+ <div class="bar" role="img" aria-label="Groceries: $280.00 of $600, 30 Sep marked"><i class="fill" style="width:46.7%"></i><i class="proj" style="left:46.7%;width:46.7%"></i><i class="tick" style="left:calc(50.0% - 1px)"></i></div>
+ <div class="pace"><span class="mut">On track for $560 by 7 Oct</span><span></span></div>
+ <svg class="mini" viewBox="0 0 300 64" preserveAspectRatio="none" role="img" aria-label="Spent $280 so far, projected $560 by period end, limit $600"><line class="lim" x1="0" x2="300" y1="10.7" y2="10.7"/><polyline class="act" points="0.0,58.0 21.4,46.7 42.9,46.7 64.3,46.7 85.7,46.7 107.1,39.8 128.6,39.8 150.0,35.9"/><line class="prj" x1="150.0" y1="35.9" x2="300" y2="13.9"/></svg>
+ <div class="axis"><span>24 Sep</span><span>to 30 Sep</span><span>7 Oct</span></div>
+ 
+</div><div class="card bud pover">
+ <div class="bt"><h3>Transport</h3><span class="scope"><i class="pd simon"></i>Simon</span><span class="per">Fortnight to 7 Oct</span><span class="edit" aria-label="Edit Transport budget"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <div class="fig"><span class="v">$140.00</span><span class="of">of $180</span><span class="left">$40 left</span></div>
+ <div class="bar" role="img" aria-label="Transport: $140.00 of $180, 30 Sep marked"><i class="fill" style="width:77.8%"></i><i class="proj" style="left:77.8%;width:22.2%"></i><i class="tick" style="left:calc(50.0% - 1px)"></i></div>
+ <div class="pace"><span class="wrn">Heading for $280 by 7 Oct</span><span></span></div>
+ <svg class="mini" viewBox="0 0 300 64" preserveAspectRatio="none" role="img" aria-label="Spent $140 so far, projected $280 by period end, limit $180"><line class="lim" x1="0" x2="300" y1="27.6" y2="27.6"/><polyline class="act" points="0.0,58.0 21.4,49.6 42.9,49.6 64.3,47.4 85.7,47.4 107.1,39.0 128.6,39.0 150.0,34.4"/><line class="prj" x1="150.0" y1="34.4" x2="300" y2="10.7"/></svg>
+ <div class="axis"><span>24 Sep</span><span>to 30 Sep</span><span>7 Oct</span></div>
+ 
+</div><div class="card bud">
+ <div class="bt"><h3>Lifestyle</h3><span class="scope"><i class="pd simon"></i>Simon</span><span class="per">Month to 15 Oct</span><span class="edit" aria-label="Edit Lifestyle budget"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></span></div>
+ <div class="fig"><span class="v">$82.00</span><span class="of">of $250</span><span class="left">$168 left</span></div>
+ <div class="bar" role="img" aria-label="Lifestyle: $82.00 of $250, 30 Sep marked"><i class="fill" style="width:32.8%"></i><i class="proj" style="left:32.8%;width:32.8%"></i><i class="tick" style="left:calc(50.0% - 1px)"></i></div>
+ <div class="pace"><span class="mut">On track for $160 by 15 Oct</span><span class="rollo">+ $40 rolled over</span></div>
+ <svg class="mini" viewBox="0 0 300 64" preserveAspectRatio="none" role="img" aria-label="Spent $82 so far, projected $164 by period end, limit $250"><line class="lim" x1="0" x2="300" y1="10.7" y2="10.7"/><polyline class="act" points="0.0,58.0 10.0,58.0 20.0,58.0 30.0,53.5 40.0,53.5 50.0,53.5 60.0,53.5 70.0,53.5 80.0,46.1 90.0,46.1 100.0,46.1 110.0,46.1 120.0,42.5 130.0,42.5 140.0,42.5 150.0,42.5"/><line class="prj" x1="150.0" y1="42.5" x2="300" y2="27.0"/></svg>
+ <div class="axis"><span>16 Sep</span><span>to 30 Sep</span><span>15 Oct</span></div>
+ 
+</div></div></main></div><div class="overlay"><div class="scrim"></div><aside class="sheet" role="dialog" aria-label="New budget">
+ <div class="shead"><h2>New budget</h2><span class="x" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></span></div>
+ <p class="hint" style="margin:0 0 18px">Shared budgets show for both of you. Personal ones are just for you.</p>
+ <div class="field"><label>Category or group</label><div class="input">Health<span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></div></div>
+ <div class="field"><span class="fl">Who it&#8217;s for</span><span class="seg" role="group" aria-label="Scope"><span class="on">Shared</span><span class="">Simon</span></span></div>
+ <div class="field"><span class="fl">Period</span><span class="seg" role="group" aria-label="Period"><span class="on">Fortnight</span><span class="">Month</span></span></div>
+ <div class="field"><label>Limit</label><div class="input focus"><span class="pre">$</span>185</div>
+  <div class="sug">You&#8217;ve averaged $185 a fortnight.</div></div>
+ <div class="field"><div class="rollrow"><div><span class="fl" style="font-size:13px;font-weight:600">Roll over what&#8217;s left</span><div class="cap" style="margin-top:2px">Unspent money carries into the next fortnight.</div></div><span class="switch" role="switch" aria-checked="false"></span></div></div>
+ <div class="sfoot"><span class="btn">Cancel</span><span class="btn pri">Save</span></div>
+</aside></div></div>
+
+</div></body></html>

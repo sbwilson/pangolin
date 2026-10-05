@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pangolin · Direction A · Calm</title>
+<style>
+/* Direction A — Calm & airy (Monarch / SharkFin-adjacent)
+   PLACEHOLDER PALETTE — colours pending Carissa. One warm neutral + one accent.
+   --bg       #F7F6F3  warm off-white canvas
+   --surface  #FFFFFF  cards
+   --border   #E8E5DF  hairlines
+   --ink      #1F2328  primary text
+   --muted    #6B6F76  secondary text
+   --accent   #3366CC  single accent (Simon dot, savings flow, selection)
+   --tint     #EEF2FB  accent wash
+   --carissa  #8A8F98  placeholder second person colour (neutral until palette chosen)
+   --flow     #A3A8B0  expense flows (at 17% opacity)
+   Type: system UI stack, 14px base, 600 titles. Radius 12px. Motion: gentle 200ms ease-out fades; Sankey bands draw in left-to-right once. */
+:root{--bg:#F7F6F3;--surface:#FFFFFF;--border:#E8E5DF;--ink:#1F2328;--muted:#6B6F76;--accent:#3366CC;--tint:#EEF2FB;--carissa:#8A8F98}
+*{box-sizing:border-box}
+body{margin:0;background:#ECEAE5;color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;padding:40px 16px 80px}
+.wrap{max-width:1280px;margin:0 auto}
+.rationale{max-width:820px;margin:0 0 28px;padding:20px 24px;background:#fff;border:1px solid var(--border);border-radius:12px}
+.rationale h1{margin:0 0 6px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.rationale h2{margin:0 0 8px;font-size:22px;font-weight:600}
+.rationale p{margin:0;color:#3d4148}
+.lbl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;margin:36px 0 10px}
+.browser{background:var(--bg);border-radius:12px;box-shadow:0 1px 0 rgba(0,0,0,.04),0 24px 60px -20px rgba(40,35,25,.25);overflow:hidden;border:1px solid #DDD9D1}
+.chrome{height:40px;background:#F1EFEB;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;position:relative}
+.dots i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:7px;background:#E0DCD4}
+.url{position:absolute;left:50%;transform:translateX(-50%);background:#fff;border:1px solid var(--border);border-radius:7px;padding:4px 120px;font-size:12px;color:var(--muted)}
+.app{display:grid;grid-template-columns:232px 1fr;min-height:900px}
+.side{background:#FBFAF8;border-right:1px solid var(--border);padding:22px 14px;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:10px;font-weight:650;font-size:16px;padding:0 10px 22px}
+.nav{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:8px;color:#4A4E55;margin-bottom:2px}
+.nav svg{color:#8B9097}
+.nav.on{background:var(--tint);color:var(--accent);font-weight:600}.nav.on svg{color:var(--accent)}
+.badge{margin-left:auto;background:var(--accent);color:#fff;font-size:11px;border-radius:10px;padding:1px 7px;font-weight:600}
+.navsep{height:1px;background:var(--border);margin:10px 10px}
+.me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:12px 10px;border-top:1px solid var(--border);font-size:13px}
+.me small{display:block;color:var(--muted);font-size:12px}
+.pd{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}.pd.simon{background:var(--accent)}.pd.carissa{background:var(--carissa)}
+main{padding:30px 36px 40px}
+.head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px}
+.head h1{margin:0;font-size:26px;font-weight:600;letter-spacing:-.01em}
+.head p{margin:4px 0 0;color:var(--muted);font-size:13px}
+.ctrl{display:flex;gap:10px;align-items:center}
+.seg{display:inline-flex;background:#EFEDE8;border-radius:9px;padding:3px}
+.seg span{padding:5px 12px;border-radius:7px;font-size:13px;color:#555a61}
+.seg span.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08);font-weight:550}
+.btn{border:1px solid var(--border);background:#fff;border-radius:9px;padding:6px 12px;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:18px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
+.kpi .k{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:7px}
+.kpi .v{font-size:24px;font-weight:600;margin-top:6px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.kpi .n{font-size:12px;color:var(--muted);margin-top:2px}
+.kpi.acc .v{color:var(--accent)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px}
+.card h3{margin:0;font-size:15px;font-weight:600}
+.cardhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.sankey .sk-n{font-size:12.5px;font-weight:600;fill:#1F2328}
+.sankey .sk-v{font-size:11.5px;fill:#6B6F76;font-variant-numeric:tabular-nums}
+.foot{font-size:12px;color:var(--muted);border-top:1px solid var(--border);margin-top:8px;padding-top:12px}
+.grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:16px;margin-top:16px}
+.tx{display:grid;grid-template-columns:56px 1fr auto 104px;gap:12px;align-items:center;padding:10px 0;border-top:1px solid #F0EEE9;font-size:13.5px}
+.tx:first-of-type{border-top:0}
+.tx .d{color:var(--muted);font-size:12.5px}
+.tx .m{display:flex;gap:9px;align-items:center}
+.chip{font-size:12px;background:#F3F1EC;border-radius:6px;padding:2px 8px;color:#4A4E55}
+.amt{text-align:right;font-variant-numeric:tabular-nums}.amt.pos{color:var(--accent);font-weight:550}
+.tx.hidden{background:var(--tint);margin:4px -10px;padding:10px;border-radius:10px;border-top:0}
+.tx.hidden strong{display:block;font-weight:600;font-size:13.5px}
+.tx.hidden small{display:block;color:#56607A;font-size:12px}
+.redact{display:none}
+.statehint{font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin:0 0 6px}
+.hb .big{font-size:34px;font-weight:600;letter-spacing:-.02em;margin:8px 0 2px;font-variant-numeric:tabular-nums}
+.hb p{margin:0;color:var(--muted);font-size:13px}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:13px;margin:14px 6px 0 0;font-variant-numeric:tabular-nums}
+.pill small{font-size:11px;color:inherit;opacity:.8}
+.pill.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.stat{background:#FAF9F6;border:1px solid #F0EEE9;border-radius:10px;padding:12px 14px}
+.stat .k{font-size:12px;color:var(--muted)}.stat .v{font-size:19px;white-space:nowrap;font-weight:600;font-variant-numeric:tabular-nums}
+.stat .n{font-size:12px;color:var(--muted)}
+.link{color:var(--accent);font-size:13px;font-weight:550}
+/* secondary */
+.sec{max-width:1060px}
+.sec .app{grid-template-columns:200px 1fr;min-height:0}
+.hbgrid{display:grid;grid-template-columns:1.1fr 1fr;gap:16px}
+.hero-num{font-size:52px;font-weight:600;letter-spacing:-.025em;margin:6px 0 4px;font-variant-numeric:tabular-nums}
+.sb{display:grid;grid-template-columns:56px 1fr 76px;gap:10px;align-items:center;font-size:13px;margin:10px 0;font-variant-numeric:tabular-nums;color:var(--muted)}
+.sb .track{height:10px;background:#F0EEE9;border-radius:6px;overflow:hidden}
+.sb .track i{display:block;height:100%;background:#C9CDD3;border-radius:6px}
+.sb.on{color:var(--ink);font-weight:600}.sb.on .track i{background:var(--accent)}
+.sb b{text-align:right;font-weight:600;color:var(--ink)}
+.assume{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.assume span{font-size:12px;background:#F3F1EC;border-radius:6px;padding:4px 9px;color:#4A4E55}
+.assume span.ok{background:var(--tint);color:var(--accent);font-weight:600}
+</style></head><body><div class="wrap">
+
+<section class="rationale">
+<h1>Direction A · Calm</h1>
+<h2>Calm, airy, quietly confident</h2>
+<p>The closest to SharkFin and SmartSpend: lots of white space, soft cards, medium-weight type and one quiet accent, so a monthly couch session feels like opening a tidy notebook rather than a spreadsheet. Personality lives in small, friendly lines of copy, not in the chrome; motion is limited to gentle fades and a one-time draw-in of the Sankey. Colours are placeholder only (one warm neutral plus a single accent) until Carissa picks the palette.</p>
+</section>
+
+<div class="lbl">Hero · Cash flow, desktop</div>
+<div class="browser"><div class="chrome"><span class="dots"><i></i><i></i><i></i></span><span class="url">pangolin.local/cash-flow</span></div>
+<div class="app">
+<aside class="side">
+ <div class="brand"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="12" fill="#3366CC"/><path d="M6 16a7 7 0 0 1 14 0M8.5 12.5a4.5 4.5 0 0 1 9 0M11 9.5a2 2 0 0 1 4 0" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>Pangolin</div>
+ <a class="nav on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20V4M4 7l3-3 3 3M17 4v16M14 17l3 3 3-3"/></svg><span>Cash flow</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.6A9 9 0 0 1 20.4 9H15z"/></svg><span>Spending</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></svg><span>Transactions</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg><span>Needs review</span><b class=badge>7</b></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h16a2 2 0 0 1 2 2v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M5 7l3-3h9v3M16 13h2"/></svg><span>Budgets</span></a><div class="navsep"></div><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg><span>Goals</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5M10 20v-6h4v6"/></svg><span>Home buying</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><span>Forecast</span></a><div class="navsep"></div><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18L12 4z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg><span>Accounts</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Settings</span></a>
+ <div class="me"><i class="pd simon"></i><div>Simon<small>Signed in with passkey</small></div></div>
+</aside>
+<main>
+ <div class="head">
+  <div><h1>Cash flow</h1><p>Jul – Sep 2026 · first quarter of FY 2026–27 · imported up to 30 Sep, 9:14 pm</p></div>
+  <div class="ctrl"><span class="btn">‹</span><span class="btn">Jul – Sep 2026</span><span class="btn">›</span><span class="seg"><span class="on">Quarter</span><span>FY to date</span><span>Custom</span></span></div>
+ </div>
+ <div class="kpis">
+  <div class="kpi"><div class="k">Money in</div><div class="v">$41,661.40</div><div class="n">14 pays, plus a little interest</div></div>
+  <div class="kpi"><div class="k">Money out</div><div class="v">$20,857.30</div><div class="n">Transfers between your accounts left out</div></div>
+  <div class="kpi acc"><div class="k">Kept</div><div class="v">$20,804.10</div><div class="n">Heading to the house deposit</div></div>
+  <div class="kpi"><div class="k">Savings rate</div><div class="v">49.9%</div><div class="n">You kept half. Nicely done.</div></div>
+ </div>
+ <div class="card">
+  <div class="cardhead"><h3>Where the money went</h3>
+   <div class="ctrl"><span class="seg"><span>Groups</span><span class="on">Categories</span></span><span class="seg"><span class="on">Sankey</span><span>Profit &amp; loss</span></span></div></div>
+  <svg class="sankey" viewBox="0 0 1000 500" width="100%" role="img" aria-label="Sankey: where the money went, Jul to Sep 2026">
+<path class="lk" d="M180.0,68.00 C315.0,68.00 315.0,84.00 450.0,84.00 L450.0,278.49 C315.0,278.49 315.0,262.49 180.0,262.49 Z" fill="#3366CC" fill-opacity="0.16"/>
+<path class="lk" d="M180.0,278.49 C315.0,278.49 315.0,278.49 450.0,278.49 L450.0,446.37 C315.0,446.37 315.0,446.37 180.0,446.37 Z" fill="#A3A8B0" fill-opacity="0.2"/>
+<path class="lk" d="M180.0,462.37 C315.0,462.37 315.0,446.37 450.0,446.37 L450.0,448.00 C315.0,448.00 315.0,464.00 180.0,464.00 Z" fill="#A3A8B0" fill-opacity="0.2"/>
+<path class="lk" d="M460.0,84.00 C610.0,84.00 610.0,40.00 760.0,40.00 L760.0,221.77 C610.0,221.77 610.0,265.77 460.0,265.77 Z" fill="#3366CC" fill-opacity="0.26"/>
+<path class="lk" d="M460.0,265.77 C610.0,265.77 610.0,232.77 760.0,232.77 L760.0,314.55 C610.0,314.55 610.0,347.55 460.0,347.55 Z" fill="#A3A8B0" fill-opacity="0.17"/>
+<path class="lk" d="M460.0,347.55 C610.0,347.55 610.0,325.55 760.0,325.55 L760.0,353.00 C610.0,353.00 610.0,375.00 460.0,375.00 Z" fill="#A3A8B0" fill-opacity="0.17"/>
+<path class="lk" d="M460.0,375.00 C610.0,375.00 610.0,364.00 760.0,364.00 L760.0,384.19 C610.0,384.19 610.0,395.19 460.0,395.19 Z" fill="#A3A8B0" fill-opacity="0.17"/>
+<path class="lk" d="M460.0,395.19 C610.0,395.19 610.0,395.19 760.0,395.19 L760.0,409.90 C610.0,409.90 610.0,409.90 460.0,409.90 Z" fill="#A3A8B0" fill-opacity="0.17"/>
+<path class="lk" d="M460.0,409.90 C610.0,409.90 610.0,420.90 760.0,420.90 L760.0,433.46 C610.0,433.46 610.0,422.46 460.0,422.46 Z" fill="#A3A8B0" fill-opacity="0.17"/>
+<path class="lk" d="M460.0,422.46 C610.0,422.46 610.0,444.46 760.0,444.46 L760.0,455.05 C610.0,455.05 610.0,433.05 460.0,433.05 Z" fill="#A3A8B0" fill-opacity="0.17"/>
+<path class="lk" d="M460.0,433.05 C610.0,433.05 610.0,466.05 760.0,466.05 L760.0,474.51 C610.0,474.51 610.0,441.51 460.0,441.51 Z" fill="#A3A8B0" fill-opacity="0.17"/>
+<path class="lk" d="M460.0,441.51 C610.0,441.51 610.0,485.51 760.0,485.51 L760.0,492.00 C610.0,492.00 610.0,448.00 460.0,448.00 Z" fill="#A3A8B0" fill-opacity="0.17"/>
+<rect x="170" y="68.00" width="10" height="194.49" rx="3.0" fill="#3366CC"/>
+<rect x="170" y="278.49" width="10" height="167.88" rx="3.0" fill="#8A8F98"/>
+<rect x="170" y="462.37" width="10" height="1.63" rx="0.8" fill="#A3A8B0"/>
+<rect x="450" y="84.00" width="10" height="364.00" rx="3" fill="#1F2328"/>
+<rect x="760" y="40.00" width="10" height="181.77" rx="3.0" fill="#3366CC"/>
+<rect x="760" y="232.77" width="10" height="81.78" rx="3.0" fill="#B9BEC5"/>
+<rect x="760" y="325.55" width="10" height="27.46" rx="3.0" fill="#B9BEC5"/>
+<rect x="760" y="364.00" width="10" height="20.18" rx="3.0" fill="#B9BEC5"/>
+<rect x="760" y="395.19" width="10" height="14.72" rx="3.0" fill="#B9BEC5"/>
+<rect x="760" y="420.90" width="10" height="12.55" rx="3.0" fill="#B9BEC5"/>
+<rect x="760" y="444.46" width="10" height="10.60" rx="3.0" fill="#B9BEC5"/>
+<rect x="760" y="466.05" width="10" height="8.46" rx="3.0" fill="#B9BEC5"/>
+<rect x="760" y="485.51" width="10" height="6.49" rx="3.0" fill="#B9BEC5"/>
+<circle cx="160" cy="160.2" r="4" fill="#3366CC"/><text x="150" y="164.2" text-anchor="end" class="sk-n">Simon&#8217;s pay</text><text x="150" y="179.2" text-anchor="end" class="sk-v">$22,260.00 · 53.4%</text>
+<circle cx="160" cy="357.4" r="4" fill="#8A8F98"/><text x="150" y="361.4" text-anchor="end" class="sk-n">Carissa&#8217;s pay</text><text x="150" y="376.4" text-anchor="end" class="sk-v">$19,215.00 · 46.1%</text>
+<text x="160" y="462.2" text-anchor="end" class="sk-n">Interest</text><text x="160" y="477.2" text-anchor="end" class="sk-v">$186.40 · 0.4%</text>
+<text x="455.0" y="64.0" text-anchor="middle" class="sk-n">Money in</text><text x="455.0" y="78.0" text-anchor="middle" class="sk-v">$41,661.40</text>
+<text x="780" y="129.9" class="sk-n">Savings</text><text x="780" y="144.9" class="sk-v">$20,804.10 · 49.9%</text>
+<path d="M772,273.7 C776,273.7 774,195.0 778,195.0" fill="none" stroke="#C9CDD3" stroke-width="1"/>
+<text x="780" y="198.0" class="sk-n">Housing</text><text x="780" y="213.0" class="sk-v">$9,360.00 · 22.5%</text>
+<path d="M772,339.3 C776,339.3 774,236.0 778,236.0" fill="none" stroke="#C9CDD3" stroke-width="1"/>
+<text x="780" y="239.0" class="sk-n">Groceries</text><text x="780" y="254.0" class="sk-v">$3,142.60 · 7.5%</text>
+<path d="M772,374.1 C776,374.1 774,277.0 778,277.0" fill="none" stroke="#C9CDD3" stroke-width="1"/>
+<text x="780" y="280.0" class="sk-n">Travel</text><text x="780" y="295.0" class="sk-v">$2,310.00 · 5.5%</text>
+<path d="M772,402.5 C776,402.5 774,318.0 778,318.0" fill="none" stroke="#C9CDD3" stroke-width="1"/>
+<text x="780" y="321.0" class="sk-n">Eating out</text><text x="780" y="336.0" class="sk-v">$1,684.35 · 4.0%</text>
+<path d="M772,427.2 C776,427.2 774,359.0 778,359.0" fill="none" stroke="#C9CDD3" stroke-width="1"/>
+<text x="780" y="362.0" class="sk-n">Lifestyle</text><text x="780" y="377.0" class="sk-v">$1,436.90 · 3.4%</text>
+<path d="M772,449.8 C776,449.8 774,400.0 778,400.0" fill="none" stroke="#C9CDD3" stroke-width="1"/>
+<text x="780" y="403.0" class="sk-n">Transport</text><text x="780" y="418.0" class="sk-v">$1,212.80 · 2.9%</text>
+<path d="M772,470.3 C776,470.3 774,441.0 778,441.0" fill="none" stroke="#C9CDD3" stroke-width="1"/>
+<text x="780" y="444.0" class="sk-n">Utilities</text><text x="780" y="459.0" class="sk-v">$968.15 · 2.3%</text>
+<text x="780" y="485.0" class="sk-n">Health</text><text x="780" y="500.0" class="sk-v">$742.50 · 1.8%</text>
+</svg>
+  <div class="foot">Same numbers as the lists below and under Profit &amp; loss. Hover a band to see the transactions behind it.</div>
+ </div>
+ <div class="grid2">
+  <div class="card"><div class="cardhead"><h3>Latest on this flow</h3><span class="link">All transactions →</span></div>
+   <p class="statehint">State: hidden transaction</p><div class="tx"><span class="d">30 Sep</span><span class="m"><i class="pd carissa"></i>Woolworths Newtown</span><span class="c"><span class="chip">Groceries</span></span><span class="amt">−$142.85</span></div><div class="tx hidden"><span class="d">29 Sep</span><span class="m"><i class="pd carissa"></i><span class="redact"></span><span><strong>Hidden until 12 Mar 2027</strong><small>Carissa&#8217;s keeping this one a surprise. We didn&#8217;t see a thing.</small></span></span><span class="c"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#EEF2FB" stroke="#3366CC" stroke-width="1.4"/><circle cx="8.6" cy="10" r="1.3" fill="#3366CC"/><path d="M13.6 10h3.2" stroke="#3366CC" stroke-width="1.5" stroke-linecap="round"/><path d="M8 14.5q4 3.2 8 0" fill="none" stroke="#3366CC" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="amt">−$214.00</span></div><div class="tx"><span class="d">29 Sep</span><span class="m"><i class="pd simon"></i>Opal top-up</span><span class="c"><span class="chip">Transport</span></span><span class="amt">−$50.00</span></div><div class="tx"><span class="d">26 Sep</span><span class="m"><i class="pd simon"></i>Northwind Pty Ltd · Pay</span><span class="c"><span class="chip">Simon&#8217;s pay</span></span><span class="amt pos">+$3,180.00</span></div><div class="tx"><span class="d">26 Sep</span><span class="m"><i class="pd simon"></i>Origin Energy</span><span class="c"><span class="chip">Utilities</span></span><span class="amt">−$186.30</span></div><div class="tx"><span class="d">25 Sep</span><span class="m"><i class="pd carissa"></i>Ray White Newtown · Rent</span><span class="c"><span class="chip">Housing</span></span><span class="amt">−$1,440.00</span></div></div>
+  <div class="card hb"><div class="cardhead"><h3>Home buying</h3><span class="link">Open planner →</span></div>
+   <p>At today&#8217;s 6.09%, you could comfortably borrow</p>
+   <div class="big">$780,000</div>
+   <p>and still have <strong style="color:#1F2328">$7,596 a month</strong> to live on.</p>
+   <span class="pill">5.59%</span><span class="pill on">6.09%<small>today</small></span><span class="pill">6.59%</span><span class="pill">7.09%</span>
+   <div class="split"><div class="stat"><div class="k">Repayments</div><div class="v">$4,722 / mo</div><div class="n">$2,179 a fortnight</div></div><div class="stat"><div class="k">Spare after usual spending</div><div class="v">$3,764 / mo</div><div class="n">Room for the odd smashed avo</div></div></div>
+  </div>
+ </div>
+</main></div></div>
+
+<div class="lbl">Secondary · Home buying planner (the main win)</div>
+<div class="browser sec"><div class="chrome"><span class="dots"><i></i><i></i><i></i></span><span class="url">pangolin.local/home-buying</span></div>
+<div class="app"><aside class="side"><div class="brand"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="12" fill="#3366CC"/><path d="M6 16a7 7 0 0 1 14 0M8.5 12.5a4.5 4.5 0 0 1 9 0M11 9.5a2 2 0 0 1 4 0" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>Pangolin</div>
+ <a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg><span>Goals</span></a><a class="nav on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5M10 20v-6h4v6"/></svg><span>Home buying</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><span>Forecast</span></a></aside>
+<main>
+ <div class="head"><div><h1>How much can we borrow?</h1><p>A plan for Simon and Carissa · estimates, not a lender&#8217;s offer</p></div><div class="ctrl"><span class="btn">Edit assumptions</span></div></div>
+ <div class="hbgrid">
+  <div class="card"><div class="k" style="color:var(--muted);font-size:13px">You could comfortably borrow</div>
+   <div class="hero-num">$780,000</div>
+   <p style="margin:0;color:var(--muted)">That&#8217;s a home up to about <strong style="color:#1F2328">$940,000</strong> with your $160,000 deposit.</p>
+   <div><span class="pill">5.59%</span><span class="pill on">6.09%<small>today</small></span><span class="pill">6.59%</span><span class="pill">7.09%</span></div>
+   <div class="split">
+    <div class="stat"><div class="k">Repayments</div><div class="v">$4,722 / mo</div><div class="n">or $2,179 a fortnight, lined up with pay day</div></div>
+    <div class="stat"><div class="k">Left to live on</div><div class="v" style="color:var(--accent)">$7,596 / mo</div><div class="n">After rates &amp; insurance. Usual spending is $3,832, so ~$3,764 spare.</div></div>
+   </div>
+  </div>
+  <div class="card"><h3>What&#8217;s left if rates move</h3><p style="margin:4px 0 6px;color:var(--muted);font-size:13px">Monthly, after repayments and home costs</p>
+   <div class="sb"><span>5.59%</span><div class="track"><i style="width:100.0%"></i></div><b>$7,845</b></div><div class="sb on"><span>6.09%</span><div class="track"><i style="width:96.8%"></i></div><b>$7,596</b></div><div class="sb"><span>6.59%</span><div class="track"><i style="width:93.6%"></i></div><b>$7,342</b></div><div class="sb"><span>7.09%</span><div class="track"><i style="width:90.3%"></i></div><b>$7,081</b></div>
+   <div class="assume"><span>30 years · principal &amp; interest</span><span>Take-home $12,838 / month</span><span>Home costs $520 / month</span><span class="ok">Passes the +3% stress test (9.09%)</span></div>
+  </div>
+ </div>
+</main></div></div>
+</div></body></html>

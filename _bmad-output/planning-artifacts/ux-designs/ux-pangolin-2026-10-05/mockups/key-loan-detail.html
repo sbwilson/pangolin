@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pangolin · Loan detail</title>
+<style>
+/* Key screen: Loan detail (desktop), Simon's investment property loan, mid what-if (Flow 2 climax).
+   Governs: DESIGN.md § Components › Accounts & loans › Loan detail (SmartSpend pattern: header line, progress line
+   with progress-track, four KPI tiles, Balance over time actual solid / projected dashed / planned thin,
+   'Where your repayments went' stacked bars principal primary / interest muted-foreground for entered periods only
+   + 'Add from a statement', 'What if I pay extra?' with yearly-cap caption, offset card with slider);
+   § Planning › Slider, Ownership split input, Stat tile; § Components › projection-line token.
+   EXPERIENCE.md § Loan Detail (header line, tiles, chart + View as table, user-entered interest only, lender's
+   plan import, extras capped at yearly limit, offset benefit + slider, what-ifs not saved [ASSUMPTION]);
+   § Component Patterns › Slider, Ownership split input; § Interaction Primitives › Sliders (steps $100);
+   Flow 2 steps 2-6; § Accessibility Floor (chart has a table equivalent).
+   .memlog: loan detail decision; user-entered interest figures (not auto-estimated); ownership split
+   enterable (Simon 100%); reconcile keep n,o,p,q (header line, lender plan import, yearly cap, % repaid + next).
+   Property section (.memlog: Property detail page + a Property section on Loan detail linking to it): value, net cash this
+   FY, gearing, link "View property". Header carries Import only (no date-range control: nothing here filters by range).
+   The pending set-aside row (VARIATION INT RATE 6.24% TO 5.99%) is flagged under the estimate line; the rate stays 6.24%
+   until Simon confirms it in Needs review. Figures are illustrative but internally consistent (gen/b2_loan.py, gen/prop.py).
+*/
+:root{--background:#F6EFE6;--foreground:#2A1F17;--card:#FFFAF3;--muted:#F6EFE6;--muted-foreground:#6A594B;--border:#E3D6C5;--ring:#B85A1E;--primary:#A3441D;--primary-foreground:#FFFFFF;--accent:#F6E8DE;--destructive:#A3283A;--sidebar:#F6EFE6;--money-in:#3D6B2D;--money-out:#A3283A;--warning:#8A5600;--warning-bg:#F0E5D3;--person-simon:#2C6681;--person-carissa:#9C4277;--mascot-scale-1:#BD785C;--mascot-scale-2:#D1A28E;--mascot-ink:#1F2328;--chart-1:#6F8A3D;--chart-2:#B5562B;--chart-3:#D9A13B;--chart-4:#2E8C88;--chart-5:#C97B63;--chart-6:#8A5A7A;--chart-7:#7E6A4F;--chart-8:#4F5D85;--chart-9:#A3B18A}
+
+*{box-sizing:border-box}
+body{margin:0;background:#E7E0D6;color:var(--foreground);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;padding:32px 16px 72px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto}
+.lbl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#5E4F42;font-weight:600;margin:34px 0 10px}
+.lbl:first-child{margin-top:0}
+.intro{max-width:900px;margin:0 0 6px;color:#5E4F42;font-size:13px}
+.statehint{display:block;font-size:10.5px;color:var(--primary);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin:0 0 4px}
+/* frame */
+.browser{background:var(--background);border-radius:12px;overflow:hidden;border:1px solid #D6C9B8;box-shadow:0 24px 60px -24px rgba(60,40,20,.28)}
+.chrome{height:38px;background:#EFE6DA;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;position:relative}
+.dots i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:7px;background:#DCCFBE}
+.url{position:absolute;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--border);border-radius:7px;padding:3px 110px;font-size:12px;color:var(--muted-foreground);white-space:nowrap}
+.app{display:grid;grid-template-columns:232px minmax(0,1fr)}
+/* sidebar */
+.side{background:var(--sidebar);border-right:1px solid var(--border);padding:20px 14px 14px;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:9px;font-weight:650;font-size:16px;padding:0 8px 20px}
+.nav{display:flex;align-items:center;gap:11px;padding:7px 10px;border-radius:8px;color:var(--muted-foreground);margin-bottom:2px;font-size:14px}
+.nav.on{background:var(--accent);color:var(--primary);font-weight:600}
+.nbadge{margin-left:auto;background:var(--warning-bg);color:var(--warning);font-size:11px;border-radius:9999px;padding:1px 7px;font-weight:600;font-variant-numeric:tabular-nums}
+.nbadge.zero{background:var(--accent);color:var(--primary);width:20px;height:20px;padding:0;display:grid;place-items:center}
+.navsep{height:1px;background:var(--border);margin:10px 10px 12px}
+.navlbl{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);padding:0 10px 6px}
+.sidefoot{margin-top:auto;padding-top:18px}
+.me{display:flex;align-items:center;gap:10px;padding:12px 10px 6px;border-top:1px solid var(--border);margin-top:8px;font-size:13px}
+.me small{display:block;color:var(--muted-foreground);font-size:12px}
+.signout{display:flex;align-items:center;gap:8px;padding:4px 10px;color:var(--muted-foreground);font-size:13px}
+.pd{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
+.pd.simon{background:var(--person-simon)}.pd.carissa{background:var(--person-carissa)}
+/* main + header */
+main{padding:28px 36px 36px;min-width:0}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:18px}
+.hl{min-width:0}
+.greet{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted-foreground);margin-bottom:2px}
+.head h1{margin:0;font-size:26px;font-weight:600;line-height:1.15;letter-spacing:-.01em}
+.fresh{margin:5px 0 0;color:var(--muted-foreground);font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ctrl{display:flex;gap:8px;align-items:center;flex:none}
+.drange{display:flex;gap:6px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--card);color:var(--foreground);border-radius:8px;padding:6px 12px;font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.btn.ic{padding:6px 7px}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:var(--primary-foreground);font-weight:600}
+.btn.sec{background:var(--card)}
+.seg{display:inline-flex;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:2px;white-space:nowrap}
+.seg span{padding:4px 10px;border-radius:6px;font-size:12.5px;color:var(--muted-foreground)}
+.seg span.on{background:var(--card);color:var(--foreground);box-shadow:0 1px 2px rgba(0,0,0,.08);font-weight:600}
+.link{color:var(--primary);font-size:13px;font-weight:600;white-space:nowrap}
+.pchip{display:inline-flex;align-items:center;gap:6px;background:var(--background);border:1px solid var(--border);border-radius:9999px;padding:1px 9px;font-size:12px;color:var(--foreground)}
+/* cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 22px}
+.card h3{margin:0;font-size:15px;font-weight:600;line-height:1.3}
+.card .sub{margin:2px 0 0;color:var(--muted-foreground);font-size:13px}
+.cardhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
+.cardhead .ctrl{flex-wrap:wrap;justify-content:flex-end}
+.foot{font-size:12px;color:var(--muted-foreground);border-top:1px solid var(--border);margin-top:8px;padding-top:10px}
+.mt{margin-top:16px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.kpis.k3{grid-template-columns:repeat(3,1fr)}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px}
+.kpi .k{font-size:12px;color:var(--muted-foreground)}
+.kpi .v{font-size:24px;font-weight:600;line-height:1.2;margin-top:4px;font-variant-numeric:tabular-nums;letter-spacing:-.01em;white-space:nowrap}
+.kpi .n{font-size:12px;color:var(--muted-foreground);margin-top:2px}
+.v.in{color:var(--money-in)}.v.out{color:var(--money-out)}.v.acc{color:var(--primary)}
+.share{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 16px;font-size:13px;color:var(--muted-foreground)}
+.share>span:first-child{display:flex;align-items:center;gap:8px}
+.share b{color:var(--foreground);font-weight:600;font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:16px;margin-top:16px}
+.grid2.even{grid-template-columns:1fr 1fr}
+.amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.amt.in{color:var(--money-in);font-weight:600}.amt.out{color:var(--money-out)}
+.chip{display:inline-flex;align-items:center;font-size:12px;border:1px solid var(--border);color:var(--muted-foreground);border-radius:6px;padding:1px 7px;white-space:nowrap}
+.chip.unc{color:var(--warning);background:var(--warning-bg);border-color:var(--warning-bg)}
+.sq{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}
+.warnline{display:flex;align-items:center;gap:10px;background:var(--warning-bg);color:var(--warning);border-radius:8px;padding:8px 12px;font-size:13px}
+.warnline>b{width:18px;height:18px;border-radius:50%;border:1.6px solid currentColor;display:grid;place-items:center;font-size:11px;flex:none}
+.warnline .link{margin-left:auto;color:var(--warning);text-decoration:underline}
+.stat{background:var(--background);border:1px solid var(--border);border-radius:10px;padding:10px 14px}
+.stat .k{font-size:12px;color:var(--muted-foreground)}
+.stat .v{font-size:19px;font-weight:600;line-height:1.25;white-space:nowrap;font-variant-numeric:tabular-nums}
+.stat .n{font-size:12px;color:var(--muted-foreground)}
+.track{height:8px;background:var(--border);border-radius:9999px;overflow:hidden}
+.track i{display:block;height:100%;border-radius:9999px}
+/* celebration */
+.party{position:relative;overflow:hidden;background:var(--accent);border-radius:12px;padding:8px 14px 8px 8px;display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.party .conf{position:absolute;inset:0;pointer-events:none}
+.party .conf i{position:absolute;width:8px;height:3px;border-radius:2px;opacity:.75}
+.party .conf i.c{width:5px;height:5px;border-radius:50%}
+.party .conf i.s{width:7px;height:7px;background:transparent!important;border:1.5px solid;border-radius:2px}
+.party .txt{position:relative}
+.party b{font-size:15px;font-weight:600}
+.party p{margin:0;color:var(--foreground);font-size:13px}
+.party .count{position:relative;margin-left:auto;background:var(--card);border-radius:9999px;padding:4px 12px;font-size:13px;font-variant-numeric:tabular-nums;color:var(--muted-foreground);white-space:nowrap}
+.party .count strong{color:var(--primary)}
+.party .x{position:relative;color:var(--muted-foreground);display:grid;place-items:center}
+/* sankey */
+.sankey{display:block}
+.sankey .sk-n{font:600 12.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;fill:var(--foreground)}
+.sankey .sk-v{font:400 11.5px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;fill:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.sankey .ld{stroke:var(--border);fill:none}
+/* phone */
+.phones{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.phonewrap{margin:0}
+.pcap{font-size:12px;color:#5E4F42;margin:0 0 8px;font-weight:600}
+.phone{width:390px;height:844px;border-radius:46px;border:10px solid #2A1F17;background:var(--background);position:relative;overflow:hidden;box-shadow:0 24px 60px -24px rgba(60,40,20,.35);display:flex;flex-direction:column}
+.status{height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 26px 0 30px;font-size:14px;flex:none}
+.status span{font-size:11px;letter-spacing:1px}
+.pscroll{flex:1;overflow:hidden;padding:6px 16px 16px}
+.tabs{flex:none;display:grid;grid-template-columns:repeat(5,1fr);background:var(--card);border-top:1px solid var(--border);padding:6px 4px 24px}
+.tab{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--muted-foreground);min-height:44px;justify-content:center;text-align:center;line-height:1.15}
+.tab.on{color:var(--primary);font-weight:600}
+.ti{position:relative;display:block}
+.tbadge{position:absolute;top:-5px;left:15px;background:var(--warning-bg);color:var(--warning);font-size:10px;border-radius:9999px;padding:0 5px;font-weight:600;border:1.5px solid var(--card)}
+.tbadge.zero{background:var(--accent);color:var(--primary);width:16px;height:16px;padding:0;display:grid;place-items:center}
+.homebar{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);width:130px;height:5px;border-radius:3px;background:#2A1F17}
+
+
+/* batch-2 primitives (shadcn defaults on Clay & Linen tokens) */
+.cb{width:16px;height:16px;border:1.5px solid #BFAE98;border-radius:4px;background:var(--card);display:inline-grid;place-items:center;flex:none;color:var(--primary-foreground)}
+.cb.on{background:var(--primary);border-color:var(--primary)}
+.cb.mixed{background:var(--primary);border-color:var(--primary)}
+.cb.mixed::after{content:"";width:8px;height:2px;background:var(--primary-foreground);border-radius:1px}
+.sel{display:inline-flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--border);background:var(--card);border-radius:8px;padding:5px 10px;font-size:13px;white-space:nowrap}
+.inp{display:flex;align-items:center;gap:8px;border:1px solid var(--border);background:var(--card);border-radius:8px;padding:6px 10px;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.inp .ph{color:var(--muted-foreground)}
+.focus{box-shadow:0 0 0 2px var(--background),0 0 0 4px var(--ring)}
+.tag{display:inline-flex;font-size:11.5px;color:var(--muted-foreground);background:var(--background);border:1px solid var(--border);border-radius:6px;padding:0 6px;line-height:17px;white-space:nowrap}
+.disc{width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--primary);display:grid;place-items:center;font-size:12px;font-weight:700;flex:none}
+.cap{font-size:12px;color:var(--muted-foreground)}
+.hint{display:block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--primary);font-weight:600}
+.btn.sm{padding:4px 10px;font-size:12.5px}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted-foreground)}
+.btn.wide{justify-content:center}
+.chip.on{background:var(--accent);color:var(--primary);border-color:var(--accent);font-weight:600}
+.pbar i{background:var(--primary)}
+
+.back{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted-foreground);margin-bottom:8px}
+.hline{font-size:13px;color:var(--muted-foreground);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
+.hline b{color:var(--foreground);font-weight:600}
+.progl{display:flex;align-items:center;gap:14px;margin:12px 0 6px}
+.progl .track{flex:1;max-width:520px}
+.progl .track i{background:var(--primary)}
+.progl span{font-size:13px;white-space:nowrap}
+.est{font-size:12px;color:var(--muted-foreground);margin:0 0 16px}
+.est .link{font-size:12px}
+.lg{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;margin-top:16px}
+.lg2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.col{display:flex;flex-direction:column;gap:16px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted-foreground);align-items:center}
+.legend i{display:inline-block;width:18px;height:0;border-top:2px solid var(--primary);vertical-align:middle;margin-right:5px}
+.legend i.p{border-top:2px dashed var(--muted-foreground)}
+.legend i.pl{border-top:1.25px solid var(--foreground)}
+.legend i.sq{width:10px;height:10px;border:0;border-radius:3px;background:var(--primary)}
+.legend i.sq.int{background:var(--muted-foreground)}
+svg.ch text{font:11px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;fill:var(--muted-foreground)}
+svg.ch .gl{stroke:var(--border)}
+.tbl{font-size:12.5px;margin-top:8px}
+.kpi .v.sm{font-size:24px}
+.rw{display:flex;align-items:flex-end;gap:14px;height:150px;margin-top:12px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+.rw .b{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%}
+.rw .b i{display:block;border-radius:3px 3px 0 0}
+.rw .b i.pr{background:var(--primary);border-radius:0}
+.rw .b i.in{background:var(--muted-foreground)}
+.rwx{display:flex;gap:14px;font-size:11px;color:var(--muted-foreground);margin-top:4px}
+.rwx span{flex:1;text-align:center;white-space:nowrap}
+.tot{display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:13px;margin-top:12px}
+.tot span{display:flex;align-items:center;gap:6px}
+.tot b{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px}
+.fl{font-size:12px;font-weight:600;margin-bottom:5px;display:block}
+.slider{display:flex;align-items:center;gap:14px;margin-top:14px}
+.sl{position:relative;flex:1;height:6px;border-radius:9999px;background:var(--border)}
+.sl .rg{position:absolute;left:0;top:0;bottom:0;background:var(--primary);border-radius:9999px}
+.sl .th{position:absolute;top:50%;width:20px;height:20px;border-radius:50%;background:var(--card);border:2px solid var(--primary);transform:translate(-50%,-50%)}
+.sl .tick{position:absolute;top:-6px;width:2px;height:18px;background:var(--foreground);transform:translateX(-1px)}
+.sl .tl{position:absolute;top:16px;transform:translateX(-50%);font-size:11px;color:var(--muted-foreground);white-space:nowrap}
+.slider .inp{width:118px;justify-content:flex-end}
+.outs{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:22px}
+.capline{font-size:12px;color:var(--muted-foreground);margin-top:10px}
+.own2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.own2 .seg{grid-column:1/-1;justify-self:start}
+.propsec{display:grid;grid-template-columns:auto minmax(0,1.1fr) repeat(3,minmax(0,1fr)) auto;gap:14px;align-items:stretch}
+.propsec>.pic,.propsec>div:nth-child(2),.propsec>.link{align-self:center}
+.propsec .pic{width:40px;height:40px;border-radius:10px;background:var(--accent);color:var(--primary);display:grid;place-items:center}
+.propsec .stat .v.out{color:var(--money-out)}
+.gear{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--foreground);background:var(--background);border:1px solid var(--border);border-radius:6px;padding:1px 8px;white-space:nowrap}
+.pend{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--warning);margin:-10px 0 16px}
+.pend .link{font-size:12px;color:var(--warning);text-decoration:underline}
+
+</style></head><body><div class="wrap">
+<div class="lbl">Key screen &#183; Loan detail, desktop &#8212; Simon&#8217;s investment property loan, trying extras and a bigger offset</div><div class="browser "><div class="chrome"><span class="dots"><i></i><i></i><i></i></span><span class="url">pangolin.local/accounts/investment-home-loan</span></div><div class="app"><aside class="side"><div class="brand"><svg class="pango logo" width="30" height="22" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>Pangolin</span></div><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20V4M4 7l3-3 3 3M17 4v16M14 17l3 3 3-3"/></svg><span>Cash flow</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 5-5"/></svg><span>Net worth</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.6A9 9 0 0 1 20.4 9H15z"/></svg><span>Spending</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></svg><span>Transactions</span><b class="nbadge">2</b></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg><span>Needs review</span><b class="nbadge">8</b></a><a class="nav on" aria-current="page"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18L12 4z"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg><span>Accounts</span></a><div class="navsep"></div><div class="navlbl">Planning</div><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h16a2 2 0 0 1 2 2v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M5 7l3-3h9v3M16 13h2"/></svg><span>Budgets</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg><span>Goals</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5M10 20v-6h4v6"/></svg><span>Home buying</span></a><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><span>Forecast</span></a><div class="sidefoot"><a class="nav"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Settings</span></a><div class="me"><i class="pd simon"></i><div>Simon<small>Signed in with passkey</small></div></div><a class="signout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></a></div></aside><main><div class="head"><div class="hl"><div class="greet"><svg class="pango" width="26" height="19" viewBox="0 0 140 100" aria-hidden="true"><path d="M112 72 q22 2 18 -16 q-3 -10 -12 -6" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/><path d="M40 74 Q40 30 84 30 Q118 32 118 74 Z" fill="var(--primary)"/><path d="M42,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M60,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M78,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M96,70 a10,10 0 0 1 20,0" fill="var(--primary)" stroke="var(--background)" stroke-width="2"/><path d="M50,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M68,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M86,56 a10,10 0 0 1 20,0" fill="var(--mascot-scale-1)" stroke="var(--background)" stroke-width="2"/><path d="M59,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M77,43 a10,10 0 0 1 20,0" fill="var(--mascot-scale-2)" stroke="var(--background)" stroke-width="2"/><path d="M44 74 Q30 72 18 66 Q12 62 20 58 Q30 54 46 56 Z" fill="#E6DDD0"/><circle cx="17" cy="62" r="2.4" fill="var(--mascot-ink)"/><circle cx="34" cy="61" r="2.6" fill="var(--mascot-ink)"/><rect x="56" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/><rect x="96" y="72" width="10" height="9" rx="4" fill="var(--mascot-ink)"/></svg><span>G&#8217;day, Simon</span></div><h1>Investment home loan &#183; 35 Hawthorne St</h1><p class="fresh">Imported up to 30 Sep from CommBank CSV, 9:14 pm</p></div><div class="ctrl"><span class="btn pri"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Import</span></div></div>
+<div class="back"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>Accounts</div>
+<div class="hline"><b>CommBank</b><span>&#183;</span><span>Investment home loan, variable, principal &amp; interest</span><span>&#183;</span>
+ <span>6.24% nominal &#183; 6.42% effective</span><span>&#183;</span><span>30 years from Apr 2019</span><span>&#183;</span>
+ <span style="display:inline-flex;align-items:center;gap:6px"><i class="pd simon"></i>Yours: 100%</span></div>
+<div class="progl"><div class="track" role="img" aria-label="15% repaid"><i style="width:15%"></i></div>
+ <span><b>15% repaid</b> &#183; next $3,426.17 on 1 Nov</span></div>
+<p class="est">Estimate: the schedule is worked out from the rate and term. <span class="link">Import the lender&#8217;s repayment plan</span> to replace it.</p>
+<p class="pend"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></svg><span>A set-aside row from your 30 Sep import looks like a rate change to 5.99%. Nothing changes here until you confirm it.</span><span class="link">Check it in Needs review</span></p>
+
+<div class="kpis">
+ <div class="kpi"><div class="k">Still owed</div><div class="v">$493,240.61</div><div class="n">of $580,000 borrowed</div></div>
+ <div class="kpi"><div class="k">Paid off</div><div class="v">Aug 2046</div><div class="n">at today&#8217;s rate and offset &#183; <b style="color:var(--foreground)">Mar 2042</b> with your extras</div></div>
+ <div class="kpi"><div class="k">Interest paid</div><div class="v">$36,458.80</div><div class="n">from the 5 quarters you&#8217;ve entered</div></div>
+ <div class="kpi"><div class="k">Interest still to pay</div><div class="v">$319,414</div><div class="n">estimate, at 6.24% over ~20 years</div></div>
+</div>
+
+<div class="lg">
+ <div class="card">
+  <div class="cardhead"><div><h3>Balance over time</h3><p class="sub">The line you&#8217;re trying to get to zero.</p></div>
+   <div class="legend"><span><i></i>Actual</span><span><i class="p"></i>Projected</span><span><i class="pl"></i>With extras</span></div></div>
+  <svg class="ch" viewBox="0 0 640 488" width="100%" role="img" aria-label="Balance over time: $580,000 in Apr 2019 to $493,241 today; projected paid off Aug 2046; with extras, Mar 2042"><line class="gl" x1="52" x2="626" y1="462.0" y2="462.0"/><text x="44" y="466.0" text-anchor="end">$0</text><line class="gl" x1="52" x2="626" y1="350.0" y2="350.0"/><text x="44" y="354.0" text-anchor="end">$150k</text><line class="gl" x1="52" x2="626" y1="238.0" y2="238.0"/><text x="44" y="242.0" text-anchor="end">$300k</text><line class="gl" x1="52" x2="626" y1="126.0" y2="126.0"/><text x="44" y="130.0" text-anchor="end">$450k</text><line class="gl" x1="52" x2="626" y1="14.0" y2="14.0"/><text x="44" y="18.0" text-anchor="end">$600k</text><text x="64.9" y="480" text-anchor="middle">2020</text><text x="161.3" y="480" text-anchor="middle">2025</text><text x="257.8" y="480" text-anchor="middle">2030</text><text x="354.3" y="480" text-anchor="middle">2035</text><text x="450.7" y="480" text-anchor="middle">2040</text><text x="547.2" y="480" text-anchor="middle">2045</text><line x1="195.1" x2="195.1" y1="14" y2="462" stroke="var(--border)" stroke-dasharray="2 3"/><text x="199.1" y="24" style="fill:var(--foreground)">Today</text><path d="M195.1,93.7 L196.7,94.5 L198.3,95.3 L199.9,96.1 L201.5,96.9 L203.1,97.7 L204.7,98.5 L206.4,99.3 L208.0,100.2 L209.6,101.0 L211.2,101.8 L212.8,102.7 L214.4,103.5 L216.0,104.3 L217.6,105.2 L219.2,106.0 L220.8,106.9 L222.4,107.8 L224.0,108.6 L225.6,109.5 L227.3,110.4 L228.9,111.2 L230.5,112.1 L232.1,113.0 L233.7,113.9 L235.3,114.8 L236.9,115.7 L238.5,116.6 L240.1,117.5 L241.7,118.4 L243.3,119.4 L244.9,120.3 L246.5,121.2 L248.2,122.2 L249.8,123.1 L251.4,124.0 L253.0,125.0 L254.6,126.0 L256.2,126.9 L257.8,127.9 L259.4,128.8 L261.0,129.8 L262.6,130.8 L264.2,131.8 L265.8,132.8 L267.5,133.8 L269.1,134.8 L270.7,135.8 L272.3,136.8 L273.9,137.8 L275.5,138.8 L277.1,139.9 L278.7,140.9 L280.3,141.9 L281.9,143.0 L283.5,144.0 L285.1,145.1 L286.7,146.1 L288.4,147.2 L290.0,148.3 L291.6,149.3 L293.2,150.4 L294.8,151.5 L296.4,152.6 L298.0,153.7 L299.6,154.8 L301.2,155.9 L302.8,157.0 L304.4,158.2 L306.0,159.3 L307.6,160.4 L309.3,161.6 L310.9,162.7 L312.5,163.9 L314.1,165.0 L315.7,166.2 L317.3,167.3 L318.9,168.5 L320.5,169.7 L322.1,170.9 L323.7,172.1 L325.3,173.3 L326.9,174.5 L328.5,175.7 L330.2,176.9 L331.8,178.1 L333.4,179.4 L335.0,180.6 L336.6,181.9 L338.2,183.1 L339.8,184.4 L341.4,185.6 L343.0,186.9 L344.6,188.2 L346.2,189.5 L347.8,190.7 L349.5,192.0 L351.1,193.3 L352.7,194.7 L354.3,196.0 L355.9,197.3 L357.5,198.6 L359.1,200.0 L360.7,201.3 L362.3,202.7 L363.9,204.0 L365.5,205.4 L367.1,206.8 L368.7,208.1 L370.4,209.5 L372.0,210.9 L373.6,212.3 L375.2,213.7 L376.8,215.2 L378.4,216.6 L380.0,218.0 L381.6,219.4 L383.2,220.9 L384.8,222.3 L386.4,223.8 L388.0,225.3 L389.6,226.8 L391.3,228.2 L392.9,229.7 L394.5,231.2 L396.1,232.7 L397.7,234.3 L399.3,235.8 L400.9,237.3 L402.5,238.8 L404.1,240.4 L405.7,241.9 L407.3,243.5 L408.9,245.1 L410.5,246.7 L412.2,248.3 L413.8,249.8 L415.4,251.5 L417.0,253.1 L418.6,254.7 L420.2,256.3 L421.8,258.0 L423.4,259.6 L425.0,261.3 L426.6,262.9 L428.2,264.6 L429.8,266.3 L431.5,268.0 L433.1,269.7 L434.7,271.4 L436.3,273.1 L437.9,274.8 L439.5,276.5 L441.1,278.3 L442.7,280.0 L444.3,281.8 L445.9,283.6 L447.5,285.3 L449.1,287.1 L450.7,288.9 L452.4,290.7 L454.0,292.6 L455.6,294.4 L457.2,296.2 L458.8,298.1 L460.4,299.9 L462.0,301.8 L463.6,303.7 L465.2,305.5 L466.8,307.4 L468.4,309.3 L470.0,311.3 L471.6,313.2 L473.3,315.1 L474.9,317.1 L476.5,319.0 L478.1,321.0 L479.7,322.9 L481.3,324.9 L482.9,326.9 L484.5,328.9 L486.1,330.9 L487.7,333.0 L489.3,335.0 L490.9,337.1 L492.5,339.1 L494.2,341.2 L495.8,343.3 L497.4,345.4 L499.0,347.5 L500.6,349.6 L502.2,351.7 L503.8,353.8 L505.4,356.0 L507.0,358.1 L508.6,360.3 L510.2,362.5 L511.8,364.7 L513.5,366.9 L515.1,369.1 L516.7,371.3 L518.3,373.5 L519.9,375.8 L521.5,378.0 L523.1,380.3 L524.7,382.6 L526.3,384.9 L527.9,387.2 L529.5,389.5 L531.1,391.8 L532.7,394.2 L534.4,396.5 L536.0,398.9 L537.6,401.3 L539.2,403.7 L540.8,406.1 L542.4,408.5 L544.0,410.9 L545.6,413.4 L547.2,415.8 L548.8,418.3 L550.4,420.8 L552.0,423.3 L553.6,425.8 L555.3,428.3 L556.9,430.8 L558.5,433.4 L560.1,435.9 L561.7,438.5 L563.3,441.0 L564.9,443.6 L566.5,446.2 L568.1,448.7 L569.7,451.3 L571.3,453.8 L572.9,456.4 L574.5,459.0 L576.2,461.5 L577.8,462.0" fill="none" stroke="var(--muted-foreground)" stroke-width="1.75" stroke-dasharray="4 3"/><path d="M195.1,93.7 L196.7,94.9 L198.3,99.8 L199.9,101.0 L201.5,102.2 L203.1,103.4 L204.7,104.6 L206.4,105.8 L208.0,107.1 L209.6,108.3 L211.2,109.5 L212.8,110.8 L214.4,112.0 L216.0,113.3 L217.6,114.6 L219.2,115.8 L220.8,117.1 L222.4,118.4 L224.0,119.7 L225.6,121.0 L227.3,122.3 L228.9,123.6 L230.5,125.0 L232.1,126.3 L233.7,127.6 L235.3,129.0 L236.9,130.3 L238.5,131.7 L240.1,133.0 L241.7,134.4 L243.3,135.8 L244.9,137.2 L246.5,138.5 L248.2,139.9 L249.8,141.4 L251.4,142.8 L253.0,144.2 L254.6,145.6 L256.2,147.1 L257.8,148.5 L259.4,149.9 L261.0,151.4 L262.6,152.9 L264.2,154.3 L265.8,155.8 L267.5,157.3 L269.1,158.8 L270.7,160.3 L272.3,161.8 L273.9,163.3 L275.5,164.9 L277.1,166.4 L278.7,168.0 L280.3,169.5 L281.9,171.1 L283.5,172.6 L285.1,174.2 L286.7,175.8 L288.4,177.4 L290.0,179.0 L291.6,180.6 L293.2,182.2 L294.8,183.8 L296.4,185.5 L298.0,187.1 L299.6,188.8 L301.2,190.4 L302.8,192.1 L304.4,193.8 L306.0,195.5 L307.6,197.2 L309.3,198.9 L310.9,200.6 L312.5,202.3 L314.1,204.0 L315.7,205.8 L317.3,207.5 L318.9,209.3 L320.5,211.0 L322.1,212.8 L323.7,214.6 L325.3,216.4 L326.9,218.2 L328.5,220.0 L330.2,221.8 L331.8,223.7 L333.4,225.5 L335.0,227.4 L336.6,229.2 L338.2,231.1 L339.8,233.0 L341.4,234.9 L343.0,236.8 L344.6,238.7 L346.2,240.6 L347.8,242.5 L349.5,244.5 L351.1,246.4 L352.7,248.4 L354.3,250.3 L355.9,252.3 L357.5,254.3 L359.1,256.3 L360.7,258.3 L362.3,260.3 L363.9,262.4 L365.5,264.4 L367.1,266.5 L368.7,268.5 L370.4,270.6 L372.0,272.7 L373.6,274.8 L375.2,276.9 L376.8,279.0 L378.4,281.1 L380.0,283.3 L381.6,285.4 L383.2,287.6 L384.8,289.8 L386.4,292.0 L388.0,294.1 L389.6,296.4 L391.3,298.6 L392.9,300.8 L394.5,303.0 L396.1,305.3 L397.7,307.6 L399.3,309.8 L400.9,312.1 L402.5,314.4 L404.1,316.8 L405.7,319.1 L407.3,321.4 L408.9,323.8 L410.5,326.1 L412.2,328.5 L413.8,330.9 L415.4,333.3 L417.0,335.7 L418.6,338.1 L420.2,340.6 L421.8,343.0 L423.4,345.5 L425.0,347.9 L426.6,350.4 L428.2,352.9 L429.8,355.4 L431.5,358.0 L433.1,360.5 L434.7,363.1 L436.3,365.6 L437.9,368.2 L439.5,370.8 L441.1,373.4 L442.7,376.0 L444.3,378.7 L445.9,381.3 L447.5,384.0 L449.1,386.7 L450.7,389.3 L452.4,392.0 L454.0,394.8 L455.6,397.5 L457.2,400.2 L458.8,403.0 L460.4,405.8 L462.0,408.6 L463.6,411.4 L465.2,414.2 L466.8,417.0 L468.4,419.9 L470.0,422.7 L471.6,425.6 L473.3,428.5 L474.9,431.4 L476.5,434.3 L478.1,437.2 L479.7,440.2 L481.3,443.1 L482.9,446.0 L484.5,449.0 L486.1,451.9 L487.7,454.8 L489.3,457.8 L490.9,460.7 L492.5,462.0" fill="none" stroke="var(--foreground)" stroke-width="1.25"/><path d="M50.4,28.9 L52.0,29.7 L53.6,30.4 L55.2,31.1 L56.8,31.8 L58.4,32.5 L60.0,33.3 L61.6,34.0 L63.3,34.7 L64.9,35.5 L66.5,36.2 L68.1,37.0 L69.7,37.7 L71.3,38.5 L72.9,39.2 L74.5,40.0 L76.1,40.7 L77.7,41.5 L79.3,42.3 L80.9,43.0 L82.5,43.8 L84.2,44.6 L85.8,45.4 L87.4,46.1 L89.0,46.9 L90.6,47.7 L92.2,48.5 L93.8,49.3 L95.4,50.1 L97.0,50.9 L98.6,51.7 L100.2,52.5 L101.8,53.3 L103.5,54.1 L105.1,54.9 L106.7,55.7 L108.3,56.5 L109.9,57.3 L111.5,58.1 L113.1,58.9 L114.7,59.7 L116.3,60.4 L117.9,61.1 L119.5,61.8 L121.1,62.5 L122.7,63.2 L124.4,63.8 L126.0,64.5 L127.6,65.1 L129.2,65.7 L130.8,66.3 L132.4,66.9 L134.0,67.5 L135.6,68.1 L137.2,68.7 L138.8,69.3 L140.4,69.9 L142.0,70.5 L143.6,71.2 L145.3,71.8 L146.9,72.4 L148.5,73.1 L150.1,73.7 L151.7,74.3 L153.3,75.0 L154.9,75.7 L156.5,76.3 L158.1,77.0 L159.7,77.7 L161.3,78.3 L162.9,79.0 L164.5,79.7 L166.2,80.4 L167.8,81.1 L169.4,81.8 L171.0,82.5 L172.6,83.2 L174.2,83.9 L175.8,84.6 L177.4,85.4 L179.0,86.1 L180.6,86.8 L182.2,87.6 L183.8,88.3 L185.5,89.1 L187.1,89.8 L188.7,90.6 L190.3,91.4 L191.9,92.1 L193.5,92.9 L195.1,93.7" fill="none" stroke="var(--primary)" stroke-width="2.25"/><circle cx="577.8" cy="462.0" r="3.5" fill="var(--card)" stroke="var(--muted-foreground)" stroke-width="1.5"/><circle cx="492.5" cy="462.0" r="3.5" fill="var(--foreground)"/><text x="486.5" y="452.0" text-anchor="end" style="fill:var(--foreground)">Mar 2042</text><text x="577.8" y="452.0" text-anchor="start">Aug 2046</text></svg>
+  <div class="foot"><span class="link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg> View as table</span> &#183; balance by year</div>
+ </div>
+ <div class="col">
+  <div class="card">
+   <div class="cardhead"><div><h3>Where your repayments went</h3><p class="sub">From interest you&#8217;ve copied off your statements.</p></div></div>
+   <div class="rw" role="img" aria-label="Principal and interest by quarter, Jul 2025 to Sep 2026"><div class="b" title="Jul–Sep 25"><i class="in" style="height:72.2%"></i><i class="pr" style="height:27.8%"></i></div><div class="b" title="Oct–Dec 25"><i class="in" style="height:71.6%"></i><i class="pr" style="height:28.4%"></i></div><div class="b" title="Jan–Mar 26"><i class="in" style="height:71.0%"></i><i class="pr" style="height:29.0%"></i></div><div class="b" title="Apr–Jun 26"><i class="in" style="height:70.3%"></i><i class="pr" style="height:29.7%"></i></div><div class="b" title="Jul–Sep 26"><i class="in" style="height:69.7%"></i><i class="pr" style="height:30.3%"></i></div></div>
+   <div class="rwx"><span>Sep 25</span><span>Dec 25</span><span>Mar 26</span><span>Jun 26</span><span>Sep 26</span></div>
+   <div class="tot"><span><i class="sq" style="background:var(--primary)"></i>Principal (debt paid down)</span><b>$14,933.70</b>
+    <span><i class="sq" style="background:var(--muted-foreground)"></i>Interest (cost of the loan)</span><b>$36,458.80</b></div>
+   <div class="capline">Quarters ending in the month shown. Only quarters with an entered figure show; earlier ones are blank, not guessed.</div><div style="display:flex;justify-content:flex-end;margin-top:10px"><span class="btn sm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add from a statement</span></div>
+  </div>
+  <div class="card">
+   <h3>Who owns this loan</h3><p class="sub">Scales equity and sale figures in Home buying.</p>
+   <div class="own2"><span class="seg" role="group" aria-label="Ownership preset"><span class="on">100 / 0</span><span class="">50 / 50</span><span class="">0 / 100</span></span>
+    <span class="inp"><i class="pd simon"></i>Simon<span style="margin-left:auto">100 %</span></span>
+    <span class="inp"><i class="pd carissa"></i>Carissa<span style="margin-left:auto">0 %</span></span></div>
+  </div>
+ </div>
+</div>
+
+<div class="lg2">
+ <div class="card">
+  <div class="cardhead"><div><h3>What if I pay extra?</h3><p class="sub">Try it out. Nothing here is saved.</p></div></div>
+  <div class="fields">
+   <div><span class="fl">Extra every month</span><span class="inp focus">$<span style="margin-left:auto">500</span></span></div>
+   <div><span class="fl">One-off extra</span><span class="inp">$<span style="margin-left:auto">5,000</span></span></div>
+   <div><span class="fl">One-off on</span><span class="inp">1 Dec 2026<span style="margin-left:auto"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span></span></div>
+  </div>
+  <div class="outs">
+   <div class="stat"><div class="k">Paid off</div><div class="v">Mar 2042</div><div class="n">4 years 5 months sooner than Aug 2046</div></div>
+   <div class="stat"><div class="k">Interest saved</div><div class="v" style="color:var(--primary)">$83,498</div><div class="n">over the life of the loan</div></div>
+  </div>
+  <div class="capline">Your contract caps extras at $10,000 a year. This uses $9,000 of it this financial year.</div>
+ </div>
+ <div class="card">
+  <div class="cardhead"><div><h3>Your offset</h3><p class="sub">Offset &#183; CommBank &#183; $38,450.00 today</p></div></div>
+  <div class="outs" style="margin-top:4px">
+   <div class="stat"><div class="k">Interest it saves</div><div class="v" style="color:var(--primary)">$99,447</div><div class="n">vs no offset, if the balance stays put</div></div>
+   <div class="stat"><div class="k">Time it saves</div><div class="v">2 yrs 5 mos</div><div class="n">off the end of the loan</div></div>
+  </div>
+  <span class="fl" style="margin-top:16px">What if the offset held</span>
+  <div class="slider" style="margin-top:6px">
+   <div class="sl" role="slider" aria-valuemin="0" aria-valuemax="150000" aria-valuenow="60000" aria-label="Offset balance">
+    <span class="rg" style="width:40%"></span><span class="tick" style="left:25.6%"></span><span class="tl" style="left:25.6%">today</span><span class="th" style="left:40%"></span></div>
+   <span class="inp">$<span style="margin-left:auto">60,000</span></span></div>
+  <div class="capline" style="margin-top:22px" aria-live="polite">At $60,000: paid off <b style="color:var(--foreground)">Jul 2045</b>, 13 months sooner, and another <b style="color:var(--foreground)">$44,759</b> of interest saved.</div>
+ </div>
+</div>
+<div class="card" style="margin-top:16px">
+ <div class="cardhead"><div><h3>The property behind it</h3><p class="sub">What this loan is paying for. Rent and running costs come from your imports, loan interest from the statements you entered; the value is the one you entered.</p></div></div>
+ <div class="propsec">
+  <span class="pic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/></svg></span>
+  <div><b style="font-size:15px">35 Hawthorne St</b><div class="cap">Geelong VIC &#183; <i class="pd simon" style="vertical-align:0"></i> Simon 100%</div></div>
+  <div class="stat"><div class="k">Value</div><div class="v">$760,000</div><div class="n">entered 30 Jun 2026</div></div>
+  <div class="stat"><div class="k">Net cash this FY</div><div class="v out">−$2,125.09</div><div class="n">Jul &#8211; Sep, −$708.36/mo</div></div>
+  <div class="stat"><div class="k">Gearing</div><div class="v" style="font-size:16px;line-height:1.55">Negatively geared</div><div class="n">costs more than the rent, for now</div></div>
+  <span class="link">View property &#8594;</span>
+ </div>
+</div></main></div></div>
+</div></body></html>

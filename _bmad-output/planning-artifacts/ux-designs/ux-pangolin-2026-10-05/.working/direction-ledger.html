@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pangolin · Direction B · Ledger</title>
+<style>
+/* Direction B — Ledger (dense analyst)
+   PLACEHOLDER PALETTE — colours pending Carissa. One cool neutral + one accent.
+   --bg       #F3F4F6  cool grey canvas
+   --surface  #FFFFFF  panels
+   --rule     #DCDFE4  1px table rules
+   --rule2    #EEF0F3  zebra / inner rules
+   --ink      #111827  text
+   --muted    #5B6472  secondary text
+   --accent   #3366CC  single accent (Simon square, savings, selection, focus)
+   --carissa  #6B7280  placeholder second person colour
+   --flow     #9CA3AF  expense flows (20% opacity)
+   Type: system UI at 12px, figures in ui-monospace with tabular-nums; 11px uppercase headers. Radius 3px. Motion: none — instant state changes, visible focus rings, keyboard-first (G-chords, J/K, Enter to accept). */
+:root{--bg:#F3F4F6;--surface:#fff;--rule:#DCDFE4;--rule2:#EEF0F3;--ink:#111827;--muted:#5B6472;--accent:#3366CC;--carissa:#6B7280;
+ --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:#E5E7EB;color:var(--ink);font:12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;padding:32px 16px 80px}
+.wrap{max-width:1280px;margin:0 auto}
+.rationale{max-width:860px;margin:0 0 22px;padding:14px 18px;background:#fff;border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:3px}
+.rationale h1{margin:0 0 4px;font:600 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.rationale h2{margin:0 0 6px;font-size:16px;font-weight:650}
+.rationale p{margin:0;font-size:13px;color:#374151}
+.lbl{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:28px 0 8px}
+.browser{background:var(--bg);border-radius:8px;overflow:hidden;border:1px solid #CBD0D7;box-shadow:0 18px 40px -22px rgba(15,23,42,.35)}
+.chrome{height:34px;background:#E9EBEF;border-bottom:1px solid var(--rule);display:flex;align-items:center;padding:0 12px;position:relative}
+.dots i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;background:#CDD1D8}
+.url{position:absolute;left:50%;transform:translateX(-50%);background:#fff;border:1px solid var(--rule);border-radius:4px;padding:3px 110px;font:11px var(--mono);color:var(--muted)}
+.app{display:grid;grid-template-columns:184px 1fr}
+.side{background:#111827;color:#C9CED6;padding:12px 0;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:8px;font:650 13px/1 var(--mono);color:#fff;padding:4px 14px 14px;letter-spacing:.02em}
+.brand i{width:14px;height:14px;background:var(--accent);display:inline-block}
+.nav{display:flex;align-items:center;gap:6px;padding:5px 14px;font-size:12px;color:#C9CED6;border-left:2px solid transparent}
+.nav.on{background:#1F2937;color:#fff;border-left-color:var(--accent);font-weight:600}
+.nav kbd{margin-left:auto;font:10px var(--mono);color:#6B7280}
+.cnt{font:600 10px var(--mono);background:var(--accent);color:#fff;padding:0 5px;border-radius:2px}
+.side .foot{margin-top:auto;padding:10px 14px;border-top:1px solid #1F2937;font:11px var(--mono);color:#8A93A1}
+.side .foot b{color:#fff;font-weight:600}
+main{padding:0}
+.top{display:flex;align-items:center;gap:10px;height:40px;padding:0 16px;background:#fff;border-bottom:1px solid var(--rule)}
+.crumb{font-weight:650;font-size:13px}.crumb span{color:var(--muted);font-weight:400}
+.top .sp{flex:1}
+.f{border:1px solid var(--rule);border-radius:3px;padding:3px 8px;font:11px var(--mono);background:#fff;color:#374151}
+.f.on{border-color:var(--accent);color:var(--accent);background:#F2F5FC}
+.strip{display:grid;grid-template-columns:repeat(6,1fr);background:#fff;border-bottom:1px solid var(--rule)}
+.strip div{padding:8px 16px;border-right:1px solid var(--rule2)}
+.strip .k{font:600 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.strip .v{font:600 17px var(--mono);font-variant-numeric:tabular-nums;margin-top:2px}
+.strip .d{font:11px var(--mono);color:var(--muted)}
+.strip .d.up{color:var(--accent)}
+.body{padding:12px 16px 16px;display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
+.panel{background:#fff;border:1px solid var(--rule);border-radius:3px}
+.ph{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--rule)}
+.ph h3{margin:0;font-size:12px;font-weight:650}
+.ph .sp{flex:1}
+.sankey{display:block;padding:4px 6px}
+.sankey .sk-n{font-size:11px;font-weight:600;fill:#111827}
+.sankey .sk-v{font:11px ui-monospace,"SF Mono",Menlo,monospace;fill:#374151}
+.sankey .sk-p{font:11px ui-monospace,"SF Mono",Menlo,monospace;fill:#5B6472}
+table{border-collapse:collapse;width:100%}
+td,th{padding:4px 10px;border-bottom:1px solid var(--rule2);text-align:left;white-space:nowrap}
+th{font:600 10px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:#F9FAFB}
+.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.grp td{font-weight:650;background:#F9FAFB}
+.tot td{border-top:1px solid var(--ink);border-bottom:0}
+.acc{color:var(--accent)}
+.spark{width:70px}.spark i{display:block;height:6px;background:#9CA3AF}
+.sq{display:inline-block;width:7px;height:7px;margin-right:7px;vertical-align:1px}
+.sq.simon{background:var(--accent)}.sq.carissa{background:var(--carissa)}.sq.none{background:transparent;border:1px solid #C4C9D1}
+.full{grid-column:1/-1}
+.day td{font:600 10px var(--mono);letter-spacing:.06em;color:var(--muted);background:#F9FAFB}
+.day td.num{color:var(--muted)}
+.pos{color:var(--accent);font-weight:600}
+.mut{color:var(--muted)}
+.rev{background:#F7F9FE;box-shadow:inset 2px 0 0 var(--accent)}
+.tag{font:600 9.5px var(--mono);text-transform:uppercase;letter-spacing:.05em;border:1px solid var(--accent);color:var(--accent);padding:0 4px;border-radius:2px;margin-left:6px}
+.sel{border:1px dashed var(--accent);border-radius:3px;padding:1px 6px;color:var(--accent)}
+kbd{font:10px var(--mono);border:1px solid var(--rule);border-bottom-width:2px;border-radius:3px;padding:0 4px;background:#fff;color:#374151}
+.hid .bar{display:inline-block;width:64px;height:9px;background:repeating-linear-gradient(90deg,#D1D5DB 0 6px,#E5E7EB 6px 8px);vertical-align:-1px}
+.hid b{font-weight:600}
+.wink{font:700 12px var(--mono);color:var(--accent);display:inline-block;transform:rotate(90deg);margin:0 4px}
+.legend{font:11px var(--mono);color:var(--muted);padding:6px 10px;border-top:1px solid var(--rule2)}
+.status{display:flex;gap:16px;padding:5px 16px;border-top:1px solid var(--rule);background:#fff;font:11px var(--mono);color:var(--muted)}
+/* secondary */
+.sec{max-width:1100px}
+.sec .body{grid-template-columns:260px 1fr}
+.form .row{display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px solid var(--rule2)}
+.form .row span:last-child{font-family:var(--mono)}
+.form .row.out{background:#F7F9FE}
+.form .row.out span:last-child{color:var(--accent);font-weight:700}
+.cell{font-weight:600}
+.cell small{display:block;font-weight:400;color:var(--muted);font-size:10px}
+.cell.sel{outline:2px solid var(--accent);outline-offset:-2px}
+.cell.neg{color:#111827;background:repeating-linear-gradient(135deg,#F3F4F6 0 4px,#fff 4px 8px)!important}
+tr.cur td:first-child{font-weight:700}
+tr.st td{border-top:1px dashed #9CA3AF}
+</style></head><body><div class="wrap">
+
+<section class="rationale">
+<h1>Direction B · Ledger</h1>
+<h2>Dense, exact, keyboard-first</h2>
+<p>An analyst&#8217;s workbench: everything for the quarter on one screen — Sankey, P&amp;L and the ledger side by side — in small type with monospaced, tabular figures and hairline rules. Personality is dry and minimal (a sideways <span style="font-family:ui-monospace,monospace">;)</span> on hidden rows), and there&#8217;s no decorative motion at all, just instant feedback and keyboard chords for working through the review queue. Colours are placeholder only (one cool neutral plus a single accent) pending Carissa.</p>
+</section>
+
+<div class="lbl">Hero · Cash flow, desktop</div>
+<div class="browser"><div class="chrome"><span class="dots"><i></i><i></i><i></i></span><span class="url">pangolin.local/cash-flow?p=2026-Q1FY</span></div>
+<div class="app">
+<aside class="side"><div class="brand"><i></i>pangolin</div><a class="nav on"><span>Cash flow</span><kbd>G C</kbd></a><a class="nav"><span>Spending</span><kbd>G S</kbd></a><a class="nav"><span>Transactions</span><kbd>G T</kbd></a><a class="nav"><span>Needs review</span><b class=cnt>7</b><kbd>G R</kbd></a><a class="nav"><span>Budgets</span><kbd>G B</kbd></a><a class="nav"><span>Goals</span><kbd>G O</kbd></a><a class="nav"><span>Home buying</span><kbd>G H</kbd></a><a class="nav"><span>Forecast</span><kbd>G F</kbd></a><a class="nav"><span>Accounts</span><kbd>G A</kbd></a><a class="nav"><span>Settings</span><kbd>,</kbd></a>
+ <div class="foot"><b>simon</b> · passkey<br>session 42m · lock &#8984;L</div></aside>
+<main>
+ <div class="top"><div class="crumb">Cash flow <span>/ FY 2026–27 / Q1 (1 Jul – 30 Sep)</span></div><div class="sp"></div>
+  <span class="f">&#8249; [</span><span class="f on">Quarter</span><span class="f">FY to date</span><span class="f">Last 12 mo</span><span class="f">] &#8250;</span>
+  <span class="f">Group by: category &#9662;</span><span class="f">People: both &#9662;</span><span class="f">Accounts: 6 &#9662;</span></div>
+ <div class="strip">
+  <div><div class="k">Income</div><div class="v">$41,661.40</div><div class="d up">+$1,204.10 vs Q4</div></div>
+  <div><div class="k">Expenses</div><div class="v">$20,857.30</div><div class="d">&minus;$612.45 vs Q4</div></div>
+  <div><div class="k">Net kept</div><div class="v" style="color:var(--accent)">$20,804.10</div><div class="d up">+$1,816.55 vs Q4</div></div>
+  <div><div class="k">Savings rate</div><div class="v">49.9%</div><div class="d">Q4 45.6%</div></div>
+  <div><div class="k">Pays</div><div class="v">14</div><div class="d">7 each, fortnightly</div></div>
+  <div><div class="k">Uncategorised</div><div class="v">7</div><div class="d">$184.20 &#183; G R</div></div>
+ </div>
+ <div class="body">
+  <div class="panel"><div class="ph"><h3>Where the money went</h3><span class="sp"></span><span class="f on">Sankey</span><span class="f">Bars</span><span class="f">Groups</span><span class="f on">Categories</span></div>
+   <svg class="sankey" viewBox="0 0 700 372" width="100%" role="img" aria-label="Sankey: where the money went, Jul to Sep 2026">
+<path class="lk" d="M100.0,44.00 C190.0,44.00 190.0,54.00 280.0,54.00 L280.0,207.88 C190.0,207.88 190.0,197.88 100.0,197.88 Z" fill="#3366CC" fill-opacity="0.18"/>
+<path class="lk" d="M100.0,207.88 C190.0,207.88 190.0,207.88 280.0,207.88 L280.0,340.71 C190.0,340.71 190.0,340.71 100.0,340.71 Z" fill="#9CA3AF" fill-opacity="0.22"/>
+<path class="lk" d="M100.0,350.71 C190.0,350.71 190.0,340.71 280.0,340.71 L280.0,342.00 C190.0,342.00 190.0,352.00 100.0,352.00 Z" fill="#9CA3AF" fill-opacity="0.22"/>
+<path class="lk" d="M284.0,54.00 C377.0,54.00 377.0,30.00 470.0,30.00 L470.0,173.82 C377.0,173.82 377.0,197.82 284.0,197.82 Z" fill="#3366CC" fill-opacity="0.32"/>
+<path class="lk" d="M284.0,197.82 C377.0,197.82 377.0,179.82 470.0,179.82 L470.0,244.52 C377.0,244.52 377.0,262.52 284.0,262.52 Z" fill="#9CA3AF" fill-opacity="0.2"/>
+<path class="lk" d="M284.0,262.52 C377.0,262.52 377.0,250.52 470.0,250.52 L470.0,272.25 C377.0,272.25 377.0,284.25 284.0,284.25 Z" fill="#9CA3AF" fill-opacity="0.2"/>
+<path class="lk" d="M284.0,284.25 C377.0,284.25 377.0,278.25 470.0,278.25 L470.0,294.21 C377.0,294.21 377.0,300.21 284.0,300.21 Z" fill="#9CA3AF" fill-opacity="0.2"/>
+<path class="lk" d="M284.0,300.21 C377.0,300.21 377.0,300.21 470.0,300.21 L470.0,311.86 C377.0,311.86 377.0,311.86 284.0,311.86 Z" fill="#9CA3AF" fill-opacity="0.2"/>
+<path class="lk" d="M284.0,311.86 C377.0,311.86 377.0,317.86 470.0,317.86 L470.0,327.79 C377.0,327.79 377.0,321.79 284.0,321.79 Z" fill="#9CA3AF" fill-opacity="0.2"/>
+<path class="lk" d="M284.0,321.79 C377.0,321.79 377.0,333.79 470.0,333.79 L470.0,342.17 C377.0,342.17 377.0,330.17 284.0,330.17 Z" fill="#9CA3AF" fill-opacity="0.2"/>
+<path class="lk" d="M284.0,330.17 C377.0,330.17 377.0,348.17 470.0,348.17 L470.0,354.87 C377.0,354.87 377.0,336.87 284.0,336.87 Z" fill="#9CA3AF" fill-opacity="0.2"/>
+<path class="lk" d="M284.0,336.87 C377.0,336.87 377.0,360.87 470.0,360.87 L470.0,366.00 C377.0,366.00 377.0,342.00 284.0,342.00 Z" fill="#9CA3AF" fill-opacity="0.2"/>
+<rect x="96" y="44.00" width="4" height="153.88" rx="0.0" fill="#3366CC"/>
+<rect x="96" y="207.88" width="4" height="132.83" rx="0.0" fill="#6B7280"/>
+<rect x="96" y="350.71" width="4" height="1.50" rx="0.0" fill="#6B7280"/>
+<rect x="280" y="54.00" width="4" height="288.00" rx="0" fill="#111827"/>
+<rect x="470" y="30.00" width="4" height="143.82" rx="0.0" fill="#3366CC"/>
+<rect x="470" y="179.82" width="4" height="64.70" rx="0.0" fill="#4B5563"/>
+<rect x="470" y="250.52" width="4" height="21.72" rx="0.0" fill="#4B5563"/>
+<rect x="470" y="278.25" width="4" height="15.97" rx="0.0" fill="#4B5563"/>
+<rect x="470" y="300.21" width="4" height="11.64" rx="0.0" fill="#4B5563"/>
+<rect x="470" y="317.86" width="4" height="9.93" rx="0.0" fill="#4B5563"/>
+<rect x="470" y="333.79" width="4" height="8.38" rx="0.0" fill="#4B5563"/>
+<rect x="470" y="348.17" width="4" height="6.69" rx="0.0" fill="#4B5563"/>
+<rect x="470" y="360.87" width="4" height="5.13" rx="0.0" fill="#4B5563"/>
+<rect x="84" y="112.9" width="6" height="6" fill="#3366CC"/><text x="80" y="118.9" text-anchor="end" class="sk-n">Simon&#8217;s pay</text><text x="88" y="130.9" text-anchor="end" class="sk-v">$22,260.00</text>
+<rect x="84" y="266.3" width="6" height="6" fill="#6B7280"/><text x="80" y="272.3" text-anchor="end" class="sk-n">Carissa&#8217;s pay</text><text x="88" y="284.3" text-anchor="end" class="sk-v">$19,215.00</text>
+<text x="88" y="349.5" text-anchor="end" class="sk-n">Interest</text><text x="88" y="361.5" text-anchor="end" class="sk-v">$186.40</text>
+<text x="282.0" y="38.0" text-anchor="middle" class="sk-n">INCOME</text><text x="282.0" y="49.0" text-anchor="middle" class="sk-v">$41,661.40</text>
+<text x="484" y="105.4" class="sk-n">Savings</text><text x="644" y="105.4" text-anchor="end" class="sk-v">$20,804.10</text><text x="686" y="105.4" text-anchor="end" class="sk-p">49.9%</text>
+<text x="484" y="215.7" class="sk-n">Housing</text><text x="644" y="215.7" text-anchor="end" class="sk-v">$9,360.00</text><text x="686" y="215.7" text-anchor="end" class="sk-p">22.5%</text>
+<text x="484" y="264.9" class="sk-n">Groceries</text><text x="644" y="264.9" text-anchor="end" class="sk-v">$3,142.60</text><text x="686" y="264.9" text-anchor="end" class="sk-p">7.5%</text>
+<path d="M476,286.2 C480,286.2 478,275.0 482,275.0" fill="none" stroke="#C4C9D1" stroke-width="1"/>
+<text x="484" y="282.5" class="sk-n">Travel</text><text x="644" y="282.5" text-anchor="end" class="sk-v">$2,310.00</text><text x="686" y="282.5" text-anchor="end" class="sk-p">5.5%</text>
+<path d="M476,306.0 C480,306.0 478,292.0 482,292.0" fill="none" stroke="#C4C9D1" stroke-width="1"/>
+<text x="484" y="299.5" class="sk-n">Eating out</text><text x="644" y="299.5" text-anchor="end" class="sk-v">$1,684.35</text><text x="686" y="299.5" text-anchor="end" class="sk-p">4.0%</text>
+<path d="M476,322.8 C480,322.8 478,309.0 482,309.0" fill="none" stroke="#C4C9D1" stroke-width="1"/>
+<text x="484" y="316.5" class="sk-n">Lifestyle</text><text x="644" y="316.5" text-anchor="end" class="sk-v">$1,436.90</text><text x="686" y="316.5" text-anchor="end" class="sk-p">3.4%</text>
+<path d="M476,338.0 C480,338.0 478,326.0 482,326.0" fill="none" stroke="#C4C9D1" stroke-width="1"/>
+<text x="484" y="333.5" class="sk-n">Transport</text><text x="644" y="333.5" text-anchor="end" class="sk-v">$1,212.80</text><text x="686" y="333.5" text-anchor="end" class="sk-p">2.9%</text>
+<path d="M476,351.5 C480,351.5 478,343.0 482,343.0" fill="none" stroke="#C4C9D1" stroke-width="1"/>
+<text x="484" y="350.5" class="sk-n">Utilities</text><text x="644" y="350.5" text-anchor="end" class="sk-v">$968.15</text><text x="686" y="350.5" text-anchor="end" class="sk-p">2.3%</text>
+<text x="484" y="367.5" class="sk-n">Health</text><text x="644" y="367.5" text-anchor="end" class="sk-v">$742.50</text><text x="686" y="367.5" text-anchor="end" class="sk-p">1.8%</text>
+</svg>
+   <div class="legend"><i class="sq simon"></i>Simon &#160; <i class="sq carissa"></i>Carissa &#160; &#183; &#160;transfers between own accounts excluded (14 rows, $9,400.00)</div></div>
+  <div class="panel"><div class="ph"><h3>Profit &amp; loss</h3><span class="sp"></span><span class="f">CSV</span></div>
+   <table><tr><th>Line</th><th class="num">% inc</th><th class="num">Amount</th><th></th></tr><tr class="grp"><td>Income</td><td class="num">100.0%</td><td class="num">$41,661.40</td><td></td></tr><tr class=""><td><i class="sq simon"></i>Simon&#8217;s pay</td><td class="num">53.4%</td><td class="num">$22,260.00</td><td class="spark"><i style="width:100.0%"></i></td></tr><tr class=""><td><i class="sq carissa"></i>Carissa&#8217;s pay</td><td class="num">46.1%</td><td class="num">$19,215.00</td><td class="spark"><i style="width:86.3%"></i></td></tr><tr class=""><td><i class="sq none"></i>Interest · ING Savings Maximiser</td><td class="num">0.4%</td><td class="num">$186.40</td><td class="spark"><i style="width:0.8%"></i></td></tr><tr class="grp"><td>Expenses</td><td class="num">50.1%</td><td class="num">&minus;$20,857.30</td><td></td></tr><tr class=""><td><i class="sq none"></i>Housing</td><td class="num">22.5%</td><td class="num">&minus;$9,360.00</td><td class="spark"><i style="width:42.0%"></i></td></tr><tr class=""><td><i class="sq none"></i>Groceries</td><td class="num">7.5%</td><td class="num">&minus;$3,142.60</td><td class="spark"><i style="width:14.1%"></i></td></tr><tr class=""><td><i class="sq none"></i>Travel</td><td class="num">5.5%</td><td class="num">&minus;$2,310.00</td><td class="spark"><i style="width:10.4%"></i></td></tr><tr class=""><td><i class="sq none"></i>Eating out</td><td class="num">4.0%</td><td class="num">&minus;$1,684.35</td><td class="spark"><i style="width:7.6%"></i></td></tr><tr class=""><td><i class="sq none"></i>Lifestyle</td><td class="num">3.4%</td><td class="num">&minus;$1,436.90</td><td class="spark"><i style="width:6.5%"></i></td></tr><tr class=""><td><i class="sq none"></i>Transport</td><td class="num">2.9%</td><td class="num">&minus;$1,212.80</td><td class="spark"><i style="width:5.4%"></i></td></tr><tr class=""><td><i class="sq none"></i>Utilities</td><td class="num">2.3%</td><td class="num">&minus;$968.15</td><td class="spark"><i style="width:4.3%"></i></td></tr><tr class=""><td><i class="sq none"></i>Health</td><td class="num">1.8%</td><td class="num">&minus;$742.50</td><td class="spark"><i style="width:3.3%"></i></td></tr><tr class="grp tot"><td>Net · kept</td><td class="num">49.9%</td><td class="num acc">$20,804.10</td><td></td></tr></table></div>
+  <div class="panel full"><div class="ph"><h3>Ledger · this period</h3><span class="mut" style="font-family:var(--mono)">186 rows · showing latest 7 · state: hidden row + needs review</span><span class="sp"></span><kbd>J</kbd><kbd>K</kbd><span class="mut">move</span><kbd>&#9166;</kbd><span class="mut">accept</span><kbd>E</kbd><span class="mut">edit split</span></div>
+   <table><tr><th style="width:24px"></th><th>Payee</th><th>Category</th><th>Account</th><th class="num">Amount</th></tr><tr class="day"><td colspan="4">TUE 30 SEP</td><td class="num">−$152.35</td></tr><tr><td><i class="sq carissa"></i></td><td>Woolworths Newtown</td><td>Groceries</td><td class="mut">Joint · Up Everyday</td><td class="num">−$142.85</td></tr><tr class="rev"><td><i class="sq simon"></i></td><td>SQ *BEAN THERE CAFE <span class="tag">needs review</span></td><td><span class="sel">Eating out? <kbd>&#9166;</kbd> accept</span></td><td class="mut">Simon · Up Spending</td><td class="num">−$9.50</td></tr><tr class="day"><td colspan="4">MON 29 SEP</td><td class="num">−$264.00</td></tr><tr class="hid"><td><i class="sq carissa"></i></td><td><span class="bar"></span> <b>Hidden until 12 Mar 2027</b> <span class="wink">;)</span> <span class="mut">Carissa&#8217;s secret. Nice try, Simon.</span></td><td>Lifestyle</td><td class="mut">Carissa · ING Orange</td><td class="num">−$214.00</td></tr><tr><td><i class="sq simon"></i></td><td>Opal top-up</td><td>Transport</td><td class="mut">Simon · Up Spending</td><td class="num">−$50.00</td></tr><tr class="day"><td colspan="4">FRI 26 SEP</td><td class="num">+$5,738.70</td></tr><tr><td><i class="sq simon"></i></td><td>Northwind Pty Ltd · Pay</td><td>Simon&#8217;s pay</td><td class="mut">Simon · Up Everyday</td><td class="num pos">+$3,180.00</td></tr><tr><td><i class="sq simon"></i></td><td>Origin Energy</td><td>Utilities</td><td class="mut">Joint · Up Everyday</td><td class="num">−$186.30</td></tr><tr><td><i class="sq carissa"></i></td><td>Harbour Health · Pay</td><td>Carissa&#8217;s pay</td><td class="mut">Carissa · ING Orange</td><td class="num pos">+$2,745.00</td></tr></table></div>
+ </div>
+ <div class="status"><span>Last import: Up CSV &#183; 30 Sep 2026 21:14</span><span>ING OFX &#183; 30 Sep 2026 21:16</span><span>All figures computed server-side &#183; AUD</span></div>
+</main></div></div>
+
+<div class="lbl">Secondary · Home buying · borrowing matrix (the main win)</div>
+<div class="browser sec"><div class="chrome"><span class="dots"><i></i><i></i><i></i></span><span class="url">pangolin.local/home-buying</span></div>
+<div class="app"><aside class="side"><div class="brand"><i></i>pangolin</div>
+ <a class="nav"><span>Goals</span><kbd>G O</kbd></a><a class="nav on"><span>Home buying</span><kbd>G H</kbd></a><a class="nav"><span>Forecast</span><kbd>G F</kbd></a></aside>
+<main>
+ <div class="top"><div class="crumb">Home buying <span>/ How much can we borrow?</span></div><div class="sp"></div><span class="f">Scenario: Inner West, 2027 &#9662;</span><span class="f">Duplicate</span></div>
+ <div class="body">
+  <div class="panel form"><div class="ph"><h3>Inputs</h3></div>
+   <div class="row"><span>Take-home (both)</span><span>$12,837.50/mo</span></div>
+   <div class="row"><span>Usual spending</span><span>$3,832.43/mo</span></div>
+   <div class="row"><span>Home costs</span><span>$520.00/mo</span></div>
+   <div class="row"><span>Deposit</span><span>$160,000.00</span></div>
+   <div class="row"><span>Term &#183; type</span><span>30y &#183; P&amp;I</span></div>
+   <div class="row"><span>Min spare / mo</span><span>$2,000.00</span></div>
+   <div class="row out"><span>Comfortable max</span><span>$780,000</span></div>
+   <div class="row out"><span>Price ceiling</span><span>$940,000</span></div>
+  </div>
+  <div class="panel"><div class="ph"><h3>Spare each month after repayment, home costs and usual spending</h3><span class="sp"></span><span class="mut">cell: spare &#183; repayment</span></div>
+   <table><tr><th>Rate \ Loan</th><th class="num">$620,000</th><th class="num">$700,000</th><th class="num">$780,000</th><th class="num">$860,000</th></tr><tr class=""><td>5.59%</td><td class="num cell " style="background:rgba(51,102,204,0.27)">$4,930<small>$3,555/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.24)">$4,471<small>$4,014/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.20)">$4,013<small>$4,473/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.16)">$3,554<small>$4,932/mo</small></td></tr><tr class="cur"><td>6.09% <span class=mut>today</span></td><td class="num cell " style="background:rgba(51,102,204,0.26)">$4,732<small>$3,753/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.22)">$4,248<small>$4,237/mo</small></td><td class="num cell  sel" style="background:rgba(51,102,204,0.18)">$3,764<small>$4,722/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.14)">$3,279<small>$5,206/mo</small></td></tr><tr class=""><td>6.59%</td><td class="num cell " style="background:rgba(51,102,204,0.24)">$4,530<small>$3,956/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.20)">$4,020<small>$4,466/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.16)">$3,509<small>$4,976/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.12)">$2,999<small>$5,487/mo</small></td></tr><tr class=""><td>7.09%</td><td class="num cell " style="background:rgba(51,102,204,0.23)">$4,323<small>$4,162/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.18)">$3,786<small>$4,700/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.14)">$3,249<small>$5,237/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.10)">$2,712<small>$5,774/mo</small></td></tr><tr class=" st"><td>9.09% <span class=mut>stress +3%</span></td><td class="num cell " style="background:rgba(51,102,204,0.16)">$3,457<small>$5,029/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.10)">$2,808<small>$5,678/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.05)">$2,159<small>$6,327/mo</small></td><td class="num cell " style="background:rgba(51,102,204,0.01)">$1,510<small>$6,976/mo</small></td></tr></table>
+   <div class="legend">Selected: $780,000 at 6.09% &#8594; $4,722/mo ($2,179/fn), $7,596 left to live on, $3,764 spare. Still $2,159 spare at the +3% stress rate.</div></div>
+ </div>
+</main></div></div>
+</div></body></html>
