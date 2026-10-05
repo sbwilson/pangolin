@@ -275,3 +275,27 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-true-audit-history-and-hidden-row-projection-plan.md`
   summary: After an early unhide, audit rows whose snapshots carry the old nameHiddenUntil keep showing the placeholder to the partner until the original date.
   evidence: auditHiddenUntil takes the max of the live row and the snapshot JSON dates (privacy.ts); product decision whether history should follow the live unhide (story 2.14 review #6).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-account-ownership-and-privacy-switches-plan.md`
+  summary: Once people can be deactivated, a deactivated co-owner cannot remove themself from an account, and only-remove-yourself (2.15) has no exception for them.
+  evidence: updateAccount refuses removing anyone but the viewer; requireKnownPeople accepts active people only. Simon chose no exception at 2.15 (2026-10-05); the epic that adds deactivation decides.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-account-ownership-and-privacy-switches-plan.md`
+  summary: A person can keep a co-owner on an account but cut their share to 1 bp, which only-remove-yourself does not cover.
+  evidence: requireOnlySelfRemoved checks membership only; shares accept any value from 1 upward. The account stays joint, so it cannot go private; whether a co-owner's stake needs protecting is a product decision (2.15 review #3).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-account-ownership-and-privacy-switches-plan.md`
+  summary: Spine and spec do not yet say AD-7 refuses a partner beneficiary as well as shared, or that setPrivacy(public) is the one update of audit_log rows (person_id only).
+  evidence: 2.15 review #5; spec reconciliation for AD-7, AD-1/AD-11 audit wording.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-account-ownership-and-privacy-switches-plan.md`
+  summary: The audit rescope on setPrivacy(public) leaves no trace and nothing at the database level limits audit_log updates to setting person_id from NULL.
+  evidence: 2.15 review #6; options are a trigger allowing only person_id NULL to a value, or a stamped-row count in the set_privacy audit row.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-account-ownership-and-privacy-switches-plan.md`
+  summary: setPrivacy(public)'s refusal names owners via person.listActive, falling back to a raw id for an inactive owner, and tells the user to remove items that may be soft-deleted and unpickable.
+  evidence: 2.15 review #7 and #9; joins the deactivation deferral and epic 3 promotion / epic 12 accounts screen copy.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-account-ownership-and-privacy-switches-plan.md`
+  summary: The public-switch refusal attributes every scoped item to the account owner, though the system viewer can put another person's scoped item on a private account.
+  evidence: 2.15 review #14; only reachable through the system viewer (retro P10, deferred).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-account-ownership-and-privacy-switches-plan.md`
+  summary: A person can add themself (or a third person) as an owner of any public account they can see, since updateAccount only refuses removing others.
+  evidence: 2.15 review pass 2 #10; predates 2.15 (public accounts are visible to both partners); a product rule on who may add owners is needed.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-account-ownership-and-privacy-switches-plan.md`
+  summary: The server privacy harness has no takeover scenario (hide, leave, private, public) for its two-world checks.
+  evidence: 2.15 review pass 2 #15; routed to epic 2 entry 18, which adds owner-change and privacy-switch worlds.

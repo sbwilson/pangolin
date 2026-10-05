@@ -15,7 +15,8 @@ import {
 import type { Id } from "@pangolin/shared";
 import { Temporal } from "@pangolin/shared/temporal";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { personViewer, type Viewer } from "../index.ts";
+import { AppError } from "../errors.ts";
+import { fixedClockAt, personViewer, setPrivacy, type Viewer } from "../index.ts";
 import type {
   AccountRow,
   SplitRow,
@@ -931,6 +932,176 @@ function scenario(
   step("owners.replaceEmpty", (r) => r.accounts.replaceOwners(ownedAcct, []));
   out["owners.afterEmpty"] = tx((r) => r.accounts.owners(ownedAcct).length);
 
+  // Privacy switches (story 2.15): splits for others, scoped references and the audit stamp.
+  const swOwn = newId<"Account">();
+  tx((r) => r.accounts.insert(account(swOwn, true), [owner(swOwn, a, 10000)]));
+  const forOthers = (r: TxRepos) => [
+    r.accounts.hasSplitForOthers(swOwn, a),
+    r.accounts.hasSplitForOthers(swOwn, b),
+  ];
+  out["switch.forOthersEmpty"] = tx(forOthers);
+  const swMine = txn(swOwn, "mine");
+  step("switch.insertMine", (r) =>
+    r.transactions.insert(swMine, [split(swMine.id, { beneficiary: a })]),
+  );
+  out["switch.forOthersMine"] = tx(forOthers);
+  const swPartner = txn(swOwn, "partner");
+  step("switch.insertPartner", (r) =>
+    r.transactions.insert(swPartner, [split(swPartner.id, { beneficiary: b })]),
+  );
+  out["switch.forOthersPartner"] = tx(forOthers);
+  out["switch.deletePartner"] = tx((r) => r.transactions.softDelete(system, swPartner.id, T2));
+  out["switch.forOthersAfterDelete"] = tx(forOthers);
+  const swShared = txn(swOwn, "shared");
+  step("switch.insertShared", (r) =>
+    r.transactions.insert(swShared, [split(swShared.id, { beneficiary: "shared" })]),
+  );
+  out["switch.forOthersShared"] = tx(forOthers);
+
+  const swPriv = newId<"Account">();
+  tx((r) => r.accounts.insert(account(swPriv, true), [owner(swPriv, a, 10000)]));
+  const pZed = newId<"Payee">();
+  const pAlpha = newId<"Payee">();
+  const swTag = tagRow("trip", a);
+  const swDeadTag = tagRow("unused", a);
+  const swSharedTag = tagRow("trip", null);
+  const swAct = act("Bali", a, null);
+  tx((r) => {
+    r.payees.insert(payeeRow(pZed, "Zed", a), swPriv);
+    r.payees.insert(payeeRow(pAlpha, "Alpha", a), swPriv);
+    r.tags.insert(swTag, swPriv);
+    r.tags.insert(swDeadTag, swPriv);
+    r.tags.insert(swSharedTag, null);
+    r.activities.insert(swAct, swPriv);
+  });
+  const swT1 = txn(swPriv, "sw1", { payeeId: pZed });
+  const swS1 = split(swT1.id, { beneficiary: a, activityId: swAct.id });
+  const swT2 = txn(swPriv, "sw2", { payeeId: pAlpha });
+  const swT3 = txn(swPriv, "sw3", { payeeId: pShared });
+  const swT4 = txn(swPriv, "sw4", { payeeId: pAlpha });
+  const swS4 = split(swT4.id, { beneficiary: a });
+  tx((r) => {
+    r.transactions.insert(swT1, [swS1]);
+    r.transactions.insert(swT2, [split(swT2.id, { beneficiary: a })]);
+    r.transactions.insert(swT3, [split(swT3.id, { beneficiary: a })]);
+    r.transactions.insert(swT4, [swS4]);
+    r.tags.replaceForSplit(system, swS1.id, [swTag.id, swSharedTag.id], T);
+    r.tags.replaceForSplit(system, swS4.id, [swDeadTag.id], T);
+    // The only use of the "unused" tag is on a soft-deleted transaction: not listed.
+    r.transactions.softDelete(system, swT4.id, T2);
+  });
+  const refs = (r: TxRepos) => {
+    const found = r.accounts.scopedReferences(swPriv);
+    return [found.payees, found.tags, found.activities].map((list) =>
+      list.map((x) => [x.name, Object.keys(x).sort().join(",")]),
+    );
+  };
+  out["switch.refs"] = tx(refs);
+  out["switch.refsOtherAccount"] = tx((r) => r.accounts.scopedReferences(swOwn));
+  const switchCtx = {
+    viewer: asA,
+    clock: fixedClockAt(TODAY),
+    newId,
+    uow,
+  };
+  const refused = (fn: () => unknown) => {
+    try {
+      fn();
+      return "ok";
+    } catch (error) {
+      return error instanceof AppError
+        ? [error.code, error.message, JSON.stringify(error.details)]
+        : "other";
+    }
+  };
+  out["switch.publicRefused"] = refused(() =>
+    setPrivacy(switchCtx, { id: swPriv, isPrivate: false }),
+  );
+  // Soft-deleting the scoped rows does not free the account: live transactions still use them.
+  out["switch.softDeleteScoped"] = tx((r) => [
+    r.payees.softDelete(asA, pZed, T2),
+    r.tags.softDelete(asA, swTag.id, T2),
+    r.activities.softDelete(asA, swAct.id, T2),
+  ]);
+  out["switch.refsAfterSoftDelete"] = tx(refs);
+  out["switch.publicRefusedAfterSoftDelete"] = refused(() =>
+    setPrivacy(switchCtx, { id: swPriv, isPrivate: false }),
+  );
+  out["switch.stillPrivate"] = tx((r) => r.accounts.findVisible(system, swPriv)?.isPrivate);
+
+  // The stamp: only rows after the most recent switch to private (by at, then id).
+  const T3 = "2026-09-29T00:00:00.000Z";
+  const T4 = "2026-09-30T00:00:00.000Z";
+  const swHist = newId<"Account">();
+  const swNew = newId<"Account">();
+  tx((r) => {
+    r.accounts.insert(account(swHist, false), [owner(swHist, a, 5000), owner(swHist, b, 5000)]);
+    r.accounts.insert(account(swNew, true), [owner(swNew, a, 10000)]);
+  });
+  const histRow = (
+    accountId: Id<"Account">,
+    action: string,
+    at: string,
+    over: { personId?: string; before?: object; after?: object; id?: Id<"AuditLog"> } = {},
+  ) => ({
+    id: over.id ?? newId<"AuditLog">(),
+    at,
+    actor: `person:${a}`,
+    entity: action === "set_privacy" ? "account" : "transaction",
+    entityId: accountId,
+    accountId,
+    personId: over.personId ?? null,
+    action,
+    before: over.before === undefined ? null : JSON.stringify(over.before),
+    after: over.after === undefined ? null : JSON.stringify(over.after),
+  });
+  const lowId = newId<"AuditLog">();
+  tx((r) => {
+    for (const row of [
+      histRow(swHist, "joint1", T),
+      histRow(swHist, "set_privacy", T, {
+        before: { isPrivate: false },
+        after: { isPrivate: true },
+      }),
+      histRow(swHist, "private1", T2),
+      histRow(swHist, "set_privacy", T2, {
+        before: { isPrivate: true },
+        after: { isPrivate: false },
+      }),
+      histRow(swHist, "joint2", T2),
+      histRow(swHist, "joint3SameAtLowerId", T3, { id: lowId }),
+      histRow(swHist, "set_privacy", T3, {
+        before: { isPrivate: false },
+        after: { isPrivate: true },
+      }),
+      histRow(swHist, "private2", T3),
+      // A redundant private → private switch is not a transition: the era started at T3.
+      histRow(swHist, "set_privacy", T3, {
+        before: { isPrivate: true },
+        after: { isPrivate: true },
+      }),
+      histRow(swHist, "private3", T4),
+      histRow(swHist, "private4ScopedToB", T4, { personId: b }),
+      histRow(swHist, "set_privacy", T4, { after: { isPrivate: "yes" } }),
+      histRow(swNew, "created", T),
+      histRow(swNew, "private", T2),
+      histRow(swOwn, "otherAccount", T4),
+    ]) {
+      r.audit.append(row);
+    }
+  });
+  const who = (id: string | null) => (id === null ? null : id === a ? "A" : id === b ? "B" : id);
+  const stamps = (accountId: Id<"Account">) => (r: TxRepos) =>
+    r.audit
+      .listVisible(system, TODAY)
+      .filter((row) => row.accountId === accountId)
+      .map((row) => [row.action, who(row.personId)]);
+  step("switch.stampHist", (r) => r.audit.scopeToPerson(swHist, a));
+  step("switch.stampNew", (r) => r.audit.scopeToPerson(swNew, a));
+  out["switch.stampedHist"] = tx(stamps(swHist));
+  out["switch.stampedNew"] = tx(stamps(swNew));
+  out["switch.stampedOther"] = tx(stamps(swOwn));
+
   step("institution.badKind", (r) =>
     r.institutions.insert({
       id: newId<"Institution">(),
@@ -1166,6 +1337,54 @@ describe("ledger and classification schema on SQLite", () => {
     expect(out["txn.updateBadPostedOnInvisible"]).toBe(false);
     expect(out["txn.badPostedOnAndDuplicate"]).toBe("error:CHECK");
     expect(out["w.missingViewer"]).toEqual(["TypeError", "TypeError", "TypeError", "TypeError"]);
+    // Privacy switches: a split for anyone but the owner counts, live transactions only.
+    expect(out["switch.forOthersEmpty"]).toEqual([false, false]);
+    expect(out["switch.forOthersMine"]).toEqual([false, true]);
+    expect(out["switch.forOthersPartner"]).toEqual([true, true]);
+    expect(out["switch.forOthersAfterDelete"]).toEqual([false, true]);
+    expect(out["switch.forOthersShared"]).toEqual([true, true]);
+    const listed = [
+      [
+        ["Alpha", "id,name"],
+        ["Zed", "id,name"],
+      ],
+      [["trip", "id,name"]],
+      [["Bali", "id,name"]],
+    ];
+    expect(out["switch.refs"]).toEqual(listed);
+    expect(out["switch.refsOtherAccount"]).toEqual({ payees: [], tags: [], activities: [] });
+    expect(out["switch.softDeleteScoped"]).toEqual([true, true, true]);
+    expect(out["switch.refsAfterSoftDelete"]).toEqual(listed);
+    const [code, message, details] = out["switch.publicRefused"] as [string, string, string];
+    expect(code).toBe("Conflict");
+    expect(message).toContain('payee "Alpha", payee "Zed", tag "trip", activity "Bali"');
+    expect(message).toContain("private to A");
+    expect(Object.keys(JSON.parse(details))).toEqual(["payees", "tags", "activities", "owners"]);
+    expect(JSON.parse(details).owners).toEqual([
+      { personId: expect.any(String), displayName: "A" },
+    ]);
+    expect(out["switch.publicRefusedAfterSoftDelete"]).toEqual(out["switch.publicRefused"]);
+    expect(out["switch.stillPrivate"]).toBe(true);
+    // The stamp: rows after the most recent switch to private only; the flips stay unscoped.
+    expect(out["switch.stampedHist"]).toEqual([
+      ["joint1", null],
+      ["set_privacy", null],
+      ["private1", null],
+      ["set_privacy", null],
+      ["joint2", null],
+      ["joint3SameAtLowerId", null],
+      ["set_privacy", null],
+      ["private2", "A"],
+      ["set_privacy", "A"],
+      ["private3", "A"],
+      ["private4ScopedToB", "B"],
+      ["set_privacy", "A"],
+    ]);
+    expect(out["switch.stampedNew"]).toEqual([
+      ["created", "A"],
+      ["private", "A"],
+    ]);
+    expect(out["switch.stampedOther"]).toEqual([["otherAccount", null]]);
     // findStored: the true row for any viewer who may see it; never a private or deleted one.
     const storedB = out["priv.storedHiddenAsB"] as unknown[];
     expect(storedB[0]).toBe("secret");
@@ -1218,7 +1437,7 @@ describe("ledger and classification schema on SQLite", () => {
     scenario(createUnitOfWork(db), softDeleteInSqlite);
     expect(
       db.prepare("SELECT count(*) FROM payee WHERE origin_account_id IS NOT NULL").pluck().get(),
-    ).toBe(5);
+    ).toBe(7);
     const row = createUnitOfWork(db).read((r) => r.payees.list(systemViewer("cli:test"))[0]);
     expect(row).toBeDefined();
     expect(Object.keys(row ?? {})).not.toContain("originAccountId");

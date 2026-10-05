@@ -76,9 +76,10 @@ function requireDay(today: string, what: string): void {
 }
 
 /**
- * The projection every transaction read goes through (AD-4). Hiding applies to transactions of
- * shared accounts, for any person other than `name_hidden_by`, while `name_hidden_until` is
- * after `today` (the name shows on that date). A system viewer sees every name. Throws without
+ * The projection every transaction read goes through (AD-4). A hidden name is hidden from any
+ * person other than `name_hidden_by` while `name_hidden_until` is after `today` (the name shows
+ * on that date), whatever the account's privacy or owners are now: a hiding outlives a switch to
+ * private or an owner change (epic 2 retro P1, P6). A system viewer sees every name. Throws without
  * a viewer. `today` is `YYYY-MM-DD`, from `ctx.clock.today()`: repositories never see the clock.
  */
 export function visibleTxn(viewer: Viewer | undefined, today: string): TxnProjection {
@@ -94,7 +95,6 @@ export function visibleTxn(viewer: Viewer | undefined, today: string): TxnProjec
       : sql`(CASE WHEN ${transaction.nameHiddenUntil} IS NOT NULL
           AND substr(${transaction.nameHiddenUntil}, 1, 10) > ${today}
           AND ${transaction.nameHiddenBy} IS NOT ${person_}
-          AND (SELECT ${account.isPrivate} FROM ${account} WHERE ${account.id} = ${transaction.accountId}) = 0
         THEN 1 ELSE 0 END)`;
 
   const scope = visibleScope(payee.scopePersonId, viewer);
@@ -153,7 +153,8 @@ export function visibleAudit(viewer: Viewer | undefined): SQL | undefined {
 /**
  * The date until which an audit row of a transaction carries a name hidden from this viewer, or
  * NULL. A row is hidden when the transaction is hidden now, or the row's own before or after
- * state was hiding it, in a shared account. Not checked for a system viewer (NULL).
+ * state was hiding it, whatever the account's privacy is now (a hiding outlives a switch to
+ * private). Not checked for a system viewer (NULL).
  */
 export function auditHiddenUntil(viewer: Viewer | undefined, today: string): SQL {
   requireDay(today, "auditHiddenUntil");
@@ -168,14 +169,12 @@ export function auditHiddenUntil(viewer: Viewer | undefined, today: string): SQL
     WHEN json_extract(${json}, '$.nameHiddenUntil') IS NOT NULL
       AND substr(json_extract(${json}, '$.nameHiddenUntil'), 1, 10) > ${today}
       AND json_extract(${json}, '$.nameHiddenBy') IS NOT ${me}
-      AND (SELECT ${account.isPrivate} FROM ${account} WHERE ${account.id} = ${auditLog.accountId}) = 0
     THEN json_extract(${json}, '$.nameHiddenUntil') END)`;
   const current = sql`(SELECT ${transaction.nameHiddenUntil} FROM ${transaction}
       WHERE ${transaction.id} = ${auditLog.entityId}
         AND ${transaction.nameHiddenUntil} IS NOT NULL
         AND substr(${transaction.nameHiddenUntil}, 1, 10) > ${today}
-        AND ${transaction.nameHiddenBy} IS NOT ${me}
-        AND (SELECT ${account.isPrivate} FROM ${account} WHERE ${account.id} = ${transaction.accountId}) = 0)`;
+        AND ${transaction.nameHiddenBy} IS NOT ${me})`;
   return sql`(CASE WHEN ${auditLog.entity} = 'transaction'
     THEN (SELECT max(v) FROM (SELECT ${current} AS v UNION ALL SELECT ${state(auditLog.before)} UNION ALL SELECT ${state(auditLog.after)}))
     END)`;

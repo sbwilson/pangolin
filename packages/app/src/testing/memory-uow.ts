@@ -43,6 +43,7 @@ import type {
   ReEnrolmentLinkRow,
   ReviewItemRepo,
   ReviewItemRow,
+  ScopedReference,
   SetupLinkRepo,
   SetupLinkRow,
   SplitRow,
@@ -711,30 +712,61 @@ function accountRepo(working: MemoryState, check: () => void): AccountRepo {
         ...owners,
       ];
     },
-    hasSharedSplit: (accountId) => {
+    hasSplitForOthers: (accountId, ownerId) => {
       check();
       const live = new Set(
         working.transactions
           .filter((t) => t.accountId === accountId && !working.deleted.has(t.id))
           .map((t) => t.id as string),
       );
-      return working.splits.some((s) => live.has(s.transactionId) && s.beneficiary === "shared");
+      return working.splits.some((s) => live.has(s.transactionId) && s.beneficiary !== ownerId);
+    },
+    scopedReferences: (accountId) => {
+      check();
+      // Mirror of the SQL: live transactions only; a soft-deleted scoped row still counts.
+      const txns = working.transactions.filter(
+        (t) => t.accountId === accountId && !working.deleted.has(t.id),
+      );
+      const txnIds = new Set(txns.map((t) => t.id as string));
+      const splits = working.splits.filter((s) => txnIds.has(s.transactionId));
+      const splitIds = new Set(splits.map((s) => s.id as string));
+      const listed = (
+        rows: readonly { id: string; name: string; scopePersonId: string | null }[],
+        used: Set<string>,
+      ): ScopedReference[] =>
+        rows
+          .filter((row) => row.scopePersonId !== null && used.has(row.id))
+          .map((row) => ({ id: row.id, name: row.name }))
+          .sort((a, b) => byText(a.name, b.name) || byText(a.id, b.id));
+      return {
+        payees: listed(
+          working.payees,
+          new Set(txns.flatMap((t) => (t.payeeId === null ? [] : [t.payeeId as string]))),
+        ),
+        tags: listed(
+          working.tags,
+          new Set(
+            working.splitTags.filter((t) => splitIds.has(t.splitId)).map((t) => t.tagId as string),
+          ),
+        ),
+        activities: listed(
+          working.activities,
+          new Set(splits.flatMap((s) => (s.activityId === null ? [] : [s.activityId as string]))),
+        ),
+      };
     },
   };
 }
 
 /** Mirror of the SQL `hidden` expression of `visibleTxn` (AD-4). */
 function nameHiddenFor(
-  working: MemoryState,
   viewer: Viewer,
-  row: Pick<TransactionRow, "accountId" | "nameHiddenUntil" | "nameHiddenBy">,
+  row: Pick<TransactionRow, "nameHiddenUntil" | "nameHiddenBy">,
   today: string,
 ): boolean {
   if (viewer.kind === "system") return false;
   if (row.nameHiddenUntil === null || row.nameHiddenUntil.slice(0, 10) <= today) return false;
-  if (row.nameHiddenBy === viewer.personId) return false;
-  const account = working.accounts.find((a) => a.id === row.accountId);
-  return account !== undefined && !account.isPrivate;
+  return row.nameHiddenBy !== viewer.personId;
 }
 
 /** Mirror of the SQL transfer label: the counterpart sits in another person's private account. */
@@ -820,7 +852,7 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       .sort((a, b) => (a.id < b.id ? -1 : 1)),
   });
   const view = (viewer: Viewer, row: TransactionRow, today: string): VisibleTransaction => {
-    const hidden = nameHiddenFor(working, viewer, row, today);
+    const hidden = nameHiddenFor(viewer, row, today);
     const payee =
       row.payeeId === null || hidden
         ? undefined
@@ -1039,23 +1071,19 @@ function auditHiddenUntil(
   today: string,
 ): string | null {
   if (viewer.kind === "system" || row.entity !== "transaction") return null;
-  const hide = (accountId: string | null, until: unknown, by: unknown): string | null => {
+  const hide = (until: unknown, by: unknown): string | null => {
     if (typeof until !== "string" || until.slice(0, 10) <= today) return null;
-    if (by === viewer.personId) return null;
-    const account = working.accounts.find((a) => a.id === accountId);
-    return account !== undefined && !account.isPrivate ? until : null;
+    return by === viewer.personId ? null : until;
   };
   const candidates: (string | null)[] = [];
   const txn = working.transactions.find((t) => t.id === row.entityId);
-  candidates.push(
-    txn === undefined ? null : hide(txn.accountId, txn.nameHiddenUntil, txn.nameHiddenBy),
-  );
+  candidates.push(txn === undefined ? null : hide(txn.nameHiddenUntil, txn.nameHiddenBy));
   for (const json of [row.before, row.after]) {
     const state = parseJson(json) as Record<string, unknown> | null;
     candidates.push(
       state === null || typeof state !== "object"
         ? null
-        : hide(row.accountId, state.nameHiddenUntil, state.nameHiddenBy),
+        : hide(state.nameHiddenUntil, state.nameHiddenBy),
     );
   }
   const found = candidates.filter((c): c is string => c !== null);
@@ -1108,6 +1136,39 @@ function auditRepo(working: MemoryState, check: () => void, failAudit: () => boo
       check();
       if (failAudit()) throw new Error("audit append failed");
       working.audit.push(row);
+    },
+    scopeToPerson: (accountId: string, personId: string): void => {
+      check();
+      // Mirror of the SQL UPDATE: rows are replaced (they are readonly), only person_id changes.
+      const order = (row: AuditRow) => `${row.at}|${row.id}`;
+      const flip = working.audit
+        .filter((row) => {
+          if (row.accountId !== accountId || row.entity !== "account") return false;
+          if (row.action !== "set_privacy") return false;
+          // A transition only: a redundant private → private switch does not restart the era.
+          const before = parseJson(row.before) as Record<string, unknown> | null;
+          const after = parseJson(row.after) as Record<string, unknown> | null;
+          return (
+            before !== null &&
+            typeof before === "object" &&
+            before.isPrivate === false &&
+            after !== null &&
+            typeof after === "object" &&
+            after.isPrivate === true
+          );
+        })
+        .reduce<AuditRow | undefined>(
+          (latest, row) =>
+            latest === undefined || byText(order(row), order(latest)) > 0 ? row : latest,
+          undefined,
+        );
+      working.audit = working.audit.map((row) =>
+        row.accountId === accountId &&
+        row.personId === null &&
+        (flip === undefined || byText(order(row), order(flip)) > 0)
+          ? { ...row, personId }
+          : row,
+      );
     },
     listVisible: (viewer: Viewer, today: string): AuditView[] => {
       requireViewer(viewer);

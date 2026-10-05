@@ -519,7 +519,7 @@ describe("hidden names and transfer groups on SQLite", () => {
   });
 });
 
-describe("AccountRepo update, replaceOwners and hasSharedSplit on SQLite", () => {
+describe("AccountRepo update, replaceOwners, hasSplitForOthers and scopedReferences on SQLite", () => {
   const uow = () => createUnitOfWork(db);
   const T = "2026-09-28T00:00:00.000Z";
   const find = (id: string) => uow().read((r) => r.accounts.findVisible(sys.viewer, id));
@@ -563,14 +563,43 @@ describe("AccountRepo update, replaceOwners and hasSharedSplit on SQLite", () =>
     expect(owners(shared)).toEqual([]);
   });
 
-  it("hasSharedSplit sees shared splits of live transactions only", () => {
-    const has = (id: string) => uow().transaction((tx) => tx.accounts.hasSharedSplit(id));
-    expect(has(shared)).toBe(false);
+  it("hasSplitForOthers sees splits for anyone but the owner, on live transactions only", () => {
+    const has = (id: string, owner: string) =>
+      uow().transaction((tx) => tx.accounts.hasSplitForOthers(id, owner));
+    expect(has(shared, a)).toBe(false);
     const sharedTxn = createTransaction(as(a), txn(shared, "joint"));
     createTransaction(as(a), txn(privateA, "private"));
-    expect(has(shared)).toBe(true);
-    expect(has(privateA)).toBe(false);
+    expect(has(shared, a)).toBe(true);
+    expect(has(privateA, a)).toBe(false);
+    expect(has(privateA, b)).toBe(true);
     deleteTransaction(as(a), { id: sharedTxn });
-    expect(has(shared)).toBe(false);
+    expect(has(shared, a)).toBe(false);
+    const forB = createTransaction(as(a), txn(shared, "for b"));
+    const splitId = getTransaction(as(a), { id: forB }).splits[0]?.id ?? "";
+    setSplitField(as(a), {
+      transactionId: forB,
+      splitId,
+      field: "beneficiary",
+      value: b,
+    });
+    expect(has(shared, a)).toBe(true);
+    expect(has(shared, b)).toBe(false);
+  });
+
+  it("scopedReferences lists the owner-scoped payees, tags and activities live rows use", () => {
+    const refs = (id: string) => uow().transaction((tx) => tx.accounts.scopedReferences(id));
+    expect(refs(privateA)).toEqual({ payees: [], tags: [], activities: [] });
+    const scopedTag = createTag(as(a), { name: "mine", originAccountId: privateA }).id;
+    const sharedTag = createTag(as(a), { name: "ours" }).id;
+    const t = createTransaction(as(a), txn(privateA, "tagged"));
+    const splitId = getTransaction(as(a), { id: t }).splits[0]?.id ?? "";
+    setSplitTags(as(a), { transactionId: t, splitId, tagIds: [scopedTag, sharedTag] });
+    expect(refs(privateA)).toEqual({
+      payees: [],
+      tags: [{ id: scopedTag, name: "mine" }],
+      activities: [],
+    });
+    deleteTransaction(as(a), { id: t });
+    expect(refs(privateA).tags).toEqual([]);
   });
 });

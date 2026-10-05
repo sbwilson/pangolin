@@ -26,10 +26,13 @@ import {
 } from "./privacy.ts";
 import { account } from "./schema/account.ts";
 import { accountOwner } from "./schema/account-owner.ts";
+import { activity } from "./schema/activity.ts";
 import { balanceSnapshot } from "./schema/balance-snapshot.ts";
 import { institution } from "./schema/institution.ts";
+import { payee } from "./schema/payee.ts";
 import { split } from "./schema/split.ts";
 import { splitTag } from "./schema/split-tag.ts";
+import { tag } from "./schema/tag.ts";
 import { transaction } from "./schema/transaction.ts";
 import { transferGroup } from "./schema/transfer-group.ts";
 
@@ -193,7 +196,7 @@ export function createAccountRepo(orm: Orm, check: () => void): AccountRepo {
           .run();
     },
 
-    hasSharedSplit: (accountId) => {
+    hasSplitForOthers: (accountId, ownerId) => {
       check();
       return (
         orm
@@ -204,12 +207,43 @@ export function createAccountRepo(orm: Orm, check: () => void): AccountRepo {
             and(
               eq(transaction.accountId, accountId),
               isNull(transaction.deletedAt),
-              eq(split.beneficiary, "shared"),
+              ne(split.beneficiary, ownerId),
             ),
           )
           .limit(1)
           .get() !== undefined
       );
+    },
+
+    scopedReferences: (accountId) => {
+      check();
+      // Live transactions only; a soft-deleted scoped row still counts while one uses it.
+      const live = and(eq(transaction.accountId, accountId), isNull(transaction.deletedAt));
+      const payees = orm
+        .selectDistinct({ id: payee.id, name: payee.name })
+        .from(transaction)
+        .innerJoin(payee, eq(payee.id, transaction.payeeId))
+        .where(and(live, isNotNull(payee.scopePersonId)))
+        .orderBy(asc(payee.name), asc(payee.id))
+        .all();
+      const tags = orm
+        .selectDistinct({ id: tag.id, name: tag.name })
+        .from(splitTag)
+        .innerJoin(split, eq(split.id, splitTag.splitId))
+        .innerJoin(transaction, eq(transaction.id, split.transactionId))
+        .innerJoin(tag, eq(tag.id, splitTag.tagId))
+        .where(and(live, isNotNull(tag.scopePersonId)))
+        .orderBy(asc(tag.name), asc(tag.id))
+        .all();
+      const activities = orm
+        .selectDistinct({ id: activity.id, name: activity.name })
+        .from(split)
+        .innerJoin(transaction, eq(transaction.id, split.transactionId))
+        .innerJoin(activity, eq(activity.id, split.activityId))
+        .where(and(live, isNotNull(activity.scopePersonId)))
+        .orderBy(asc(activity.name), asc(activity.id))
+        .all();
+      return { payees, tags, activities };
     },
   };
 }
