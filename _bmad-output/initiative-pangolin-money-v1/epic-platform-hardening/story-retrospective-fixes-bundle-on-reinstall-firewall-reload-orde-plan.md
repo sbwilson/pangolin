@@ -3,7 +3,7 @@ title: 'Retrospective fixes: bundle on reinstall, firewall reload order, databas
 type: 'bugfix'
 ticket: '11'
 created: '2026-10-03'
-status: 'built'
+status: done
 baseline_revision: '5c2dbc92ba5158edc16e43f9d6aae11c062e5172'
 route: 'full'
 route_source: 'auto'

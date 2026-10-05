@@ -24,7 +24,7 @@ Our investments and super sit beside our cash, valued daily, and their tax numbe
 2. A seeded statement and unit-price history reproduces the fund balance within rounding. The balance is labelled an estimate until the next statement.
 3. The cap tracker flags a seeded over-cap contribution. A seeded missed SG payment is flagged after its payday.
 4. Price fetches send only ticker codes. A stale price shows its age and can be overridden. All fetchers pass against the mock price server in CI.
-5. Deployed to the home server with `pangolin upgrade`, and CI (lint, types, unit, migration, Playwright) is green on the release tag.
+5. Deployed to the home server with `pangolin upgrade`, and CI (lint, types, unit, migration, Playwright, axe on its routes) is green on the release tag.
 
 ## Boundaries
 
