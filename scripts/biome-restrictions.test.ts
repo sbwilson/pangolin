@@ -29,7 +29,9 @@ function copyConfig(to: string): void {
 
 // Line 1 imports temporal-polyfill, line 2 imports ulid, line 3 imports the SystemViewer factory by
 // package specifier, line 4 imports it by relative path, lines 5 to 8 import the `account`,
-// `transaction` and `audit-log` schema files (the read rule, AD-3) by the forms it must catch.
+// `transaction` and `audit-log` schema files (the read rule, AD-3) by the forms it must catch, and
+// lines 16 to 21 import the other scoped tables' schema files (account-owner, split, split-tag,
+// balance-snapshot, review-item and transfer-group). Line 9 is a table the rule leaves alone.
 const PROBE = [
   'import { Temporal } from "temporal-polyfill";',
   'import { ulid } from "ulid";',
@@ -46,6 +48,12 @@ const PROBE = [
   'export * from "../schema/transaction.ts";',
   'export const dyn = import("../schema/account.ts");',
   'export const req = require("../schema/transaction");',
+  'import { accountOwner } from "../schema/account-owner.ts";',
+  'import { split } from "../schema/split.ts";',
+  'import { splitTag } from "../schema/split-tag";',
+  'import { balanceSnapshot } from "../schema/balance-snapshot.ts";',
+  'import { reviewItem } from "../schema/review-item.ts";',
+  'import { transferGroup } from "../schema/transfer-group.ts";',
   "export const probe = [Temporal, ulid, systemViewer, relative, account, transaction, auditLog, payee];",
   "",
 ].join("\n");
@@ -66,14 +74,26 @@ const LINE_TO_MODULE: Record<number, string> = {
   13: "export *",
   14: "import()",
   15: "require()",
+  16: "schema/account-owner",
+  17: "schema/split",
+  18: "schema/split-tag",
+  19: "schema/balance-snapshot",
+  20: "schema/review-item",
+  21: "schema/transfer-group",
 };
 /** Both ways of reaching the SystemViewer factory. */
 const SV = [SYSTEM_VIEWER, SYSTEM_VIEWER_RELATIVE] as const;
-/** The three schema files only the privacy path may import (the read-rule plugin). */
+/** The scoped tables' schema files only the privacy path may import (the read-rule plugin). */
 const DB = [
   "schema/account",
   "schema/transaction",
   "schema/audit-log",
+  "schema/account-owner",
+  "schema/split",
+  "schema/split-tag",
+  "schema/balance-snapshot",
+  "schema/review-item",
+  "schema/transfer-group",
   "schema/account (side effect)",
   "import type",
   "export { }",
@@ -129,6 +149,12 @@ const READ_CASES: Record<string, readonly string[]> = {
   "packages/db/src/privacy.ts": [],
   "packages/db/src/ledger-repos.ts": [],
   "packages/db/src/unit-of-work.ts": [],
+  // Two repositories apply a viewer filter of their own: classify-repos.ts reads split and
+  // split_tag through `visibleTxnId`, review-item-repo.ts reads review_item through
+  // `visibleReviewItems`. The exception is per file: a sibling is still flagged.
+  "packages/db/src/classify-repos.ts": [],
+  "packages/db/src/review-item-repo.ts": [],
+  "packages/db/src/other-repo.ts": DB,
   "packages/db/src/ledger-repos.test.ts": [],
   "packages/app/src/system/x.test.ts": [],
 };
@@ -230,8 +256,10 @@ describe("biome system-clock ban", () => {
   });
 });
 
-// AD-3: account, transaction and audit_log are read only through privacy.ts, ledger-repos.ts and
-// unit-of-work.ts. A plugin states the rule once; this proves where it applies.
+// AD-3: every scoped table (account, account_owner, transaction, split, split_tag,
+// balance_snapshot, review_item, transfer_group, audit_log) is read only through privacy.ts,
+// ledger-repos.ts and unit-of-work.ts, apart from the two reasoned exceptions above. A plugin
+// states the rule once; this proves where it applies.
 describe("biome read rule", () => {
   let found: Map<string, Set<string>>;
 

@@ -219,7 +219,9 @@
         "!**/*.test.ts",
         "!packages/db/src/privacy.ts",
         "!packages/db/src/ledger-repos.ts",
-        "!packages/db/src/unit-of-work.ts"
+        "!packages/db/src/unit-of-work.ts",
+        "!packages/db/src/classify-repos.ts",
+        "!packages/db/src/review-item-repo.ts"
       ],
       "plugins": ["./tools/lint/no-ledger-schema-read.grit"]
     },

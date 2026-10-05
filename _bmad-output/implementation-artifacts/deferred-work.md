@@ -306,3 +306,7 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-backup-manifest-privacy-plan.md`
   summary: Validate `balanceDate` (real calendar date, and before any file is removed) in `writeSnapshot`/`buildManifest`.
   evidence: The check is a `YYYY-MM-DD` regex inside `buildManifest`, run after `writeSnapshot` has removed `outDir` and copied the database, and `2026-13-45` passes it. Pre-existing; no current caller can pass a bad date.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-widen-the-read-rule-and-privacy-suite-plan.md`
+  summary: The backup manifest digest (`manifestSha256`, which hashes the whole database including private rows) and the restic snapshot id reach the partner in unscoped `backup_snapshot` audit rows, so partner B can see that A's private data changed.
+  evidence: The 2.18 failed-drill world shows the digest differs between two worlds that differ only in A's private account; the drill comparison masks it as `<digest>`. Not invertible, but a byte difference B can read; a fix scopes or redacts `backup_snapshot` audit rows for a person viewer, or leaves the digest out of the audit `after`.

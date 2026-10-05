@@ -2,9 +2,12 @@
 // same ids and the same clock, differing only in partner A's private delta, which is applied last
 // through the use cases. Partner B is signed in through the real HTTP app, so every route runs
 // under its real middleware. Test support only.
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import {
   type AccountRepo,
   type ActivityRepo,
+  BACKUP_DRILL_JOB,
   type Clock,
   closeAccount,
   createAccount,
@@ -71,6 +74,7 @@ import { applySeed, parseSeed } from "../admin/seed.ts";
 import { nodeTokens, recoveryCodeHasher } from "../auth/secret.ts";
 import { type AppDeps, createApp } from "../http/app.ts";
 import type { AuthGateway } from "../http/session.ts";
+import { createDrillRig } from "../testing/backup-drill.ts";
 import type { Entity, SlotId } from "./route-manifest.ts";
 
 export const ORIGIN = "http://localhost:3000";
@@ -307,12 +311,18 @@ function collectPrivateIds(db: Db, a: string): PrivateIds {
 /**
  * Builds a world from the demo seed. `base` stops at the shared household; `delta` then lets
  * partner A add, rename, close and delete private accounts and the classification, snapshots,
- * transactions, splits, transfers, review items and audit rows that go with them.
+ * transactions, splits, transfers, review items and audit rows that go with them. `dbFile` keeps
+ * the database in a file instead of memory.
  */
-export function buildWorld(seedJson: string, variant: Variant): World {
+export function buildWorld(
+  seedJson: string,
+  variant: Variant,
+  options: { readonly dbFile?: string } = {},
+): World {
   const seedToday = parseSeed(seedJson).today;
   const clock = testClock(seedToday);
-  const db = openDatabase(":memory:");
+  // In memory unless a test needs the database as a file (the backup jobs open it by path).
+  const db = openDatabase(options.dbFile ?? ":memory:");
   migrate(db, loadMigrations(packageMigrationsDir));
   const uow = createUnitOfWork(db);
   const buildIds = deterministicIds(1_700_000_000_000, 1);
@@ -791,4 +801,81 @@ export function slotIds(
 ): SlotId {
   return (wanted, slot = 0) =>
     wanted === entity && slot === aimedSlot ? target : world.ok(wanted, slot);
+}
+
+/** A world whose restore drill failed on a private account of A's whose sum differs per flavour. */
+export interface DrillWorld extends World {
+  /** The restic snapshot the drill restored and found altered. */
+  readonly snapshotId: string;
+  /** The drill's stored verdicts, oldest first. */
+  readonly verifications: () => { kind: string; ok: number; summary: string }[];
+}
+
+/** An amount the private account's one transaction has in each flavour. */
+const DRILL_AMOUNTS = { one: -1000, two: -778_777 } as const;
+/** What the stored copy's private account is altered by, so its sum no longer matches. */
+export const DRILL_TAMPER_CENTS = 3_131_313;
+
+/**
+ * Builds a world on a database file, gives A a private account with one transaction whose amount
+ * depends on `flavour`, backs the database up to a stub restic repository, alters that account's
+ * transactions in the stored copy and runs the restore drill, which fails its manifest check. The
+ * returned world's app has the backup configured, so `/api/system/backup` reports the verdict.
+ * `viewer` is the system viewer the backup request runs as (`systemViewer("cli:backup")`); the
+ * caller builds it, as only the jobs, the admin entry and tests may (AD-6).
+ */
+export async function failedDrillWorld(
+  seedJson: string,
+  flavour: "one" | "two",
+  dir: string,
+  viewer: Viewer,
+): Promise<DrillWorld> {
+  const root = join(dir, flavour);
+  const dataDir = join(root, "data");
+  mkdirSync(dataDir, { recursive: true });
+  const world = buildWorld(seedJson, "base", { dbFile: join(dataDir, "pangolin.sqlite") });
+  const a = world.ctx("a");
+  const owner = [{ personId: world.people.a, shareBp: 10_000 }];
+  const account = createAccount(a, {
+    name: "Drill probe private",
+    type: "transaction",
+    currency: "AUD",
+    isPrivate: true,
+    owners: owner,
+  });
+  createTransaction(a, {
+    accountId: account,
+    postedOn: "2026-07-12",
+    amountCents: DRILL_AMOUNTS[flavour],
+    description: "Drill probe",
+  });
+  const rig = createDrillRig({
+    dataDir,
+    stubDir: join(root, "stub"),
+    uow: world.uow,
+    clock: world.clock,
+    newId: a.newId,
+    viewer,
+  });
+  const runner = rig.runner();
+  const snapshotId = await rig.backUp(runner);
+  const stored = openDatabase(rig.storedDatabase(snapshotId));
+  stored
+    .prepare('UPDATE "transaction" SET amount_cents = amount_cents + ? WHERE account_id = ?')
+    .run(DRILL_TAMPER_CENTS, account);
+  stored.close();
+  await rig.run(runner, BACKUP_DRILL_JOB);
+  const deps: AppDeps = { ...world.deps, backupConfigured: true };
+  const app = createApp(deps);
+  return {
+    ...world,
+    app,
+    deps,
+    snapshotId,
+    request: (who, method, path, body) => requestVia(app, who, method, path, body),
+    verifications: () =>
+      world.db
+        .prepare("SELECT kind, ok, summary FROM backup_verification ORDER BY at, rowid")
+        .all() as { kind: string; ok: number; summary: string }[],
+  };
 }

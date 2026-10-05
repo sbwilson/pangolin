@@ -12,12 +12,10 @@ import { join } from "node:path";
 import {
   BACKUP_CHECK_JOB,
   BACKUP_DRILL_JOB,
-  BACKUP_PUSH_JOB,
   backupProgress,
   backupStatus,
   type Clock,
   createIdGenerator,
-  enqueueJob,
   fixedClockAt,
   lastBackup,
   listReviewItems,
@@ -38,8 +36,8 @@ import {
 } from "@pangolin/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { backupPaths } from "../backup/paths.ts";
-import { DEFAULT_BACKUP_CONFIG } from "../config.ts";
-import { type StubRestic, stubRestic } from "../testing/restic.ts";
+import { createDrillRig, type DrillRig } from "../testing/backup-drill.ts";
+import type { StubRestic } from "../testing/restic.ts";
 import { createJobs, EXTERNAL_EFFECT_KINDS, JOB_KINDS } from "./index.ts";
 import { createRunner, type Runner } from "./runner.ts";
 
@@ -48,6 +46,7 @@ let dataDir: string;
 let db: Db;
 let uow: UnitOfWork;
 let stub: StubRestic;
+let rig: DrillRig;
 const start = fixedClockAt("2026-09-27").now();
 let now = start;
 const clock: Clock = systemClock("UTC", () => now);
@@ -61,7 +60,15 @@ beforeEach(() => {
   db = openDatabase(join(dataDir, "pangolin.sqlite"));
   migrate(db, loadMigrations(packageMigrationsDir));
   uow = createUnitOfWork(db);
-  stub = stubRestic(join(dir, "stub"));
+  rig = createDrillRig({
+    dataDir,
+    stubDir: join(dir, "stub"),
+    uow,
+    clock,
+    newId,
+    viewer: systemViewer("cli:backup"),
+  });
+  stub = rig.stub;
   now = start;
   ms = now.epochMilliseconds;
 });
@@ -74,33 +81,12 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function runner(configured = true, pushTimeoutMs?: number): Runner {
-  const jobs = createJobs({
-    timezone: "Australia/Sydney",
-    dataDir,
-    backup: configured ? stub.config : DEFAULT_BACKUP_CONFIG,
-    migrationsDir: packageMigrationsDir,
-  });
-  // A copy of the push kind with a short timeout, for the abort test.
-  const kinds = jobs.kinds.map((registration) =>
-    pushTimeoutMs !== undefined && registration.kind.kind === BACKUP_PUSH_JOB.kind
-      ? { ...registration, kind: { ...registration.kind, timeoutMs: pushTimeoutMs } }
-      : registration,
-  );
-  return createRunner({
-    uow,
-    clock,
-    newId,
-    kinds,
-    schedules: jobs.schedules,
-    leaseMs: 60_000,
-    log: () => {},
-  });
-}
+const runner = (configured = true, pushTimeoutMs?: number): Runner =>
+  rig.runner(configured, pushTimeoutMs);
 
 const staging = () => readdirSync(backupPaths(dataDir).stagingRoot).sort();
 
-const cli = () => ({ viewer: systemViewer("cli:backup"), clock, newId, uow });
+const cli = () => rig.cli();
 
 function jobRows() {
   return db
@@ -360,20 +346,9 @@ describe("the backup jobs", () => {
     expect(alive()).toBe(false);
   });
   describe("the check and the restore drill", () => {
-    /** A completed backup in the stub repository; returns its restic snapshot ID. */
-    async function backUp(r: Runner): Promise<string> {
-      const jobId = requestBackup(cli());
-      await r.tick();
-      await r.tick();
-      const progress = backupProgress({ uow }, { jobId });
-      if (progress.state !== "done") throw new Error(`backup ${progress.state}`);
-      return progress.snapshotId;
-    }
-
-    async function run(r: Runner, kind: typeof BACKUP_CHECK_JOB | typeof BACKUP_DRILL_JOB) {
-      uow.transaction((tx) => enqueueJob(tx, { clock, newId }, kind, {}));
-      await r.tick();
-    }
+    const backUp = (r: Runner) => rig.backUp(r);
+    const run = (r: Runner, kind: typeof BACKUP_CHECK_JOB | typeof BACKUP_DRILL_JOB) =>
+      rig.run(r, kind);
 
     const verifications = () =>
       db.prepare("SELECT kind, ok, summary FROM backup_verification ORDER BY at, rowid").all() as {
@@ -517,20 +492,7 @@ describe("the backup jobs", () => {
       expect(openItems()).toEqual([]);
     });
 
-    /** The snapshot's database file inside the stub repository. */
-    function storedDatabase(snapshotId: string): string {
-      const meta = JSON.parse(
-        readFileSync(join(stub.repoDir, "snapshots", snapshotId, "meta.json"), "utf8"),
-      ) as { paths: string[] };
-      return join(
-        stub.repoDir,
-        "snapshots",
-        snapshotId,
-        "tree",
-        meta.paths[0] as string,
-        "pangolin.sqlite",
-      );
-    }
+    const storedDatabase = (snapshotId: string) => rig.storedDatabase(snapshotId);
 
     const auditRows = () =>
       db

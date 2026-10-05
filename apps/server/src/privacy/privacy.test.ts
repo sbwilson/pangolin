@@ -9,12 +9,16 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hiddenLabel, listAudit, listReviewItems, redact, type Viewer } from "@pangolin/app";
+import { systemViewer } from "@pangolin/app/system-viewer";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { generateSeedFile } from "../../scripts/demo-seed.ts";
 import {
   A_NAMES,
   buildWorld,
   type Captured,
+  DRILL_TAMPER_CENTS,
+  type DrillWorld,
+  failedDrillWorld,
   type LeakMode,
   leakyWorld,
   nonexistentId,
@@ -23,6 +27,16 @@ import {
   type Variant,
   type World,
 } from "./privacy-harness.ts";
+import {
+  type Flavour,
+  type HiddenRun,
+  hiddenNameScenario,
+  type Observe,
+  type Step,
+  type SwitchRun,
+  switchScenario,
+  type View,
+} from "./privacy-scenarios.ts";
 import {
   apiRoutes,
   type Entity,
@@ -822,5 +836,423 @@ describe("cross-scope cascades left for a product decision, and the closed trans
       .pluck()
       .get();
     expect(defaultCleared).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------------- paired scenarios
+//
+// Each scenario runs in two worlds that differ in one thing B must never learn (the `Flavour`):
+// at every checkpoint B's reads (every GET route, the transaction as the repository gives it, the
+// audit log) must be byte-identical, and the steps must answer the same in both worlds. The
+// assertions after that name what a revert of a fix would break.
+
+type Seen = Map<string, Map<string, string>>;
+
+/** Everything B can read at a checkpoint: all GET routes, the `view`'s paths and the repo rows. */
+async function viewOf(world: World, view: View): Promise<Map<string, string>> {
+  const out = await readTranscript(world);
+  for (const path of view.paths) {
+    const res = await world.request("b", "GET", path);
+    out.set(`GET ${path}`, normaliseRequestIds(`${res.status} ${res.text}`));
+  }
+  const b = world.ctx("b");
+  const today = world.clock.today().toString();
+  for (const id of view.transactionIds) {
+    const row = b.uow.read((repos) => repos.transactions.findVisible(b.viewer, id, today));
+    out.set(`repo findVisible(B, ${id})`, normaliseRequestIds(JSON.stringify(row ?? null)));
+  }
+  return out;
+}
+
+const FLAVOURS: readonly Flavour[] = ["one", "two"];
+
+interface Pair<R> {
+  readonly worlds: [World, World];
+  readonly seen: [Seen, Seen];
+  readonly runs: [R, R];
+}
+
+/** Builds two worlds and runs `scenario` in each, one flavour apiece, recording B's checkpoints. */
+async function runPair<R>(
+  scenario: (world: World, flavour: Flavour, observe: Observe) => Promise<R>,
+  build: (variant: Variant) => World = world,
+): Promise<Pair<R>> {
+  const worlds: [World, World] = [build("base"), build("base")];
+  const seen: [Seen, Seen] = [new Map(), new Map()];
+  const runs: R[] = [];
+  for (const i of [0, 1] as const) {
+    const w = worlds[i];
+    runs.push(
+      await scenario(w, FLAVOURS[i] as Flavour, async (label, view) => {
+        seen[i].set(label, await viewOf(w, view));
+      }),
+    );
+  }
+  return { worlds, seen, runs: runs as [R, R] };
+}
+
+/** Differences in what B read at each checkpoint of the two worlds. */
+function checkpointProblems(seen: [Seen, Seen]): string[] {
+  const [left, right] = seen;
+  const labels = new Set([...left.keys(), ...right.keys()]);
+  return [...labels].flatMap((label) => {
+    const l = left.get(label);
+    const r = right.get(label);
+    if (l === undefined || r === undefined) return [`${label}: missing in one world`];
+    return identicalProblems(l, r).map((problem) => `${label}: ${problem}`);
+  });
+}
+
+/** What a step answered: its status and body, with B's own minted ids named by order. */
+const outcomes = (steps: Step[]) =>
+  steps.map((s) => ({ name: s.name, status: s.status, text: normaliseRequestIds(s.text) }));
+
+/** The audit rows B may read, as `listAudit(B)` returns them (redacted). */
+function auditSeenByB(w: World) {
+  return listAudit(w.ctx("b"));
+}
+
+describe("a hidden description and payee on a shared imported transaction", () => {
+  let pair: Pair<HiddenRun>;
+  beforeAll(async () => {
+    pair = await runPair(hiddenNameScenario);
+  });
+
+  it("gives B the same reads in both worlds, before and after B edits, splits, tags and deletes it", () => {
+    expect([...pair.seen[0].keys()]).toEqual([
+      "hidden row, before B writes",
+      "hidden row, after B's edits",
+      "hidden row, after B's delete",
+    ]);
+    expect(checkpointProblems(pair.seen)).toEqual([]);
+    // The probe is not empty: B reads the hidden row, as a placeholder.
+    const before = pair.seen[0].get("hidden row, before B writes");
+    const key = `GET /api/ledger/transactions/${pair.runs[0].ids.transactionId}`;
+    expect(before?.get(key)).toContain("Hidden until");
+  });
+
+  it("answers B's writes on the hidden row the same way in both worlds", () => {
+    const [left, right] = pair.runs;
+    expect(outcomes(right.steps)).toEqual(outcomes(left.steps));
+    expect(left.steps.map((s) => [s.name, s.status])).toEqual([
+      ["B edits the notes", 200],
+      ["B splits it", 200],
+      ["B sets a category", 200],
+      ["B tags a split", 200],
+      ["B deletes it", 204],
+    ]);
+  });
+
+  it("never shows B the description, payee, fingerprint or external ID of the row", () => {
+    pair.runs.forEach((run, i) => {
+      const { ids } = run;
+      for (const [label, reads] of pair.seen[i] as Seen) {
+        // The audit branch below is keyed by name: a rename must not silently skip it.
+        expect(reads.has("use case listAudit(B)"), `${label}: listAudit(B) is in the reads`).toBe(
+          true,
+        );
+        for (const [key, text] of reads) {
+          // The payee list is shared, so a payee's name and id are fair game there.
+          const about = key.startsWith("GET /api/ledger") || key.startsWith("repo findVisible");
+          const secrets = [ids.description, ids.fingerprint, ids.externalId];
+          if (about) secrets.push(ids.payeeId);
+          if (key === "use case listAudit(B)") {
+            // Other audit rows (the payee's own creation) name the payee; this row's must not.
+            const rows = auditSeenByB(pair.worlds[i] as World).filter(
+              (r) => r.entity === "transaction" && r.entityId === ids.transactionId,
+            );
+            expect(JSON.stringify(rows), `${label}: ${key}`).not.toContain(ids.payeeId);
+          }
+          for (const secret of secrets) {
+            expect(text.includes(secret), `${label}: ${key} holds ${secret}`).toBe(false);
+          }
+        }
+      }
+    });
+  });
+
+  it("keeps the stored description and payee in the audit row of every write on it, B's included", () => {
+    pair.runs.forEach((run, i) => {
+      const w = pair.worlds[i] as World;
+      const { ids } = run;
+      const rows = w.db
+        .prepare(
+          "SELECT actor, action, before, after FROM audit_log WHERE entity = 'transaction' AND entity_id = ? ORDER BY rowid",
+        )
+        .all(ids.transactionId) as {
+        actor: string;
+        action: string;
+        before: string | null;
+        after: string | null;
+      }[];
+      const problems: string[] = [];
+      let named = 0;
+      for (const row of rows) {
+        for (const json of [row.before, row.after]) {
+          if (json === null) continue;
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(json);
+          } catch {
+            continue;
+          }
+          if (typeof parsed !== "object" || parsed === null || !("descriptionRaw" in parsed)) {
+            continue;
+          }
+          const state = parsed as { descriptionRaw: unknown; payeeId: unknown };
+          named++;
+          if (state.descriptionRaw !== ids.description) {
+            problems.push(
+              `${row.actor} ${row.action}: description ${String(state.descriptionRaw)}`,
+            );
+          }
+          if (state.payeeId !== ids.payeeId) {
+            problems.push(`${row.actor} ${row.action}: payee ${String(state.payeeId)}`);
+          }
+        }
+      }
+      // create, hide, B's four edits and the delete each carry a state; B wrote five of them.
+      expect(named).toBeGreaterThanOrEqual(12);
+      expect(rows.filter((r) => r.actor === `person:${w.people.b}`).length).toBeGreaterThanOrEqual(
+        5,
+      );
+      expect(problems).toEqual([]);
+    });
+  });
+
+  it("fails closed on audit rows of unusual shape: no key added, nothing raw passed through", () => {
+    pair.runs.forEach((run, i) => {
+      const w = pair.worlds[i] as World;
+      const { ids } = run;
+      const label = hiddenLabel(w.clock.today().add({ days: 90 }).toString());
+      const rows = auditSeenByB(w).filter(
+        (r) => r.entity === "transaction" && r.entityId === ids.transactionId,
+      );
+      // A bare string and an array holding the description come back as the placeholder, never
+      // as themselves.
+      expect(rows.filter((r) => r.before === null && r.after === label)).toHaveLength(2);
+      // An object with no name keys is not given one.
+      expect(rows.some((r) => r.after === '{"unrelated":1}')).toBe(true);
+      expect(JSON.stringify(rows)).not.toContain(ids.description);
+    });
+  });
+});
+
+describe("a deliberate leak in the hidden-row worlds", () => {
+  it("is caught: with the hidden names lifted, B's reads differ between the worlds", async () => {
+    const pair = await runPair(hiddenNameScenario, (variant) =>
+      leakyWorld(world(variant), "hidden-name"),
+    );
+    const problems = checkpointProblems(pair.seen);
+    expect(problems.length).toBeGreaterThan(0);
+    expect(problems.some((p) => p.includes("repo findVisible"))).toBe(true);
+  });
+});
+
+describe("owner changes and privacy switches", () => {
+  let pair: Pair<SwitchRun>;
+  beforeAll(async () => {
+    pair = await runPair(switchScenario);
+  });
+
+  it("gives B the same reads in both worlds at every checkpoint", () => {
+    expect(pair.seen[0].size).toBe(9);
+    expect(checkpointProblems(pair.seen)).toEqual([]);
+  });
+
+  it("answers each step as the rules say, and the same in both worlds", () => {
+    const [left, right] = pair.runs;
+    expect(outcomes(right.steps).map(({ name, status }) => ({ name, status }))).toEqual(
+      outcomes(left.steps).map(({ name, status }) => ({ name, status })),
+    );
+    expect(left.steps.map((s) => [s.name, s.status])).toEqual([
+      ["B strips A from the joint account", 400],
+      ["A removes themself from it", 200],
+      ["B takes the split", 200],
+      ["B makes it private", 200],
+      ["B makes it public", 200],
+      ["A makes the private account public while it uses a private activity", 409],
+      ["A clears the activity", 200],
+      ["A makes the private account public", 200],
+      ["A puts a private activity on a public split", 409],
+      ["A sets a private activity through setSplits", 409],
+      ["B hides a name on an account B does not own", 400],
+      ["A makes it private while a split is shared", 409],
+      ["A gives the split to B", 200],
+      ["A makes it private while a split is B's", 409],
+      ["A takes the split", 200],
+      ["A makes it private", 200],
+      ["A makes it public", 200],
+    ]);
+  });
+
+  it("keeps a hidden name hidden through an owner change and a switch to private and back", () => {
+    pair.runs.forEach((run, i) => {
+      const id = run.ids.hiddenTransaction;
+      for (const checkpoint of ["joint account private", "joint account public again"]) {
+        const reads = (pair.seen[i] as Seen).get(checkpoint) as Map<string, string>;
+        for (const key of [`GET /api/ledger/transactions/${id}`, `repo findVisible(B, ${id})`]) {
+          const text = reads.get(key) ?? "";
+          // The route renders the placeholder; the repository gives the flag and a null name.
+          const hidden = key.startsWith("GET") ? "Hidden until" : '"nameHidden":true';
+          expect(text, `${checkpoint}: ${key}`).toContain(hidden);
+          expect(text, `${checkpoint}: ${key}`).not.toContain("Switch probe one hidden");
+          expect(text, `${checkpoint}: ${key}`).not.toContain("Switch probe two hidden");
+        }
+      }
+    });
+  });
+
+  it("scopes the private era's audit rows to their owner and leaves the joint era's to both", () => {
+    pair.runs.forEach((run, i) => {
+      const w = pair.worlds[i] as World;
+      const { ids } = run;
+      const tuple = (r: { entity: string; entityId: string; action: string }) =>
+        `${r.entity} ${r.entityId} ${r.action}`;
+      const forB = auditSeenByB(w);
+      // The private account was created private: B reads its switch to public, nothing before.
+      expect(
+        forB.filter((r) => r.accountId === ids.privateAccount).map(tuple),
+        "private account",
+      ).toEqual([`account ${ids.privateAccount} set_privacy`]);
+      // The public account's joint era stays visible; its private era does not.
+      expect(forB.filter((r) => r.accountId === ids.flipped).map(tuple), "flipped account").toEqual(
+        [
+          `account ${ids.flipped} create`,
+          `transaction ${ids.flippedTransaction} create`,
+          `transaction ${ids.flippedTransaction} update`,
+          `transaction ${ids.flippedTransaction} update`,
+          `account ${ids.flipped} set_privacy`,
+          `account ${ids.flipped} set_privacy`,
+        ],
+      );
+      expect(JSON.stringify(forB)).not.toContain(ids.privateEraTransaction);
+      expect(JSON.stringify(forB)).not.toContain("private era");
+      // A reads all of it, so the difference is real.
+      const forA = listAudit(w.ctx("a"));
+      expect(forA.filter((r) => r.entityId === ids.privateEraTransaction).length).toBeGreaterThan(
+        0,
+      );
+      expect(forA.filter((r) => r.accountId === ids.privateAccount).length).toBeGreaterThan(1);
+    });
+  });
+});
+
+describe("a failed restore drill", () => {
+  let dir: string;
+  let drills: [DrillWorld, DrillWorld];
+
+  /**
+   * Restic's snapshot ids are random, and the manifest's digest covers the whole database, private
+   * rows included, so it differs between the worlds too (a finding for the human, see the story's
+   * notes: both reach B in unscoped audit rows). They are named, not compared; every other byte is.
+   * The known-gap test below pins the difference, so closing the leak fails it and the mask goes.
+   */
+  const sansSnapshotIds = (text: string) =>
+    normaliseRequestIds(text)
+      .replace(/\b[0-9a-f]{64}\b/g, "<digest>")
+      .replace(/(snapshot )[0-9a-f]{8}\b/g, "$1<id>");
+
+  /** B's reads and the drill's stored verdict, audit rows and review items. */
+  async function drillView(w: DrillWorld): Promise<Map<string, string>> {
+    const out = new Map(
+      [...(await readTranscript(w))].map(([key, text]) => [key, sansSnapshotIds(text)]),
+    );
+    const backup = await w.request("b", "GET", "/api/system/backup");
+    out.set("GET /api/system/backup", sansSnapshotIds(`${backup.status} ${backup.text}`));
+    out.set("stored verdicts", sansSnapshotIds(JSON.stringify(w.verifications())));
+    out.set(
+      "backup audit rows",
+      sansSnapshotIds(
+        JSON.stringify(
+          w.db
+            .prepare(
+              "SELECT actor, entity, action, account_id, person_id, before, after FROM audit_log WHERE entity LIKE 'backup%' ORDER BY rowid",
+            )
+            .all(),
+        ),
+      ),
+    );
+    const b = w.ctx("b");
+    out.set("review items", sansSnapshotIds(JSON.stringify(redact(b.viewer, listReviewItems(b)))));
+    return out;
+  }
+
+  beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), "pangolin-privacy-drill-"));
+    drills = [
+      await failedDrillWorld(seedJson, "one", dir, systemViewer("cli:backup")),
+      await failedDrillWorld(seedJson, "two", dir, systemViewer("cli:backup")),
+    ];
+    for (const d of drills) worlds.push(d);
+  });
+
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("fails the manifest check in both worlds, and the stored summary names only the check", () => {
+    for (const d of drills) {
+      const [verdict, ...rest] = d.verifications();
+      expect(rest).toEqual([]);
+      expect(verdict?.kind).toBe("drill");
+      expect(verdict?.ok).toBe(0);
+      expect(sansSnapshotIds(verdict?.summary ?? "")).toBe(
+        "the manifest check failed on snapshot <id>",
+      );
+    }
+  });
+
+  it("shows B the same stored verdict, /api/system/backup, audit rows and reads in both worlds", async () => {
+    const [left, right] = [await drillView(drills[0]), await drillView(drills[1])];
+    expect(left.get("GET /api/system/backup")).toContain("the manifest check failed");
+    expect(identicalProblems(left, right)).toEqual([]);
+  });
+
+  // KNOWN GAP (_bmad-output/implementation-artifacts/deferred-work.md): the manifest digest, which
+  // covers A's private rows, and the restic snapshot id reach B unmasked in unscoped
+  // `backup_snapshot` audit rows and in /api/system/backup. This pins exactly that.
+  it("known gap: B reads a manifest digest of A's private rows, and nothing else differs", async () => {
+    const unmasked = async (w: DrillWorld) => {
+      const b = w.ctx("b");
+      const rows = listAudit(b).filter((r) => r.entity === "backup_snapshot");
+      const backup = await w.request("b", "GET", "/api/system/backup");
+      return normaliseRequestIds(JSON.stringify([rows, backup.status, backup.text]));
+    };
+    const tokens = async (w: DrillWorld) => (await unmasked(w)).split(/[^0-9A-Za-z]+/);
+    const [left, right] = [await tokens(drills[0]), await tokens(drills[1])];
+    expect(left.length).toBe(right.length);
+    const differing = left.flatMap((token, i) => (token === right[i] ? [] : [token, right[i]]));
+    // If this fails the leak is closed: drop the digest mask from `sansSnapshotIds` and this test.
+    expect(differing.length, "the unmasked rows no longer differ").toBeGreaterThan(0);
+    for (const token of differing) {
+      expect(token, "a differing token that is not a digest or snapshot id").toMatch(
+        /^(?:[0-9a-f]{64}|[0-9a-f]{8})$/,
+      );
+    }
+  });
+
+  it("keeps the private account's id and figures out of every place the verdict reaches", async () => {
+    for (const [i, d] of drills.entries()) {
+      const account = d.db
+        .prepare("SELECT id FROM account WHERE name = 'Drill probe private'")
+        .pluck()
+        .get() as string;
+      const reads = await drillView(d);
+      // The verdict's own places: the backup status, the stored rows, the audit rows, the inbox.
+      const verdict = [...reads]
+        .filter(([key]) => !key.startsWith("GET /api/") || key === "GET /api/system/backup")
+        .filter(([key]) => !key.startsWith("use case"))
+        .map(([, text]) => text)
+        .join("\n");
+      const amount = i === 0 ? 1000 : 778_777;
+      for (const figure of [DRILL_TAMPER_CENTS, DRILL_TAMPER_CENTS - amount, amount]) {
+        expect(verdict.includes(String(figure)), `world ${i + 1} shows ${figure}`).toBe(false);
+      }
+      expect(verdict.includes(" cents"), `world ${i + 1} shows cents`).toBe(false);
+      // The account's id appears nowhere B reads, the audit log included.
+      const everything = [...reads.values()].join("\n");
+      expect(everything.includes(account), `world ${i + 1} shows ${account}`).toBe(false);
+    }
   });
 });

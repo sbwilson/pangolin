@@ -1,8 +1,13 @@
 language js
 
-// The read rule (AD-3, AD-4): account, transaction and audit_log are read only through
+// The read rule (AD-3, AD-4): the scoped tables (account, account_owner, transaction, split,
+// split_tag, balance_snapshot, review_item, transfer_group and audit_log) are read only through
 // privacy.ts, ledger-repos.ts and unit-of-work.ts, which compose the viewer's SQL projection.
-// biome.json applies this plugin to every source file except those three and tests.
+// biome.json applies this plugin to every source file except those three, tests, and the two
+// repositories below that apply a viewer filter of their own:
+//   classify-repos.ts    reads split and split_tag through `visibleTxnId(viewer)` or under the
+//                        tag's own scope filter.
+//   review-item-repo.ts  reads review_item only through `visibleReviewItems`.
 // Covers static imports (also `import type` and side-effect), `export ... from`, dynamic
 // `import()` and `require()`.
 or {
@@ -14,6 +19,6 @@ or {
   `import($source)`,
   `require($source)`
 } where {
-  $source <: r".*/schema/(?:account|transaction|audit-log)(?:\.[jt]s)?['\"]",
-  register_diagnostic(span=$source, message="Read account, transaction and audit_log only through privacy.ts, ledger-repos.ts and unit-of-work.ts, which compose the viewer's SQL projection (AD-3, AD-4).", severity="error")
+  $source <: r".*/schema/(?:account|account-owner|transaction|split|split-tag|balance-snapshot|review-item|transfer-group|audit-log)(?:\.[jt]s)?['\"]",
+  register_diagnostic(span=$source, message="Read the scoped tables (account, account_owner, transaction, split, split_tag, balance_snapshot, review_item, transfer_group, audit_log) only through privacy.ts, ledger-repos.ts and unit-of-work.ts, which compose the viewer's SQL projection (AD-3, AD-4).", severity="error")
 }
