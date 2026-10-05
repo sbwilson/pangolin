@@ -2,10 +2,15 @@ import { formatDate, formatInstant, parseDate } from "@pangolin/shared/temporal"
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
-import type { VisibleTransaction } from "../ports/unit-of-work.ts";
+import type { TransactionWithSplits, VisibleTransaction } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
 import type { LedgerTransaction } from "./list-transactions.ts";
-import { auditSnapshot, tagsOf, toLedgerTransaction } from "./transaction-view.ts";
+import {
+  auditSnapshot,
+  storedTransaction,
+  tagsOf,
+  toLedgerTransaction,
+} from "./transaction-view.ts";
 
 /** A hiding lasts at most this many calendar months from today. */
 export const MAX_HIDE_MONTHS = 12;
@@ -84,11 +89,12 @@ export function hideTransactionName(
       throw new AppError("Validation", "A name in a private account cannot be hidden");
     }
     requireHider(before, me, today);
+    const stored = storedTransaction(tx, ctx.viewer, before.id);
     const at = formatInstant(ctx.clock.now());
     if (!tx.transactions.setNameHidden(ctx.viewer, before.id, me, until, at)) {
       throw new AppError("NotFound", "Transaction not found");
     }
-    return finish(ctx, tx, audit, before, today);
+    return finish(ctx, tx, audit, stored, today);
   });
 }
 
@@ -111,11 +117,12 @@ export function unhideTransactionName(
       return toLedgerTransaction(ctx.viewer, before, tagsOf(tx, ctx.viewer, before));
     }
     requireHider(before, me, today);
+    const stored = storedTransaction(tx, ctx.viewer, before.id);
     const at = formatInstant(ctx.clock.now());
     if (!tx.transactions.setNameHidden(ctx.viewer, before.id, null, null, at)) {
       throw new AppError("NotFound", "Transaction not found");
     }
-    return finish(ctx, tx, audit, before, today);
+    return finish(ctx, tx, audit, stored, today);
   });
 }
 
@@ -123,7 +130,7 @@ function finish(
   ctx: UseCaseContext,
   tx: Parameters<Parameters<typeof write>[1]>[0],
   audit: Parameters<Parameters<typeof write>[1]>[1],
-  before: VisibleTransaction,
+  before: TransactionWithSplits,
   today: string,
 ): LedgerTransaction {
   const after = tx.transactions.findVisible(ctx.viewer, before.id, today);
@@ -134,7 +141,7 @@ function finish(
     accountId: before.accountId,
     action: "update",
     before: auditSnapshot(before),
-    after: auditSnapshot(after),
+    after: auditSnapshot(storedTransaction(tx, ctx.viewer, before.id)),
   });
   return toLedgerTransaction(ctx.viewer, after, tagsOf(tx, ctx.viewer, after));
 }

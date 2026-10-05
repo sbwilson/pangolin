@@ -6,7 +6,12 @@ import { write } from "../write.ts";
 import type { LedgerTransaction } from "./list-transactions.ts";
 import "./needs-review.ts";
 import { privateOwner } from "./split-targets.ts";
-import { auditSnapshot, tagsOf, toLedgerTransaction } from "./transaction-view.ts";
+import {
+  auditSnapshot,
+  storedTransaction,
+  tagsOf,
+  toLedgerTransaction,
+} from "./transaction-view.ts";
 
 export const setSplitTagsInput = z
   .object({
@@ -48,6 +53,7 @@ export function setSplitTags(ctx: UseCaseContext, input: SetSplitTagsInput): Led
     if (have.length === wanted.length && wanted.every((id) => have.includes(id))) {
       return toLedgerTransaction(ctx.viewer, before, tagsBefore);
     }
+    const stored = storedTransaction(tx, ctx.viewer, before.id);
     tx.tags.replaceForSplit(ctx.viewer, target.id, wanted, formatInstant(ctx.clock.now()));
     const after = tx.transactions.findVisible(ctx.viewer, before.id, today);
     if (after === undefined) throw new Error(`Transaction ${before.id} vanished during its update`);
@@ -57,8 +63,8 @@ export function setSplitTags(ctx: UseCaseContext, input: SetSplitTagsInput): Led
       entityId: before.id,
       accountId: before.accountId,
       action: "update",
-      before: auditSnapshot(before, tagsBefore),
-      after: auditSnapshot(after, tagsAfter),
+      before: auditSnapshot(stored, tagsBefore),
+      after: auditSnapshot(storedTransaction(tx, ctx.viewer, before.id), tagsAfter),
     });
     return toLedgerTransaction(ctx.viewer, after, tagsAfter);
   });

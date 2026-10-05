@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hiddenLabel, redact } from "./redact.ts";
+import { hiddenLabel, redact, scrubJson } from "./redact.ts";
 import { systemViewer } from "./system-viewer.ts";
 
 const viewer = systemViewer("cli:test");
@@ -36,6 +36,45 @@ describe("redact", () => {
     });
     expect(plain).toEqual(rows[1]);
     expect(other).toEqual(rows[2]);
+  });
+
+  it("writes the label into the audit JSON's name keys that are present, adding none", () => {
+    const label = "Hidden until 12 Mar 2027";
+    const before = JSON.stringify({ descriptionRaw: null, payeeId: null, notes: "keep" });
+    const after = JSON.stringify({ transferGroupId: null, notes: "keep" });
+    const [row] = redact(viewer, [
+      { entity: "transaction", hiddenUntil: "2027-03-12", before, after },
+    ]);
+    expect(JSON.parse(row?.before ?? "")).toEqual({
+      descriptionRaw: label,
+      payeeId: label,
+      notes: "keep",
+    });
+    expect(JSON.parse(row?.after ?? "")).toEqual({ transferGroupId: null, notes: "keep" });
+  });
+
+  it("fails closed on audit JSON it cannot read: the label, never the input", () => {
+    const label = "Hidden until 12 Mar 2027";
+    for (const bad of [
+      '{"descriptionRaw":"Surprise"',
+      "Surprise",
+      '["Surprise"]',
+      '"Surprise"',
+      "42",
+      7,
+    ]) {
+      expect(scrubJson(bad, label)).toBe(label);
+    }
+    expect(scrubJson(null, label)).toBeNull();
+    const [row] = redact(viewer, [
+      {
+        entity: "transaction",
+        hiddenUntil: "2027-03-12",
+        before: "not json Surprise",
+        after: null,
+      },
+    ]);
+    expect(row).toMatchObject({ before: label, after: null });
   });
 
   it("throws without a viewer", () => {

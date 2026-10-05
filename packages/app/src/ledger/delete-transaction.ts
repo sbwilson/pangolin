@@ -6,7 +6,7 @@ import { requireRecentAuth } from "../identity/reauth.ts";
 import { resolveReviewItemsForEntity } from "../system/review-items.ts";
 import { write } from "../write.ts";
 import { transactionEntityRef } from "./needs-review.ts";
-import { auditSnapshot } from "./transaction-view.ts";
+import { auditSnapshot, storedTransaction } from "./transaction-view.ts";
 
 export const deleteTransactionInput = z.object({ id: z.string().min(1).max(100) }).strict();
 export type DeleteTransactionInput = z.input<typeof deleteTransactionInput>;
@@ -24,6 +24,8 @@ export function deleteTransaction(ctx: UseCaseContext, input: DeleteTransactionI
   write(ctx, (tx, audit) => {
     const before = tx.transactions.findVisible(ctx.viewer, parsed.id, ctx.clock.today().toString());
     if (before === undefined) throw new AppError("NotFound", "Transaction not found");
+    // Read before the delete: `findStored` sees live rows only.
+    const stored = storedTransaction(tx, ctx.viewer, before.id);
     const at = formatInstant(ctx.clock.now());
     if (!tx.transactions.softDelete(ctx.viewer, before.id, at)) {
       throw new AppError("NotFound", "Transaction not found");
@@ -32,7 +34,7 @@ export function deleteTransaction(ctx: UseCaseContext, input: DeleteTransactionI
       entityRef: transactionEntityRef(before.id),
       resolution: "transaction deleted",
     });
-    const snapshot = auditSnapshot(before);
+    const snapshot = auditSnapshot(stored);
     audit({
       entity: "transaction",
       entityId: before.id,

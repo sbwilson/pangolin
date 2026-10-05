@@ -38,7 +38,7 @@ import {
   createTransferGroupRepo,
 } from "./ledger-repos.ts";
 import type { Db } from "./open.ts";
-import { auditHiddenUntil, visibleAudit } from "./privacy.ts";
+import { auditHiddenUntil, auditPayeeHidden, visibleAudit } from "./privacy.ts";
 import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
 import { auditLog } from "./schema/audit-log.ts";
@@ -113,11 +113,15 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
         const visible = visibleAudit(viewer);
         const hidden = auditHiddenUntil(viewer, today);
         guard(scope);
-        // While a name is hidden the JSON loses it here; `redact` writes the placeholder back.
+        // The stored JSON is the true state. While a name is hidden its keys are nulled here
+        // (kept, never added: `json_replace`), and `redact` writes the placeholder into them.
+        // A payee the viewer may not see (another person's scoped one) is nulled the same way.
+        // JSON that is not valid comes back NULL, never as raw text (fail closed).
         const scrub = (json: SQLiteColumn) =>
-          sql<
-            string | null
-          >`(CASE WHEN ${hidden} IS NOT NULL AND ${json} IS NOT NULL THEN json_remove(${json}, '$.descriptionRaw', '$.payeeId') ELSE ${json} END)`;
+          sql<string | null>`(CASE WHEN ${json} IS NULL OR NOT json_valid(${json}) THEN NULL
+            WHEN ${hidden} IS NOT NULL THEN json_replace(${json}, '$.descriptionRaw', NULL, '$.payeeId', NULL, '$.fingerprint', NULL, '$.externalId', NULL)
+            WHEN ${auditPayeeHidden(viewer, json)} = 1 THEN json_replace(${json}, '$.payeeId', NULL)
+            ELSE ${json} END)`;
         return orm
           .select({
             id: auditLog.id,

@@ -373,9 +373,17 @@ export interface TransactionWithSplits extends TransactionRow {
  * projection, so a name hidden from this viewer is already null. `redact` renders the
  * placeholder from `nameHidden` and `nameHiddenUntil`.
  */
-export interface VisibleTransaction extends Omit<TransactionRow, "descriptionRaw" | "payeeId"> {
+export interface VisibleTransaction
+  extends Omit<TransactionRow, "descriptionRaw" | "payeeId" | "fingerprint" | "externalId"> {
   /** Null while the name is hidden from the viewer. */
   readonly descriptionRaw: string | null;
+  /**
+   * Null while the name is hidden from the viewer: a v1 fingerprint hashes the description, so
+   * it would let the partner guess a hidden name.
+   */
+  readonly fingerprint: string | null;
+  /** Null while the name is hidden from the viewer (a bank's ID can carry the description). */
+  readonly externalId: string | null;
   /** Null while hidden, or when the payee is another person's scoped row. */
   readonly payeeId: Id<"Payee"> | null;
   /** The payee's name; null under the same conditions as `payeeId`. */
@@ -400,6 +408,12 @@ export interface TransactionRepo {
   insert(row: TransactionRow, splits: readonly SplitRow[]): void;
   /** The live transaction `viewer` may see, with its splits, as of `today`. Throws without a viewer. */
   findVisible(viewer: Viewer, id: string, today: string): VisibleTransaction | undefined;
+  /**
+   * The live transaction `viewer` may see, with its splits, as stored: no name is hidden. Only
+   * for audit snapshots and rules decided on stored columns inside a write; never returned to a
+   * viewer, so it is not in `ReadRepos`. Throws without a viewer.
+   */
+  findStored(viewer: Viewer, id: string): TransactionWithSplits | undefined;
   /**
    * Overwrites the posting date, amount, description and notes of the live transaction `viewer`
    * may see, and `updatedAt`. Never touches the fingerprint, status, `performedBy`, payee or
@@ -952,7 +966,10 @@ export interface LoginAttemptRepo {
 export interface AuditView extends AuditRow {
   /**
    * The date a transaction name in `before`/`after` stays hidden from this viewer, or null.
-   * While set, the SQL has removed `descriptionRaw` and `payeeId` from the JSON.
+   * While set, the SQL has nulled `descriptionRaw`, `payeeId`, `fingerprint` and `externalId`
+   * where the JSON has them (never adding one). Hidden or not, a `payeeId` naming a payee
+   * the viewer may not see (another person's scoped one) is nulled too, and JSON that is not
+   * valid comes back null.
    */
   readonly hiddenUntil: string | null;
 }

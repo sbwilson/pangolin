@@ -4,7 +4,12 @@ import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { write } from "../write.ts";
 import type { LedgerTransaction } from "./list-transactions.ts";
-import { auditSnapshot, tagsOf, toLedgerTransaction } from "./transaction-view.ts";
+import {
+  auditSnapshot,
+  storedTransaction,
+  tagsOf,
+  toLedgerTransaction,
+} from "./transaction-view.ts";
 
 const idInput = z.string().min(1).max(100);
 
@@ -44,13 +49,17 @@ export function createTransferGroup(
     if (a.transferGroupId !== null || b.transferGroupId !== null) {
       throw new AppError("Conflict", "A transaction is already in a transfer group");
     }
+    const sides = [a, b].map((before) => ({
+      before,
+      stored: storedTransaction(tx, ctx.viewer, before.id),
+    }));
     const at = formatInstant(ctx.clock.now());
     const groupId = ctx.newId<"TransferGroup">();
     tx.transferGroups.insert({ id: groupId, matchedBy: "manual", createdAt: at, updatedAt: at });
     if (tx.transactions.setTransferGroup([a.id, b.id], groupId, at) !== 2) {
       throw new Error("A transfer group's transactions vanished during its creation");
     }
-    const linked = [a, b].map((before) => {
+    const linked = sides.map(({ before, stored }) => {
       const after = tx.transactions.findVisible(ctx.viewer, before.id, today);
       if (after === undefined)
         throw new Error(`Transaction ${before.id} vanished during its update`);
@@ -59,8 +68,8 @@ export function createTransferGroup(
         entityId: before.id,
         accountId: before.accountId,
         action: "update",
-        before: auditSnapshot(before),
-        after: auditSnapshot(after),
+        before: auditSnapshot(stored),
+        after: auditSnapshot(storedTransaction(tx, ctx.viewer, before.id)),
       });
       return toLedgerTransaction(ctx.viewer, after, tagsOf(tx, ctx.viewer, after));
     });

@@ -141,8 +141,9 @@ export function updatePayee(ctx: UseCaseContext, input: UpdatePayeeInput): Payee
 export const deletePayeeInput = z.object({ id: idInput }).strict();
 
 /**
- * `classify.deletePayee`: soft-deletes the payee and its aliases. A payee that any transaction
- * references is refused with `Conflict`. Another person's scoped payee is `NotFound`.
+ * `classify.deletePayee`: soft-deletes the payee and its aliases, whether or not transactions
+ * reference it (decided in story 2.5): those transactions keep the payee, and its name and logo
+ * still show on them. Another person's scoped payee is `NotFound`.
  */
 export function deletePayee(ctx: UseCaseContext, input: z.input<typeof deletePayeeInput>): void {
   const parsed = parseInput(deletePayeeInput, input);

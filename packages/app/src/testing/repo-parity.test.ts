@@ -556,7 +556,11 @@ function scenario(
     nameHiddenUntil: until,
     nameHiddenBy: by,
   });
-  const tHide = txn(shared, "secret", { payeeId: pOwn, ...hide("2027-03-12", a) });
+  const tHide = txn(shared, "secret", {
+    payeeId: pOwn,
+    externalId: "ext-hide",
+    ...hide("2027-03-12", a),
+  });
   const tLift = txn(shared, "lifts", hide(TODAY, a));
   const tPrivHide = txn(privA, "priv-hidden", hide("2027-03-12", a));
   const tScoped = txn(shared, "scoped-payee", { payeeId: pOwn });
@@ -583,6 +587,8 @@ function scenario(
         row.logoAttachmentId,
         row.nameHidden,
         row.transferLabel,
+        row.fingerprint,
+        row.externalId,
       ]);
   out["priv.asA"] = tx(projected(asA));
   out["priv.asB"] = tx(projected(asB));
@@ -593,6 +599,71 @@ function scenario(
     (r) => r.transactions.findVisible(asB, tHide.id, "2027-03-12")?.descriptionRaw,
   );
   out["priv.privHiddenAsB"] = tx((r) => r.transactions.findVisible(asB, tPrivHide.id, TODAY));
+  // The stored row: real names for every viewer who may see the row, live rows only.
+  const stored = (v: Viewer, id: string) => (r: TxRepos) => {
+    const row = r.transactions.findStored(v, id);
+    return row === undefined
+      ? undefined
+      : [row.descriptionRaw, row.payeeId, row.fingerprint, row.externalId, row.splits.length];
+  };
+  out["priv.storedHiddenAsB"] = tx(stored(asB, tHide.id));
+  out["priv.storedHiddenAsA"] = tx(stored(asA, tHide.id));
+  out["priv.storedPrivateAsB"] = tx(stored(asB, tPrivHide.id));
+  out["priv.storedDeleted"] = tx(stored(system, tA.id));
+  out["priv.storedWithSplits"] = tx(stored(asB, t1.id));
+  step("priv.storedMissingViewer", (r) => {
+    try {
+      r.transactions.findStored(undefined as never, tHide.id);
+      return "no throw";
+    } catch (error) {
+      return error instanceof TypeError ? "TypeError" : "other";
+    }
+  });
+  // The audit scrub: name keys nulled while hidden, kept but never added.
+  const auditRow = (before: object | null, after: object | null) => ({
+    id: newId<"AuditLog">(),
+    at: T,
+    actor: `person:${b}`,
+    entity: "transaction",
+    entityId: tHide.id,
+    accountId: shared,
+    personId: null,
+    action: "update",
+    before: before === null ? null : JSON.stringify(before),
+    after: after === null ? null : JSON.stringify(after),
+  });
+  const full = {
+    descriptionRaw: "secret",
+    payeeId: pOwn,
+    fingerprint: "fp",
+    externalId: "ext-hide",
+    notes: "n",
+  };
+  tx((r) => {
+    r.audit.append(auditRow(full, { ...full, notes: "m" }));
+    r.audit.append(auditRow({ transferGroupId: "g", notes: null }, null));
+  });
+  const auditOf = (v: Viewer) => (r: TxRepos) =>
+    r.audit
+      .listVisible(v, TODAY)
+      .filter((row) => row.entityId === tHide.id)
+      .map((row) => [row.before, row.after, row.hiddenUntil]);
+  out["priv.auditAsB"] = tx(auditOf(asB));
+  out["priv.auditAsA"] = tx(auditOf(asA));
+  // Not hidden: a payee another person scoped is nulled for the partner, a shared one kept.
+  tx((r) => {
+    r.audit.append({
+      ...auditRow({ descriptionRaw: "scoped-payee", payeeId: pOwn }, { payeeId: pShared }),
+      entityId: tScoped.id,
+    });
+  });
+  const scopedAudit = (v: Viewer) => (r: TxRepos) =>
+    r.audit
+      .listVisible(v, TODAY)
+      .filter((row) => row.entityId === tScoped.id)
+      .map((row) => [row.before, row.after, row.hiddenUntil]);
+  out["priv.auditScopedAsB"] = tx(scopedAudit(asB));
+  out["priv.auditScopedAsA"] = tx(scopedAudit(asA));
   step("priv.missingViewer", (r) => {
     try {
       r.transactions.listVisible(undefined as never, TODAY);
@@ -1095,6 +1166,52 @@ describe("ledger and classification schema on SQLite", () => {
     expect(out["txn.updateBadPostedOnInvisible"]).toBe(false);
     expect(out["txn.badPostedOnAndDuplicate"]).toBe("error:CHECK");
     expect(out["w.missingViewer"]).toEqual(["TypeError", "TypeError", "TypeError", "TypeError"]);
+    // findStored: the true row for any viewer who may see it; never a private or deleted one.
+    const storedB = out["priv.storedHiddenAsB"] as unknown[];
+    expect(storedB[0]).toBe("secret");
+    expect(storedB[1]).not.toBeNull();
+    expect(storedB.slice(3)).toEqual(["ext-hide", 0]);
+    expect(out["priv.storedHiddenAsA"]).toEqual(storedB);
+    expect(out["priv.storedPrivateAsB"]).toBeUndefined();
+    expect(out["priv.storedDeleted"]).toBeUndefined();
+    expect((out["priv.storedWithSplits"] as unknown[]).at(-1)).toBe(1);
+    expect(out["priv.storedMissingViewer"]).toBe("TypeError");
+    // The hidden projection nulls fingerprint and externalId for B only.
+    const asB = (out["priv.asB"] as unknown[][]).filter((row) => row[5] === true);
+    expect(asB).toHaveLength(1);
+    expect(asB[0]?.slice(7)).toEqual([null, null]);
+    const asA = (out["priv.asA"] as unknown[][]).find((row) => row[0] === asB[0]?.[0]);
+    expect(asA?.[1]).toBe("secret");
+    expect(asA?.[8]).toBe("ext-hide");
+    expect(asA?.[7]).toEqual(expect.stringContaining("secret"));
+    // The audit scrub: keys kept and nulled while hidden, none added; the hider sees the truth.
+    const [full, transfer] = out["priv.auditAsB"] as [string | null, string | null, unknown][];
+    expect(JSON.parse(full?.[0] ?? "")).toEqual({
+      descriptionRaw: null,
+      payeeId: null,
+      fingerprint: null,
+      externalId: null,
+      notes: "n",
+    });
+    expect(JSON.parse(full?.[1] ?? "")).toMatchObject({ descriptionRaw: null, notes: "m" });
+    expect(full?.[2]).toBe("2027-03-12");
+    expect(JSON.parse(transfer?.[0] ?? "")).toEqual({ transferGroupId: "g", notes: null });
+    expect(transfer?.[1]).toBeNull();
+    const [fullA] = out["priv.auditAsA"] as [string | null, string | null, unknown][];
+    expect(JSON.parse(fullA?.[0] ?? "")).toMatchObject({
+      descriptionRaw: "secret",
+      fingerprint: "fp",
+    });
+    expect(fullA?.[2]).toBeNull();
+    const [scopedB] = out["priv.auditScopedAsB"] as [string, string, unknown][];
+    expect(JSON.parse(scopedB?.[0] ?? "")).toEqual({
+      descriptionRaw: "scoped-payee",
+      payeeId: null,
+    });
+    expect(JSON.parse(scopedB?.[1] ?? "").payeeId).not.toBeNull();
+    expect(scopedB?.[2]).toBeNull();
+    const [scopedA] = out["priv.auditScopedAsA"] as [string, string, unknown][];
+    expect(JSON.parse(scopedA?.[0] ?? "").payeeId).not.toBeNull();
   });
 
   it("keeps the scoped origin account in the database, never in a row", () => {

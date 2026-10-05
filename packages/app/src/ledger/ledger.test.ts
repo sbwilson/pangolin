@@ -275,7 +275,9 @@ describe("audit scope", () => {
     expect(seen?.hiddenUntil).toBe("2999-03-12");
     const json = JSON.parse(seen?.after ?? "{}");
     expect(json.descriptionRaw).toBe("Hidden until 12 Mar 2999");
-    expect(json.payeeId).toBeUndefined();
+    // The key is kept (nulled by the projection) and labelled; none is added.
+    expect(json.payeeId).toBe("Hidden until 12 Mar 2999");
+    expect(json.fingerprint).toBeUndefined();
     const own = listAudit(as(a)).find((r) => r.id === ("AU9" as never));
     expect(own?.hiddenUntil).toBeNull();
     expect(JSON.parse(own?.after ?? "{}").descriptionRaw).toBe("Secret name");
@@ -391,9 +393,13 @@ describe("ledger.updateTransaction", () => {
     const out = updateTransaction(as(b), { id, notes: "from B" });
     expect(uow.state.transactions[0]?.descriptionRaw).toBe("Surprise");
     expect(out.descriptionRaw).toBe("Hidden until 12 Mar 2999");
+    // The stored audit is the true state; hiding applies when it is read (retro I1).
     const entry = uow.state.audit.slice(audits)[0];
-    expect(entry?.before).not.toContain("Surprise");
-    expect(entry?.after).not.toContain("Surprise");
+    expect(JSON.parse(entry?.before ?? "{}").descriptionRaw).toBe("Surprise");
+    expect(JSON.parse(entry?.after ?? "{}")).toMatchObject({
+      descriptionRaw: "Surprise",
+      notes: "from B",
+    });
     expect(JSON.stringify(listAudit(as(b)))).not.toContain("Surprise");
   });
 

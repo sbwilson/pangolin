@@ -6,7 +6,12 @@ import { write } from "../write.ts";
 import { descriptionField, notesField, postedOnField } from "./fields.ts";
 import type { LedgerTransaction } from "./list-transactions.ts";
 import "./needs-review.ts";
-import { auditSnapshot, tagsOf, toLedgerTransaction } from "./transaction-view.ts";
+import {
+  auditSnapshot,
+  storedTransaction,
+  tagsOf,
+  toLedgerTransaction,
+} from "./transaction-view.ts";
 
 export const updateTransactionInput = z
   .object({
@@ -43,7 +48,9 @@ export function updateTransaction(
     const today = ctx.clock.today().toString();
     const before = tx.transactions.findVisible(ctx.viewer, parsed.id, today);
     if (before === undefined) throw new AppError("NotFound", "Transaction not found");
-    const imported = before.importId !== null || before.externalId !== null;
+    // Decided on the stored row: the projection nulls `externalId` while the name is hidden.
+    const stored = storedTransaction(tx, ctx.viewer, before.id);
+    const imported = stored.importId !== null || stored.externalId !== null;
     const touchesLine =
       parsed.postedOn !== undefined ||
       parsed.amountCents !== undefined ||
@@ -97,8 +104,8 @@ export function updateTransaction(
       entityId: before.id,
       accountId: before.accountId,
       action: "update",
-      before: auditSnapshot(before),
-      after: auditSnapshot(after),
+      before: auditSnapshot(stored),
+      after: auditSnapshot(storedTransaction(tx, ctx.viewer, before.id)),
     });
     return toLedgerTransaction(ctx.viewer, after, tagsOf(tx, ctx.viewer, after));
   });

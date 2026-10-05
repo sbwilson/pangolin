@@ -76,10 +76,18 @@ const transactionColumns = {
 
 /** The columns of a transaction read: name fields come from the privacy projection (AD-4). */
 function viewColumns(p: TxnProjection) {
-  const { descriptionRaw: _d, payeeId: _p, ...plain } = transactionColumns;
+  const {
+    descriptionRaw: _d,
+    payeeId: _p,
+    fingerprint: _f,
+    externalId: _e,
+    ...plain
+  } = transactionColumns;
   return {
     ...plain,
     descriptionRaw: p.descriptionRaw,
+    fingerprint: p.fingerprint,
+    externalId: p.externalId,
     payeeId: p.payeeId,
     payeeName: p.payeeName,
     logoAttachmentId: p.logoAttachmentId,
@@ -207,7 +215,10 @@ export function createAccountRepo(orm: Orm, check: () => void): AccountRepo {
 }
 
 /** Attaches each transaction's splits, in chunks: SQLite caps the number of bound parameters. */
-function withSplits(orm: Orm, rows: VisibleTransaction[]): VisibleTransaction[] {
+function withSplits<T extends { readonly id: string }>(
+  orm: Orm,
+  rows: T[],
+): (T & { readonly splits: SplitRow[] })[] {
   if (rows.length === 0) return [];
   const splits = new Map<string, SplitRow[]>();
   for (let i = 0; i < rows.length; i += 500) {
@@ -224,7 +235,7 @@ function withSplits(orm: Orm, rows: VisibleTransaction[]): VisibleTransaction[] 
       splits.set(s.transactionId, list);
     }
   }
-  return rows.map((row): VisibleTransaction => ({ ...row, splits: splits.get(row.id) ?? [] }));
+  return rows.map((row) => ({ ...row, splits: splits.get(row.id) ?? [] }));
 }
 
 /** SQLite hands the hidden flag back as 0 or 1. */
@@ -255,6 +266,17 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
         .where(and(eq(transaction.id, id), projection.where))
         .get();
       return row === undefined ? undefined : withSplits(orm, [toView(row)])[0];
+    },
+
+    findStored: (viewer, id) => {
+      const visible = liveVisibleTxn(viewer);
+      check();
+      const row = orm
+        .select(transactionColumns)
+        .from(transaction)
+        .where(and(eq(transaction.id, id), visible))
+        .get() as TransactionRow | undefined;
+      return row === undefined ? undefined : withSplits(orm, [row])[0];
     },
 
     update: (viewer, change) => {

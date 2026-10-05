@@ -2,7 +2,9 @@ import type {
   SplitRow,
   SplitTagged,
   TagRepo,
+  TransactionRepo,
   TransactionRow,
+  TransactionWithSplits,
   VisibleTransaction,
 } from "../ports/unit-of-work.ts";
 import { redact } from "../redact.ts";
@@ -10,27 +12,41 @@ import type { Viewer } from "../viewer.ts";
 import type { LedgerSplit, LedgerTransaction } from "./list-transactions.ts";
 
 /**
- * The stored columns of a transaction and its splits, for an audit row's before and after. Given
- * `tags`, each split also carries its tag IDs (sorted); the splits keep their provenance columns.
+ * The stored columns of a transaction and its splits, for an audit row's before and after: the
+ * row from `findStored`, never the actor's projection (hiding applies when the audit is read).
+ * Given `tags`, each split also carries its tag IDs (sorted): only the tags visible to the
+ * writer (`tagsOf` reads them in the writer's scope), so the tag record is not complete (a full
+ * record is deferred). The splits keep their provenance columns.
  */
 export function auditSnapshot(
-  row: VisibleTransaction,
+  row: TransactionWithSplits,
   tags?: readonly SplitTagged[],
-): Omit<TransactionRow, "descriptionRaw" | "payeeId"> & {
-  readonly descriptionRaw: string | null;
-  readonly payeeId: string | null;
+): TransactionRow & {
   readonly splits: readonly (SplitRow & { readonly tagIds?: readonly string[] })[];
 } {
-  const { payeeName: _n, logoAttachmentId: _l, nameHidden: _h, transferLabel: _t, ...stored } = row;
-  if (tags === undefined) return stored;
+  if (tags === undefined) return row;
   const grouped = tagsBySplit(tags);
   return {
-    ...stored,
-    splits: stored.splits.map((s) => ({
+    ...row,
+    splits: row.splits.map((s) => ({
       ...s,
       tagIds: (grouped.get(s.id) ?? []).map((t) => t.id).sort(),
     })),
   };
+}
+
+/**
+ * The stored row of a transaction the viewer may see, for an audit snapshot inside a write. The
+ * caller has already found it with `findVisible`, so a miss means it vanished mid-write.
+ */
+export function storedTransaction(
+  repos: { readonly transactions: Pick<TransactionRepo, "findStored"> },
+  viewer: Viewer,
+  id: string,
+): TransactionWithSplits {
+  const row = repos.transactions.findStored(viewer, id);
+  if (row === undefined) throw new Error(`Transaction ${id} vanished during its update`);
+  return row;
 }
 
 /** Groups `listForSplits` rows by split, keeping their order. */
