@@ -51,7 +51,7 @@ function setup() {
   const privateB = account("B private", true, [[b, 10000]]);
   const line = (ctx: UseCaseContext, accountId: string, amountCents: number, description = "x") =>
     createTransaction(ctx, { accountId, postedOn: "2026-09-01", amountCents, description });
-  return { uow, sys, a, b, as: viewerOf, shared, shared2, privateA, privateB, line };
+  return { uow, sys, a, b, as: viewerOf, shared, shared2, privateA, privateB, line, account };
 }
 
 const code = (c: string) => expect.objectContaining({ code: c });
@@ -98,6 +98,22 @@ describe("hide and unhide a transaction name", () => {
     expect(hideTransactionName(as(a), { id, until: "2027-09-27" }).id).toBe(id);
     expect(() => hideTransactionName(as(a), { id: mine })).toThrow(code("Validation"));
     expect(uow.state.transactions.find((t) => t.id === mine)?.nameHiddenUntil).toBeNull();
+  });
+
+  it("refuses a non-owner of a public account (Validation), writing and auditing nothing", () => {
+    const { as, a, b, account, line, uow } = setup();
+    const soloPublic = account("A only, public", false, [[a, 10000]]);
+    const id = line(as(a), soloPublic, -500, "Surprise");
+    // B sees the public account but does not own it.
+    expect(getTransaction(as(b), { id }).amountCents).toBe(-500);
+    const audits = uow.state.audit.length;
+    expect(() => hideTransactionName(as(b), { id })).toThrow(code("Validation"));
+    expect(uow.state.transactions.find((t) => t.id === id)).toMatchObject({
+      nameHiddenBy: null,
+      nameHiddenUntil: null,
+    });
+    expect(uow.state.audit).toHaveLength(audits);
+    expect(hideTransactionName(as(a), { id }).id).toBe(id);
   });
 
   it("lets the hider re-hide (restarting the clock) and unhide, and refuses the partner", () => {
@@ -266,26 +282,47 @@ describe("transfer groups", () => {
     expect(getTransaction(as(b), { id: out }).transferLabel).toBe("Transfer to Ann");
   });
 
-  it("keeps the private member's description out of the partner's audit after a group delete", () => {
+  it("keeps the private member's description out of the partner's audit after the owner's group delete", () => {
     const { as, a, b, shared, privateA, line } = setup();
     const sharedSide = line(as(a), shared, 2500, "Top up");
     const privateSide = line(as(a), privateA, -2500, "Secret savings");
     const [first] = createTransferGroup(as(a), { transactionIds: [sharedSide, privateSide] });
-    deleteTransferGroup(as(b), { id: first.transferGroupId as string });
+    deleteTransferGroup(as(a), { id: first.transferGroupId as string });
     const forB = JSON.stringify(listAudit(as(b)));
     expect(forB).not.toContain("Secret savings");
     expect(forB).not.toContain(privateSide);
   });
 
-  it("deletes a group whose other member the viewer cannot see", () => {
+  it("refuses a group whose other live member the viewer cannot see (NotFound), changing nothing", () => {
     const { as, a, b, shared, privateA, line, uow } = setup();
     const sharedSide = line(as(a), shared, 2500);
     const privateSide = line(as(a), privateA, -2500);
     const [pair] = [createTransferGroup(as(a), { transactionIds: [sharedSide, privateSide] })];
     const groupId = pair[0].transferGroupId as string;
-    deleteTransferGroup(as(b), { id: groupId });
+    const audits = uow.state.audit.length;
+    const rows = JSON.stringify(uow.state.transactions);
+    expect(() => deleteTransferGroup(as(b), { id: groupId })).toThrow(code("NotFound"));
+    // The same answer as a group that does not exist.
+    expect(() => deleteTransferGroup(as(b), { id: "nope" })).toThrow(code("NotFound"));
+    expect(JSON.stringify(uow.state.transactions)).toBe(rows);
+    expect(uow.state.transferGroups).toHaveLength(1);
+    expect(uow.state.audit).toHaveLength(audits);
+    expect(uow.state.transactions.find((t) => t.id === privateSide)?.transferGroupId).toBe(groupId);
+    // The owner still can.
+    deleteTransferGroup(as(a), { id: groupId });
+    expect(uow.state.transferGroups).toHaveLength(0);
+  });
+
+  it("deletes a group whose live members are all visible, with one audit per member", () => {
+    const { as, a, b, shared, shared2, line, uow } = setup();
+    const x = line(as(a), shared, -1000);
+    const y = line(as(a), shared2, 1000);
+    const [pair] = [createTransferGroup(as(a), { transactionIds: [x, y] })];
+    const audits = uow.state.audit.length;
+    deleteTransferGroup(as(b), { id: pair[0].transferGroupId as string });
     expect(uow.state.transactions.every((t) => t.transferGroupId === null)).toBe(true);
     expect(uow.state.transferGroups).toHaveLength(0);
+    expect(uow.state.audit.slice(audits).map((r) => r.entityId)).toEqual([x, y].sort());
   });
 
   it("audits each affected transaction with accountId, before and after", () => {
@@ -309,6 +346,83 @@ describe("transfer groups", () => {
       expect(JSON.parse(unlink?.before ?? "{}").transferGroupId).toBe(groupId);
       expect(JSON.parse(unlink?.after ?? "{}").transferGroupId).toBeNull();
     }
+  });
+});
+
+describe("deleting one side of a transfer", () => {
+  const audits = (uow: ReturnType<typeof setup>["uow"], id: string) =>
+    uow.state.audit.filter((r) => r.entityId === id && r.action === "update");
+
+  it("unlinks the survivor and the deleted row, deletes the group, and audits the survivor", () => {
+    const { as, a, b, shared, shared2, line, uow } = setup();
+    const x = line(as(a), shared, -1000);
+    const y = line(as(a), shared2, 1000);
+    const [pair] = [createTransferGroup(as(a), { transactionIds: [x, y] })];
+    const groupId = pair[0].transferGroupId as string;
+    const before = audits(uow, y).length;
+    deleteTransaction(as(b), { id: x });
+    expect(uow.state.transferGroups).toHaveLength(0);
+    expect(uow.state.transactions.every((t) => t.transferGroupId === null)).toBe(true);
+    const del = uow.state.audit.find((r) => r.entityId === x && r.action === "delete");
+    expect(JSON.parse(del?.before ?? "{}").transferGroupId).toBe(groupId);
+    expect(JSON.parse(del?.after ?? "{}").transferGroupId).toBeNull();
+    const survivor = audits(uow, y).slice(before);
+    expect(survivor).toHaveLength(1);
+    expect(survivor[0]).toMatchObject({ accountId: shared2, personId: null });
+    expect(JSON.parse(survivor[0]?.before ?? "{}").transferGroupId).toBe(groupId);
+    expect(JSON.parse(survivor[0]?.after ?? "{}").transferGroupId).toBeNull();
+    // The survivor can join a new group.
+    const z = line(as(a), shared, -1000);
+    expect(
+      createTransferGroup(as(a), { transactionIds: [z, y] })[1].transferGroupId,
+    ).not.toBeNull();
+  });
+
+  it("scopes the survivor's audit to the private account's owner", () => {
+    const { as, a, b, shared, privateA, sys, line, uow } = setup();
+    const sharedSide = line(as(a), shared, 2500, "Top up");
+    const privateSide = line(as(a), privateA, -2500, "Secret savings");
+    createTransferGroup(as(a), { transactionIds: [sharedSide, privateSide] });
+    const before = audits(uow, privateSide).length;
+    // B deletes the shared side; the survivor is in A's private account.
+    deleteTransaction(as(b), { id: sharedSide });
+    expect(uow.state.transferGroups).toHaveLength(0);
+    expect(uow.state.transactions.find((t) => t.id === privateSide)?.transferGroupId).toBeNull();
+    const row = audits(uow, privateSide).slice(before);
+    expect(row).toHaveLength(1);
+    expect(row[0]).toMatchObject({ accountId: privateA, personId: a });
+    const forB = JSON.stringify(listAudit(as(b)));
+    expect(forB).not.toContain(privateSide);
+    expect(forB).not.toContain("Secret savings");
+    const forA = listAudit(as(a)).filter((r) => r.entityId === privateSide);
+    expect(forA.length).toBeGreaterThan(0);
+    expect(listAudit(sys).some((r) => r.entityId === privateSide)).toBe(true);
+  });
+
+  it("scopes the survivor's audit to its owner when the owner deletes the shared side", () => {
+    const { as, a, b, shared, privateA, line, uow } = setup();
+    const sharedSide = line(as(a), shared, 2500, "Top up");
+    const privateSide = line(as(a), privateA, -2500, "Secret savings");
+    createTransferGroup(as(a), { transactionIds: [sharedSide, privateSide] });
+    const before = audits(uow, privateSide).length;
+    deleteTransaction(as(a), { id: sharedSide });
+    expect(uow.state.transferGroups).toHaveLength(0);
+    expect(uow.state.transactions.find((t) => t.id === privateSide)?.transferGroupId).toBeNull();
+    const row = audits(uow, privateSide).slice(before);
+    expect(row).toHaveLength(1);
+    expect(row[0]).toMatchObject({ accountId: privateA, personId: a });
+    expect(listAudit(as(a)).some((r) => r.entityId === privateSide)).toBe(true);
+    const forB = JSON.stringify(listAudit(as(b)));
+    expect(forB).not.toContain(privateSide);
+    expect(forB).not.toContain("Secret savings");
+  });
+
+  it("leaves a row with no group alone", () => {
+    const { as, a, shared, line, uow } = setup();
+    const x = line(as(a), shared, -1000);
+    const count = uow.state.audit.length;
+    deleteTransaction(as(a), { id: x });
+    expect(uow.state.audit).toHaveLength(count + 1);
   });
 });
 

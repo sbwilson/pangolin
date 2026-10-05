@@ -1386,10 +1386,22 @@ function transferGroupRepo(working: MemoryState, check: () => void): TransferGro
       working.transferGroups.splice(index, 1);
       return true;
     },
-    members: (id) => {
+    members: (viewer, id) => {
+      requireViewer(viewer);
+      check();
+      const live = working.transactions
+        .filter((t) => t.transferGroupId === id && !working.deleted.has(t.id))
+        .sort((a, b) => byText(a.id, b.id));
+      const rows = live.filter((t) => {
+        const account = working.accounts.find((row) => row.id === t.accountId);
+        return account !== undefined && accountVisible(working, viewer, account);
+      });
+      return { rows, hidden: live.length - rows.length };
+    },
+    upkeepMembers: (id) => {
       check();
       return working.transactions
-        .filter((t) => t.transferGroupId === id)
+        .filter((t) => t.transferGroupId === id && !working.deleted.has(t.id))
         .sort((a, b) => byText(a.id, b.id));
     },
   };

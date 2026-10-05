@@ -200,13 +200,6 @@ export const MANIFEST: readonly ManifestEntry[] = [
   write("PUT", "/api/ledger/transactions/:id/name-hidden", {
     params: { id: "transaction" },
     body: () => ({}),
-    knownGaps: [
-      {
-        gap: "Hiding a name does not check who owns the account: a partner can hide a name on a transaction in a shared account the other partner uses.",
-        reason:
-          "Both owners of a shared account may see the name; whether only the payer may hide it is a product decision. No private data is exposed.",
-      },
-    ],
   }),
   write("DELETE", "/api/ledger/transactions/:id/name-hidden", { params: { id: "transaction" } }),
   write("POST", "/api/ledger/transfer-groups", {
@@ -216,13 +209,6 @@ export const MANIFEST: readonly ManifestEntry[] = [
   }),
   write("DELETE", "/api/ledger/transfer-groups/:id", {
     params: { id: "transferGroup" },
-    knownGaps: [
-      {
-        gap: "A partner who sees one side of a transfer whose other side is in the first partner's private account can delete the group, which unlinks the private side.",
-        reason:
-          "The group is visible through its shared member, so the partner is a legitimate editor of it. Whether a private counterpart should block that is a product decision. The private side's amounts and names stay hidden.",
-      },
-    ],
   }),
 
   read("/api/accounts/institutions"),

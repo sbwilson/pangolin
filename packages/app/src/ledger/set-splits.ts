@@ -69,7 +69,8 @@ function resolve<T>(
  * private account every split's beneficiary is the owner (omitted means the owner; any other
  * is `Validation`); in a public account it is `shared` unless given. A missing, deleted or
  * other-scope category, activity or tax category, an unknown split ID and a partner-private
- * transaction are `NotFound`. Audited as one `update` of `transaction` with its `accountId`,
+ * transaction are `NotFound`; an owner-scoped activity on a public account is `Conflict` (AD-18),
+ * and a non-null `propertyId` is `Validation` (nothing is written). Audited as one `update` of `transaction` with its `accountId`,
  * before and after snapshots carrying the splits, their sources and tag IDs. Returns the
  * transaction as `getTransaction` does, whose `remainingCents` is 0.
  */
@@ -91,6 +92,10 @@ export function setSplits(ctx: UseCaseContext, input: SetSplitsInput): LedgerTra
       if (seen.has(s.id)) throw fail("A split appears twice");
       seen.add(s.id);
     }
+    // Nothing exists to reference until the property epic (epic-loans-property) ships.
+    if (parsed.splits.some((s) => s.propertyId !== undefined && s.propertyId !== null)) {
+      throw new AppError("Validation", "A split cannot be linked to a property yet");
+    }
     if (before.amountCents !== 0 && parsed.splits.some((s) => s.amountCents === 0)) {
       throw fail("A split cannot be zero unless the transaction is");
     }
@@ -106,7 +111,7 @@ export function setSplits(ctx: UseCaseContext, input: SetSplitsInput): LedgerTra
         requireCategory(tx, ctx.viewer, s.categoryId);
       }
       if (s.activityId && s.activityId !== old?.activityId) {
-        requireActivity(tx, ctx.viewer, s.activityId);
+        requireActivity(tx, ctx.viewer, s.activityId, owner === null);
       }
       if (s.taxCategoryId && s.taxCategoryId !== old?.taxCategoryId) {
         requireTaxCategory(tx, ctx.viewer, s.taxCategoryId);

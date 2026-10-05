@@ -589,12 +589,28 @@ export function createTransferGroupRepo(orm: Orm, check: () => void): TransferGr
       check();
       return orm.delete(transferGroup).where(eq(transferGroup.id, id)).run().changes === 1;
     },
-    members: (id) => {
+    members: (viewer, id) => {
+      const visible = liveVisibleTxn(viewer);
+      check();
+      const rows = orm
+        .select(transactionColumns)
+        .from(transaction)
+        .where(and(eq(transaction.transferGroupId, id), visible))
+        .orderBy(asc(transaction.id))
+        .all() as TransactionRow[];
+      const live = orm
+        .select({ id: transaction.id })
+        .from(transaction)
+        .where(and(eq(transaction.transferGroupId, id), isNull(transaction.deletedAt)))
+        .all().length;
+      return { rows, hidden: live - rows.length };
+    },
+    upkeepMembers: (id) => {
       check();
       return orm
         .select(transactionColumns)
         .from(transaction)
-        .where(eq(transaction.transferGroupId, id))
+        .where(and(eq(transaction.transferGroupId, id), isNull(transaction.deletedAt)))
         .orderBy(asc(transaction.id))
         .all() as TransactionRow[];
     },

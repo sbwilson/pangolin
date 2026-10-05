@@ -62,7 +62,8 @@ function requireHider(row: VisibleTransaction, me: string, today: string): void 
  * owner of a shared account until `until` (`YYYY-MM-DD`, after today and at most 12 calendar
  * months out; default the 12-month maximum). Sets `nameHiddenBy` to the viewer; re-hiding
  * replaces both columns. While another person's hiding is active it is a `Conflict`; a lapsed
- * one may be replaced. A private account is `Validation`; a missing, deleted or partner-private
+ * one may be replaced. A private account, or a viewer who is not an owner of the account, is
+ * `Validation`; a missing, deleted or partner-private
  * transaction is `NotFound`. Amount, date, category, tags and notes are untouched. Audited as one
  * `update` of `transaction` with its `accountId`.
  */
@@ -87,6 +88,9 @@ export function hideTransactionName(
     if (account === undefined) throw new AppError("NotFound", "Transaction not found");
     if (account.isPrivate) {
       throw new AppError("Validation", "A name in a private account cannot be hidden");
+    }
+    if (!tx.accounts.owners(account.id).some((owner) => owner.personId === me)) {
+      throw new AppError("Validation", "Only an owner of the account can hide a name");
     }
     requireHider(before, me, today);
     const stored = storedTransaction(tx, ctx.viewer, before.id);

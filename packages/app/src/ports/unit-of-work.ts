@@ -575,10 +575,18 @@ export interface TransferGroupRepo {
   /** Deletes the group row; false when absent. Clear its members first (foreign key). */
   delete(id: string): boolean;
   /**
-   * Every transaction in the group, live or deleted, whatever the viewer (raw, for clearing the
-   * link), by ID.
+   * The live transactions in the group that `viewer` may see, by ID, and how many other live
+   * ones it may not (`hidden`). A soft-deleted member is neither. The caller refuses when
+   * `hidden > 0`, so a refusal names nothing about a row the viewer cannot see.
    */
-  members(id: string): TransactionRow[];
+  members(viewer: Viewer, id: string): { rows: TransactionRow[]; hidden: number };
+  /**
+   * Every live transaction in the group, whatever the viewer, by ID (raw). For upkeep that must
+   * reach a member the viewer cannot see, such as unlinking a survivor when its other side is
+   * deleted. A use-case read on this port; never behind `SystemViewer` on the HTTP path (AD-6),
+   * and not part of `ReadRepos`.
+   */
+  upkeepMembers(id: string): TransactionRow[];
 }
 
 export const CATEGORY_GROUP_KINDS = ["income", "expense", "transfer"] as const;

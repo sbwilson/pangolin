@@ -257,6 +257,34 @@ function scenario(
     r.transferGroups.find(asB, g2)?.id === g2,
     r.transferGroups.find(system, g2)?.id === g2,
   ]);
+  // Members of a group: live only, split into what the viewer sees and the count it does not.
+  const g4 = newId<"TransferGroup">();
+  const m1 = txn(shared, "m-shared", { transferGroupId: g4 });
+  const m2 = txn(privB, "m-privB", { transferGroupId: g4 });
+  const m3 = txn(shared, "m-deleted", { transferGroupId: g4 });
+  tx((r) => {
+    r.transferGroups.insert({ id: g4, matchedBy: "manual", createdAt: T, updatedAt: T });
+    for (const row of [m1, m2, m3]) r.transactions.insert(row, []);
+  });
+  const membersOf = (v: Viewer) => (r: TxRepos) => {
+    const { rows, hidden } = r.transferGroups.members(v, g4);
+    return { rows: rows.map((row) => row.descriptionRaw), hidden };
+  };
+  out["group.members.beforeDelete"] = tx((r) => [
+    membersOf(asA)(r),
+    membersOf(asB)(r),
+    membersOf(system)(r),
+    r.transferGroups.upkeepMembers(g4).map((row) => row.descriptionRaw),
+  ]);
+  out["group.members.softDelete"] = tx((r) => r.transactions.softDelete(system, m3.id, T));
+  out["group.members.afterDelete"] = tx((r) => [
+    membersOf(asA)(r),
+    membersOf(asB)(r),
+    membersOf(system)(r),
+    r.transferGroups.upkeepMembers(g4).map((row) => row.descriptionRaw),
+    r.transferGroups.members(asA, newId<"TransferGroup">()),
+    r.transferGroups.upkeepMembers(newId<"TransferGroup">()),
+  ]);
   step("txn.unknownGroup", (r) =>
     r.transactions.insert(txn(shared, "g", { transferGroupId: newId() }), []),
   );
@@ -1295,6 +1323,20 @@ describe("ledger and classification schema on SQLite", () => {
     expect(out["txn.reinsertDeleted"]).toBe("error:UNIQUE");
     expect(out["reviewItem.unknownAccount"]).toBe("error:FOREIGN KEY");
     expect(out["reviewItem.knownAccount"]).toBe(true);
+    expect(out["group.members.beforeDelete"]).toEqual([
+      { rows: ["m-shared", "m-deleted"], hidden: 1 },
+      { rows: ["m-shared", "m-privB", "m-deleted"], hidden: 0 },
+      { rows: ["m-shared", "m-privB", "m-deleted"], hidden: 0 },
+      ["m-shared", "m-privB", "m-deleted"],
+    ]);
+    expect(out["group.members.afterDelete"]).toEqual([
+      { rows: ["m-shared"], hidden: 1 },
+      { rows: ["m-shared", "m-privB"], hidden: 0 },
+      { rows: ["m-shared", "m-privB"], hidden: 0 },
+      ["m-shared", "m-privB"],
+      { rows: [], hidden: 0 },
+      [],
+    ]);
     expect(out["payee.sameNameInOwnerScope"]).toBe("ok");
     expect(out["payee.sameNameTwiceShared"]).toBe("error:UNIQUE");
     expect(out["payee.sameNameTwiceOwner"]).toBe("error:UNIQUE");

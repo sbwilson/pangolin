@@ -494,7 +494,7 @@ describe("the route manifest", () => {
       "GET /api/x: exempt entries need a written reason",
     ]);
     const gaps = personEntries().flatMap((entry) => entry.knownGaps ?? []);
-    expect(gaps).toHaveLength(4);
+    expect(gaps).toHaveLength(2);
   });
 });
 
@@ -766,7 +766,7 @@ describe("a deliberate leak", () => {
   });
 });
 
-describe("cross-scope cascades left for a product decision", () => {
+describe("cross-scope cascades left for a product decision, and the closed transfer-group route", () => {
   let w1: World;
   let w2: World;
   beforeAll(() => {
@@ -795,11 +795,21 @@ describe("cross-scope cascades left for a product decision", () => {
       results.push(out);
     }
     const [left, right] = results as [Captured[], Captured[]];
-    expect(left.map((r) => r.status)).toEqual([200, 200, 204, 200]);
+    // The transfer-group delete is refused (NotFound): the group reaches A's private account.
+    expect(left.map((r) => r.status)).toEqual([200, 200, 404, 200]);
     expect(sameBytes(right)).toEqual(sameBytes(left));
     expect(identicalProblems(await readTranscript(w1), await readTranscript(w2))).toEqual([]);
     expect(auditProblems(w2)).toEqual([]);
-    // The gaps are real: A's alias on the shared payee went with it, and A's payee lost its default.
+    // The refused group delete left A's private side linked.
+    const stillLinked = w2.db
+      .prepare(
+        `SELECT COUNT(*) FROM "transaction" t JOIN account a ON a.id = t.account_id
+         WHERE a.is_private = 1 AND t.transfer_group_id = ?`,
+      )
+      .pluck()
+      .get(w2.ok("transferGroup", 1));
+    expect(stillLinked).toBeGreaterThan(0);
+    // The remaining gaps are real: A's alias on the shared payee went with it, and A's payee lost its default.
     const aliasGone = w2.db
       .prepare("SELECT deleted_at FROM payee_alias WHERE pattern = 'DELTA ON SHARED'")
       .pluck()

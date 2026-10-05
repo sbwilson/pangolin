@@ -94,6 +94,9 @@ describe("provenance.mayOverwrite", () => {
   });
 });
 
+const firstSplit = (ctx: UseCaseContext, id: string) =>
+  getTransaction(ctx, { id }).splits[0]?.id as string;
+
 describe("ledger.setSplits", () => {
   it("replaces splits that sum to the amount, keeping ids, provenance and tags", () => {
     const { uow, a, of, shared, cat, create } = setup();
@@ -245,6 +248,105 @@ describe("ledger.setSplits", () => {
     expect(codeOf(run({ activityId: mine }))).toBe("NotFound");
     expect(codeOf(run({ taxCategoryId: "nope" }))).toBe("NotFound");
     expect(codeOf(run({ categoryId: cat }))).toBe("no throw");
+  });
+
+  it("refuses an owner-scoped activity on a shared split (Conflict), for either partner", () => {
+    const { uow, a, of, privateA, shared, create } = setup();
+    const id = create(shared);
+    const sid = firstSplit(of(a), id);
+    const mine = createActivity(of(a), { name: "Mine", originAccountId: privateA }).id;
+    const audits = uow.state.audit.length;
+    const before = JSON.stringify(uow.state.splits);
+    expect(
+      codeOf(() =>
+        setSplitField(of(a), { transactionId: id, splitId: sid, field: "activity", value: mine }),
+      ),
+    ).toBe("Conflict");
+    expect(
+      codeOf(() =>
+        setSplits(of(a), { transactionId: id, splits: [{ amountCents: -1000, activityId: mine }] }),
+      ),
+    ).toBe("Conflict");
+    expect(
+      codeOf(() =>
+        setSplits(of(a), {
+          transactionId: id,
+          splits: [
+            { id: sid, amountCents: -400 },
+            { amountCents: -600, activityId: mine },
+          ],
+        }),
+      ),
+    ).toBe("Conflict");
+    expect(uow.state.audit).toHaveLength(audits);
+    expect(JSON.stringify(uow.state.splits)).toBe(before);
+  });
+
+  it("answers NotFound, not Conflict, to the partner who cannot see the scoped activity", () => {
+    const { a, b, of, privateA, shared, create } = setup();
+    const id = create(shared);
+    const sid = firstSplit(of(a), id);
+    const mine = createActivity(of(a), { name: "Mine", originAccountId: privateA }).id;
+    expect(
+      codeOf(() =>
+        setSplitField(of(b), { transactionId: id, splitId: sid, field: "activity", value: mine }),
+      ),
+    ).toBe("NotFound");
+  });
+
+  it("accepts the owner's scoped activity in their private account, and shared ones anywhere", () => {
+    const { uow, a, of, privateA, shared, activity, create } = setup();
+    const mine = createActivity(of(a), { name: "Mine", originAccountId: privateA }).id;
+    const priv = create(privateA);
+    const psid = firstSplit(of(a), priv);
+    expect(
+      setSplitField(of(a), {
+        transactionId: priv,
+        splitId: psid,
+        field: "activity",
+        value: mine,
+      }).applied,
+    ).toBe(true);
+    const priv2 = create(privateA);
+    setSplits(of(a), {
+      transactionId: priv2,
+      splits: [{ amountCents: -1000, activityId: mine }],
+    });
+    const pub = create(shared);
+    setSplitField(of(a), {
+      transactionId: pub,
+      splitId: firstSplit(of(a), pub),
+      field: "activity",
+      value: activity,
+    });
+    expect(uow.state.splits.filter((s) => s.activityId === mine)).toHaveLength(2);
+    expect(uow.state.splits.filter((s) => s.activityId === activity)).toHaveLength(1);
+  });
+
+  it("refuses a property on any split, writing nothing", () => {
+    const { uow, a, of, privateA, shared, create } = setup();
+    const audits = uow.state.audit.length;
+    for (const account of [shared, privateA]) {
+      const id = create(account);
+      const before = JSON.stringify(uow.state.splits);
+      const audited = uow.state.audit.length;
+      expect(
+        codeOf(() =>
+          setSplits(of(a), {
+            transactionId: id,
+            splits: [{ amountCents: -1000, propertyId: "01J0000000000000000000PROP" }],
+          }),
+        ),
+      ).toBe("Validation");
+      expect(JSON.stringify(uow.state.splits)).toBe(before);
+      expect(uow.state.audit).toHaveLength(audited);
+      // A null property is still fine.
+      expect(
+        setSplits(of(a), { transactionId: id, splits: [{ amountCents: -1000, propertyId: null }] })
+          .remainingCents,
+      ).toBe(0);
+    }
+    expect(uow.state.audit.length).toBeGreaterThan(audits);
   });
 
   it("keeps an omitted field, clears on null, and records the user source on change only", () => {

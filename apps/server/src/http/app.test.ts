@@ -545,6 +545,102 @@ describe("name hiding and transfer groups", () => {
     expect(noop.status).toBe(200);
   });
 
+  it("answers 404 to a group delete that reaches the partner's private row, and leaves it linked", async () => {
+    const db = openDb();
+    const { sys, sam, mine, other } = seed(db);
+    const d = deps(db);
+    const asSam: UseCaseContext = { ...sys, viewer: personViewer(sam, d.clock.now()) };
+    const samPrivate = createAccount(asSam, {
+      name: "Sam savings",
+      type: "savings",
+      currency: "AUD",
+      isPrivate: true,
+      owners: [{ personId: sam, shareBp: 10000 }],
+    });
+    const secret = createTransaction(asSam, {
+      accountId: samPrivate,
+      postedOn: "2026-09-01",
+      amountCents: -500,
+      description: "Secret savings",
+    });
+    const [first] = createTransferGroup(asSam, { transactionIds: [other, secret] });
+    const groupId = first.transferGroupId as string;
+    const res = await send(db, "DELETE", `/api/ledger/transfer-groups/${groupId}`);
+    expect(res.status).toBe(404);
+    const body = await res.text();
+    expect(body).toContain("NotFound");
+    expect(body).not.toContain("Secret savings");
+    expect(body).not.toContain(secret);
+    const missing = await send(db, "DELETE", "/api/ledger/transfer-groups/nope");
+    expect(await missing.text()).toBe(body);
+    expect(
+      db.prepare('SELECT transfer_group_id FROM "transaction" WHERE id = ?').pluck().get(secret),
+    ).toBe(groupId);
+    expect(mine).toBeDefined();
+  });
+
+  it("answers 400 to a hide by a non-owner of a public account", async () => {
+    const db = openDb();
+    const { sys, sam } = seed(db);
+    const samPublic = createAccount(sys, {
+      name: "Sam only, public",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [{ personId: sam, shareBp: 10000 }],
+    });
+    const id = createTransaction(sys, {
+      accountId: samPublic,
+      postedOn: "2026-09-01",
+      amountCents: -500,
+      description: "Gift",
+    });
+    const res = await send(db, "PUT", `/api/ledger/transactions/${id}/name-hidden`, {});
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("Only an owner of the account can hide a name");
+    expect(
+      db.prepare('SELECT name_hidden_by FROM "transaction" WHERE id = ?').pluck().get(id),
+    ).toBeNull();
+  });
+
+  it("answers 409 to a scoped activity on a shared split, and 400 to a property", async () => {
+    const db = openDb();
+    const { sys, mine } = seed(db);
+    const d = deps(db);
+    const asAlex: UseCaseContext = { ...sys, viewer: personViewer(alex as never, d.clock.now()) };
+    const alexPrivate = createAccount(asAlex, {
+      name: "Alex private",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: true,
+      owners: [{ personId: alex, shareBp: 10000 }],
+    });
+    const activity = createActivity(asAlex, { name: "Trip", originAccountId: alexPrivate }).id;
+    const splitId = db
+      .prepare("SELECT id FROM split WHERE transaction_id = ?")
+      .pluck()
+      .get(mine) as string;
+    const audits = db.prepare("SELECT count(*) FROM audit_log").pluck().get();
+    const patch = await send(db, "PATCH", `/api/ledger/transactions/${mine}/splits/${splitId}`, {
+      field: "activity",
+      value: activity,
+    });
+    expect(patch.status).toBe(409);
+    expect(await patch.text()).toContain("This activity cannot be used on a shared account yet");
+    const put = await send(db, "PUT", `/api/ledger/transactions/${mine}/splits`, {
+      splits: [{ amountCents: -500, activityId: activity }],
+    });
+    expect(put.status).toBe(409);
+    const prop = await send(db, "PUT", `/api/ledger/transactions/${mine}/splits`, {
+      splits: [{ amountCents: -500, propertyId: "01J0000000000000000000PROP" }],
+    });
+    expect(prop.status).toBe(400);
+    expect(db.prepare("SELECT count(*) FROM audit_log").pluck().get()).toBe(audits);
+    expect(
+      db.prepare("SELECT count(*) FROM split WHERE activity_id IS NOT NULL").pluck().get(),
+    ).toBe(0);
+  });
+
   it("is read-only in demo mode", async () => {
     const db = openDb();
     const { mine, other } = seed(db);

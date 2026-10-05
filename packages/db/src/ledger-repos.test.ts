@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createAccount,
+  createActivity,
   createCategory,
   createCategoryGroup,
   createIdGenerator,
@@ -15,6 +16,7 @@ import {
   deleteTransferGroup,
   getTransaction,
   hideTransactionName,
+  listAudit,
   listTransactions,
   personViewer,
   raiseReviewItem,
@@ -463,16 +465,135 @@ describe("hidden names and transfer groups on SQLite", () => {
     expect(entries.map((e) => e.account_id)).toEqual([shared, shared]);
   });
 
-  it("deletes a group that has a soft-deleted member, clearing both rows", () => {
+  it("unlinks the survivor and deletes the group when one side is deleted", () => {
+    const x = line(as(a), shared, -500);
+    const joint2 = createAccount(sys, {
+      name: "Joint 2",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [
+        { personId: a, shareBp: 5000 },
+        { personId: b, shareBp: 5000 },
+      ],
+    });
+    const y = line(as(a), joint2, 500);
+    const [first] = createTransferGroup(as(a), { transactionIds: [x, y] });
+    const groupId = first.transferGroupId as string;
+    deleteTransaction(as(b), { id: x });
+    expect(raw(x).transfer_group_id).toBeNull();
+    expect(raw(y).transfer_group_id).toBeNull();
+    expect(db.prepare("SELECT count(*) FROM transfer_group").pluck().get()).toBe(0);
+    const audited = db
+      .prepare(
+        "SELECT account_id, person_id, before, after FROM audit_log WHERE entity_id = ? AND action = 'update' ORDER BY at, id",
+      )
+      .all(y) as { account_id: string; person_id: string | null; before: string; after: string }[];
+    const last = audited[audited.length - 1];
+    expect(last).toMatchObject({ account_id: joint2, person_id: null });
+    expect(JSON.parse(last?.before ?? "{}").transferGroupId).toBe(groupId);
+    expect(JSON.parse(last?.after ?? "{}").transferGroupId).toBeNull();
+    const deleted = db
+      .prepare("SELECT after FROM audit_log WHERE entity_id = ? AND action = 'delete'")
+      .pluck()
+      .get(x) as string;
+    expect(JSON.parse(deleted).transferGroupId).toBeNull();
+    // The survivor can join a new group.
+    const z = line(as(a), shared, -500);
+    expect(createTransferGroup(as(a), { transactionIds: [z, y] })[0].transferGroupId).toBeTruthy();
+  });
+
+  it("scopes a private survivor's audit to its owner when the partner deletes the other side", () => {
+    const x = line(as(a), shared, -500, "Top up");
+    const y = line(as(a), privateA, 500, "Secret savings");
+    createTransferGroup(as(a), { transactionIds: [x, y] });
+    deleteTransaction(as(b), { id: x });
+    expect(raw(y).transfer_group_id).toBeNull();
+    expect(db.prepare("SELECT count(*) FROM transfer_group").pluck().get()).toBe(0);
+    const rows = db
+      .prepare(
+        "SELECT account_id, person_id FROM audit_log WHERE entity_id = ? AND action = 'update' ORDER BY at, id",
+      )
+      .all(y);
+    expect(rows[rows.length - 1]).toMatchObject({ account_id: privateA, person_id: a });
+    expect(JSON.stringify(listAudit(as(b)))).not.toContain(y);
+    expect(JSON.stringify(listAudit(as(b)))).not.toContain("Secret savings");
+    expect(listAudit(as(a)).some((r) => r.entityId === y)).toBe(true);
+  });
+
+  it("scopes a private survivor's audit to its owner when the owner deletes the other side", () => {
+    const x = line(as(a), shared, -500, "Top up");
+    const y = line(as(a), privateA, 500, "Secret savings");
+    createTransferGroup(as(a), { transactionIds: [x, y] });
+    deleteTransaction(as(a), { id: x });
+    expect(raw(y).transfer_group_id).toBeNull();
+    expect(db.prepare("SELECT count(*) FROM transfer_group").pluck().get()).toBe(0);
+    const rows = db
+      .prepare(
+        "SELECT account_id, person_id FROM audit_log WHERE entity_id = ? AND action = 'update' ORDER BY at, id",
+      )
+      .all(y);
+    expect(rows[rows.length - 1]).toMatchObject({ account_id: privateA, person_id: a });
+    expect(listAudit(as(a)).some((r) => r.entityId === y)).toBe(true);
+    expect(JSON.stringify(listAudit(as(b)))).not.toContain(y);
+    expect(JSON.stringify(listAudit(as(b)))).not.toContain("Secret savings");
+  });
+
+  it("refuses a group delete that reaches the partner's private row, and allows an all-visible one", () => {
     const x = line(as(a), shared, -500);
     const y = line(as(a), privateA, 500);
     const [first] = createTransferGroup(as(a), { transactionIds: [x, y] });
     const groupId = first.transferGroupId as string;
-    deleteTransaction(as(a), { id: y });
+    const audits = db.prepare("SELECT count(*) FROM audit_log").pluck().get();
+    expect(() => deleteTransferGroup(as(b), { id: groupId })).toThrow(
+      expect.objectContaining({ code: "NotFound" }),
+    );
+    expect(raw(x).transfer_group_id).toBe(groupId);
+    expect(raw(y).transfer_group_id).toBe(groupId);
+    expect(db.prepare("SELECT count(*) FROM audit_log").pluck().get()).toBe(audits);
     deleteTransferGroup(as(a), { id: groupId });
-    expect(raw(x).transfer_group_id).toBeNull();
-    expect(raw(y).transfer_group_id).toBeNull();
     expect(db.prepare("SELECT count(*) FROM transfer_group").pluck().get()).toBe(0);
+  });
+
+  it("refuses a non-owner's hide on a public account", () => {
+    const solo = createAccount(sys, {
+      name: "A solo public",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [{ personId: a, shareBp: 10000 }],
+    });
+    const id = line(as(a), solo, -500, "Surprise");
+    expect(() => hideTransactionName(as(b), { id })).toThrow(
+      expect.objectContaining({ code: "Validation" }),
+    );
+    expect(raw(id)).toMatchObject({ name_hidden_by: null, name_hidden_until: null });
+    hideTransactionName(as(a), { id });
+    expect(raw(id).name_hidden_by).toBe(a);
+  });
+
+  it("refuses an owner-scoped activity on a shared split, and any property", () => {
+    const id = line(as(a), shared, -500);
+    const sid = getTransaction(as(a), { id }).splits[0]?.id as string;
+    const mine = createActivity(as(a), { name: "Mine", originAccountId: privateA }).id;
+    const audits = db.prepare("SELECT count(*) FROM audit_log").pluck().get();
+    const conflict = expect.objectContaining({ code: "Conflict" });
+    expect(() =>
+      setSplitField(as(a), { transactionId: id, splitId: sid, field: "activity", value: mine }),
+    ).toThrow(conflict);
+    expect(() =>
+      setSplits(as(a), { transactionId: id, splits: [{ amountCents: -500, activityId: mine }] }),
+    ).toThrow(conflict);
+    expect(() =>
+      setSplits(as(a), { transactionId: id, splits: [{ amountCents: -500, propertyId: "P" }] }),
+    ).toThrow(expect.objectContaining({ code: "Validation" }));
+    expect(db.prepare("SELECT count(*) FROM audit_log").pluck().get()).toBe(audits);
+    const priv = line(as(a), privateA, -500);
+    const psid = getTransaction(as(a), { id: priv }).splits[0]?.id as string;
+    expect(
+      setSplitField(as(a), { transactionId: priv, splitId: psid, field: "activity", value: mine })
+        .applied,
+    ).toBe(true);
   });
 
   it("leaves the partner's responses byte-identical across the hider's later edits", () => {
@@ -500,11 +621,15 @@ describe("hidden names and transfer groups on SQLite", () => {
     expect(() => createTransferGroup(as(a), { transactionIds: [sharedSide, privateSide] })).toThrow(
       expect.objectContaining({ code: "Conflict" }),
     );
-    deleteTransferGroup(as(b), { id: groupId });
+    expect(() => deleteTransferGroup(as(b), { id: groupId })).toThrow(
+      expect.objectContaining({ code: "NotFound" }),
+    );
+    expect(raw(privateSide).transfer_group_id).toBe(groupId);
+    deleteTransferGroup(as(a), { id: groupId });
     expect(raw(sharedSide).transfer_group_id).toBeNull();
     expect(raw(privateSide).transfer_group_id).toBeNull();
     expect(db.prepare("SELECT count(*) FROM transfer_group").pluck().get()).toBe(0);
-    expect(() => deleteTransferGroup(as(b), { id: groupId })).toThrow(
+    expect(() => deleteTransferGroup(as(a), { id: groupId })).toThrow(
       expect.objectContaining({ code: "NotFound" }),
     );
     const audited = db

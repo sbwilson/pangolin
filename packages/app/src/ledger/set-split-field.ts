@@ -103,7 +103,8 @@ const COLUMNS: Readonly<Record<SplitField, Column>> = {
  * clears the field and records `user`, so rules do not refill it; only a user may clear, and a
  * beneficiary cannot be cleared. A write that changes only the source (an upgrade) is a change
  * and is audited; one that changes nothing is not. A missing, deleted or other-scope category,
- * activity or tax category is `NotFound`; a beneficiary is `shared` or a person, and in a
+ * activity or tax category is `NotFound`, and an owner-scoped activity on a public account is
+ * `Conflict` (AD-18); a beneficiary is `shared` or a person, and in a
  * private account only its owner (`Validation`). Audited as one `update` of `transaction` with
  * its `accountId`, before and after carrying the splits, their sources and tag IDs.
  */
@@ -128,8 +129,10 @@ export function setSplitField(ctx: UseCaseContext, input: SetSplitFieldInput): S
     } else if (typeof value !== "string") {
       throw fail("Expected an ID");
     } else if (field === "category") requireCategory(tx, ctx.viewer, value);
-    else if (field === "activity") requireActivity(tx, ctx.viewer, value);
-    else if (field === "tax_category") requireTaxCategory(tx, ctx.viewer, value);
+    else if (field === "activity") {
+      const isPublic = privateOwner(tx, ctx.viewer, before.accountId) === null;
+      requireActivity(tx, ctx.viewer, value, isPublic);
+    } else if (field === "tax_category") requireTaxCategory(tx, ctx.viewer, value);
     else {
       const owner = privateOwner(tx, ctx.viewer, before.accountId);
       if (owner !== null && value !== owner) {

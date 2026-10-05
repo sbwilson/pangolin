@@ -78,9 +78,10 @@ export function createTransferGroup(
 }
 
 /**
- * `ledger.deleteTransferGroup`: clears the link on every transaction in the group (including
- * ones the viewer cannot see) and deletes the group. The viewer must see at least one live
- * member, else `NotFound`. Audited as one `update` of each member `transaction` with its
+ * `ledger.deleteTransferGroup`: clears the link on every live transaction in the group and
+ * deletes the group. Every live member must be visible to the viewer: a group with none visible,
+ * or one that reaches into another person's private account, is `NotFound` (nothing is written
+ * and nothing says which). Audited as one `update` of each member `transaction` with its
  * `accountId`.
  */
 export function deleteTransferGroup(ctx: UseCaseContext, input: DeleteTransferGroupInput): void {
@@ -89,7 +90,8 @@ export function deleteTransferGroup(ctx: UseCaseContext, input: DeleteTransferGr
     if (tx.transferGroups.find(ctx.viewer, parsed.id) === undefined) {
       throw new AppError("NotFound", "Transfer group not found");
     }
-    const members = tx.transferGroups.members(parsed.id);
+    const { rows: members, hidden } = tx.transferGroups.members(ctx.viewer, parsed.id);
+    if (hidden > 0) throw new AppError("NotFound", "Transfer group not found");
     const at = formatInstant(ctx.clock.now());
     tx.transactions.setTransferGroup(
       members.map((m) => m.id),

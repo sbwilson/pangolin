@@ -11,9 +11,16 @@ export function requireCategory(tx: TxRepos, viewer: Viewer, id: string): void {
   }
 }
 
-export function requireActivity(tx: TxRepos, viewer: Viewer, id: string): void {
-  if (tx.activities.find(viewer, id) === undefined) {
-    throw new AppError("NotFound", "Activity not found");
+/**
+ * An activity the viewer can see. On a public account (`isPublic`) an owner-scoped activity is
+ * `Conflict`: it would put one person's private classification on a shared split (AD-18), the
+ * same refusal tags and payees give.
+ */
+export function requireActivity(tx: TxRepos, viewer: Viewer, id: string, isPublic: boolean): void {
+  const found = tx.activities.find(viewer, id);
+  if (found === undefined) throw new AppError("NotFound", "Activity not found");
+  if (isPublic && found.scopePersonId !== null) {
+    throw new AppError("Conflict", "This activity cannot be used on a shared account yet");
   }
 }
 
