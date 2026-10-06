@@ -306,14 +306,17 @@ repository is append-only and a read changes nothing):
 set -a; . /opt/pangolin/.env; set +a      # for PANGOLIN_BACKUP_REPOSITORY
 export RESTIC_REPOSITORY="$PANGOLIN_BACKUP_REPOSITORY"
 export RESTIC_PASSWORD_FILE=/opt/pangolin/secrets/restic-password
-restic dump <snapshot-id> manifest.json | head -c 400     # the format line
+restic dump <snapshot-id> /data/backup/staging/<backup-id>/manifest.json | head -c 400     # the format line
 ```
 
 Then read the whole `accounts` section on the host (for example with `jq .accounts` on the
 dumped file), not a fixed number of bytes: its length depends on the household.
 
-(If restic needs a different path inside the snapshot or a different invocation for this setup,
-say so in the record; this is the human's call. `pangolin restore` is not used here: it swaps
+(`<snapshot-id>` is the restic snapshot ID `pangolin backup` prints; `<backup-id>` is the backup's own
+ID, the `01M…` value on the "Backup … started" line. The path inside the snapshot is
+`/data/backup/staging/<backup-id>/manifest.json`, as read on pang-dev on 2026-10-06; a bare
+`manifest.json` does not exist there. If restic needs a different invocation for this setup, say
+so in the record; this is the human's call. `pangolin restore` is not used here: it swaps
 into the live database.) This page is committed, so household figures must not go in it: paste
 only the `format` line, `balanceDate` and the number of accounts. Keep account names and amounts
 out of this page.
@@ -348,31 +351,31 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | `pnpm lint` | No errors, 8 warnings (none from this page), package boundaries ok, 2026-10-06 |
 | `check:upgrade` on a v0.2.0 database | Not run by the agent: no Docker on the agent's host, so `previous-db.sh` could not make one (CI's `migrate-previous` does this on the tag) |
 | **Human, before the tag** | |
-| Tag commit (step 1): `TAG_COMMIT` hash, subject | |
-| CI on the tag commit (step 1): run URL, conclusion | |
-| Starting build (step 2): `pangolin status` output | |
-| Manual backup snapshot ID (step 3) | |
+| Tag commit (step 1): `TAG_COMMIT` hash, subject | `ba762e2d01b49b0a49a522e7115d72e769030eb3` `ci(test): raise the default test and hook timeouts to 30 s` (the tip of `develop`; `origin/develop` unchanged at tag time) |
+| CI on the tag commit (step 1): run URL, conclusion | https://github.com/sbwilson/pangolin/actions/runs/37401151635: success (`Secret scan`, `Lint, types, tests, STRICT`, `Container and end-to-end`), `headSha` `ba762e2`, 2026-10-06. The 30 s timeout fix (`ba762e2`) came after the failed base run |
+| Starting build (step 2): `pangolin status` output | `Pangolin Money v0.2.0`, `Schema: 11 (this build expects 11)`, `Readiness: ok`, warning `recovery bundle not confirmed stored safely`, 1 dead job (`backup-push`, 2026-10-02, pre-existing), last backup `ffe2bbb7c35218f9668b07061f82799c69b2880f221b7b569cd4f0a3fd47ca29` (2026-10-05T15:30:03Z); pasted by the human, 2026-10-06. Re-read just before the upgrade: same, last backup now the manual one |
+| Manual backup snapshot ID (step 3) | `924a330c8c565f02979960eefe1269cb307ba8984b98e7915985e38af70b907f`, backup `01M47MPJVBTP38RCSQJ67EMN1P`, done 2026-10-06T03:39:18.000Z, taken before the upgrade |
 | **Release** | |
-| Tag and commit (step 4) | |
-| Release run URL (step 5) | |
-| `ci` job | |
-| `image` job | |
-| `upgrade-test` job | |
-| `migrate-previous` job | |
-| `publish` job; GitHub release and `latest` moved | |
-| Signed image digest (step 6) | |
-| Re-runs, deleted tags or retags (run URLs, tag names) | |
+| Tag and commit (step 4) | `v0.2.1` (annotated tag) on `ba762e2d01b49b0a49a522e7115d72e769030eb3`, set by the human; `git rev-parse v0.2.1^{commit}` gives that hash, 2026-10-06 |
+| Release run URL (step 5) | https://github.com/sbwilson/pangolin/actions/runs/37410053125: success, `headSha` `ba762e2` |
+| `ci` job | success (`ci / Lint, types, tests, STRICT`, `ci / Secret scan`, `ci / Container and end-to-end`) |
+| `image` job | success |
+| `upgrade-test` job | success |
+| `migrate-previous` job | success |
+| `publish` job; GitHub release and `latest` moved | `publish` success; `gh release list` shows `v0.2.1` as `Latest`, published 2026-10-06T03:50:35Z, `v0.2.0` below it |
+| Signed image digest (step 6) | `sha256:f684b98ff1964840326ea374b3962e13fa8c1f732135d026d3c615a2e68eb9b3` (`docker buildx imagetools inspect ghcr.io/sbwilson/pangolin:v0.2.1`, run on pang-dev) |
+| Re-runs, deleted tags or retags (run URLs, tag names) | None. The base commit's red run 37393717950 was not re-run; the timeout fix and a fresh run on `ba762e2` replaced it |
 | **Upgrade on pang-dev** | |
-| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | |
-| `pangolin upgrade` output (step 7) | |
-| Pre-upgrade copy path (from step 7 output) | |
-| Image digest `pangolin upgrade` verified (step 7) | |
-| `/healthz` (step 8) | |
-| `pangolin status` showing the tag and schema 11 of 11 (step 9) | |
+| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | 2026-10-06, `PANGOLIN_UPGRADE_TIMEOUT=180` |
+| `pangolin upgrade` output (step 7) | `Pulling ghcr.io/sbwilson/pangolin:v0.2.1...`, `Verifying ghcr.io/sbwilson/pangolin@sha256:f684b98f…b3...`, stack stopped (0.4 s) and started (0.9 s), `Upgrade to v0.2.1 successful. Old image was ghcr.io/sbwilson/pangolin@sha256:60af95ac20ca02282425a97e74887e58c1682c69a005aac64ef4e788b0655cb1.` (the v0.2.0 digest) |
+| Pre-upgrade copy path (from step 7 output) | Not in the output. `sudo ls /srv/pangolin/upgrade-copies/` lists `pre-upgrade-20261005171624` (the v0.2.0 upgrade's) and `pre-upgrade-20261006145552` (this upgrade's, 14:55:52 local, 03:55Z) |
+| Image digest `pangolin upgrade` verified (step 7) | `sha256:f684b98ff1964840326ea374b3962e13fa8c1f732135d026d3c615a2e68eb9b3`, equal to step 6's |
+| `/healthz` (step 8) | `{"ok":true,"warnings":["recovery-bundle-unconfirmed"]}` (the warning pre-dates the release; `sudo pangolin confirm-bundle` clears it), 2026-10-06 |
+| `pangolin status` showing the tag and schema 11 of 11 (step 9) | `Pangolin Money v0.2.1`, `Schema: 11 (this build expects 11)`, `Readiness: ok`; same warning, 3 pending jobs, 1 dead job (`backup-push`, 2026-10-02, pre-existing), 2026-10-06 |
 | **After the upgrade** | |
-| First backup: snapshot ID (step 10) | |
-| First backup: manifest `format` | |
-| First backup: `balanceDate` and accounts section | |
+| First backup: snapshot ID (step 10) | `ecaa220f85b42bf50cdc6824fe66683f9ef423fa0a5051ab5d5de75efd88b8ba`, backup `01M47NRX5ACDH1DHZ879E270M9`, done 2026-10-06T03:58:02.525Z by `v0.2.1`. The `pangolin status` after it was not pasted |
+| First backup: manifest `format` | `"format": 2`, reported by the human from `restic dump` of the snapshot, 2026-10-06. Path in the snapshot: `/data/backup/staging/01M47NRX5ACDH1DHZ879E270M9/manifest.json` |
+| First backup: `balanceDate` and accounts section | `balanceDate` is today (reported by the human; the exact date was not pasted). Number of accounts: not yet reported |
 | **Decision** | |
 | Outcome (accepted / failed) and reason | |
 | Accepted by the human (name, date) | |
