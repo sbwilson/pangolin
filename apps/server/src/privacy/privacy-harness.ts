@@ -2,6 +2,7 @@
 // same ids and the same clock, differing only in partner A's private delta, which is applied last
 // through the use cases. Partner B is signed in through the real HTTP app, so every route runs
 // under its real middleware. Test support only.
+import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -803,38 +804,50 @@ export function slotIds(
     wanted === entity && slot === aimedSlot ? target : world.ok(wanted, slot);
 }
 
-/** A world whose restore drill failed on a private account of A's whose sum differs per flavour. */
+/** What a drill world ran after its backup: nothing, a drill that passes, one that fails, or both. */
+export type DrillOutcome = "backup only" | "passed" | "failed" | "passed then failed";
+
+/** A world with a backup and, per its outcome, restore drills, on a private account of A's. */
 export interface DrillWorld extends World {
-  /** The restic snapshot the drill restored and found altered. */
+  /** The restic snapshot the backup stored; a drill restored it. */
   readonly snapshotId: string;
   /** The drill's stored verdicts, oldest first. */
   readonly verifications: () => { kind: string; ok: number; summary: string }[];
 }
 
-/** An amount the private account's one transaction has in each flavour. */
-const DRILL_AMOUNTS = { one: -1000, two: -778_777 } as const;
+/** The amounts of the private account's transactions in each flavour: one row, or five. */
+const DRILL_AMOUNTS = {
+  one: [-1000],
+  two: [-778_777, -2501, -3502, -4503, -5504],
+} as const;
 /** What the stored copy's private account is altered by, so its sum no longer matches. */
 export const DRILL_TAMPER_CENTS = 3_131_313;
 
 /**
- * Builds a world on a database file, gives A a private account with one transaction whose amount
- * depends on `flavour`, backs the database up to a stub restic repository, alters that account's
- * transactions in the stored copy and runs the restore drill, which fails its manifest check. The
- * returned world's app has the backup configured, so `/api/system/backup` reports the verdict.
- * `viewer` is the system viewer the backup request runs as (`systemViewer("cli:backup")`); the
- * caller builds it, as only the jobs, the admin entry and tests may (AD-6).
+ * Builds a world on a database file, gives A a private account whose transactions (their number
+ * and amounts) depend on `flavour`, backs the database up to a stub restic repository and then
+ * runs what `outcome` says. A failing drill follows the stored copy's private account being
+ * altered, so its manifest check fails. The returned world's app has the backup configured, so
+ * `/api/system/backup` reports the verdict. `viewer` is the system viewer the backup request runs
+ * as (`systemViewer("cli:backup")`); the caller builds it, as only the jobs, the admin entry and
+ * tests may (AD-6). `dir` plus `flavour` must be a new directory for each world.
  */
-export async function failedDrillWorld(
+export async function drillWorld(
   seedJson: string,
   flavour: "one" | "two",
   dir: string,
   viewer: Viewer,
+  outcome: DrillOutcome,
 ): Promise<DrillWorld> {
   const root = join(dir, flavour);
   const dataDir = join(root, "data");
   mkdirSync(dataDir, { recursive: true });
   const world = buildWorld(seedJson, "base", { dbFile: join(dataDir, "pangolin.sqlite") });
-  const a = world.ctx("a");
+  // The private rows mint their ids from a generator of their own. The world's generator is a
+  // monotonic counter, so five rows in one world and one in the other would shift every id the
+  // backup mints after them; a real id is random and carries no such signal (see
+  // `normaliseRequestIds`). Only the number of rows differs between the worlds, not the ids B reads.
+  const a = { ...world.ctx("a"), newId: deterministicIds(1_750_000_000_000, 3) };
   const owner = [{ personId: world.people.a, shareBp: 10_000 }];
   const account = createAccount(a, {
     name: "Drill probe private",
@@ -843,28 +856,35 @@ export async function failedDrillWorld(
     isPrivate: true,
     owners: owner,
   });
-  createTransaction(a, {
-    accountId: account,
-    postedOn: "2026-07-12",
-    amountCents: DRILL_AMOUNTS[flavour],
-    description: "Drill probe",
-  });
+  for (const amountCents of DRILL_AMOUNTS[flavour]) {
+    createTransaction(a, {
+      accountId: account,
+      postedOn: "2026-07-12",
+      amountCents,
+      description: "Drill probe",
+    });
+  }
   const rig = createDrillRig({
     dataDir,
     stubDir: join(root, "stub"),
     uow: world.uow,
     clock: world.clock,
-    newId: a.newId,
+    newId: world.ctx("a").newId,
     viewer,
   });
   const runner = rig.runner();
   const snapshotId = await rig.backUp(runner);
-  const stored = openDatabase(rig.storedDatabase(snapshotId));
-  stored
-    .prepare('UPDATE "transaction" SET amount_cents = amount_cents + ? WHERE account_id = ?')
-    .run(DRILL_TAMPER_CENTS, account);
-  stored.close();
-  await rig.run(runner, BACKUP_DRILL_JOB);
+  if (outcome === "passed" || outcome === "passed then failed") {
+    await rig.run(runner, BACKUP_DRILL_JOB);
+  }
+  if (outcome === "failed" || outcome === "passed then failed") {
+    const stored = openDatabase(rig.storedDatabase(snapshotId));
+    stored
+      .prepare('UPDATE "transaction" SET amount_cents = amount_cents + ? WHERE account_id = ?')
+      .run(DRILL_TAMPER_CENTS, account);
+    stored.close();
+    await rig.run(runner, BACKUP_DRILL_JOB);
+  }
   const deps: AppDeps = { ...world.deps, backupConfigured: true };
   const app = createApp(deps);
   return {
@@ -878,4 +898,41 @@ export async function failedDrillWorld(
         .prepare("SELECT kind, ok, summary FROM backup_verification ORDER BY at, rowid")
         .all() as { kind: string; ok: number; summary: string }[],
   };
+}
+
+/** A world whose restore drill failed: the entry 17 world. */
+export const failedDrillWorld = (
+  seedJson: string,
+  flavour: "one" | "two",
+  dir: string,
+  viewer: Viewer,
+): Promise<DrillWorld> => drillWorld(seedJson, flavour, dir, viewer, "failed");
+
+/** Where a stand-in drill world puts a figure of the whole database back. */
+export type DrillLeak = "summary-count" | "audit-digest";
+
+/**
+ * A stand-in for a product that stores a figure of the whole database again: a row count in the
+ * success summary (stored verdict and its audit row), or the digest of the transactions in a
+ * `backup_snapshot` audit row. It writes through the world's own database, as a product bug would
+ * through the job, so every place B reads the backup shows it.
+ */
+export function leakyDrillWorld(world: DrillWorld, leak: DrillLeak): DrillWorld {
+  const db = world.db;
+  if (leak === "summary-count") {
+    const rows = db.prepare('SELECT count(*) FROM "transaction"').pluck().get() as number;
+    const add = `, ${rows} transactions`;
+    db.prepare("UPDATE backup_verification SET summary = summary || ?").run(add);
+    db.prepare(
+      "UPDATE audit_log SET after = json_set(after, '$.summary', json_extract(after, '$.summary') || ?) WHERE entity = 'backup_verification'",
+    ).run(add);
+  } else {
+    const digest = createHash("sha256")
+      .update(JSON.stringify(db.prepare('SELECT * FROM "transaction" ORDER BY rowid').all()))
+      .digest("hex");
+    db.prepare(
+      "UPDATE audit_log SET after = json_set(after, '$.manifestSha256', ?) WHERE entity = 'backup_snapshot'",
+    ).run(digest);
+  }
+  return world;
 }

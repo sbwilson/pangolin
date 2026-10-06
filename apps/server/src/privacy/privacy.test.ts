@@ -17,9 +17,13 @@ import {
   buildWorld,
   type Captured,
   DRILL_TAMPER_CENTS,
+  type DrillLeak,
+  type DrillOutcome,
   type DrillWorld,
+  drillWorld,
   failedDrillWorld,
   type LeakMode,
+  leakyDrillWorld,
   leakyWorld,
   nonexistentId,
   normaliseRequestIds,
@@ -51,7 +55,8 @@ import {
 } from "./route-manifest.ts";
 
 // Each test builds worlds and makes hundreds of in-process HTTP calls.
-vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
+const SLOW_MS = 120_000;
+vi.setConfig({ testTimeout: SLOW_MS, hookTimeout: SLOW_MS });
 
 // ------------------------------------------------------------------------------ assertions
 
@@ -1142,44 +1147,98 @@ describe("owner changes and privacy switches", () => {
   });
 });
 
+/**
+ * The restic snapshot id is readable by decision (recorded in the epic file, 2026-10-06: the id
+ * stays readable so a backup can be chosen to restore), and restic makes it random, so it differs
+ * between the worlds. It is an accepted exposure: masked here by name, only the ids this world stored (a 64-hex id, and the
+ * 8-character short id the drill's summary names). Every other byte is compared, so a digest or
+ * any other hex string put back stays visible.
+ */
+function maskResticIds(w: World, text: string): string {
+  let out = normaliseRequestIds(text);
+  const ids = w.db.prepare("SELECT restic_snapshot_id FROM backup_snapshot").pluck().all();
+  for (const id of ids as (string | null)[]) {
+    if (id === null || id.length < 8) continue;
+    out = out
+      .replaceAll(id, "<restic id>")
+      .replaceAll(`snapshot ${id.slice(0, 8)}`, "snapshot <id>");
+  }
+  return out;
+}
+
+/** The raw backup audit rows, as stored. */
+const backupAuditRows = (w: World) =>
+  w.db
+    .prepare(
+      "SELECT actor, entity, action, account_id, person_id, before, after FROM audit_log WHERE entity LIKE 'backup%' ORDER BY rowid",
+    )
+    .all();
+
+/** B's reads and the backup's stored verdicts, rows, audit rows and review items, ids masked. */
+async function drillView(w: DrillWorld): Promise<Map<string, string>> {
+  const out = new Map(
+    [...(await readTranscript(w))].map(([key, text]) => [key, maskResticIds(w, text)]),
+  );
+  const backup = await w.request("b", "GET", "/api/system/backup");
+  out.set("GET /api/system/backup", maskResticIds(w, `${backup.status} ${backup.text}`));
+  out.set("stored verdicts", maskResticIds(w, JSON.stringify(w.verifications())));
+  out.set(
+    "stored backups",
+    maskResticIds(w, JSON.stringify(w.db.prepare("SELECT * FROM backup_snapshot").all())),
+  );
+  out.set("backup audit rows", maskResticIds(w, JSON.stringify(backupAuditRows(w))));
+  const b = w.ctx("b");
+  out.set("review items", maskResticIds(w, JSON.stringify(redact(b.viewer, listReviewItems(b)))));
+  return out;
+}
+
+/**
+ * The only words a drill's stored verdict, in a row or an audit row, may say: the checks the
+ * product can name, and the snapshot's 8-character short id. (No world here runs the repository
+ * check, so its success words are not listed.)
+ */
+const VERDICT_SUMMARIES = [
+  /^restored snapshot [0-9a-f]{8} and verified the restore$/,
+  /^the (manifest|integrity|schema|restore|repository) check failed( on snapshot [0-9a-f]{8})?$/,
+];
+
+/**
+ * Where a count or a digest of the whole database has been put back in what B reads of the backup:
+ * a figure-shaped key or word, a verdict that says more than the fixed words, or a 64-hex string
+ * that is not a stored restic snapshot id.
+ */
+async function drillFigureProblems(w: DrillWorld): Promise<string[]> {
+  const problems: string[] = [];
+  const b = w.ctx("b");
+  const rows = listAudit(b).filter((r) => r.entity.startsWith("backup"));
+  const backup = await w.request("b", "GET", "/api/system/backup");
+  const stored = w.db.prepare("SELECT * FROM backup_snapshot").all();
+  const read = JSON.stringify([rows, backup.text, stored, w.verifications(), backupAuditRows(w)]);
+  if (/table_?count|row_?count|manifest_?sha256|\btables?\b|\brows\b/i.test(read)) {
+    problems.push("a count or digest key is stored where B reads the backup");
+  }
+  const ids = new Set(w.db.prepare("SELECT restic_snapshot_id FROM backup_snapshot").pluck().all());
+  for (const hex of read.match(/\b[0-9a-f]{64}\b/g) ?? []) {
+    if (!ids.has(hex)) problems.push(`${hex} is not a restic snapshot id`);
+  }
+  const audited = w.db
+    .prepare(
+      "SELECT json_extract(after, '$.summary') FROM audit_log WHERE entity = 'backup_verification'",
+    )
+    .pluck()
+    .all() as string[];
+  const summaries = [...w.verifications().map((v) => v.summary), ...audited];
+  for (const summary of summaries) {
+    if (!VERDICT_SUMMARIES.some((pattern) => pattern.test(summary))) {
+      problems.push(`the verdict "${summary}" says more than the fixed words`);
+    }
+  }
+  return problems;
+}
+
 describe("a failed restore drill", () => {
   let dir: string;
   let drills: [DrillWorld, DrillWorld];
-
-  /**
-   * Restic's snapshot ids are random, so they differ between the worlds. They are named, not
-   * compared; every other byte is. A 64-hex string is a restic snapshot id and nothing else now:
-   * the manifest digest is no longer stored, and the test below keeps it that way.
-   */
-  const sansSnapshotIds = (text: string) =>
-    normaliseRequestIds(text)
-      .replace(/\b[0-9a-f]{64}\b/g, "<restic id>")
-      .replace(/(snapshot )[0-9a-f]{8}\b/g, "$1<id>");
-
-  /** B's reads and the drill's stored verdict, audit rows and review items. */
-  async function drillView(w: DrillWorld): Promise<Map<string, string>> {
-    const out = new Map(
-      [...(await readTranscript(w))].map(([key, text]) => [key, sansSnapshotIds(text)]),
-    );
-    const backup = await w.request("b", "GET", "/api/system/backup");
-    out.set("GET /api/system/backup", sansSnapshotIds(`${backup.status} ${backup.text}`));
-    out.set("stored verdicts", sansSnapshotIds(JSON.stringify(w.verifications())));
-    out.set(
-      "backup audit rows",
-      sansSnapshotIds(
-        JSON.stringify(
-          w.db
-            .prepare(
-              "SELECT actor, entity, action, account_id, person_id, before, after FROM audit_log WHERE entity LIKE 'backup%' ORDER BY rowid",
-            )
-            .all(),
-        ),
-      ),
-    );
-    const b = w.ctx("b");
-    out.set("review items", sansSnapshotIds(JSON.stringify(redact(b.viewer, listReviewItems(b)))));
-    return out;
-  }
 
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), "pangolin-privacy-drill-"));
@@ -1188,7 +1247,7 @@ describe("a failed restore drill", () => {
       await failedDrillWorld(seedJson, "two", dir, systemViewer("cli:backup")),
     ];
     for (const d of drills) worlds.push(d);
-  });
+  }, SLOW_MS); // builds several worlds, each seeded and backed up: slow on a busy runner
 
   afterAll(() => {
     rmSync(dir, { recursive: true, force: true });
@@ -1200,7 +1259,7 @@ describe("a failed restore drill", () => {
       expect(rest).toEqual([]);
       expect(verdict?.kind).toBe("drill");
       expect(verdict?.ok).toBe(0);
-      expect(sansSnapshotIds(verdict?.summary ?? "")).toBe(
+      expect(maskResticIds(d, verdict?.summary ?? "")).toBe(
         "the manifest check failed on snapshot <id>",
       );
     }
@@ -1242,14 +1301,169 @@ describe("a failed restore drill", () => {
         .filter(([key]) => !key.startsWith("use case"))
         .map(([, text]) => text)
         .join("\n");
-      const amount = i === 0 ? 1000 : 778_777;
-      for (const figure of [DRILL_TAMPER_CENTS, DRILL_TAMPER_CENTS - amount, amount]) {
+      // Every private amount, their sum, and the sums the tampered copy holds.
+      const amounts = d.db
+        .prepare('SELECT amount_cents FROM "transaction" WHERE account_id = ?')
+        .pluck()
+        .all(account) as number[];
+      const sum = amounts.reduce((total, cents) => total + cents, 0);
+      const tampered = sum + DRILL_TAMPER_CENTS * amounts.length;
+      const figures = [
+        ...amounts,
+        sum,
+        tampered,
+        DRILL_TAMPER_CENTS,
+        DRILL_TAMPER_CENTS - Math.abs(sum),
+      ].map((cents) => Math.abs(cents));
+      expect(amounts.length, `world ${i + 1} private rows`).toBe(i === 0 ? 1 : 5);
+      for (const figure of figures) {
         expect(verdict.includes(String(figure)), `world ${i + 1} shows ${figure}`).toBe(false);
       }
       expect(verdict.includes(" cents"), `world ${i + 1} shows cents`).toBe(false);
       // The account's id appears nowhere B reads, the audit log included.
       const everything = [...reads.values()].join("\n");
       expect(everything.includes(account), `world ${i + 1} shows ${account}`).toBe(false);
+    }
+  });
+});
+
+// A drill world pair per outcome. The private account holds one transaction in one world and five
+// in the other, of different amounts, so a count or digest of the whole database differs.
+const DRILL_PAIRS: readonly DrillOutcome[] = ["backup only", "passed", "passed then failed"];
+
+describe("backup status after a backup, a passing drill, and a pass then a fail", () => {
+  let dir: string;
+  const pairs = new Map<DrillOutcome, [DrillWorld, DrillWorld]>();
+  const pair = (outcome: DrillOutcome): [DrillWorld, DrillWorld] => {
+    const found = pairs.get(outcome);
+    if (found === undefined) throw new Error(`no drill pair for ${outcome}`);
+    return found;
+  };
+
+  beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), "pangolin-privacy-passed-drill-"));
+    for (const [i, outcome] of DRILL_PAIRS.entries()) {
+      const viewer = systemViewer("cli:backup");
+      const made: [DrillWorld, DrillWorld] = [
+        await drillWorld(seedJson, "one", join(dir, String(i)), viewer, outcome),
+        await drillWorld(seedJson, "two", join(dir, String(i)), viewer, outcome),
+      ];
+      pairs.set(outcome, made);
+      for (const d of made) worlds.push(d);
+    }
+  }, SLOW_MS); // builds several worlds, each seeded and backed up: slow on a busy runner
+
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("gives A's private account one transaction in one world and five in the other", () => {
+    for (const outcome of DRILL_PAIRS) {
+      const counts = pair(outcome).map((d) =>
+        d.db
+          .prepare(
+            "SELECT count(*) FROM \"transaction\" WHERE account_id = (SELECT id FROM account WHERE name = 'Drill probe private')",
+          )
+          .pluck()
+          .get(),
+      );
+      expect(counts, outcome).toEqual([1, 5]);
+    }
+  });
+
+  it("stores a passed drill's verdict as the fixed words, with the snapshot's short id", () => {
+    for (const outcome of ["passed", "passed then failed"] as const) {
+      for (const d of pair(outcome)) {
+        const [first, ...rest] = d.verifications().map((v) => ({
+          ...v,
+          summary: maskResticIds(d, v.summary),
+        }));
+        expect(first, outcome).toEqual({
+          kind: "drill",
+          ok: 1,
+          summary: "restored snapshot <id> and verified the restore",
+        });
+        expect(
+          rest.map((v) => [v.ok, v.summary]),
+          outcome,
+        ).toEqual(outcome === "passed" ? [] : [[0, "the manifest check failed on snapshot <id>"]]);
+      }
+    }
+    for (const d of pair("backup only")) expect(d.verifications()).toEqual([]);
+  });
+
+  for (const outcome of DRILL_PAIRS) {
+    it(`shows B the same /api/system/backup, audit rows, stored rows, verdicts and reads in both worlds: ${outcome}`, async () => {
+      const [left, right] = pair(outcome);
+      const [l, r] = [await drillView(left), await drillView(right)];
+      expect(l.get("GET /api/system/backup")).toContain("200");
+      expect(l.get("backup audit rows")).toContain("backup_snapshot");
+      expect(identicalProblems(l, r)).toEqual([]);
+    });
+
+    it(`stores no count and no digest where B reads the backup: ${outcome}`, async () => {
+      for (const d of pair(outcome)) expect(await drillFigureProblems(d)).toEqual([]);
+    });
+  }
+
+  it("reads the drill's success in /api/system/backup", async () => {
+    const backup = await pair("passed")[0].request("b", "GET", "/api/system/backup");
+    expect(backup.text).toContain("verified the restore");
+  });
+});
+
+describe("a deliberate leak of a figure of the whole database into the backup", () => {
+  let dir: string;
+  const leaked = new Map<DrillLeak, [DrillWorld, DrillWorld]>();
+
+  beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), "pangolin-privacy-leaky-drill-"));
+    for (const [i, leak] of (["summary-count", "audit-digest"] as const).entries()) {
+      const viewer = systemViewer("cli:backup");
+      const made: [DrillWorld, DrillWorld] = [
+        leakyDrillWorld(
+          await drillWorld(seedJson, "one", join(dir, String(i)), viewer, "passed"),
+          leak,
+        ),
+        leakyDrillWorld(
+          await drillWorld(seedJson, "two", join(dir, String(i)), viewer, "passed"),
+          leak,
+        ),
+      ];
+      leaked.set(leak, made);
+      for (const d of made) worlds.push(d);
+    }
+  }, SLOW_MS); // builds several worlds, each seeded and backed up: slow on a busy runner
+
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("is caught when a count is put back in the success summary: B's reads differ", async () => {
+    const [left, right] = leaked.get("summary-count") as [DrillWorld, DrillWorld];
+    const problems = identicalProblems(await drillView(left), await drillView(right));
+    expect(problems).toContain("GET /api/system/backup differs between the worlds");
+    expect(problems).toContain("stored verdicts differs between the worlds");
+    expect(problems).toContain("backup audit rows differs between the worlds");
+  });
+
+  it("is caught when a count is put back in the success summary: the verdict says more than the fixed words", async () => {
+    for (const d of leaked.get("summary-count") as [DrillWorld, DrillWorld]) {
+      const problems = await drillFigureProblems(d);
+      expect(problems.some((p) => p.includes("says more than the fixed words"))).toBe(true);
+    }
+  });
+
+  it("is caught when the digest is put back in a backup_snapshot audit row: B's audit rows differ", async () => {
+    const [left, right] = leaked.get("audit-digest") as [DrillWorld, DrillWorld];
+    const problems = identicalProblems(await drillView(left), await drillView(right));
+    expect(problems).toContain("backup audit rows differs between the worlds");
+  });
+
+  it("is caught when the digest is put back in a backup_snapshot audit row: a 64-hex string that is no snapshot id", async () => {
+    for (const d of leaked.get("audit-digest") as [DrillWorld, DrillWorld]) {
+      const problems = await drillFigureProblems(d);
+      expect(problems.some((p) => p.endsWith("is not a restic snapshot id"))).toBe(true);
     }
   });
 });

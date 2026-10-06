@@ -37,8 +37,10 @@ const UNSCOPED_REPOS: Readonly<Record<string, string>> = {
   categoryGroups: "household-wide, shared by both partners",
   categories: "household-wide, shared by both partners",
   taxCategories: "household-wide, shared by both partners",
-  backups: "backup snapshot metadata, no ledger data",
-  backupVerifications: "backup check and drill verdicts, no ledger data",
+  backups:
+    "one row per backup: its id, when it was taken, the schema version, its push job and its restic snapshot id; no count or digest of the household's data",
+  backupVerifications:
+    "one row per check or drill: its kind, whether it passed and fixed words naming the check; no figure of the household's data",
   recoveryBundle: "whether the recovery bundle is confirmed",
 };
 
