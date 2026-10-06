@@ -13,14 +13,11 @@ const { dbFile, outDir, takenAt, balanceDate } = workerData as {
   readonly takenAt?: string;
   readonly balanceDate: string;
 };
-const { manifest, manifestSha256 } = writeSnapshot(
+const { manifest } = writeSnapshot(
   dbFile,
   outDir,
   takenAt === undefined ? { balanceDate } : { balanceDate, takenAt },
 );
 parentPort?.postMessage({
   schemaVersion: manifest.schemaVersion,
-  tableCount: manifest.tables.length,
-  rowCount: manifest.tables.reduce((sum, table) => sum + table.rows, 0),
-  manifestSha256,
 });

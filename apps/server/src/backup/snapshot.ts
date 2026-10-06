@@ -3,12 +3,9 @@
 import { Worker } from "node:worker_threads";
 import type { JobSignal } from "@pangolin/app";
 
-/** The manifest's summary, as `backup_snapshot` records it. */
+/** What `backup_snapshot` records of the manifest: its schema version, no figures. */
 export interface SnapshotSummary {
   readonly schemaVersion: number;
-  readonly tableCount: number;
-  readonly rowCount: number;
-  readonly manifestSha256: string;
 }
 
 /**
@@ -38,14 +35,7 @@ export interface TakeSnapshotOptions {
 
 function isSummary(value: unknown): value is SnapshotSummary {
   const v = value as Partial<SnapshotSummary> | null;
-  return (
-    typeof v === "object" &&
-    v !== null &&
-    Number.isSafeInteger(v.schemaVersion) &&
-    Number.isSafeInteger(v.tableCount) &&
-    Number.isSafeInteger(v.rowCount) &&
-    typeof v.manifestSha256 === "string"
-  );
+  return typeof v === "object" && v !== null && Number.isSafeInteger(v.schemaVersion);
 }
 
 /**

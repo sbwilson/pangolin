@@ -139,10 +139,6 @@ export interface BackupSnapshotRow {
   readonly id: string;
   readonly takenAt: string;
   readonly schemaVersion: number;
-  readonly tableCount: number;
-  readonly rowCount: number;
-  /** SHA-256 of the manifest pushed beside the snapshot, hex. */
-  readonly manifestSha256: string;
   readonly pushJobId: Id<"Job">;
   /** restic's snapshot ID, once pushed; null until then. */
   readonly resticSnapshotId: string | null;

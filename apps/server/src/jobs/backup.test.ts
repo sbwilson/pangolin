@@ -269,7 +269,7 @@ describe("the backup jobs", () => {
       )
       .run(now.toString({ fractionalSecondDigits: 3 }), kind);
   const snapshotRows = () =>
-    db.prepare("SELECT * FROM backup_snapshot ORDER BY id").all() as { manifest_sha256: string }[];
+    db.prepare("SELECT * FROM backup_snapshot ORDER BY id").all() as Record<string, unknown>[];
 
   it("re-running the snapshot after it was recorded changes nothing", async () => {
     const r = runner();
@@ -280,7 +280,23 @@ describe("the backup jobs", () => {
     rerun("backup-snapshot");
     await r.tick(); // the snapshot again (a no-op), and the push
     expect(snapshotRows()).toHaveLength(1);
-    expect(snapshotRows()[0]?.manifest_sha256).toBe(before[0]?.manifest_sha256);
+    // The row is kept as it was (the push then marks it); it never held a count or a digest.
+    expect(snapshotRows()[0]).toMatchObject({
+      id: before[0]?.id,
+      taken_at: before[0]?.taken_at,
+      schema_version: before[0]?.schema_version,
+      push_job_id: before[0]?.push_job_id,
+    });
+    expect(Object.keys(snapshotRows()[0] ?? {}).sort()).toEqual([
+      "created_at",
+      "id",
+      "push_job_id",
+      "pushed_at",
+      "restic_snapshot_id",
+      "schema_version",
+      "taken_at",
+      "updated_at",
+    ]);
     expect(staging()).toEqual([]); // the no-op snapshot staged nothing new and the push emptied staging
     expect(backupProgress({ uow }, { jobId })).toMatchObject({ state: "done" });
     expect(db.prepare("SELECT count(*) FROM job WHERE kind = 'backup-push'").pluck().get()).toBe(1);
@@ -480,9 +496,7 @@ describe("the backup jobs", () => {
       await run(r, BACKUP_DRILL_JOB);
       const [drill] = verifications();
       expect(drill).toMatchObject({ kind: "drill", ok: 1 });
-      expect(drill?.summary).toMatch(
-        /^restored snapshot [0-9a-f]{8} and verified \d+ tables, \d+ rows$/,
-      );
+      expect(drill?.summary).toMatch(/^restored snapshot [0-9a-f]{8} and verified the restore$/);
       expect(drillDirs()).toEqual([]);
       // Nothing was swapped: the same entries, and the live attachment is as it was.
       expect(readdirSync(dataDir).sort()).toEqual(before);

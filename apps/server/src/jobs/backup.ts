@@ -204,7 +204,7 @@ export function backupJobs(deps: BackupJobDeps): JobRegistration[] {
         const verdict = verifyFetched(fetched, loadMigrations(deps.migrationsDir));
         ok = verdict.ok;
         summary = verdict.ok
-          ? `restored snapshot ${fetched.snapshot.id.slice(0, 8)} and verified ${verdict.tables} tables, ${verdict.rows} rows`
+          ? `restored snapshot ${fetched.snapshot.id.slice(0, 8)} and verified the restore`
           : failureSummary(verdict.check, fetched.snapshot.id);
       } catch (error) {
         if (error instanceof SnapshotNotFound) return;

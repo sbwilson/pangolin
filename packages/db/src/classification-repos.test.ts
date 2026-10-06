@@ -91,7 +91,7 @@ describe("ledger and classification schema on SQLite", () => {
       { id: "R1", account_id: "A1" },
     ]);
     expect(old.prepare("SELECT count(*) FROM split").pluck().get()).toBe(1);
-    expect(migrate(old, migrations).applied).toEqual(["0010_split_provenance"]);
+    expect(migrate(old, migrations.slice(0, 11)).applied).toEqual(["0010_split_provenance"]);
     expect(old.pragma("foreign_key_check")).toEqual([]);
     expect(
       old

@@ -6,7 +6,6 @@ import {
   type Db,
   loadMigrations,
   MANIFEST_FILE,
-  manifestSha256,
   migrate,
   openDatabase,
   packageMigrationsDir,
@@ -47,12 +46,7 @@ describe("takeSnapshot", () => {
     const manifest = parseManifest(text);
     expect(manifest).toEqual(buildManifest(db, { balanceDate: BALANCE_DATE }));
     const migrations = loadMigrations(packageMigrationsDir);
-    expect(summary).toEqual({
-      schemaVersion: migrations.length,
-      tableCount: manifest.tables.length,
-      rowCount: manifest.tables.reduce((sum, t) => sum + t.rows, 0),
-      manifestSha256: manifestSha256(text),
-    });
+    expect(summary).toEqual({ schemaVersion: migrations.length });
     expect(manifest.tables.find((t) => t.name === "person")?.rows).toBe(50);
     expect(verifySnapshot(join(outDir, SNAPSHOT_FILE), manifest, migrations)).toMatchObject({
       ok: true,

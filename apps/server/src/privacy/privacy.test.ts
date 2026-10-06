@@ -1147,14 +1147,13 @@ describe("a failed restore drill", () => {
   let drills: [DrillWorld, DrillWorld];
 
   /**
-   * Restic's snapshot ids are random, and the manifest's digest covers the whole database, private
-   * rows included, so it differs between the worlds too (a finding for the human, see the story's
-   * notes: both reach B in unscoped audit rows). They are named, not compared; every other byte is.
-   * The known-gap test below pins the difference, so closing the leak fails it and the mask goes.
+   * Restic's snapshot ids are random, so they differ between the worlds. They are named, not
+   * compared; every other byte is. A 64-hex string is a restic snapshot id and nothing else now:
+   * the manifest digest is no longer stored, and the test below keeps it that way.
    */
   const sansSnapshotIds = (text: string) =>
     normaliseRequestIds(text)
-      .replace(/\b[0-9a-f]{64}\b/g, "<digest>")
+      .replace(/\b[0-9a-f]{64}\b/g, "<restic id>")
       .replace(/(snapshot )[0-9a-f]{8}\b/g, "$1<id>");
 
   /** B's reads and the drill's stored verdict, audit rows and review items. */
@@ -1213,26 +1212,20 @@ describe("a failed restore drill", () => {
     expect(identicalProblems(left, right)).toEqual([]);
   });
 
-  // KNOWN GAP (_bmad-output/implementation-artifacts/deferred-work.md): the manifest digest, which
-  // covers A's private rows, and the restic snapshot id reach B unmasked in unscoped
-  // `backup_snapshot` audit rows and in /api/system/backup. This pins exactly that.
-  it("known gap: B reads a manifest digest of A's private rows, and nothing else differs", async () => {
-    const unmasked = async (w: DrillWorld) => {
-      const b = w.ctx("b");
-      const rows = listAudit(b).filter((r) => r.entity === "backup_snapshot");
-      const backup = await w.request("b", "GET", "/api/system/backup");
-      return normaliseRequestIds(JSON.stringify([rows, backup.status, backup.text]));
-    };
-    const tokens = async (w: DrillWorld) => (await unmasked(w)).split(/[^0-9A-Za-z]+/);
-    const [left, right] = [await tokens(drills[0]), await tokens(drills[1])];
-    expect(left.length).toBe(right.length);
-    const differing = left.flatMap((token, i) => (token === right[i] ? [] : [token, right[i]]));
-    // If this fails the leak is closed: drop the digest mask from `sansSnapshotIds` and this test.
-    expect(differing.length, "the unmasked rows no longer differ").toBeGreaterThan(0);
-    for (const token of differing) {
-      expect(token, "a differing token that is not a digest or snapshot id").toMatch(
-        /^(?:[0-9a-f]{64}|[0-9a-f]{8})$/,
+  it("stores no row or table count and no manifest digest where B reads the backup", async () => {
+    for (const d of drills) {
+      const b = d.ctx("b");
+      const rows = listAudit(b).filter((r) => r.entity.startsWith("backup"));
+      expect(rows.length).toBeGreaterThan(0);
+      const backup = await d.request("b", "GET", "/api/system/backup");
+      const stored = d.db.prepare("SELECT * FROM backup_snapshot").all();
+      const read = JSON.stringify([rows, backup.text, stored, d.verifications()]);
+      expect(read).not.toMatch(/table_?count|row_?count|manifest_?sha256|\btables?\b|\brows\b/i);
+      // Every 64-hex string is a restic snapshot id.
+      const ids = new Set(
+        d.db.prepare("SELECT restic_snapshot_id FROM backup_snapshot").pluck().all(),
       );
+      for (const hex of read.match(/\b[0-9a-f]{64}\b/g) ?? []) expect(ids.has(hex)).toBe(true);
     }
   });
 

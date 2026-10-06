@@ -43,7 +43,7 @@ describe("committed migrations", () => {
     expect(loadMigrations(packageMigrationsDir)[0]?.name).toBe("0000_baseline");
   });
 
-  it("migrates a fresh database to version 11, then re-applies nothing", () => {
+  it("migrates a fresh database to version 12, then re-applies nothing", () => {
     const migrations = loadMigrations(packageMigrationsDir);
     const names = [
       "0000_baseline",
@@ -57,10 +57,11 @@ describe("committed migrations", () => {
       "0008_ledger_accounts",
       "0009_ledger_classification_schema",
       "0010_split_provenance",
+      "0011_backup_snapshot_drop_figures",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 11 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 11 });
-    expect(schemaVersion(db)).toBe(11);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 12 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 12 });
+    expect(schemaVersion(db)).toBe(12);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });
@@ -75,7 +76,7 @@ describe("committed migrations", () => {
       INSERT INTO tag (id, name, created_at, updated_at) VALUES ('G1','holiday','t','t');
       INSERT INTO split_tag (split_id, tag_id, created_at, updated_at) VALUES ('S1','G1','t','t');
     `);
-    expect(migrate(db, migrations).applied).toEqual(["0010_split_provenance"]);
+    expect(migrate(db, migrations.slice(0, 11)).applied).toEqual(["0010_split_provenance"]);
     expect(db.pragma("foreign_key_check")).toEqual([]);
     expect(db.prepare("SELECT split_id, tag_id FROM split_tag").all()).toEqual([
       { split_id: "S1", tag_id: "G1" },
@@ -89,6 +90,157 @@ describe("committed migrations", () => {
         "INSERT INTO split_tag (split_id, tag_id, created_at, updated_at) VALUES ('nope','G1','t','t')",
       ),
     ).toThrow(/FOREIGN KEY/);
+  });
+
+  it("drops the backup figures from 0010's rows, audit rows and drill summaries when 0010 upgrades to 0011", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 11));
+    const figures = { tableCount: 15, rowCount: 100, manifestSha256: "d".repeat(64) };
+    const restic = "a".repeat(8) + "b".repeat(56);
+    const row = (id: string, pushed: boolean) => ({
+      id,
+      takenAt: "2026-09-27T00:00:00.000Z",
+      schemaVersion: 11,
+      ...figures,
+      pushJobId: `push-${id}`,
+      resticSnapshotId: pushed ? restic : null,
+      pushedAt: pushed ? "2026-09-27T00:05:00.000Z" : null,
+      createdAt: "t",
+      updatedAt: "t",
+    });
+    const insertSnapshot = db.prepare(
+      `INSERT INTO backup_snapshot (id, taken_at, schema_version, table_count, row_count,
+         manifest_sha256, push_job_id, restic_snapshot_id, pushed_at, created_at, updated_at)
+       VALUES (?, '2026-09-27T00:00:00.000Z', 11, 15, 100, ?, ?, ?, ?, 't', 't')`,
+    );
+    insertSnapshot.run("S1", figures.manifestSha256, "push-S1", restic, "2026-09-27T00:05:00.000Z");
+    insertSnapshot.run("S2", figures.manifestSha256, "push-S2", null, null);
+    const audit = db.prepare(
+      `INSERT INTO audit_log (id, at, actor, entity, entity_id, action, before, after)
+       VALUES (?, 't', 'system', ?, ?, ?, ?, ?)`,
+    );
+    audit.run("L1", "backup_snapshot", "S1", "create", null, JSON.stringify(row("S1", false)));
+    audit.run(
+      "L2",
+      "backup_snapshot",
+      "S1",
+      "push",
+      JSON.stringify(row("S1", false)),
+      JSON.stringify(row("S1", true)),
+    );
+    audit.run("L3", "person", "P1", "create", null, JSON.stringify({ tableCount: 1 }));
+    const drill = db.prepare(
+      "INSERT INTO backup_verification (id, kind, at, ok, summary) VALUES (?, ?, 't', ?, ?)",
+    );
+    const okSummary = `restored snapshot ${restic.slice(0, 8)} and verified 15 tables, 100 rows`;
+    const failSummary = `the manifest check failed on snapshot ${restic.slice(0, 8)}`;
+    drill.run("V1", "drill", 1, okSummary);
+    drill.run("V2", "drill", 0, failSummary);
+    drill.run("V3", "check", 1, "the repository check found no errors");
+    // A failed drill and a check whose summaries happen to hold the phrase are not rewritten.
+    const oddFail = "the restore check failed and verified nothing";
+    const oddCheck = "the repository check ran and verified 3 packs";
+    drill.run("V4", "drill", 0, oddFail);
+    drill.run("V5", "check", 1, oddCheck);
+    const auditVerification = (id: string, kind: string, ok: boolean, summary: string) =>
+      audit.run(
+        `L${id}`,
+        "backup_verification",
+        id,
+        "record",
+        null,
+        JSON.stringify({ id, kind, at: "t", ok, summary }),
+      );
+    auditVerification("V1", "drill", true, okSummary);
+    auditVerification("V4", "drill", false, oddFail);
+    auditVerification("V5", "check", true, oddCheck);
+
+    expect(migrate(db, migrations).applied).toEqual(["0011_backup_snapshot_drop_figures"]);
+    expect(schemaVersion(db)).toBe(12);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+
+    // The rows are kept, the three columns and their check are gone, the pushed check stays.
+    expect(db.prepare("SELECT * FROM backup_snapshot ORDER BY id").all()).toEqual([
+      {
+        id: "S1",
+        taken_at: "2026-09-27T00:00:00.000Z",
+        schema_version: 11,
+        push_job_id: "push-S1",
+        restic_snapshot_id: restic,
+        pushed_at: "2026-09-27T00:05:00.000Z",
+        created_at: "t",
+        updated_at: "t",
+      },
+      {
+        id: "S2",
+        taken_at: "2026-09-27T00:00:00.000Z",
+        schema_version: 11,
+        push_job_id: "push-S2",
+        restic_snapshot_id: null,
+        pushed_at: null,
+        created_at: "t",
+        updated_at: "t",
+      },
+    ]);
+    expect(
+      db
+        .prepare("SELECT strict FROM pragma_table_list WHERE name = 'backup_snapshot'")
+        .pluck()
+        .get(),
+    ).toBe(1);
+    expect(
+      db
+        .prepare(
+          "SELECT name FROM sqlite_schema WHERE tbl_name = 'backup_snapshot' AND type = 'index'",
+        )
+        .pluck()
+        .all(),
+    ).toContain("backup_snapshot_pushed_idx");
+    expect(() =>
+      db.exec(
+        "INSERT INTO backup_snapshot (id, taken_at, schema_version, push_job_id, restic_snapshot_id, created_at, updated_at) VALUES ('x','t',1,'j','r','t','t')",
+      ),
+    ).toThrow(/CHECK constraint failed: backup_snapshot_pushed/);
+
+    // The audit rows of backup snapshots hold none of the three keys, and nothing else changed.
+    const kept: Record<string, unknown> = { ...row("S1", true) };
+    for (const key of Object.keys(figures)) delete kept[key];
+    const audited = db
+      .prepare(
+        "SELECT id, before, after FROM audit_log WHERE entity = 'backup_snapshot' ORDER BY id",
+      )
+      .all() as { id: string; before: string | null; after: string }[];
+    expect(audited.map((r) => r.id)).toEqual(["L1", "L2"]);
+    expect(audited[0]?.before).toBeNull();
+    expect(JSON.parse(audited[1]?.after ?? "null")).toEqual(kept);
+    for (const r of audited) {
+      const text = `${r.before} ${r.after}`;
+      expect(text).not.toMatch(/tableCount|rowCount|manifestSha256/);
+      // The only 64-hex string left is the restic snapshot id.
+      for (const hex of text.match(/\b[0-9a-f]{64}\b/g) ?? []) expect(hex).toBe(restic);
+    }
+    expect(db.prepare("SELECT after FROM audit_log WHERE id = 'L3'").pluck().get()).toBe(
+      '{"tableCount":1}',
+    );
+
+    // A successful drill's summary loses its figures, so it reads as a new one does; a failed
+    // drill's and a check's stay as they were, even when they hold the phrase.
+    expect(db.prepare("SELECT id, summary FROM backup_verification ORDER BY id").all()).toEqual([
+      { id: "V1", summary: `restored snapshot ${restic.slice(0, 8)} and verified the restore` },
+      { id: "V2", summary: failSummary },
+      { id: "V3", summary: "the repository check found no errors" },
+      { id: "V4", summary: oddFail },
+      { id: "V5", summary: oddCheck },
+    ]);
+    const auditedSummary = (id: string) =>
+      JSON.parse(
+        db.prepare("SELECT after FROM audit_log WHERE id = ?").pluck().get(`L${id}`) as string,
+      ).summary;
+    expect(auditedSummary("V1")).toBe(
+      `restored snapshot ${restic.slice(0, 8)} and verified the restore`,
+    );
+    expect(auditedSummary("V4")).toBe(oddFail);
+    expect(auditedSummary("V5")).toBe(oddCheck);
   });
 
   it("opens in WAL mode with foreign keys on", () => {

@@ -46,9 +46,6 @@ const input = (id: string) => ({
   id,
   takenAt: "2026-09-27T00:00:00.000Z",
   schemaVersion: 6,
-  tableCount: 15,
-  rowCount: 100,
-  manifestSha256: "b".repeat(64),
 });
 
 describe("backup_snapshot on SQLite", () => {
@@ -62,9 +59,9 @@ describe("backup_snapshot on SQLite", () => {
     expect(() =>
       db
         .prepare(
-          `INSERT INTO backup_snapshot (id, taken_at, schema_version, table_count, row_count,
-             manifest_sha256, push_job_id, restic_snapshot_id, pushed_at, created_at, updated_at)
-           VALUES ('x', 't', 1, 1, 1, 's', 'j', 'r', NULL, 't', 't')`,
+          `INSERT INTO backup_snapshot (id, taken_at, schema_version, push_job_id,
+             restic_snapshot_id, pushed_at, created_at, updated_at)
+           VALUES ('x', 't', 1, 'j', 'r', NULL, 't', 't')`,
         )
         .run(),
     ).toThrow(/CHECK constraint failed: backup_snapshot_pushed/);

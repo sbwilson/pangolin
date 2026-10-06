@@ -51,9 +51,6 @@ function snapshotInput(id: string) {
     id,
     takenAt: "2026-09-27T00:00:00.000Z",
     schemaVersion: 6,
-    tableCount: 15,
-    rowCount: 120,
-    manifestSha256: SHA,
   };
 }
 
@@ -141,7 +138,9 @@ describe("recording a backup", () => {
     const jobCtx = { ...ctx, viewer: systemViewer("job:backup-snapshot") };
     const row = recordBackupSnapshot(jobCtx, snapshotInput("SNAP1"));
     expect(row).toMatchObject({ id: "SNAP1", resticSnapshotId: null, pushedAt: null });
-    expect(recordBackupSnapshot(jobCtx, { ...snapshotInput("SNAP1"), rowCount: 1 })).toEqual(row);
+    expect(recordBackupSnapshot(jobCtx, { ...snapshotInput("SNAP1"), schemaVersion: 7 })).toEqual(
+      row,
+    );
     const pushes = uow.state.jobs.filter((job) => job.kind === "backup-push");
     expect(pushes).toEqual([
       expect.objectContaining({
@@ -186,9 +185,12 @@ describe("recording a backup", () => {
     expect(() => recordBackupPush(pushCtx, { id: "NOPE", resticSnapshotId: RESTIC_1 })).toThrow(
       expect.objectContaining({ code: "NotFound" }),
     );
-    expect(() =>
-      recordBackupSnapshot(jobCtx, { ...snapshotInput("X"), manifestSha256: "no" }),
-    ).toThrow(expect.objectContaining({ code: "Validation" }));
+    // The manifest's figures are no longer recorded: a caller passing them is refused.
+    for (const dropped of [{ tableCount: 1 }, { rowCount: 1 }, { manifestSha256: SHA }]) {
+      expect(() => recordBackupSnapshot(jobCtx, { ...snapshotInput("X"), ...dropped })).toThrow(
+        expect.objectContaining({ code: "Validation" }),
+      );
+    }
   });
 
   it("lists as removable only staged snapshots that are pushed or whose push finished", () => {

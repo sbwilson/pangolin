@@ -140,7 +140,7 @@ describe("GET /api/system/health", () => {
     const app = createApp(deps(openDb()));
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 11, writable: true });
+    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 12, writable: true });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
@@ -1494,9 +1494,9 @@ describe("GET /api/system/jobs", () => {
 describe("GET /api/system/backup", () => {
   function insertBackup(db: Db, id: string, resticId: string | null, pushedAt: string | null) {
     db.prepare(
-      `INSERT INTO backup_snapshot (id, taken_at, schema_version, table_count, row_count,
-         manifest_sha256, push_job_id, restic_snapshot_id, pushed_at, created_at, updated_at)
-       VALUES (?, '2026-09-27T00:00:00.000Z', 6, 10, 100, 'x', 'j', ?, ?, 'x', 'x')`,
+      `INSERT INTO backup_snapshot (id, taken_at, schema_version, push_job_id,
+         restic_snapshot_id, pushed_at, created_at, updated_at)
+       VALUES (?, '2026-09-27T00:00:00.000Z', 6, 'j', ?, ?, 'x', 'x')`,
     ).run(id, resticId, pushedAt);
   }
 
@@ -1578,9 +1578,9 @@ describe("GET /healthz with a stale backup", () => {
   it("stays 200 and ready, with a warning in the body only when the backup is stale", async () => {
     const db = openDb();
     db.prepare(
-      `INSERT INTO backup_snapshot (id, taken_at, schema_version, table_count, row_count,
-         manifest_sha256, push_job_id, restic_snapshot_id, pushed_at, created_at, updated_at)
-       VALUES ('A', '2026-09-27T00:00:00.000Z', 6, 10, 100, 'x', 'j', ?, '2026-09-27T00:05:00.000Z', 'x', 'x')`,
+      `INSERT INTO backup_snapshot (id, taken_at, schema_version, push_job_id,
+         restic_snapshot_id, pushed_at, created_at, updated_at)
+       VALUES ('A', '2026-09-27T00:00:00.000Z', 6, 'j', ?, '2026-09-27T00:05:00.000Z', 'x', 'x')`,
     ).run("1".repeat(64));
     const at = (day: string) => ({
       ...deps(db),

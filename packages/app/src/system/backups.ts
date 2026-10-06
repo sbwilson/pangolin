@@ -212,9 +212,6 @@ export const recordBackupSnapshotInput = z
     id: z.string().min(1).max(64),
     takenAt: z.string().min(1),
     schemaVersion: z.number().int().min(0),
-    tableCount: z.number().int().min(0),
-    rowCount: z.number().int().min(0),
-    manifestSha256: sha256,
   })
   .strict();
 export type RecordBackupSnapshotInput = z.input<typeof recordBackupSnapshotInput>;

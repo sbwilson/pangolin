@@ -33,7 +33,6 @@ import {
   type Db,
   loadMigrations,
   MANIFEST_FILE,
-  manifestSha256,
   migrate,
   openDatabase,
   parseManifest,
@@ -253,9 +252,6 @@ function afterSwap(
       id,
       takenAt: manifest.takenAt ?? new Date(fetched.snapshot.time).toISOString(),
       schemaVersion: manifest.schemaVersion,
-      tableCount: manifest.tables.length,
-      rowCount: manifest.tables.reduce((sum, table) => sum + table.rows, 0),
-      manifestSha256: manifestSha256(text),
     });
     recordBackupPush(ctx, { id, resticSnapshotId: snapshotId });
     return { schemaVersion, cancelled, credentials };
