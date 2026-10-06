@@ -314,3 +314,7 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-release-v0-2-1-and-deploy-plan.md`
   summary: `apps/server/src/admin/seed.test.ts` (5 tests) and `apps/server/src/demo.test.ts` (1) time out at 5000 ms on the CI runner, so `Lint, types, tests, STRICT` fails intermittently on `develop` and the release run's `ci` job can fail the same way.
   evidence: CI run 37393717950 on 84a6699 failed on those six timeouts (97 of 99 files passed); `develop` runs alternate red and green (3ed41f1, fc36bf7, 84a6699 red; 82ce95d, bfd0abb green) with no code cause; the files pass locally in 26 s. A fix raises the per-test timeout or speeds the seed fixture.
+
+- source_plan: none
+  summary: Applying the demo seed costs about 1.4 s per call locally (732 events), roughly half of it Drizzle query building (`entity.is`) and SQLite `prepare` with no statement reuse, and seed-dependent tests each re-apply it.
+  evidence: CPU profile of `applySeed` (3 runs, 1.35 to 1.44 s each): `entity.js is` 1242 ms and better-sqlite3 `prepare` 1029 ms of 5083 ms total. On CI (2 vCPU, beside `deploy/install.test.ts`, which alone runs 130 to 220 s) the same tests take 4 to 6 s. The 30 s default timeout stops the failures; caching prepared statements in the repositories, or seeding once per file and copying with `serialize()`, would cut the cost itself.
