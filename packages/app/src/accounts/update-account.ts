@@ -3,6 +3,7 @@ import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { requireClosableOn } from "../ledger/closed-lock.ts";
 import type { AccountOwnerRow, AccountRow } from "../ports/unit-of-work.ts";
 import type { Viewer } from "../viewer.ts";
 import { write } from "../write.ts";
@@ -42,7 +43,9 @@ export type UpdateAccountInput = z.input<typeof updateAccountInput>;
 /**
  * `accounts.updateAccount`: changes the fields it is given (an omitted field stays; `null` clears
  * an institution or date). The type, currency and privacy never change here: the currency must
- * match, and `setPrivacy` owns privacy. Clearing `closedOn` reopens the account. Owners are
+ * match, and `setPrivacy` owns privacy. Clearing `closedOn` reopens the account; setting a new
+ * `closedOn` before the latest transaction or balance snapshot is a `Conflict` carrying the
+ * choice (`ClosedAccountDetails`). Owners are
  * replaced as a whole and take effect from the next open period (AD-26). On a public account a
  * person who owns it may set the owners freely (share it, remove themself or the other, change
  * shares; one or two owners whose shares add up to 100%); a person who does not own it may only
@@ -73,6 +76,9 @@ export function updateAccount(ctx: UseCaseContext, input: UpdateAccountInput): A
     const openedOn = parsed.openedOn === undefined ? before.openedOn : parsed.openedOn;
     const closedOn = parsed.closedOn === undefined ? before.closedOn : parsed.closedOn;
     requireDatesInOrder(openedOn, closedOn);
+    if (closedOn !== null && closedOn !== before.closedOn) {
+      requireClosableOn(ctx, tx, before.id, closedOn);
+    }
     const at = formatInstant(ctx.clock.now());
     const after: AccountRow = {
       ...before,

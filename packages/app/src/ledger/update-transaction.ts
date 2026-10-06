@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { write } from "../write.ts";
+import { requireEntryOpen } from "./closed-lock.ts";
 import { descriptionField, notesField, postedOnField } from "./fields.ts";
 import type { LedgerTransaction } from "./list-transactions.ts";
 import "./needs-review.ts";
@@ -37,7 +38,9 @@ export type UpdateTransactionInput = z.input<typeof updateTransactionInput>;
  * single split's amount. Status, `performedBy`, fingerprint, hidden-name fields, payee and
  * categories never change, and an edit that changes nothing writes and audits nothing. A
  * missing, deleted or partner-private transaction is `NotFound`. Audited as one `update` of
- * `transaction` (with its splits) and its `accountId`.
+ * `transaction` (with its splits) and its `accountId`. On a closed account the date the entry ends
+ * on must be on or before `closedOn` (`Conflict` with the choice in its details), so a locked
+ * entry must move back to on or before `closedOn`, not merely earlier.
  */
 export function updateTransaction(
   ctx: UseCaseContext,
@@ -75,6 +78,8 @@ export function updateTransaction(
       (parsed.description !== undefined && parsed.description !== before.descriptionRaw) ||
       notes !== before.notes;
     if (!changed) return toLedgerTransaction(ctx.viewer, before, tagsOf(tx, ctx.viewer, before));
+    // The date it ends on decides: moving a locked entry back to the closed date is allowed.
+    requireEntryOpen(ctx, tx, before.accountId, postedOn);
     const [only] = before.splits;
     if (amountChanged && (before.splits.length !== 1 || only === undefined)) {
       throw new AppError(

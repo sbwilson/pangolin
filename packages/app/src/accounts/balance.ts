@@ -2,6 +2,7 @@ import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { requireOpenOn } from "../ledger/closed-lock.ts";
 import {
   type AccountType,
   BALANCE_SOURCES,
@@ -34,7 +35,7 @@ export type RecordBalanceSnapshotInput = z.input<typeof recordBalanceSnapshotInp
 /**
  * `accounts.recordBalanceSnapshot`: records an account's balance on one day, for any viewer who
  * can see the account (`manual` unless a source is given). Another person's private account is
- * `NotFound`. Audited as one `create` of `balance_snapshot` with the `accountId`.
+ * `NotFound`. On a closed account an `asOf` after its `closedOn` is a `Conflict`. Audited as one `create` of `balance_snapshot` with the `accountId`.
  */
 export function recordBalanceSnapshot(
   ctx: UseCaseContext,
@@ -44,6 +45,7 @@ export function recordBalanceSnapshot(
   return write(ctx, (tx, audit) => {
     const account = tx.accounts.findVisible(ctx.viewer, parsed.accountId);
     if (account === undefined) throw new AppError("NotFound", "Account not found");
+    requireOpenOn(ctx, tx, account, parsed.asOf, "balance snapshot");
     const at = formatInstant(ctx.clock.now());
     const row: BalanceSnapshotRow = {
       id: ctx.newId<"BalanceSnapshot">(),

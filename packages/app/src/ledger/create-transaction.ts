@@ -5,6 +5,7 @@ import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import type { SplitRow, TransactionRow } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
+import { requireOpenOn } from "./closed-lock.ts";
 import { descriptionField, postedOnField } from "./fields.ts";
 import { fingerprintManual, MANUAL_FINGERPRINT_VERSION } from "./fingerprint.ts";
 import "./needs-review.ts";
@@ -27,7 +28,8 @@ export type CreateTransactionInput = z.input<typeof createTransactionInput>;
  * `ledger.createTransaction`: adds a posted transaction with one split for the whole amount to
  * an account the viewer can see, audited as one `create` of `transaction` with the account's
  * ID. An account that does not exist and another person's private account both answer
- * `NotFound`. The fingerprint is `fingerprintManual` (version 2): it comes from the new ID, so
+ * `NotFound`. A closed account refuses a `postedOn` after its `closedOn` (`Conflict`, with the
+ * choice in its details). The fingerprint is `fingerprintManual` (version 2): it comes from the new ID, so
  * identical manual lines coexist. The split's beneficiary is the owner of a private account,
  * `shared` otherwise. A payee the viewer cannot see (missing, or another person's) is `NotFound`;
  * a payee scoped to one person cannot go on a public account's transaction (`Conflict`, as for a
@@ -42,6 +44,7 @@ export function createTransaction(
   return write(ctx, (tx, audit) => {
     const account = tx.accounts.findVisible(ctx.viewer, parsed.accountId);
     if (account === undefined) throw new AppError("NotFound", "Account not found");
+    requireOpenOn(ctx, tx, account, parsed.postedOn);
     let beneficiary = "shared";
     if (account.isPrivate) {
       const [owner] = tx.accounts.owners(account.id);

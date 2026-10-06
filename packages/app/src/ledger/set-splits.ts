@@ -4,6 +4,7 @@ import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import type { SplitRow, SplitSource } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
+import { requireEntryOpen } from "./closed-lock.ts";
 import type { LedgerTransaction } from "./list-transactions.ts";
 import "./needs-review.ts";
 import {
@@ -178,6 +179,7 @@ export function setSplits(ctx: UseCaseContext, input: SetSplitsInput): LedgerTra
       next.length === before.splits.length && next.every((row) => existing.get(row.id) === row);
     const tagsBefore = tagsOf(tx, ctx.viewer, before);
     if (unchanged) return toLedgerTransaction(ctx.viewer, before, tagsBefore);
+    requireEntryOpen(ctx, tx, before.accountId, before.postedOn);
 
     const stored = storedTransaction(tx, ctx.viewer, before.id);
     tx.transactions.replaceSplits(before.id, next);

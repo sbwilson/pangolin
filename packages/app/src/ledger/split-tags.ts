@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { write } from "../write.ts";
+import { requireEntryOpen } from "./closed-lock.ts";
 import type { LedgerTransaction } from "./list-transactions.ts";
 import "./needs-review.ts";
 import { privateOwner } from "./split-targets.ts";
@@ -53,6 +54,7 @@ export function setSplitTags(ctx: UseCaseContext, input: SetSplitTagsInput): Led
     if (have.length === wanted.length && wanted.every((id) => have.includes(id))) {
       return toLedgerTransaction(ctx.viewer, before, tagsBefore);
     }
+    requireEntryOpen(ctx, tx, before.accountId, before.postedOn);
     const stored = storedTransaction(tx, ctx.viewer, before.id);
     tx.tags.replaceForSplit(ctx.viewer, target.id, wanted, formatInstant(ctx.clock.now()));
     const after = tx.transactions.findVisible(ctx.viewer, before.id, today);

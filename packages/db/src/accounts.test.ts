@@ -396,8 +396,9 @@ describe("closeAccount", () => {
     expect(closed).toMatchObject({ closedOn: "2026-09-27", name: before.name, pool: "shared" });
     expect(auditFor("account", id).at(-1)).toMatchObject({ action: "close", account_id: id });
     expect(() => closeAccount(as(a), { id })).toThrow(code("Conflict"));
-    // createTransaction is untouched by a closed account.
-    expect(() => txn(as(a), id, "2026-09-28", -100)).not.toThrow();
+    // A closed account takes entries up to its closed date and refuses later ones.
+    expect(() => txn(as(a), id, "2026-09-27", -100)).not.toThrow();
+    expect(() => txn(as(a), id, "2026-09-28", -100)).toThrow(code("Conflict"));
   });
 
   it("refuses a close before the opening date", () => {

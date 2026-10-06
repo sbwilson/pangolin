@@ -13,7 +13,7 @@ import type {
   TransferGroupRow,
   VisibleTransaction,
 } from "@pangolin/app";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { balanceAsOf } from "./balance.ts";
 import type { Db } from "./open.ts";
@@ -424,6 +424,43 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
           .where(and(eq(transaction.id, id), visible))
           .run().changes === 1
       );
+    },
+
+    latestPostedOn: (viewer, accountId) => {
+      const visible = liveVisibleTxn(viewer);
+      check();
+      const row = orm
+        .select({ postedOn: transaction.postedOn })
+        .from(transaction)
+        .where(and(eq(transaction.accountId, accountId), visible))
+        .orderBy(desc(transaction.postedOn))
+        .limit(1)
+        .get();
+      return row?.postedOn;
+    },
+
+    listManualAfter: (viewer, accountId, day, limit) => {
+      const visible = liveVisibleTxn(viewer);
+      check();
+      const after = and(
+        eq(transaction.accountId, accountId),
+        gt(transaction.postedOn, day),
+        visible,
+      );
+      const manual = and(isNull(transaction.importId), isNull(transaction.externalId));
+      const rows = orm
+        .select({ id: transaction.id, postedOn: transaction.postedOn })
+        .from(transaction)
+        .where(and(after, manual))
+        .orderBy(asc(transaction.postedOn), asc(transaction.id))
+        .limit(limit)
+        .all();
+      const imported = orm
+        .select({ n: count() })
+        .from(transaction)
+        .where(and(after, or(isNotNull(transaction.importId), isNotNull(transaction.externalId))))
+        .get();
+      return { manual: rows, importedCount: imported?.n ?? 0 };
     },
 
     listVisible: (viewer, today) => {

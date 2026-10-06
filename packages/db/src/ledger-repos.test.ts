@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  closeAccount,
   createAccount,
   createActivity,
   createCategory,
@@ -26,6 +27,7 @@ import {
   setSplitTags,
   type UseCaseContext,
   unhideTransactionName,
+  updateAccount,
   updateTransaction,
   write,
 } from "@pangolin/app";
@@ -726,5 +728,51 @@ describe("AccountRepo update, replaceOwners, hasSplitForOthers and scopedReferen
     });
     deleteTransaction(as(a), { id: t });
     expect(refs(privateA).tags).toEqual([]);
+  });
+});
+
+/** The error `fn` throws; fails when it throws nothing. */
+function thrown(fn: () => unknown): unknown {
+  try {
+    fn();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("expected a throw");
+}
+
+describe("the closed-account lock on SQLite", () => {
+  it("reads the stored columns: imported rows are counted, a hidden name does not hide one", () => {
+    const manual = createTransaction(as(a), txn(shared, "Manual", "2026-09-05"));
+    const viaImport = createTransaction(as(a), txn(shared, "Imported", "2026-09-06"));
+    db.prepare("UPDATE \"transaction\" SET import_id = 'IMP' WHERE id = ?").run(viaImport);
+    const viaBank = createTransaction(as(a), txn(shared, "Bank", "2026-09-07"));
+    db.prepare("UPDATE \"transaction\" SET external_id = 'bank-1' WHERE id = ?").run(viaBank);
+    hideTransactionName(as(a), { id: viaBank });
+    createTransaction(as(a), txn(shared, "Early", "2026-08-01"));
+    const error = thrown(() => closeAccount(as(b), { id: shared, closedOn: "2026-08-31" }));
+    expect(error).toMatchObject({ code: "Conflict" });
+    expect((error as { details: unknown }).details).toEqual({
+      accountId: shared,
+      closedOn: "2026-08-31",
+      latestEntryDate: "2026-09-07",
+      latestSnapshotAsOf: null,
+      manualEntries: [{ id: manual, postedOn: "2026-09-05" }],
+      importedCount: 2,
+    });
+    closeAccount(as(b), { id: shared, closedOn: "2026-09-07" });
+    expect(() => createTransaction(as(a), txn(shared, "Late", "2026-09-08"))).toThrow(
+      expect.objectContaining({ code: "Conflict" }),
+    );
+    expect(updateAccount(as(a), { id: shared, closedOn: null }).closedOn).toBeNull();
+    createTransaction(as(a), txn(shared, "Late", "2026-09-08"));
+  });
+
+  it("never reads a private account of the other person", () => {
+    createTransaction(as(a), txn(privateA, "Secret", "2026-09-20"));
+    // B cannot see the account at all, so cannot close it or learn its dates.
+    expect(() => closeAccount(as(b), { id: privateA, closedOn: "2026-09-01" })).toThrow(
+      expect.objectContaining({ code: "NotFound" }),
+    );
   });
 });

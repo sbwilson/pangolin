@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { write } from "../write.ts";
+import { requireEntryOpen } from "./closed-lock.ts";
 import type { LedgerTransaction } from "./list-transactions.ts";
 import {
   auditSnapshot,
@@ -49,6 +50,7 @@ export function createTransferGroup(
     if (a.transferGroupId !== null || b.transferGroupId !== null) {
       throw new AppError("Conflict", "A transaction is already in a transfer group");
     }
+    for (const side of [a, b]) requireEntryOpen(ctx, tx, side.accountId, side.postedOn);
     const sides = [a, b].map((before) => ({
       before,
       stored: storedTransaction(tx, ctx.viewer, before.id),
@@ -92,6 +94,7 @@ export function deleteTransferGroup(ctx: UseCaseContext, input: DeleteTransferGr
     }
     const { rows: members, hidden } = tx.transferGroups.members(ctx.viewer, parsed.id);
     if (hidden > 0) throw new AppError("NotFound", "Transfer group not found");
+    for (const member of members) requireEntryOpen(ctx, tx, member.accountId, member.postedOn);
     const at = formatInstant(ctx.clock.now());
     tx.transactions.setTransferGroup(
       members.map((m) => m.id),

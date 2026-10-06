@@ -488,6 +488,26 @@ export interface TransactionRepo {
    */
   softDelete(viewer: Viewer, id: string, at: string): boolean;
   /**
+   * The latest `postedOn` (`YYYY-MM-DD`) among the live transactions of account `accountId` that
+   * `viewer` may see, pending or posted; undefined when there is none. Throws without a viewer.
+   */
+  latestPostedOn(viewer: Viewer, accountId: string): string | undefined;
+  /**
+   * The live transactions of account `accountId` that `viewer` may see with `postedOn` after
+   * `day` (`YYYY-MM-DD`), read from the stored columns (not the hidden-name projection): the
+   * manually entered ones (`importId` and `externalId` both null), oldest first, at most
+   * `limit`, and the number of imported ones (any other). Throws without a viewer.
+   */
+  listManualAfter(
+    viewer: Viewer,
+    accountId: string,
+    day: string,
+    limit: number,
+  ): {
+    readonly manual: readonly { readonly id: string; readonly postedOn: string }[];
+    readonly importedCount: number;
+  };
+  /**
    * The transactions `viewer` may see (those of public accounts and of their own private ones),
    * newest first, with their splits, names projected for `today` (`YYYY-MM-DD`, from the
    * clock). Throws when given no viewer.

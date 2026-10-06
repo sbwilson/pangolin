@@ -1045,6 +1045,30 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       working.transactions[working.transactions.indexOf(row)] = { ...row, updatedAt: at };
       return true;
     },
+    latestPostedOn: (viewer, accountId) => {
+      requireViewer(viewer);
+      check();
+      let latest: string | undefined;
+      for (const row of visibleRows(viewer)) {
+        if (row.accountId !== accountId) continue;
+        if (latest === undefined || row.postedOn > latest) latest = row.postedOn;
+      }
+      return latest;
+    },
+    listManualAfter: (viewer, accountId, day, limit) => {
+      requireViewer(viewer);
+      check();
+      const after = visibleRows(viewer).filter(
+        (r) => r.accountId === accountId && r.postedOn > day,
+      );
+      const isManual = (r: TransactionRow) => r.importId === null && r.externalId === null;
+      const manual = after
+        .filter(isManual)
+        .sort((a, b) => byText(`${a.postedOn}|${a.id}`, `${b.postedOn}|${b.id}`))
+        .slice(0, limit)
+        .map((r) => ({ id: r.id as string, postedOn: r.postedOn }));
+      return { manual, importedCount: after.filter((r) => !isManual(r)).length };
+    },
     listVisible: (viewer, today) => {
       requireViewer(viewer);
       requireDay(today, "visibleTxn");

@@ -862,6 +862,68 @@ describe("/api/accounts", () => {
     expect((await send(db, "POST", `${path}/close`)).status).toBe(409);
   });
 
+  it("locks a closed account after its closed date, and carries the choice in the Conflict", async () => {
+    const db = openDb();
+    const { joint } = seed(db);
+    const path = `/api/accounts/${joint}`;
+    const line = (postedOn: string) => ({
+      accountId: joint,
+      postedOn,
+      amountCents: -100,
+      description: "later",
+    });
+    // Early close: refused with the later date and the manual entries; nothing is written.
+    const early = await send(db, "POST", `${path}/close`, { closedOn: "2026-08-15" });
+    expect(early.status).toBe(409);
+    const refusal = (await early.json()) as {
+      error: { code: string; details: Record<string, unknown> };
+    };
+    expect(refusal.error.code).toBe("Conflict");
+    expect(refusal.error.details).toMatchObject({
+      accountId: joint,
+      closedOn: "2026-08-15",
+      latestEntryDate: "2026-09-01",
+      importedCount: 0,
+    });
+    expect(refusal.error.details.manualEntries).toEqual([
+      { id: expect.any(String), postedOn: "2026-09-01" },
+    ]);
+    const via = await send(db, "PATCH", path, { closedOn: "2026-08-15" });
+    expect(via.status).toBe(409);
+    // The later date closes it.
+    expect((await send(db, "POST", `${path}/close`, { closedOn: "2026-09-01" })).status).toBe(200);
+
+    // On the closed date is allowed; after it is refused, as are a snapshot and a date moved across.
+    const onDay = await send(db, "POST", "/api/ledger/transactions", line("2026-09-01"));
+    expect(onDay.status).toBe(201);
+    const { transaction } = (await onDay.json()) as { transaction: { id: string } };
+    const id = transaction.id;
+    const after = await send(db, "POST", "/api/ledger/transactions", line("2026-09-02"));
+    expect(after.status).toBe(409);
+    expect(
+      ((await after.json()) as { error: { details: { closedOn: string } } }).error.details.closedOn,
+    ).toBe("2026-09-01");
+    const across = await send(db, "PATCH", `/api/ledger/transactions/${id}`, {
+      postedOn: "2026-09-02",
+    });
+    expect(across.status).toBe(409);
+    const snapshot = await send(db, "POST", `${path}/snapshots`, {
+      asOf: "2026-09-02",
+      balanceCents: 1,
+    });
+    expect(snapshot.status).toBe(409);
+    const onSnapshot = await send(db, "POST", `${path}/snapshots`, {
+      asOf: "2026-09-01",
+      balanceCents: 1,
+    });
+    expect(onSnapshot.status).toBe(201);
+
+    // Reopening lifts the lock.
+    expect((await send(db, "PATCH", path, { closedOn: null })).status).toBe(200);
+    const reopened = await send(db, "POST", "/api/ledger/transactions", line("2026-09-02"));
+    expect(reopened.status).toBe(201);
+  });
+
   it("refuses an id or unknown field in a create body, and a bad balance query", async () => {
     const db = openDb();
     const { joint } = seed(db);

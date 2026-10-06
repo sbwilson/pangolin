@@ -9,6 +9,7 @@ import {
   type TxRepos,
 } from "../ports/unit-of-work.ts";
 import { type Audit, write } from "../write.ts";
+import { requireEntryOpen } from "./closed-lock.ts";
 import type { LedgerTransaction } from "./list-transactions.ts";
 import "./needs-review.ts";
 import { mayOverwrite } from "./provenance.ts";
@@ -159,6 +160,7 @@ export function setSplitField(ctx: UseCaseContext, input: SetSplitFieldInput): S
         transaction: toLedgerTransaction(ctx.viewer, before, tagsBefore),
       };
     }
+    requireEntryOpen(ctx, tx, before.accountId, before.postedOn);
     const row = {
       ...old,
       [column.value]: value,

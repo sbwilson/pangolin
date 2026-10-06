@@ -1375,6 +1375,63 @@ function scenario(
     r.balanceSnapshots.listVisible(asA, balAcct).length,
   ]);
 
+  // The closed-account lock reads: the latest live date, and the manual entries after a day (read
+  // from the stored columns, so a hidden name still counts as imported).
+  const lockAcct = newId<"Account">();
+  tx((r) =>
+    r.accounts.insert(account(lockAcct, false), [
+      owner(lockAcct, a, 5000),
+      owner(lockAcct, b, 5000),
+    ]),
+  );
+  const lockLine = (postedOn: string, over: Partial<TransactionRow> = {}) =>
+    txn(lockAcct, `lock-${postedOn}-${over.externalId ?? "m"}`, { postedOn, ...over });
+  const lockGone = lockLine("2026-10-30");
+  tx((r) => {
+    r.transactions.insert(lockLine("2026-09-01"), []);
+    r.transactions.insert(lockLine("2026-09-20"), []);
+    r.transactions.insert(lockLine("2026-09-10"), []);
+    r.transactions.insert(lockLine("2026-09-15", { externalId: "bank-1" }), []);
+    r.transactions.insert(lockLine("2026-09-25", { externalId: "bank-2" }), []);
+    r.transactions.insert(
+      lockLine("2026-09-26", {
+        externalId: "bank-3",
+        nameHiddenBy: a,
+        nameHiddenUntil: "2030-01-01T00:00:00.000Z",
+      }),
+      [],
+    );
+    r.transactions.insert(lockGone, []);
+  });
+  const manualAfter =
+    (viewer: Viewer, day: string, limit = 20) =>
+    (r: TxRepos) => {
+      const found = r.transactions.listManualAfter(viewer, lockAcct, day, limit);
+      return [found.manual.map((m) => m.postedOn), found.importedCount];
+    };
+  out["lock.latest"] = tx((r) => [
+    r.transactions.latestPostedOn(system, lockAcct),
+    r.transactions.latestPostedOn(asB, lockAcct),
+    r.transactions.latestPostedOn(system, privA),
+    r.transactions.latestPostedOn(asB, privA),
+    r.transactions.latestPostedOn(system, "nobody"),
+  ]);
+  out["lock.manualAfter"] = tx((r) => [
+    manualAfter(system, "2026-09-10")(r),
+    manualAfter(asB, "2026-09-10")(r),
+    manualAfter(system, "2026-09-30")(r),
+    manualAfter(system, "2026-08-31", 2)(r),
+    manualAfter(system, "2026-09-20")(r),
+  ]);
+  out["lock.afterDelete"] = tx((r) => {
+    r.transactions.softDelete(system, lockGone.id, T2);
+    return [r.transactions.latestPostedOn(system, lockAcct), manualAfter(system, "2026-09-10")(r)];
+  });
+  out["lock.missingViewer"] = tx((r) => [
+    throws(() => r.transactions.latestPostedOn(undefined as never, lockAcct)),
+    throws(() => r.transactions.listManualAfter(undefined as never, lockAcct, "2026-09-01", 1)),
+  ]);
+
   // Review item foreign key.
   const reviewItem = (accountId: string | null) => ({
     id: newId<"ReviewItem">(),
@@ -1441,6 +1498,21 @@ describe("ledger and classification schema on SQLite", () => {
     expect(out["w.aliasUpdateBadKind"]).toBe("error:CHECK");
     expect(out["taxCategory.updateBadBp"]).toBe("error:CHECK");
     expect(out["w.delete"]).toEqual([true, false]);
+    expect(out["lock.latest"]).toEqual([
+      "2026-10-30",
+      "2026-10-30",
+      "2026-09-01",
+      undefined,
+      undefined,
+    ]);
+    expect(out["lock.manualAfter"]).toEqual([
+      [["2026-09-20", "2026-10-30"], 3],
+      [["2026-09-20", "2026-10-30"], 3],
+      [["2026-10-30"], 0],
+      [["2026-09-01", "2026-09-10"], 3],
+      [["2026-10-30"], 2],
+    ]);
+    expect(out["lock.afterDelete"]).toEqual(["2026-09-26", [["2026-09-20"], 3]]);
     // Same-day snapshots: the later created_at wins, then the higher ID; soft-deleted lines drop out.
     expect(out["balance.beforeDelete"]).toEqual([0, -10, 1000, 2000, 1223, 5000, 5025]);
     expect(out["balance.afterTxnDelete"]).toEqual([0, -10, 1000, 2000, 2000, 5000, 5025]);

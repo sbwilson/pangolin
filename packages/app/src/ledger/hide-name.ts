@@ -4,6 +4,7 @@ import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import type { TransactionWithSplits, VisibleTransaction } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
+import { requireEntryOpen, requireOpenOn } from "./closed-lock.ts";
 import type { LedgerTransaction } from "./list-transactions.ts";
 import {
   auditSnapshot,
@@ -93,6 +94,7 @@ export function hideTransactionName(
       throw new AppError("Validation", "Only an owner of the account can hide a name");
     }
     requireHider(before, me, today);
+    requireOpenOn(ctx, tx, account, before.postedOn);
     const stored = storedTransaction(tx, ctx.viewer, before.id);
     const at = formatInstant(ctx.clock.now());
     if (!tx.transactions.setNameHidden(ctx.viewer, before.id, me, until, at)) {
@@ -121,6 +123,7 @@ export function unhideTransactionName(
       return toLedgerTransaction(ctx.viewer, before, tagsOf(tx, ctx.viewer, before));
     }
     requireHider(before, me, today);
+    requireEntryOpen(ctx, tx, before.accountId, before.postedOn);
     const stored = storedTransaction(tx, ctx.viewer, before.id);
     const at = formatInstant(ctx.clock.now());
     if (!tx.transactions.setNameHidden(ctx.viewer, before.id, null, null, at)) {
