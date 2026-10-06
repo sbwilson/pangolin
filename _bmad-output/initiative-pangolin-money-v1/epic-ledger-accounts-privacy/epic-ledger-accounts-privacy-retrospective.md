@@ -1,6 +1,6 @@
 ---
 epic: epic-ledger-accounts-privacy
-date: 2026-10-05
+date: 2026-10-06
 verdict: rejected
 criteria: declared
 headless: false
@@ -8,7 +8,219 @@ headless: false
 
 # Retrospective: Ledger core and privacy (epic 2)
 
-## Epic summary
+Two passes are recorded here. The **second pass** (2026-10-06) follows this line and is the current state; the sections headed "First pass" are the original retrospective of 2026-10-05, kept as the record.
+
+## Second pass (2026-10-06)
+
+The first pass (below, sections headed "First pass") was written at `3219563` and rejected epic 2. Remediation stories 2.14 to 2.19 followed. This pass re-reads the epic after them, focusing on what changed since the first retrospective and on whether the defects it named are closed. Findings carry source references; claims from sub-agents were re-checked against the primary source before routing, and unverified ones are marked as such.
+
+**Run:** interactive. The user asked to focus on the changes since the last retrospective and the defects identified. Evidence: `git_evidence.py` ranges, the six new plans with their triage logs, the first retrospective, and `deferred-work.md`. Five sub-agents ran the re-verification (every first-pass finding re-opened at HEAD with mutation runs in a scratch copy), the action-item follow-through, and three review lenses over the code diff `e8a92b8..HEAD`; a sixth ran a behaviour check over real HTTP. No session logs were read: process findings rest on the plans, commits and CI history.
+
+### Second pass: Epic summary
+
+All 19 tickets are at `built` (board state `review`); `pending_tickets` is empty. Tickets 2.14 to 2.19 are new since the first pass. None has a story file. Covers now include CAP-16 (decision of 2026-10-05, `epic-ledger-accounts-privacy.md:5`).
+
+| Ref | Title | Plan range | Commits (merges) | Files | +/− |
+|---|---|---|---|---|---|
+| 2.14 | True audit history and hidden-row projection | `e8a92b8..3ed41f1` | 2 (1) | 24 | +852 / −71 |
+| 2.15 | Account ownership and privacy switches | `3ed41f1..82ce95d` | 2 (1) | 16 | +1,161 / −68 |
+| 2.16 | Cross-partner split and transfer guards | `82ce95d..bfd0abb` | 1 (0) | 18 | +742 / −52 |
+| 2.17 | Backup manifest privacy | `bfd0abb..fc36bf7` | 1 (0) | 10 | +294 / −60 |
+| 2.18 | Widen the read rule and privacy suite | `fc36bf7..84a6699` | 1 (0) | 13 | +1,953 / −91 |
+| 2.19 | Release v0.2.1 and deploy (hitl) | `84a6699..HEAD` (`6541bc7`) | 5 (0) | 4 | +538 / −29 |
+| Overall | | `e8a92b8..HEAD` | 12 (2) | 59 | +5,540 / −371 |
+
+- The range end for 2.19 is `HEAD` (inferred; the page and the CI fix `ba762e2` are in it). The 11 docs-only commits between the first cut (`3219563`) and `e8a92b8` (`458f72f`..`283f8af`: UX spines, the UX catch-up proposal, the spec and spine reconciliation, the first retro itself) are outside the plan ranges; the first retro's spec action items landed there.
+- 2.14 and 2.15 landed by branch and merge (`3ed41f1`, `82ce95d`); 2.16 to 2.19 landed directly on `develop` with no merge commit.
+- The release tag `v0.2.1` is on `ba762e2d01b49b0a49a522e7115d72e769030eb3`, and `docs/release-v0.2.1.md` records the release run `37410053125`, the upgrade of pang-dev from the `v0.2.0` tag, and acceptance by Simon Wilson on 2026-10-06.
+- Raw evidence: scratchpad `retro3/` (`evidence-*.json`, `code-diff.patch`).
+
+**Evidence missing or narrowed:** no `## Code Review` blocks (review evidence is each plan's Review Triage Log); no session logs read; the `/api/system/audit` route does not exist, so audit rows were read through the use case and the scratch database, not over HTTP; the backup flows ran with restic stubbed in tests, and pang-dev has no ledger accounts, so the privacy fixes were not seen on a real host.
+
+### Second pass: Findings
+
+**First-pass defects, re-verified at HEAD (`6541bc7`).** Re-opened by reading the code and, for 13 fixes, by reverting each in a scratch copy and running `vitest run apps/server packages/app packages/db` (baseline 994 pass; every revert failed named tests).
+
+| ID | Status | Where it lives now | Test that fails on revert |
+|---|---|---|---|
+| P1 | fixed | `update-account.ts:62,105-117`; `db/privacy.ts:92-98,173-177` | `accounts.test.ts` self-removal; `privacy.test.ts` "owner changes and privacy switches"; `db/privacy.test.ts` takeover |
+| P2 | fixed | `db/privacy.ts:128-129`; `ledger-repos.ts:82-93`; `unit-of-work.ts:122` | `privacy.test.ts` "never shows B the description, payee, fingerprint…" |
+| P3 | fixed | `jobs/backup.ts:71-76,172,208,215` | `backup.test.ts` private-account drill; `privacy.test.ts` "a failed restore drill" |
+| P4 | fixed | `split-targets.ts:19-25` | `splits.test.ts`, `app.test.ts` 409 |
+| P5, P6 | fixed | `set-privacy.ts:45-60,84-107`; `unit-of-work.ts:147-173` | `accounts.test.ts` setPrivacy cases; `privacy.test.ts` era scoping |
+| P7 | fixed | `transfer-groups.ts:93-94` | `app.test.ts`, `hidden-names-transfers.test.ts` |
+| P8 | fixed, bypassable (N1) | `hide-name.ts:92-94` | `hidden-names-transfers.test.ts`, `app.test.ts` |
+| P9, P10, I8 | deferred as decided | P9 settled by Simon; P10, I8 routed to epic-ledger-workspace entry 9 | none (by decision) |
+| I1, I2 | fixed | `transaction-view.ts:42-50`; `ledger-repos.ts:305-314`; `redact.ts:36-49` | nine tests; `redact.test.ts` |
+| I3 | fixed (decision 81) | `delete-transaction.ts:40-83` | `hidden-names-transfers.test.ts`, `ledger-repos.test.ts` |
+| I4 | not fixed, accepted by Simon at 2.14 | `db/privacy.ts:102` | `classify.test.ts:370` pins the visible name |
+| I5, I6, I7 | fixed | `payees.ts:143-147`; `set-splits.ts:95-98`; `manifest.ts:66-70,171-176` | named tests |
+| V1 | partly fixed | 9 tables in `no-ledger-schema-read.grit`; `raw-sql-read-rule.test.ts`; `tx-repos-viewer.test.ts` | planted violations fail (checked in the scratch copy) |
+| V2, V3 | fixed | `privacy.test.ts` hidden-name, switch and drill worlds | the 13 reverts |
+| V4 | accepted | worlds run over HTTP on hand-built data, not the demo seed | n/a |
+
+The recorded 2.18 revert table is a claim in a plan; the scratch run reproduced it for P1 to P8, I1 to I3, I6, I7 and decision 80.
+
+**New findings.** Verdicts are fix now, defer, or accept. "Verified" means re-checked against the primary source or reproduced.
+
+**N1. A person who does not own a public account can add themself as an owner, and rewrite the shares.** *Verified; reclassified on 2026-10-06 from fix now to intended behaviour by Simon's decision: the relationship is not adversarial, so either person may share a public account and remove themself or the other, the removed person is told and can add themself back, and the last owner cannot be removed. Entry 20 now implements that rule instead of forbidding the addition.*
+- `requireOnlySelfRemoved` only blocks removal (`update-account.ts:105-117`); `updateAccount` needs only `findVisible`, and a public account is visible to both partners.
+- Over HTTP on a real server, B (not an owner) PATCHed A's sole-owned public account to owners `[A 1bp, B 9999bp]` and got 200. B then hid a name of A's transaction (200); A saw the placeholder, and A's unhide returned 409 "hidden by someone else". Neither A nor B can remove the other afterwards (removal is self-only), and A cannot make the account private with two owners.
+- This defeats P8 (owner-only hiding) and the intent of P1. The 2.15 triage recorded "anyone can add themself as owner of a public account" as a deferred entry without connecting it to P8.
+- Sources: `update-account.ts:62,105-117`; behaviour check step 2 (`behave3/calls.log`); the 2.15 deferred entry; also found independently by the edge-case lens and by the re-verification run (reproduced in a copy).
+- Prevention: owner changes by a person require the caller to be an owner already, and share changes need the other owners' consent (or are refused); an ownership rule carries a test for each of add, remove and re-share by a non-owner.
+
+**N2. A hiding can lock out the sole owner of the account.** *Open decision, then fix. Verified.*
+- Hiding outlives the hider's ownership and the account's privacy (decision of 2026-10-05), and only the hider may lift it (`hide-name.ts:54-58`).
+- Over HTTP: B hid a name on a joint account and removed themself; A, now the sole owner, read only the placeholder and got 409 on unhide and re-hide, while B (no longer an owner) still reads the name and can unhide it (200). If A then makes the account private, B cannot see it and A still cannot lift it. Nobody can until the hiding lapses (up to 12 months).
+- The decision protected the hider from a takeover; it did not decide what the remaining owner can do. The pinning test is `db/privacy.test.ts` "keeps a partner's hiding after they leave and the account turns private".
+- Prevention: a privacy decision names the actors on both sides of the state it creates.
+- **Decision (Simon, 2026-10-06):** if one person leaves, the relationship has ended. Leaving prompts for what to do with each shared account, removes all of the leaver's private accounts, and shows the hidden transactions (hidden names are lifted). That settles the person-leaves-the-household case. It does not say what happens when a person removes themself from one account's owners and stays in the household (the case reproduced over HTTP): open question 1.
+- **Decision (Simon, 2026-10-06, account lifecycle):** an account is never orphaned, so the last owner of an account cannot be removed from it; ending an account means closing it. A closed account is kept as a historical record: data can be added and amended up to its closed date and is locked after it, until the account is opened again. A non-zero closing balance is a warning state. Deleting an account is done in settings, only for a closed account, clearly marked destructive, and only after confirmation. State at `6541bc7` for the design: `closeAccount` sets `closedOn` and leaves transactions untouched (`close-account.ts:19`), clearing `closedOn` reopens it (`update-account.ts:45`), there is no write lock after the closed date and no delete use case or route.
+- **Decisions (Simon, 2026-10-06, answers to the lifecycle questions):**
+  1. A hiding is lifted when its hider leaves the household, not when it is removed from or leaves one account; revised on 2026-10-06 to keep hidings after removal, since the hider can add themself back and lift them, which also ends the lock-out.
+  2. Leaving the household deletes all of that person's own private data, after a confirmation that it is the intended action. This path deletes the leaver's private accounts itself; the settings-only delete of closed accounts is the separate, everyday route.
+  3. When there is evidence of entries in a closed account after its closed date, the app proposes adjusting the closed date, and also prompts to adjust the date of the manually entered entry instead. It does not refuse outright.
+  4. A non-zero closing balance is a warning state shown on the account, in settings and, once the inbox exists, as an inbox item.
+
+**N3. Row counts of the whole database, private rows included, reach partner B, through `/api/system/backup`.** *Fix now. Verified by reading; a successful drill was not exercised end to end.*
+- A successful drill stores `restored snapshot … verified N tables, M rows` (`jobs/backup.ts:205-207`); `/api/system/backup` returns the latest drill's summary (`system/backups.ts`, `drill: shown(...)`), and the stored `backup_snapshot` rows carry `tableCount` and `rowCount` (`backups.ts:215-216`) in unscoped audit rows. `M` counts A's private rows, so B's response changes when only A's private data changes: Done when 1 is not met on this route.
+- The privacy suite cannot see it. `failedDrillWorld` builds two worlds whose private account differs in an amount, not a row count, and covers only a failed drill; the known-gap test pins only the digest and snapshot id. `tx-repos-viewer.test.ts` lists `backups` and `backupVerifications` as "no ledger data".
+- Same family as the deferred digest finding (2.18): `manifestSha256` of the whole database and the restic snapshot id in unscoped `backup_snapshot` audit rows.
+- Sources: `backup.ts:205-207`; `backups.ts:215-216,531-544`; `privacy.test.ts` known-gap test; `tx-repos-viewer.test.ts` UNSCOPED_REPOS; found by two lenses.
+- Prevention: a route's privacy class follows from the figures it can carry, a summary included (the first retro's P3 lesson, applied to the success path); a differential world per summary a job can store.
+
+**N4. Scheduled check and drill failures now discard their detail, and nothing records it elsewhere.** *Defer (a recorded trade-off). Verified.*
+- `failureSummary` replaces `verdict.message` and restic's text in both job paths; no log line or operator-only column keeps them (`backup.ts:71-76`). The "operator path keeps the message" test calls `verifySnapshot` directly, which no scheduled job does. Raised by three lenses; the 2.17 plan recorded the trade-off and the user was told.
+- Fix when wanted: an operator-only log line or column, with a test that it never reaches a person's read.
+
+**N5. Deleting one side of a transfer unlinks and audits the other side in the partner's private account, while deleting the group is refused (I3 against P7).** *Accept (decision 81). Verified.*
+- Over HTTP B's delete of the shared side returned 204 with no body, and A's private row was unlinked and still readable by A. Decision 81 (the user, 2026-10-05) allows it as invariant upkeep, audited with owner-only scope. Residual: the survivor's audit snapshot is a raw `TransactionRow` without `splits` (`delete-transaction.ts:66-83`), unlike every other transaction audit row, and A learns of the change only through an owner-scoped audit row.
+
+**N6. Smaller defects, each reported by a lens and re-read.** *Defer unless noted.*
+- `scopeToPerson` stamps the private era by `(at, id)` (`unit-of-work.ts:147-173`): a clock that steps back across the flip leaves a private-era row unscoped. Order by `rowid` instead. Verified by reading.
+- The SQL and memory audit scrub pass valid non-object JSON (a bare string or array) through at the repository layer; only `redact` relabels it (`unit-of-work.ts:~122`). Defence in depth.
+- `setPrivacy` to public throws a bare `Error` (a 500) when a private account has other than one owner (`set-privacy.ts:~58`); `requireNoScopedReferences` falls back to the raw person id as a display name for a deactivated owner (`set-privacy.ts:94`). Verified by reading.
+- Making a public account private is refused while any split's beneficiary is "shared", the default on a public account (behaviour check step 5): a sole-owner account with default splits cannot go private until each split names the owner. Possibly a product decision (open question).
+- Legacy soft-deleted group members keep `transfer_group_id` and block a group delete by foreign key (already a deferred 2.16 entry; the reviewer rated it high, but only dev databases can hold such rows).
+- Reported, not re-checked: a refusal that tells the owner to remove a scoped payee that cannot be removed; `propertyId` carry-over on a re-save.
+
+**N7. The read rule still has bypasses, now documented.** *Defer.*
+- The raw-SQL scan misses comma joins, interpolated table names, `.sql` files and views; the lint exemption for `classify-repos.ts` and `review-item-repo.ts` is file-wide (only `read-rule.test.ts` narrows it per table); the viewer-first test checks the parameter name `viewer`, not its type, and every viewerless read is allow-listed by a reason that nothing verifies; `balanceAsOf` is exported from the db package with no visibility check. The multi-line and qualified forms were fixed in the 2.18 review.
+
+**N8. A global 30 s test and hook timeout was the CI fix.** *Accept, with a deferred cost item.*
+- CI failed on six 5 s timeouts (run `37393717950`, `seed.test.ts` and `demo.test.ts`) because each demo-seed application costs about 1.4 s locally and 4 to 6 s on the runner, while `deploy/install.test.ts` alone runs 130 to 220 s beside it. `develop` alternated red and green over three stories (`3ed41f1`, `fc36bf7`, `84a6699` red). Fixed by `ba762e2` (`vitest.config.ts`, 30 s). The seed's cost (about half Drizzle query building and SQLite `prepare`) is in `deferred-work.md`; a lens suggests scoping the long timeout to the seed suites.
+
+**Process findings.**
+
+| ID | Finding | Source |
+|---|---|---|
+| R1 | CI was red on `develop` for three consecutive landings (2.17, 2.18, and the base of 2.19) and was caught only at the 2.19 pre-flight; first retro L5 and L6 recurred. | `gh run list`; run `37393717950`; `docs/release-v0.2.1.md` Pre-flight 1 |
+| R2 | L7 recurred: 2.16 to 2.19 landed directly on `develop`; only 2.14 and 2.15 used branch and merge. | `git log --graph` |
+| R3 | The 2.15 deferral "anyone can add themself as owner" was not connected to P8, which the same epic fixed one story later (N1). Deferred entries are read one story at a time. | `deferred-work.md` (2.15 entries); N1 |
+| R4 | A defect class fixed in one place was missed in its twin: the P3 fix covered the failure path of the drill summary, not the success path (N3). | `backup.ts:205-207` against `:71-76` |
+| R5 | Plan Change Log is empty in all of 2.14 to 2.19, though the plans record decisions (2.19's Implementation Notes record dropped and added steps; decisions 80 to 83 live in the epic file). L11 recurred. | the six plans |
+| R6 | No process lesson of the first retro became a mechanism: no change to `_bmad`, `.claude`, `.github` or lint rules since `3219563` apart from the read-rule allow-list and the 30 s timeout (`git diff --stat 3219563 HEAD -- _bmad .claude .github biome.json`: `biome.json` only). | follow-through below |
+| R7 | Strengths. Each remediation story ran a four-lens review whose triage log shows real patches (weak assertions, a flaky test, a multi-line scan, a tag-the-wrong-commit hole in the release page); the revert-run proof for P1 to P8 held up under independent re-run; 2.19 made the manual backup a gate, tagged an explicit CI-green commit on `develop`, and recorded pasted evidence for every step. | plans' Review Triage Logs; mutation run; `docs/release-v0.2.1.md` |
+
+**Lens overlap.** Raw-SQL and parser blind spots: three lenses (N7). The drill count and digest leak: three lenses (N3). The hider lock-out and the add-self hole: two lenses each (N1, N2); the add-self hole was also reproduced in the re-verification copy and over HTTP.
+
+### Second pass: Behavior verification
+
+Run on 2026-10-06 against HEAD `6541bc7`, a real server over real HTTP on `localhost`, with a scratch data directory. Both people signed up through `/api/identity/sign-up`, enrolled TOTP and signed in with real session cookies. The one shortcut: no WebAuthn, so the `auth_passkey` row was inserted into the scratch database as the repo's test helper does. The seed was not used; every account and transaction was created through the API. The server was stopped afterwards and no repo file changed. Driver scripts and `calls.log`: scratchpad `behave3/`.
+
+| Check | Observed | Result |
+|---|---|---|
+| P1: B removes A from a joint account | 400 "You can only remove yourself"; A removing themself 200 | pass |
+| N1: B adds themself to A's sole-owner public account | 200, owners `[A 1bp, B 9999bp]`; B then hides A's name (200); A cannot unhide (409) or remove B (400) | **fail** |
+| P8: non-owner hides a name | 400 "Only an owner of the account can hide a name" | pass |
+| P2, I1: A hides a name; B reads, edits notes and splits | B sees the placeholder with `fingerprint` and `externalId` null; B's edits 200; A sees the real name and B's note; B editing the description 409 | pass |
+| P5: private to public with a private activity in use | 409 naming the activity; after clearing it, 200 | pass |
+| P6: public to private with a partner-beneficiary split | 409 | pass (see N6: "shared" also blocks) |
+| P4, I6: scoped activity on a public split; a `propertyId` | 409 / 400 via both `setSplits` and `setSplitField` | pass |
+| P7: B deletes a group reaching A's private account | 404; A's row stays linked | pass |
+| I3: B deletes the shared side of such a transfer | 204 no body; A's private row unlinked and readable by A | pass (decision 81) |
+| N2: B hides, then leaves; A (sole owner) reads and unhides | placeholder; 409 on unhide and re-hide; B (not an owner) can still unhide | **surprise** |
+| `/api/system/backup`, unconfigured; `/api/system/audit` | 200 `configured:false`; 404 (pending) | as expected |
+
+Narrowed: no restic, so a successful or failed drill was not run end to end (N3 rests on the code and the test world); audit rows are not on HTTP, so I1 over the audit route is not exercised; `v0.2.1` itself was upgraded on pang-dev, which holds no ledger accounts, so the fixes were not seen on a real household's data; the home server was not driven.
+
+### Second pass: Previous-retro follow-through
+
+Items of the first retrospective's action list (owner Simon unless noted), with evidence at HEAD:
+
+1. **Privacy-fixes stories (P1, P3 to P8, I1 to I4, I6, I7, V1, V2, docstring and decision log).** Landed: `8142ac1` (2.14), `b362230` (2.15), `bfd0abb` (2.16), `fc36bf7` (2.17), `84a6699` (2.18); the 2.5 decision is in `story-classify-module-plan.md:80`. P1 landed with the hole N1.
+2. **P2 fingerprint.** Landed in 2.14 (`8142ac1`).
+3. **A1 spine exception.** Landed: `283f8af`, spine line 55, `scripts/check-boundaries.ts:32`.
+4. **A11 "Transfer to <owner>".** Landed: `283f8af` (spine AD-4, `data-model.md`, EXPERIENCE.md).
+5. **A12 CAP-16 in covers.** Landed: `2ed2919`, `epic-ledger-accounts-privacy.md:5`. The ticketing "covers subset" check does not exist.
+6. **A13 AD-19.** Landed: `2ed2919`, spine line 295 amendment; the manifest keeps its system read, now on the read-rule allow-list.
+7. **P9 decision.** Landed: `e8a92b8` (hiding does not hide memos, tags or notes; the hide action warns). Epic-ledger-workspace entry 3's text lists only notes: no evidence it was updated.
+8. **Refactor sweep (A2 to A8, I8, P10).** Routed to epic-ledger-workspace entry 9 (`2ed2919`), not done in code, as intended. Since then `memory-uow.ts` grew from 2,011 to 2,123 lines, `unit-of-work.ts` from 1,040 to 1,092; `transaction-view.ts` still imports `list-transactions.ts`; bare `throw new Error` remains in the ledger use cases; no cycle check in lint.
+9. **A9 paging routed to epic 12 entries 2 and 6.** Partly: entry 2 has keyset paging; no handoff for audit paging was found in entry 6.
+10. **Accepted items (A10, I5, V4).** Recorded; not re-flagged.
+11. **L1 "fails without the change" check.** Not landed as a mechanism. A recorded revert run did the work for 2.18.
+12. **L2 parity in Done.** Partly: plans 2.14 to 2.16 state it under Always; nothing enforces it.
+13. **L3 `as never` lint rule.** Not landed (`biome.json` has none).
+14. **L4 stale-plan noise, L8 interleaving gate, L14 verify "done" from the diff.** No evidence found.
+15. **L5 red baseline.** Not landed; recurred (R1).
+16. **L6 CI watch.** Partly (plans say "e2e in CI order" locally); no watch step; recurred (R1).
+17. **L7 branch and merge.** Partly: 2.14 and 2.15 only (R2).
+18. **L9 hitl change log and review.** Partly: 2.19 had a review (12 findings); its Plan Change Log is empty (R5).
+19. **L10 deployed build.** Partly: for this release the page confirms the starting build and records the digest and backup; not a standing rule.
+20. **L11 log renegotiated intent.** Partly: the 2.5 decision was logged; decisions 80 to 83 are in the epic file; the new plans' Plan Change Logs are empty.
+21. **L12 decision queue.** Not landed: `deferred-work.md` has 85 entries (70 at the first retro, 15 since), about 66 without a disposition.
+22. **L13 failing-case test for every guard.** Partly: 2.16 to 2.18 added guard tests; no convention or lint.
+
+Open questions of the first pass: P9 answered (`e8a92b8`); P2 answered (fixed now); A13 answered (spine amended); the "not checked" items (as-built columns against `data-model.md`, the CI run on `v0.2.0`, the 8-to-11 upgrade) were not re-examined in this pass; the re-run condition (differential covers privacy transitions; read rule tested with planted violations) is met.
+
+### Second pass: Action items
+
+Proposed, not applied. Remediation is for the dev loop; spec reconciliations are Simon's.
+
+**Remediation (fix now; one story under epic 2 is enough)**
+1. **N1 (reclassified 2026-10-06).** Replace the self-removal-only owner rule with Simon's relaxed rule (entry 20): either person may share a public account and remove themself or the other, the removed person is told and can add themself back, the last owner cannot be removed. Test add, remove and re-add over HTTP, and the last-owner refusal. Owner: dev loop.
+2. **N3 (decision: drop the figures, Simon, 2026-10-06).** Remove the whole-database figures from what a person can read: drop `rowCount`, `tableCount` and `manifestSha256` (and the drill's row counts) from the stored summary and the audit `after`, and add paired worlds for a successful drill and for private row counts. Fold in the digest and snapshot-id deferred entry and the `tx-repos-viewer` "no ledger data" reasons. Owner: dev loop.
+3. **N2 and the account lifecycle.** Implement Simon's decisions of 2026-10-06 (see N2): the last owner cannot be removed, closing an account locks writes after its closed date until it is opened again, a non-zero closing balance is a warning, closed accounts are deleted from settings with a destructive confirmation, a closed-date adjustment is proposed (with the entry-date alternative) when entries fall after it, a hiding is lifted when its hider leaves the account, and leaving the household deletes the leaver's private data after confirmation. Test hide, leave and read by the remaining owner; add, amend and delete on a closed account either side of its closed date; and the delete confirmation. Larger than a fix: slice it as its own story or epic. Owner: dev loop; ticketing to slice.
+
+**Deferred (tracked in `deferred-work.md` and routed to the next sweep or a hardening story)**
+4. N4 (operator-only record of the dropped detail), N6 items (`scopeToPerson` ordering by `rowid`; non-object audit JSON at the repo layer; `setPrivacy` bare `Error` and the raw-id display name; the "shared" beneficiary block), N7 (read-rule bypasses), N8 (seed cost; scope the timeout). Owner: next sweep (epic-ledger-workspace entry 9) or a hardening ticket.
+5. **R3 prevention.** Before closing a story, read the deferred entries it added against the stories still ahead of it in the epic. Owner: Simon, ticketing.
+
+**Accepted (recorded so later retros stop re-flagging them)**
+6. N5 (decision 81), I4 (Simon, 2.14), P9, the 2.19 release evidence gaps (no step 10 status paste; privacy fixes not seen on real household data). Owner: Simon (recorded here).
+
+**Process lessons (owner: Simon and the next epic's planning)**
+7. **R1, R2.** L5, L6 and L7 recurred: add a CI-watch step and a single landing flow to the build workflow instead of repeating them as lessons. No lesson of the first pass became a mechanism (R6).
+8. **R5.** Log decisions in the Plan Change Log when they are made (L11 again), including the epic-file decisions that change a plan's frozen intent.
+
+### Second pass: Acceptance verdict
+
+**Verdict: rejected (machine verdict, confirmed by the human).** Criteria **declared**: the epic file's Done when, items 1 to 5. No ticket is unfinished.
+
+1. **Cross-user reads fail through every route; B is byte-identical; private IDs are NotFound; hidden names lift.** **Not met.**
+   - Closed since the first pass: P1, P3 to P8, I1 to I3 and P2, each reproduced and covered by a test that fails on revert.
+   - Open: N3 (a successful drill's row count and the digest reach B through `/api/system/backup` and the audit rows, so B's response changes when only A's private data changes) and N1 (a non-owner can take ownership and defeat the owner-only hide).
+2. **Read rule through the visibility helpers, enforced by lint or test.** **Met, with deferred bypasses (N7).** Nine tables, a raw-SQL scan, a viewer-first test, each with a planted-violation case; viewerless reads are allow-listed by unverified reasons.
+3. **API flows on the seeded ledger.** **Met** (unchanged from the first pass; V4 accepted).
+4. **Manifest per-account counts, sums and `balanceAsOf`; a format-1 backup restores.** **Met.** `v0.2.1` on pang-dev wrote a format 2 manifest with `balanceDate` 2026-10-06 and 0 accounts, since pang-dev has no ledger accounts.
+5. **Deployed with `pangolin upgrade`; CI green on the release tag.** **Met, with evidence.** `docs/release-v0.2.1.md`: release run `37410053125` green on `ba762e2`, pang-dev upgraded from the `v0.2.0` tag after a recorded manual backup, healthy at schema 11. The first retro's L10 concern is closed for this release.
+
+**Human decision:** Simon, interactive, 2026-10-06. He kept the verdict at **rejected**. Epic 12 (epic-ledger-workspace) waits until action items 1 to 3 are done and the retrospective is re-run; the epic then moves to accepted-with-open-items if nothing new blocks. Decisions given with it: N3, drop the figures; N2, the departure rule recorded above.
+
+### Second pass: Open questions
+
+1. **N2 residual: answered (2026-10-06).** A hiding is lifted when its hider leaves the account; the last owner cannot be removed (close the account instead); leaving the household deletes the leaver's own private data after confirmation. Still open for the story's design: what the household-departure flow does to shared accounts by default, and whether it needs a re-authentication step.
+2. **N6: should a public account with only "shared" splits be made private without editing every split?** For a sole owner, "shared" arguably already means the owner. If so, the refusal should treat the sole owner's "shared" split as the owner's.
+3. **N3: answered.** Simon chose to drop the figures (2026-10-06).
+4. **Not checked in this pass:** the as-built schema against `data-model.md` and the categorisation spec after the 2026-10-05 spec edits; the first pass's "not inspected" CI and upgrade-path items (closed for `v0.2.1` by the release page, not re-examined for `v0.2.0`).
+
+
+---
+
+# First pass (2026-10-05)
+
+## First pass (2026-10-05): Epic summary
 
 **Epic:** `epic-ledger-accounts-privacy` (epic 2, "Ledger core and privacy"), folder `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/`, epic file `epic-ledger-accounts-privacy.md`. Covers CAP-3, CAP-18 and CAP-14; risk high. Its Done when has five items, so the verdict criteria are **declared**.
 
@@ -133,7 +345,7 @@ The raw JSON for each range is at `/private/tmp/claude-501/-Users-sim-dev-pangol
 - **CI run results** are not in the repository. Evidence for "CI green on the release tag" (Done when 5) is limited to what `docs/release-v0.2.0.md` records; the run itself was not inspected in this phase.
 - **Runtime behaviour** was not exercised in this phase.
 
-## Findings
+## First pass (2026-10-05): Findings
 
 All code references are at `3219563`, the end of the epic's range. Findings came from five lenses and the behaviour check:
 
@@ -487,7 +699,7 @@ For every PROC finding, the instance disposition is "process change", and the ow
   - V2 and V3: the suite's blind spots are the instance, and tests that cannot fail are the pattern.
   - V1 and A13: the read rule's narrowness is what let the manifest's viewerless read through.
 
-## Behavior verification
+## First pass (2026-10-05): Behavior verification
 
 Exercised end to end on 2026-10-05, against a fresh local server:
 
@@ -538,7 +750,7 @@ What the check narrowed or did not show:
 - **No functional defect reproduced.** The privacy findings P1, P3 to P8 and I1 were not exercised: the check followed Done when's own scenarios, which do not cover ownership takeover, privacy transitions, drill failure text, scoped activities on splits, or partner writes on hidden rows. That gap is itself the substance of V2.
 - **Latent:** P2. Every row is v2 today, so the fingerprint leak can only be reproduced once imports create v1 rows. `retro2/fp.ts` is the check to run then.
 
-## Previous-retro follow-through
+## First pass (2026-10-05): Previous-retro follow-through
 
 ### Epic 1: `epic-platform-foundations-retrospective.md` (2026-10-02, accepted-with-open-items)
 
@@ -581,7 +793,7 @@ Process lessons:
 10. **Accepted items recorded (Simon).** Landed: recorded in the epic 11 retro itself, and not re-flagged here.
 11. **Process L1/L2: state what a stub must model (next epic's planning).** No evidence found in epic 2's plans. 2.9's stubbed restic tests are the place it would show.
 
-## Action items
+## First pass (2026-10-05): Action items
 
 The human approved all of these on 2026-10-05. There are two kinds:
 
@@ -637,7 +849,7 @@ The human approved all of these on 2026-10-05. There are two kinds:
 23. **L13. Guards.** Every guard keeps a failing-case test, so a refactor cannot silently drop it.
 24. **L14. Subagent reports.** Keep verifying "done" from the diff, not from the report.
 
-## Acceptance verdict
+## First pass (2026-10-05): Acceptance verdict
 
 **Verdict: rejected.** The criteria are **declared**: the epic file's Done when, items 1 to 5.
 
@@ -663,7 +875,7 @@ Evidence for each Done-when item:
    - The CI run itself was not inspected.
    - L10: develop builds ran on the home server before the release, so the real previous-release upgrade path was not what was exercised.
 
-## Open questions
+## First pass (2026-10-05): Open questions
 
 - **P9:** should hiding a name also hide the split memo and tags, or only warn that they stay visible? The answer sets whether item 1's story grows or the UX spec changes.
 - **P2:** does it wait until epic 3, or is it cheap enough to fold into the remediation story now? The decision allows either; whoever writes the story should confirm.

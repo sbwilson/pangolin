@@ -216,3 +216,39 @@ after = [18]
 hitl = true
 risk = "low"
 unknown = "Whether the real upgrade from v0.2.0 runs cleanly on the home server."
+
+[[entry]]
+id = 20
+type = "story"
+title = "Either person may share a public account and change who is on it"
+description = "Replaces updateAccount's self-removal-only rule (packages/app/src/accounts/update-account.ts:62,105-117, requireOnlySelfRemoved, entry 15) with Simon's relaxed rule: either person may mark a public account shared by adding themself or the other person, and may remove themself or the other person, provided at least one owner remains (the last owner cannot be removed; closing the account is how it ends) and the account is not private (owner changes on a private account stay refused); a person removed by the other still sees the account, now marked on it as 'you've been removed, undo?', where undo adds them back, and the marker comes from the owner change itself, not from the review inbox, which does not exist yet; the system viewer stays exempt; the hide rule is unchanged (only an owner may hide a name, which a person can now become by adding themself). Updates the tests that encode self-removal only, in packages/db/src/accounts.test.ts, packages/app/src/testing/accounts-parity.test.ts and apps/server/src/http/app.test.ts, and the privacy suite step of entry 18 (privacy-scenarios.ts) that expects the refusals (retro N1, reclassified as a decision)."
+verify = "Over HTTP, B (not an owner) adds themself to A's sole-owner public account, and either owner removes the other, each with 200 and the owners as asked; removing the last owner is refused with Validation; an owner change on a private account is refused; the removed person's read of the account shows that they were removed and by whom, and an undo adds them back; a hiding made by a person still holds after that person is removed or leaves the account (it is lifted only when the person leaves the household); and the privacy-suite worlds and parity tests pass with the new expectations."
+covers = ["CAP-3", "CAP-14"]
+after = [15, 18]
+hitl = false
+risk = "medium"
+unknown = "None open. Settled by Simon on 2026-10-06 (this is not an adversarial relationship): either person may share a public account and remove themself or the other; a removed person sees the account marked 'you've been removed, undo?' and can add themself back; a hiding survives its hider's removal, because the hider can add themself back and lift it. Design left to the builder: where the removal marker is stored, since nothing records it today beyond the audit row."
+
+[[entry]]
+id = 21
+type = "story"
+title = "Drop the backup figures from the stored row"
+description = "Drops rowCount, tableCount and manifestSha256 from the stored backup_snapshot row, its audit after and the drill's 'verified N tables, M rows' success summary, through a schema migration after v0.2.1 (the columns in packages/db/src/schema/backup-snapshot.ts are NOT NULL with a CHECK on the counts), and from every place that writes them (apps/server/src/jobs/backup.ts:205-207, packages/app/src/system/backups.ts:215-216 and the recordBackupPush audit at :304-306, apps/server/src/backup/snapshot.ts and snapshot-worker.ts, apps/server/src/admin/restore.ts:256-258, the unit-of-work port and the memory mirror); nothing reads them back, and the manifest file that travels with each snapshot keeps its own counts and checksums (retro N3, Simon's decisions of 2026-10-06 to drop the figures and to migrate)."
+verify = "A migration drops the three columns and pnpm check:upgrade passes on a v0.2.1 database; a backup, a push, a restore and a restore drill still work with the figures gone; the stored row, its audit rows and the drill and check summaries hold no row or table count and no digest; and the epic's migration tests and the manifest tests still pass."
+covers = ["CAP-3", "CAP-16"]
+after = [17, 18]
+hitl = false
+risk = "medium"
+unknown = "None known; the figures are written but never read, which a grep of apps, packages and the specs confirms."
+
+[[entry]]
+id = 22
+type = "story"
+title = "Backup status in the privacy suite"
+description = "Adds paired privacy worlds, built on the drill rig and failedDrillWorld from entry 18 and on entry 20's step in privacy-scenarios.ts and privacy.test.ts, for a successful drill and for private row counts that differ, in which partner B's /api/system/backup response and the backup audit rows B reads through the listAudit use case (the epic 12 audit API will expose the same unscoped rows) must match; the restic snapshot id stays readable by decision (Simon, 2026-10-06: people may need it to choose which backup to restore), so the suite excludes it by name as an accepted exposure; replaces the known-gap test with that comparison and corrects the tx-repos-viewer reasons for backups and backupVerifications (retro N3). Needs entry 21's removal of the figures."
+verify = "Two worlds whose private accounts hold different numbers of rows give partner B byte-identical /api/system/backup responses and backup audit rows, apart from the named snapshot id, after a successful drill, a failed drill and a backup; the suite fails when the figures are put back; and the known-gap test is gone."
+covers = ["CAP-3", "CAP-16"]
+after = [20, 21]
+hitl = false
+risk = "low"
+unknown = "None known."
