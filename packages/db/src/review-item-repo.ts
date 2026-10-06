@@ -99,5 +99,15 @@ export function createReviewItemRepo(orm: Orm, check: () => void): ReviewItemRep
         .orderBy(asc(reviewItem.createdAt), asc(reviewItem.id))
         .all() as ReviewItemRow[];
     },
+
+    deleteForAccount: (accountId) => {
+      check();
+      return orm.delete(reviewItem).where(eq(reviewItem.accountId, accountId)).run().changes;
+    },
+
+    deleteForPerson: (personId) => {
+      check();
+      return orm.delete(reviewItem).where(eq(reviewItem.personId, personId)).run().changes;
+    },
   };
 }

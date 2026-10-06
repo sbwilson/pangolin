@@ -101,8 +101,12 @@ export type Authn =
   | { readonly kind: "demo" };
 
 export interface SessionEnv {
-  /** `needs`: enrolment steps the login still lacks (empty once set up, and in demo mode). */
-  Variables: { viewer: PersonViewer; needs: EnrolmentStep[] };
+  /**
+   * `needs`: enrolment steps the login still lacks (empty once set up, and in demo mode).
+   * `sessionEnded`: a route set it after revoking the session and clearing its cookie, so the
+   * gateway's refreshed cookie is not passed on after it.
+   */
+  Variables: { viewer: PersonViewer; needs: EnrolmentStep[]; sessionEnded?: true };
 }
 
 /** The one protected route a login that has not finished enrolling may reach. */
@@ -162,7 +166,9 @@ export function sessionMiddleware(deps: {
     c.set("viewer", viewer);
     c.set("needs", needs);
     await next();
-    for (const cookie of setCookies) c.res.headers.append("Set-Cookie", cookie);
+    if (c.get("sessionEnded") !== true) {
+      for (const cookie of setCookies) c.res.headers.append("Set-Cookie", cookie);
+    }
     return undefined;
   };
 }

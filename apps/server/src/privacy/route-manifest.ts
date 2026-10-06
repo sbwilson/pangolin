@@ -226,6 +226,9 @@ export const MANIFEST: readonly ManifestEntry[] = [
     params: { id: "account" },
     body: () => ({ name: "Privacy probe account" }),
   }),
+  // Names no id: it acts on the signed-in person's own data. The leave scenario in
+  // `privacy-scenarios.ts` proves the partner reads the same bytes whatever the leaver held.
+  write("POST", "/api/accounts/leave-household", { body: () => ({ confirm: true }) }),
   write("POST", "/api/accounts/:id/rejoin", { params: { id: "account" }, body: () => ({}) }),
   write("POST", "/api/accounts/:id/close", { params: { id: "account" }, body: () => ({}) }),
   write("POST", "/api/accounts/:id/privacy", {

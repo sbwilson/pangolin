@@ -16,7 +16,7 @@ import type {
   TaxCategoryRow,
 } from "@pangolin/app";
 import type { Id } from "@pangolin/shared";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { requireViewer, visibleScope, visibleTxnId } from "./privacy.ts";
 import { activity } from "./schema/activity.ts";
@@ -347,6 +347,12 @@ export function createTagRepo(orm: Orm, check: () => void): TagRepo {
         .orderBy(asc(tag.name), asc(tag.id))
         .all() as TagRow[];
     },
+    deleteScopedTo: (personId) => {
+      check();
+      const mine = orm.select({ id: tag.id }).from(tag).where(eq(tag.scopePersonId, personId));
+      orm.delete(splitTag).where(inArray(splitTag.tagId, mine)).run();
+      return orm.delete(tag).where(eq(tag.scopePersonId, personId)).run().changes;
+    },
   };
 }
 
@@ -425,6 +431,15 @@ export function createActivityRepo(orm: Orm, check: () => void): ActivityRepo {
         .from(activity)
         .where(and(eq(activity.id, id), isNull(activity.deletedAt), scope))
         .get()?.origin as Id<"Account"> | null | undefined;
+    },
+    deleteScopedTo: (personId) => {
+      check();
+      const mine = orm
+        .select({ id: activity.id })
+        .from(activity)
+        .where(eq(activity.scopePersonId, personId));
+      orm.update(split).set({ activityId: null }).where(inArray(split.activityId, mine)).run();
+      return orm.delete(activity).where(eq(activity.scopePersonId, personId)).run().changes;
     },
   };
 }
@@ -519,6 +534,10 @@ export function createPayeeRepo(orm: Orm, check: () => void): PayeeRepo {
         .where(and(eq(payee.id, id), isNull(payee.deletedAt), scope))
         .get()?.origin as Id<"Account"> | null | undefined;
     },
+    deleteScopedTo: (personId) => {
+      check();
+      return orm.delete(payee).where(eq(payee.scopePersonId, personId)).run().changes;
+    },
   };
 }
 
@@ -605,6 +624,17 @@ export function createPayeeAliasRepo(orm: Orm, check: () => void): PayeeAliasRep
         .from(payeeAlias)
         .where(and(eq(payeeAlias.id, id), isNull(payeeAlias.deletedAt), scope))
         .get()?.origin as Id<"Account"> | null | undefined;
+    },
+    deleteScopedTo: (personId) => {
+      check();
+      const mine = orm
+        .select({ id: payee.id })
+        .from(payee)
+        .where(eq(payee.scopePersonId, personId));
+      return orm
+        .delete(payeeAlias)
+        .where(or(eq(payeeAlias.scopePersonId, personId), inArray(payeeAlias.payeeId, mine)))
+        .run().changes;
     },
   };
 }

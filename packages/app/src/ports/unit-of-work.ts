@@ -223,6 +223,10 @@ export interface ReviewItemRepo {
    * viewer sees every item.
    */
   listOpenFor(viewer: Viewer): ReviewItemRow[];
+  /** Hard-deletes every item of account `accountId`, open or resolved; returns how many. */
+  deleteForAccount(accountId: string): number;
+  /** Hard-deletes every item scoped to `personId`, open or resolved; returns how many. */
+  deleteForPerson(personId: string): number;
 }
 
 /** The kinds of account (`account.type`). */
@@ -303,6 +307,24 @@ export interface AccountRepo {
    * still counts while a live transaction uses it. Each list is distinct, sorted by name then ID.
    */
   scopedReferences(accountId: string): ScopedReferences;
+  /**
+   * Every account `personId` owns, soft-deleted ones included, whatever its privacy, oldest
+   * first, each with whether it is soft-deleted. For the household leave, which reaches the
+   * leaver's accounts in every state (a use-case read; never behind `SystemViewer`, AD-6).
+   */
+  ownedBy(personId: string): OwnedAccount[];
+  /**
+   * Hard-deletes the owner rows and the account row of `accountId`, soft-deleted or not. The
+   * caller deletes the rows that point at the account first (foreign keys). Only the household
+   * leave calls it.
+   */
+  deleteRows(accountId: string): void;
+}
+
+/** An account as the household leave finds it: the row and whether it is soft-deleted. */
+export interface OwnedAccount {
+  readonly row: AccountRow;
+  readonly deleted: boolean;
 }
 
 /** An owner-scoped classification row that an account's transactions use. */
@@ -513,6 +535,34 @@ export interface TransactionRepo {
    * clock). Throws when given no viewer.
    */
   listVisible(viewer: Viewer, today: string): VisibleTransaction[];
+  /**
+   * Every transaction, soft-deleted ones included, whose name `personId` hid (`nameHiddenBy`),
+   * with its splits, as stored, whatever the viewer or the account's privacy. For the household
+   * leave, which lifts them; never returned to a viewer, so it is not in `ReadRepos`.
+   */
+  hidingsBy(personId: string): TransactionWithSplits[];
+  /**
+   * Clears `name_hidden_by` and `name_hidden_until` on every transaction in `ids`, whatever the
+   * viewer, bumping `updatedAt`. Returns how many rows it changed.
+   */
+  clearNameHidden(ids: readonly string[], at: string): number;
+  /**
+   * Clears `payee_id` on every transaction, whatever its account, whose payee is scoped to
+   * `personId`. Touches nothing else, `updatedAt` included. Returns how many rows it changed.
+   */
+  clearScopedPayees(personId: string): number;
+  /**
+   * Clears `transfer_group_id` on every transaction in group `groupId`, live or deleted, whatever
+   * the viewer, touching nothing else (the caller audits the survivors it read first). Returns
+   * how many rows it changed.
+   */
+  unlinkGroup(groupId: string): number;
+  /**
+   * Hard-deletes every transaction of account `accountId`, soft-deleted ones included, with
+   * their splits and split tags. Only the household leave calls it; the caller has unlinked the
+   * transfer groups first.
+   */
+  deleteForAccount(accountId: string): void;
 }
 
 /** What kind of body an institution is. */
@@ -571,6 +621,8 @@ export interface BalanceSnapshotRepo {
    * not check the account's type; `accounts.balanceAsOf` does.
    */
   balanceAsOf(viewer: Viewer, accountId: string, date: string): number | undefined;
+  /** Hard-deletes every snapshot of `accountId`; returns how many. Only the household leave. */
+  deleteForAccount(accountId: string): number;
 }
 
 export const TRANSFER_MATCHES = ["rule", "manual", "auto"] as const;
@@ -603,6 +655,11 @@ export interface TransferGroupRepo {
    * and not part of `ReadRepos`.
    */
   upkeepMembers(id: string): TransactionRow[];
+  /**
+   * The IDs of the groups with a transaction, live or deleted, in account `accountId`, by ID.
+   * For the household leave, which dissolves them.
+   */
+  idsInAccount(accountId: string): string[];
 }
 
 export const CATEGORY_GROUP_KINDS = ["income", "expense", "transfer"] as const;
@@ -719,6 +776,11 @@ export interface TagRepo {
    * and ID. Splits of a transaction `viewer` may not see, and tags out of scope, are absent.
    */
   listForSplits(viewer: Viewer, splitIds: readonly string[]): SplitTagged[];
+  /**
+   * Hard-deletes every tag scoped to `personId`, live or deleted, with its `split_tag` rows;
+   * returns how many tags. Only the household leave calls it.
+   */
+  deleteScopedTo(personId: string): number;
 }
 
 /** One tag on one split, from `TagRepo.listForSplits`. */
@@ -752,6 +814,12 @@ export interface ActivityRepo {
   softDelete(viewer: Viewer, id: string, at: string): boolean;
   /** The origin account stored with a row `viewer` may see: non-null only for a private origin. */
   originOf(viewer: Viewer, id: string): Id<"Account"> | null | undefined;
+  /**
+   * Hard-deletes every activity scoped to `personId`, live or deleted, clearing the `activityId`
+   * of the splits that name one (their `updatedAt` stays); returns how many activities. Only
+   * the household leave calls it.
+   */
+  deleteScopedTo(personId: string): number;
 }
 
 /** `payee`: a clean merchant identity. */
@@ -790,6 +858,12 @@ export interface PayeeRepo {
   softDelete(viewer: Viewer, id: string, at: string): boolean;
   /** The origin account stored with a row `viewer` may see: non-null only for a private origin. */
   originOf(viewer: Viewer, id: string): Id<"Account"> | null | undefined;
+  /**
+   * Hard-deletes every payee scoped to `personId`, live or deleted; returns how many. The caller
+   * has cleared the transactions and deleted the aliases that point at them first (foreign
+   * keys). Only the household leave calls it.
+   */
+  deleteScopedTo(personId: string): number;
 }
 
 export const ALIAS_MATCH_KINDS = ["exact", "contains", "prefix", "regex"] as const;
@@ -823,6 +897,12 @@ export interface PayeeAliasRepo {
   softDelete(viewer: Viewer, id: string, at: string): boolean;
   /** The origin account stored with a row `viewer` may see: non-null only for a private origin. */
   originOf(viewer: Viewer, id: string): Id<"Account"> | null | undefined;
+  /**
+   * Hard-deletes every alias scoped to `personId`, and every alias of a payee scoped to
+   * `personId`, whatever its own scope; live or deleted. Returns how many. Only the household
+   * leave calls it.
+   */
+  deleteScopedTo(personId: string): number;
 }
 
 /**
@@ -856,6 +936,12 @@ export interface PersonRepo {
   listActive(): PersonRow[];
   /** Active people with a login, oldest first, with the login's email (from `auth_user`). */
   listLogins(): LoginRow[];
+  /**
+   * Marks the active person `id` as left: sets `deleted_at` and `updated_at` to `at`. False,
+   * changing nothing, when there is no such active person. The row stays, so what names it
+   * (an owner row, a `performed_by`) still reads as a former member.
+   */
+  markLeft(id: Id<"Person">, at: string): boolean;
 }
 
 /** An active person with a login, as the server console lists them. */
@@ -1055,6 +1141,16 @@ export interface AuditRepo {
    * joint period stay unscoped. Sets `person_id` only, never the content. Write-only.
    */
   scopeToPerson(accountId: string, personId: string): void;
+  /**
+   * Hard-deletes every audit row carrying `accountId`; returns how many. Write-only, for the
+   * household leave: the audit trail is append-only everywhere else.
+   */
+  deleteForAccount(accountId: string): number;
+  /**
+   * Hard-deletes every audit row scoped to `personId` (`person_id`); returns how many.
+   * Write-only, for the household leave.
+   */
+  deleteForPerson(personId: string): number;
 }
 
 /** Repositories bound to one open transaction. They throw once that transaction has ended. */

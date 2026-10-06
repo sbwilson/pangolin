@@ -3,6 +3,7 @@ import { defaultAuthConfig } from "../config.ts";
 import { Browser, createHarness, type Harness } from "../testing/auth-harness.ts";
 import { secretOf, totp } from "../testing/totp.ts";
 import { cookieSettings } from "./auth.ts";
+import { clearedSessionCookies } from "./cookie.ts";
 import { authHooks } from "./hooks.ts";
 
 // One household, built up test by test: the order matters.
@@ -49,6 +50,35 @@ describe("cookieSettings", () => {
       defaultCookieAttributes: { httpOnly: true, secure: true, sameSite: "strict", path: "/" },
     });
     expect(cookieSettings("http://localhost:3000").cookiePrefix).toBe("pangolin");
+  });
+
+  it("clears the session cookies under the same names and attributes it sets them with", () => {
+    // The attributes better-auth sets, written as a `Set-Cookie` header names them.
+    const attributes = (url: string): string[] => {
+      const { path, httpOnly, secure, sameSite } = cookieSettings(url).defaultCookieAttributes;
+      const site = sameSite.charAt(0).toUpperCase() + sameSite.slice(1);
+      return [
+        `Path=${path}`,
+        ...(httpOnly ? ["HttpOnly"] : []),
+        ...(secure ? ["Secure"] : []),
+        `SameSite=${site}`,
+      ];
+    };
+    for (const [url, prefix] of [
+      ["https://money.example.com", "__Host-pangolin"],
+      ["http://localhost:3000", "pangolin"],
+    ] as const) {
+      expect(cookieSettings(url).cookiePrefix).toBe(prefix);
+      const cleared = clearedSessionCookies(url);
+      expect(cleared.map((c) => c.split(";")[0])).toEqual([
+        `${prefix}.session_token=`,
+        `${prefix}.session_data=`,
+      ]);
+      for (const cookie of cleared) {
+        const [, ...rest] = cookie.split("; ");
+        expect(rest).toEqual(["Max-Age=0", ...attributes(url)]);
+      }
+    }
   });
 });
 

@@ -20,20 +20,30 @@ import {
   balanceAsOf as accountBalanceAsOf,
   closeAccount,
   createAccount,
+  createActivity,
   createIdGenerator,
   createPayee,
+  createPayeeAlias,
   createPerson,
   createTag,
   createTransaction,
+  createTransferGroup,
+  defineReviewKind,
   deleteTransaction,
   getAccount,
   getTransaction,
   hideTransactionName,
+  leaveHousehold,
   listAccounts,
+  listActivities,
   listAudit,
+  listPayeeAliases,
+  listPayees,
   listReviewItems,
+  listTags,
   listTransactions,
   personViewer,
+  raiseReviewItem,
   recordBalanceSnapshot,
   rejoinAccount,
   setPrivacy,
@@ -43,9 +53,11 @@ import {
   unhideTransactionName,
   updateAccount,
   updateTransaction,
+  write,
 } from "../index.ts";
 import { systemViewer } from "../system-viewer.ts";
 import { memoryUnitOfWork } from "./memory-uow.ts";
+import { fakeTokens } from "./tokens.ts";
 
 const now = Temporal.Instant.from("2026-09-27T00:00:00Z");
 
@@ -661,6 +673,182 @@ describe("closed accounts are archived (story 25)", () => {
       expect(out.record, who).toEqual(["2026-09-10", 1, 500, true]);
       expect(out.badInput, who).toBe("Validation");
       expect(out.reopened, who).toEqual(["closed", "future@2026-12-31", "open"]);
+    }
+  });
+});
+
+/**
+ * Leaving the household (story 26) on one adapter: A's private data, hidings and shared accounts,
+ * then the leave. Everything is named by label, so the two adapters' IDs do not matter.
+ */
+function leaving(ctxs: Ctxs) {
+  const { sys } = ctxs;
+  const pa = createPerson(sys, { displayName: "A", colour: "#000000" });
+  const pb = createPerson(sys, { displayName: "B", colour: "#ffffff" });
+  const A = ctxs.as(pa);
+  const B = ctxs.as(pb);
+  const labels = new Map<string, string>([
+    [pa, "PA"],
+    [pb, "PB"],
+  ]);
+  const name = (id: string | null | undefined) => (id == null ? null : (labels.get(id) ?? "?"));
+  const label = (text: string, id: string) => {
+    labels.set(id, text);
+    return id;
+  };
+  const account = (text: string, isPrivate: boolean, owners = [pa, pb]) =>
+    label(
+      text,
+      createAccount(sys, {
+        name: text,
+        type: "savings",
+        currency: "AUD",
+        isPrivate,
+        owners: isPrivate
+          ? own(pa)
+          : owners.map((personId) => ({ personId, shareBp: 10_000 / owners.length })),
+      }),
+    );
+  const priv = account("priv", true);
+  const closed = account("closed", true);
+  const shared = account("shared", false);
+  const sole = account("sole", false, [pa]);
+
+  const tag = createTag(A, { name: "tag", originAccountId: priv });
+  const payee = createPayee(A, { name: "payee", originAccountId: priv });
+  createPayeeAlias(A, {
+    payeeId: payee.id,
+    pattern: "PAYEE",
+    matchKind: "contains",
+    originAccountId: priv,
+  });
+  const activity = createActivity(A, { name: "trip", originAccountId: priv });
+  const line = (ctx: UseCaseContext, text: string, accountId: string, cents: number, extra = {}) =>
+    label(
+      text,
+      createTransaction(ctx, {
+        accountId,
+        postedOn: "2026-09-01",
+        amountCents: cents,
+        description: text,
+        ...extra,
+      }),
+    );
+  const t1 = line(A, "t1", priv, -500, { payeeId: payee.id });
+  const split = getTransaction(A, { id: t1 }).splits[0]?.id as string;
+  setSplitTags(A, { transactionId: t1, splitId: split, tagIds: [tag.id] });
+  setSplitField(A, { transactionId: t1, splitId: split, field: "activity", value: activity.id });
+  recordBalanceSnapshot(A, { accountId: priv, asOf: "2026-09-01", balanceCents: 9000 });
+  line(A, "t2", closed, 700);
+  closeAccount(A, { id: closed, closedOn: "2026-09-05" });
+  const theirs = line(B, "b-side", shared, 500);
+  createTransferGroup(A, { transactionIds: [t1, theirs] });
+  const hidden = line(A, "hidden", shared, -900);
+  hideTransactionName(A, { id: hidden, until: "2026-12-01" });
+  line(A, "sole", sole, -100);
+  const item = defineReviewKind({ kind: "parity.item", module: "system", scope: "person" });
+  write(A, (tx, audit) =>
+    raiseReviewItem(tx, audit, A, {
+      kind: item,
+      entityRef: "x:a",
+      dedupeKey: "parity:a",
+      personId: pa,
+    }),
+  );
+
+  const tokens = fakeTokens();
+  const leave = (ctx: UseCaseContext, input: unknown) =>
+    outcome(() => leaveHousehold({ ...ctx, tokens }, input as never));
+  const stale = {
+    ...A,
+    viewer: personViewer(pa, now.subtract({ minutes: 6 })),
+  };
+  const out: Record<string, unknown> = {};
+  out.refused = [
+    leave(A, {}),
+    leave(A, { confirm: false }),
+    leave(stale, { confirm: true }),
+    leave(sys, { confirm: true }),
+  ];
+  const view = (ctx: UseCaseContext) => ({
+    accounts: listAccounts(ctx, { includeClosed: true })
+      .map((row) => `${name(row.id)}:${row.owners.map((o) => `${name(o.personId)}=${o.shareBp}`)}`)
+      .sort(),
+    transactions: listTransactions(ctx)
+      .map((row) => [
+        name(row.id),
+        name(row.accountId),
+        row.descriptionRaw,
+        row.nameHidden,
+        row.transferGroupId === null,
+        row.payeeId === null,
+        row.splits.map((s) => s.activityId === null),
+      ])
+      .sort(),
+    payees: listPayees(ctx).map((row) => row.name),
+    aliases: listPayeeAliases(ctx).map((row) => row.pattern),
+    tags: listTags(ctx).map((row) => row.name),
+    activities: listActivities(ctx).map((row) => row.name),
+    items: listReviewItems(ctx).map((row) => row.entityRef),
+    audit: listAudit(ctx)
+      .map(
+        (row) =>
+          `${row.entity}.${row.action}:${name(row.entityId)}:${name(row.accountId)}:${name(row.personId)}:${row.actor.replace(pa, "PA").replace(pb, "PB")}`,
+      )
+      .sort(),
+  });
+  out.beforeB = view(B);
+  out.left = leave(A, { confirm: true });
+  out.afterB = view(B);
+  out.afterA = view(A);
+  out.afterSystem = view(sys);
+  out.people = sys.uow.read((r) => r.person.listActive().map((p) => name(p.id)));
+  out.again = leave(A, { confirm: true });
+  return out;
+}
+
+describe("leaving the household (story 26)", () => {
+  it("is the same on SQLite and the memory mirror", () => {
+    migrate(db, loadMigrations(packageMigrationsDir));
+    const sqlite = leaving(sqliteCtxs(db));
+    const memory = leaving(memoryCtxs());
+    expect(memory).toEqual(sqlite);
+    for (const [who, out] of [
+      ["sqlite", sqlite],
+      ["memory", memory],
+    ] as const) {
+      expect(out.refused, who).toEqual([
+        "Validation",
+        "Validation",
+        "ReauthRequired",
+        "Unauthenticated",
+      ]);
+      expect(out.left, who).toBe("ok");
+      expect(out.people, who).toEqual(["PB"]);
+      expect(out.again, who).toBe("Unauthenticated");
+      const after = out.afterB as ReturnType<typeof leaving>["afterB"] & {
+        accounts: string[];
+        payees: string[];
+        audit: string[];
+      };
+      expect(after.accounts, who).toEqual(["shared:PB=10000", "sole:PB=10000"]);
+      expect(after.payees, who).not.toContain("payee");
+      // The hiding is lifted: B reads "hidden" with its name, the transfer's far side is unlinked.
+      const rows = (out.afterB as { transactions: unknown[][] }).transactions;
+      expect(
+        rows.find((row) => row[0] === "hidden"),
+        who,
+      ).toEqual(["hidden", "shared", "hidden", false, true, true, [true]]);
+      expect(rows.find((row) => row[0] === "b-side")?.[4], who).toBe(true);
+      expect(
+        rows.some((row) => row[0] === "t1"),
+        who,
+      ).toBe(false);
+      expect((out.afterSystem as { accounts: string[] }).accounts, who).toEqual(after.accounts);
+      expect(
+        (out.afterSystem as { audit: string[] }).audit.some((row) => /:priv:|:closed:/.test(row)),
+        who,
+      ).toBe(false);
     }
   });
 });

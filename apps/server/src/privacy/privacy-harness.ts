@@ -29,6 +29,7 @@ import {
   deleteTransferGroup,
   fixedClockAt,
   getTransaction,
+  hideTransactionName,
   type IdGenerator,
   listAccounts,
   listCategories,
@@ -246,6 +247,14 @@ function linkLogin(db: Db, userId: string, personId: string, name: string): void
     `INSERT INTO auth_passkey (id, user_id, public_key, credential_id, counter, device_type, backed_up)
      VALUES (?, ?, 'k', ?, 0, 'singleDevice', 0)`,
   ).run(`pk-${userId}`, userId, `c-${userId}`);
+  db.prepare(
+    `INSERT INTO auth_account (id, user_id, account_id, provider_id, password, created_at, updated_at)
+     VALUES (?, ?, ?, 'credential', 'old-hash', 'x', 'x')`,
+  ).run(`acc-${userId}`, userId, userId);
+  db.prepare(
+    `INSERT INTO auth_session (id, user_id, token, expires_at, created_at, updated_at)
+     VALUES (?, ?, ?, '2099-01-01T00:00:00.000Z', 'x', 'x')`,
+  ).run(`s-${userId}`, userId, `t-${userId}`);
   db.prepare("UPDATE person SET user_id = ? WHERE id = ?").run(userId, personId);
 }
 
@@ -405,7 +414,8 @@ export type LeakMode =
   | "hidden-name"
   | "redact-identity"
   | "classification"
-  | "review-items";
+  | "review-items"
+  | "leave-hidings";
 
 type Repos = {
   accounts: Pick<AccountRepo, "findVisible" | "list">;
@@ -428,6 +438,7 @@ type Repos = {
  *   classification  payee, tag, alias and activity lists
  *   review-items    the review inbox
  *   redact-identity a hidden flag is never rendered (the placeholder is missing)
+ *   leave-hidings   the household leave does not lift the leaver's hidings
  * Test support: it exists to prove the suite fails on each.
  */
 function tamperRepos<R extends Repos>(repos: R, mode: LeakMode, a: PersonViewer): R {
@@ -452,6 +463,7 @@ function tamperRepos<R extends Repos>(repos: R, mode: LeakMode, a: PersonViewer)
     writes.update = (viewer, row) => update(lift(viewer), row);
     writes.setNameHidden = (viewer, ...rest) => setNameHidden(lift(viewer), ...rest);
   }
+  if (when("leave-hidings") && inner.clearNameHidden) writes.clearNameHidden = () => 0;
   const transactions = {
     ...repos.transactions,
     ...writes,
@@ -771,6 +783,30 @@ function applyDelta(db: Db, a: UseCaseContext, aId: string, shared: Shared) {
   const activityTwo = createActivity(a, { name: "Delta Activity two", originAccountId: cash });
   updateActivity(a, { id: activityTwo.id, name: "Delta Activity two renamed" });
   deleteActivity(a, { id: activityTwo.id });
+  // A hiding of A's, on a public account of A's alone that then turned private: B never saw the
+  // account's rows, and the hiding outlives the switch (AD-4).
+  const hiding = createAccount(a, {
+    name: "Delta hiding account",
+    type: "transaction",
+    currency: "AUD",
+    isPrivate: false,
+    owners: owner,
+  });
+  const hidden = createTransaction(a, {
+    accountId: hiding,
+    postedOn: "2026-07-12",
+    amountCents: -250,
+    description: "Delta secret hidden",
+  });
+  hideTransactionName(a, { id: hidden, until: a.clock.today().add({ days: 90 }).toString() });
+  // A private account has no split for anyone else: the split is A's.
+  setSplitField(a, {
+    transactionId: hidden,
+    splitId: getTransaction(a, { id: hidden }).splits[0]?.id as string,
+    field: "beneficiary",
+    value: aId,
+  });
+  setPrivacy(a, { id: hiding, isPrivate: true });
   db.prepare("UPDATE account SET deleted_at = ?, updated_at = ? WHERE id = ?").run(
     "2026-07-14T00:00:00.000Z",
     "2026-07-14T00:00:00.000Z",

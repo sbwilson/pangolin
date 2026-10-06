@@ -1446,6 +1446,167 @@ function scenario(
   });
   step("reviewItem.unknownAccount", (r) => r.reviewItems.raise(reviewItem("nobody")).inserted);
   step("reviewItem.knownAccount", (r) => r.reviewItems.raise(reviewItem(shared)).inserted);
+
+  // The household leave (story 26): the hard deletes, and the foreign keys that order them.
+  const c = newId<"Person">();
+  const privC = newId<"Account">();
+  const scopedC = { scopePersonId: c, createdAt: T, updatedAt: T };
+  const cPayee = {
+    id: newId<"Payee">(),
+    name: "c-payee",
+    websiteUrl: null,
+    logoAttachmentId: null,
+    defaultCategoryId: null,
+    ...scopedC,
+  };
+  const cAlias = {
+    id: newId<"PayeeAlias">(),
+    pattern: "C PAYEE",
+    matchKind: "exact" as const,
+    payeeId: cPayee.id,
+    ...scopedC,
+  };
+  const cTag = { id: newId<"Tag">(), name: "c-tag", ...scopedC };
+  const cActivity = {
+    id: newId<"Activity">(),
+    name: "c-trip",
+    startsOn: null,
+    endsOn: null,
+    budgetCents: null,
+    ...scopedC,
+  };
+  const gLeave = newId<"TransferGroup">();
+  const cOwn = txn(privC, "c-own", {
+    payeeId: cPayee.id,
+    transferGroupId: gLeave,
+    nameHiddenBy: c,
+    nameHiddenUntil: "2030-01-01T00:00:00.000Z",
+  });
+  const cShared = txn(shared, "c-shared", { payeeId: cPayee.id, transferGroupId: gLeave });
+  const cOwnSplit = split(cOwn.id, { activityId: cActivity.id, beneficiary: c });
+  const cSharedSplit = split(cShared.id, { activityId: cActivity.id });
+  const cItem = (key: string, over: { accountId?: string; personId?: string }) => ({
+    ...reviewItem(null),
+    dedupeKey: key,
+    ...over,
+  });
+  tx((r) => {
+    r.person.insert(person(c, "C"));
+    r.accounts.insert(account(privC, true), [
+      { accountId: privC, personId: c, shareBp: 10000, createdAt: T, updatedAt: T },
+    ]);
+    r.payees.insert(cPayee, privC);
+    r.payeeAliases.insert(cAlias, privC);
+    r.tags.insert(cTag, privC);
+    r.activities.insert(cActivity, privC);
+    r.transferGroups.insert({ id: gLeave, matchedBy: "manual", createdAt: T, updatedAt: T });
+    r.transactions.insert(cOwn, [cOwnSplit]);
+    r.transactions.insert(cShared, [cSharedSplit]);
+    r.tags.replaceForSplit(system, cOwnSplit.id, [cTag.id], T);
+    r.tags.replaceForSplit(system, cSharedSplit.id, [cTag.id], T);
+    r.balanceSnapshots.insert({
+      id: newId<"BalanceSnapshot">(),
+      accountId: privC,
+      asOf: "2026-09-01",
+      balanceCents: 1,
+      source: "manual",
+      createdAt: T,
+      updatedAt: T,
+    });
+    r.reviewItems.raise(cItem("leave:account", { accountId: privC }));
+    r.reviewItems.raise(cItem("leave:person", { personId: c }));
+    const row = (accountId: string | null, personId: string | null, entity: string) => ({
+      id: newId<"AuditLog">(),
+      at: T,
+      actor: `person:${c}`,
+      entity,
+      entityId: entity,
+      accountId,
+      personId,
+      action: "update",
+      before: null,
+      after: null,
+    });
+    r.audit.append(row(privC, null, "leave-account"));
+    r.audit.append(row(null, c, "leave-person"));
+    r.audit.append(row(null, null, "leave-shared"));
+  });
+  out["leave.ownedBy"] = tx((r) => [
+    r.accounts.ownedBy(c).map(({ row, deleted }) => [row.id === privC, row.isPrivate, deleted]),
+    r.accounts.ownedBy(a).map(({ row }) => row.isPrivate),
+    r.accounts.ownedBy(newId()),
+  ]);
+  // Foreign keys, as SQLite has them: what points at a row must go first.
+  step("leave.accountWithRows", (r) => r.accounts.deleteRows(privC));
+  step("leave.payeeInUse", (r) => r.payees.deleteScopedTo(c));
+  out["leave.hidings"] = tx((r) =>
+    r.transactions.hidingsBy(c).map((row) => [row.id === cOwn.id, row.splits.length]),
+  );
+  out["leave.groups"] = tx((r) => [
+    r.transferGroups.idsInAccount(privC).length,
+    r.transferGroups.idsInAccount(shared).includes(gLeave),
+    r.transferGroups.idsInAccount(newId()),
+  ]);
+  out["leave.steps"] = tx((r) => [
+    r.transactions.clearNameHidden([cOwn.id, "nobody"], T2),
+    r.transactions.hidingsBy(c).length,
+    r.transactions.clearScopedPayees(c),
+    r.transactions.clearScopedPayees(c),
+    r.transactions.unlinkGroup(gLeave),
+    r.transactions.unlinkGroup(gLeave),
+    r.transferGroups.upkeepMembers(gLeave).length,
+    r.payeeAliases.deleteScopedTo(c),
+    r.payees.deleteScopedTo(c),
+    r.tags.deleteScopedTo(c),
+    r.activities.deleteScopedTo(c),
+    r.activities.deleteScopedTo(c),
+    r.reviewItems.deleteForAccount(privC),
+    r.reviewItems.deleteForPerson(c),
+    r.balanceSnapshots.deleteForAccount(privC),
+  ]);
+  out["leave.sharedRow"] = tx((r) => {
+    const row = r.transactions.findStored(system, cShared.id);
+    return [
+      row?.payeeId,
+      row?.transferGroupId,
+      row?.splits.map((x) => x.activityId),
+      row?.updatedAt,
+    ];
+  });
+  out["leave.listsAfter"] = tx((r) => [
+    r.payees.list(system).filter((p) => p.scopePersonId === c).length,
+    r.payeeAliases.list(system).filter((p) => p.scopePersonId === c).length,
+    r.tags.list(system).filter((p) => p.scopePersonId === c).length,
+    r.activities.list(system).filter((p) => p.scopePersonId === c).length,
+    r.tags.listForSplits(system, [cSharedSplit.id]).length,
+  ]);
+  step("leave.accountWithTransactions", (r) => r.accounts.deleteRows(privC));
+  out["leave.account"] = tx((r) => {
+    r.transactions.deleteForAccount(privC);
+    r.transferGroups.delete(gLeave);
+    r.accounts.deleteRows(privC);
+    return [
+      r.audit.deleteForAccount(privC),
+      r.audit.deleteForPerson(c),
+      r.audit.deleteForPerson(c),
+      r.accounts.ownedBy(c),
+      r.accounts.owners(privC),
+      r.transactions.findStored(system, cOwn.id),
+      r.transactions.listVisible(system, TODAY).filter((row) => row.accountId === privC).length,
+    ];
+  });
+  out["leave.markLeft"] = tx((r) => [
+    r.person.markLeft(c, T2),
+    r.person.markLeft(c, T2),
+    r.person.markLeft(newId(), T2),
+    r.person.listActive().map((p) => p.displayName),
+  ]);
+  out["leave.audit"] = tx((r) =>
+    r.audit
+      .listVisible(system, TODAY)
+      .filter((row) => row.entity.startsWith("leave-"))
+      .map((row) => row.entity),
+  );
   return out;
 }
 
@@ -1492,6 +1653,15 @@ describe("ledger and classification schema on SQLite", () => {
     expect(out["w.updateToSharedName"]).toBe("error:UNIQUE");
     expect(out["w.updateDuplicateInScope"]).toBe("error:UNIQUE");
     expect(out["w.updateUnknownCategory"]).toBe("error:FOREIGN KEY");
+    expect(out["leave.accountWithRows"]).toBe("error:FOREIGN KEY");
+    expect(out["leave.payeeInUse"]).toBe("error:FOREIGN KEY");
+    expect(out["leave.accountWithTransactions"]).toBe("error:FOREIGN KEY");
+    expect(out["leave.hidings"]).toEqual([[true, 1]]);
+    expect(out["leave.steps"]).toEqual([1, 0, 2, 0, 2, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1]);
+    expect(out["leave.sharedRow"]).toEqual([null, null, [null], T]);
+    expect(out["leave.listsAfter"]).toEqual([0, 0, 0, 0, 0]);
+    expect(out["leave.markLeft"]).toEqual([true, false, false, ["A", "B"]]);
+    expect(out["leave.audit"]).toEqual(["leave-shared"]);
     expect(out["categoryGroup.insertBadKind"]).toBe("error:CHECK");
     expect(out["categoryGroup.updateBadKind"]).toBe("error:CHECK");
     expect(out["w.aliasBadKind"]).toBe("error:CHECK");

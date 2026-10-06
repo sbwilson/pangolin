@@ -78,6 +78,33 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
     "a household-wide cascade of a category delete that reaches every payee, whatever its scope (a known gap in the route manifest)",
   "PayeeAliasRepo.softDeleteForPayee":
     "a cascade of a payee delete that reaches every alias of it, whatever its scope (a known gap in the route manifest)",
+  // The household leave (story 26): the leaver's rows are reached whoever can see them, because
+  // the leaver is the one person whose private data goes and whose hidings lift. Only
+  // `leaveHousehold` calls these, behind a recent sign-in and a confirmation.
+  "PersonRepo.markLeft": "marks the leaver as left; the use case checked the person is active",
+  "AccountRepo.deleteRows":
+    "hard-deletes a private account of the leaver once the leave has deleted what points at it",
+  "TransactionRepo.clearNameHidden":
+    "lifts the leaver's own hidings, also on an account that has turned private to the partner",
+  "TransactionRepo.clearScopedPayees":
+    "nulls the reference to a payee scoped to the leaver, on any transaction",
+  "TransactionRepo.unlinkGroup":
+    "unlinks every member of a transfer group, also in the other partner's private account (decision 81)",
+  "TransactionRepo.deleteForAccount":
+    "hard-deletes the rows of one of the leaver's private accounts",
+  "BalanceSnapshotRepo.deleteForAccount":
+    "hard-deletes the snapshots of one of the leaver's private accounts",
+  "ReviewItemRepo.deleteForAccount":
+    "hard-deletes the review items of one of the leaver's private accounts",
+  "ReviewItemRepo.deleteForPerson": "hard-deletes the leaver's own review items",
+  "AuditRepo.deleteForAccount":
+    "write-only: erases the audit rows of one of the leaver's private accounts",
+  "AuditRepo.deleteForPerson": "write-only: erases the audit rows scoped to the leaver",
+  "TagRepo.deleteScopedTo": "hard-deletes the tags scoped to the leaver",
+  "ActivityRepo.deleteScopedTo": "hard-deletes the activities scoped to the leaver",
+  "PayeeRepo.deleteScopedTo": "hard-deletes the payees scoped to the leaver",
+  "PayeeAliasRepo.deleteScopedTo":
+    "hard-deletes the aliases scoped to the leaver and those of a payee scoped to them",
   // Reads with no viewer: the only ones.
   "AccountRepo.any": "whether any account exists, for first-run setup; returns no row",
   "AccountRepo.owners": "the owners of an account the use case already read with the viewer",
@@ -85,6 +112,12 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
     "a yes or no on an account the use case already read with the viewer (AD-7)",
   "AccountRepo.scopedReferences":
     "names the owner's own scoped rows, in a refusal only the owner can read (AD-18)",
+  "AccountRepo.ownedBy":
+    "the leaver's own accounts in every state, for the household leave (a use-case read, never behind SystemViewer, AD-6)",
+  "TransactionRepo.hidingsBy":
+    "the transactions whose name the leaver hid, wherever they are, so the leave can lift them",
+  "TransferGroupRepo.idsInAccount":
+    "the groups with a member in one of the leaver's private accounts, so the leave can dissolve them",
   "TransferGroupRepo.upkeepMembers":
     "unlinks the survivor of a deleted transfer even in the other partner's private account; a use-case read on the port, never behind SystemViewer (decision 81, AD-6)",
 };

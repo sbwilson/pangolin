@@ -8,16 +8,24 @@
 //                       transaction; B reads, then edits, splits, tags and deletes it.
 //   switchScenario      owner changes and privacy switches, both ways, on accounts whose history
 //                       or hidden names must stay out of B's sight.
+//   leaveScenario       A leaves the household holding private data in one world and none in the
+//                       other; B then reads, and writes on what A handed over.
 import { createHash } from "node:crypto";
 import {
+  closeAccount,
   createAccount,
   createActivity,
   createPayee,
+  createPayeeAlias,
+  createTag,
   createTransaction,
+  createTransferGroup,
   getTransaction,
   hideTransactionName,
+  recordBalanceSnapshot,
   type SplitRow,
   setSplitField,
+  setSplitTags,
   type TransactionRow,
   type UseCaseContext,
   updateTransaction,
@@ -552,6 +560,192 @@ export async function switchScenario(
     flippedTransaction: flippedTxn,
     privateEraTransaction: second,
     activity: activity.id,
+  };
+  return { ids, steps };
+}
+
+// ------------------------------------------------------------------------------------ leave
+
+export interface LeaveIds {
+  /** A joint account A owned with B, and a transaction whose name A hid from B. */
+  readonly joint: string;
+  readonly hidden: string;
+  /** A public account A owned alone, which passes to B. */
+  readonly sole: string;
+  readonly soleTransaction: string;
+  /** A's private data, in flavour "one" only: accounts, scoped rows and an entry in a closed one. */
+  readonly privateAccounts: readonly string[];
+  readonly privateTransactions: readonly string[];
+  readonly payee: string | undefined;
+  readonly tag: string | undefined;
+  readonly activity: string | undefined;
+  readonly alias: string | undefined;
+}
+
+export interface LeaveRun {
+  readonly ids: LeaveIds;
+  readonly steps: Step[];
+}
+
+/** The description of the transaction A hides on the joint account, whatever the flavour. */
+export const LEAVE_HIDDEN_NAME = "Leave probe hidden name";
+
+/**
+ * A leaves the household. Both worlds have the shared data first (a joint account with a
+ * transaction whose name A hid from B, a public account A owns alone with an entry); flavour
+ * "one" then gives A private data on top: private accounts (one closed, with a balance snapshot
+ * and a transfer between them), an owner-scoped payee, alias, tag and activity used on an entry's
+ * split, and review items. Flavour "two" gives A none. A then leaves through the real HTTP app,
+ * and B reads and writes on what A handed over. B reads the same bytes in both worlds at every
+ * checkpoint, the lifted hiding included: nothing says what A held.
+ */
+export async function leaveScenario(
+  world: World,
+  flavour: Flavour,
+  observe: Observe,
+): Promise<LeaveRun> {
+  const a = world.ctx("a");
+  const steps: Step[] = [];
+  const A = world.people.a;
+  const B = world.people.b;
+
+  // Shared data first, so its ids are the same in both worlds whatever A holds privately.
+  const joint = createAccount(a, {
+    name: "Leave probe joint",
+    type: "transaction",
+    currency: "AUD",
+    isPrivate: false,
+    owners: [
+      { personId: A, shareBp: 5000 },
+      { personId: B, shareBp: 5000 },
+    ],
+  });
+  const hidden = createTransaction(a, {
+    accountId: joint,
+    postedOn: POSTED,
+    amountCents: -1200,
+    description: LEAVE_HIDDEN_NAME,
+  });
+  hideTransactionName(a, { id: hidden, until: after(world, 90) });
+  const sole = createAccount(a, {
+    name: "Leave probe sole",
+    type: "transaction",
+    currency: "AUD",
+    isPrivate: false,
+    owners: [{ personId: A, shareBp: 10_000 }],
+  });
+  const soleTransaction = createTransaction(a, {
+    accountId: sole,
+    postedOn: POSTED,
+    amountCents: -800,
+    description: "Leave probe sole entry",
+  });
+
+  // A's private data, in one world only.
+  const privateAccounts: string[] = [];
+  const privateTransactions: string[] = [];
+  let scoped: { payee: string; tag: string; activity: string; alias: string } | undefined;
+  if (flavour === "one") {
+    const priv = (name: string) =>
+      createAccount(a, {
+        name,
+        type: "transaction",
+        currency: "AUD",
+        isPrivate: true,
+        owners: [{ personId: A, shareBp: 10_000 }],
+      });
+    const cash = priv("Leave probe private cash");
+    const closed = priv("Leave probe private closed");
+    privateAccounts.push(cash, closed);
+    const payee = createPayee(a, { name: "Leave probe payee", originAccountId: cash });
+    const alias = createPayeeAlias(a, {
+      payeeId: payee.id,
+      pattern: "LEAVE PROBE PAYEE",
+      matchKind: "contains",
+      originAccountId: cash,
+    });
+    const tag = createTag(a, { name: "Leave probe tag", originAccountId: cash });
+    const activity = createActivity(a, { name: "Leave probe trip", originAccountId: cash });
+    scoped = { payee: payee.id, tag: tag.id, activity: activity.id, alias: alias.id };
+    const line = (accountId: string, amountCents: number, description: string, payeeId?: string) =>
+      createTransaction(a, {
+        accountId,
+        postedOn: POSTED,
+        amountCents,
+        description,
+        ...(payeeId === undefined ? {} : { payeeId }),
+      });
+    const out = line(cash, -4200, "Leave probe secret out", payee.id);
+    const into = line(closed, 4200, "Leave probe secret in");
+    privateTransactions.push(out, into);
+    const split = getTransaction(a, { id: out }).splits[0]?.id as string;
+    setSplitTags(a, { transactionId: out, splitId: split, tagIds: [tag.id] });
+    setSplitField(a, { transactionId: out, splitId: split, field: "activity", value: activity.id });
+    createTransferGroup(a, { transactionIds: [out, into] });
+    recordBalanceSnapshot(a, { accountId: cash, asOf: "2026-07-01", balanceCents: 99_900 });
+    closeAccount(a, { id: closed, closedOn: POSTED });
+  }
+
+  const reads = (): View => ({
+    paths: [
+      "/api/accounts",
+      "/api/ledger/transactions",
+      "/api/classify/payees",
+      "/api/classify/tags",
+      "/api/classify/activities",
+      "/api/classify/payees/aliases",
+      ...[joint, sole].flatMap((id) => [`/api/accounts/${id}`, `/api/accounts/${id}/balance`]),
+      ...[hidden, soleTransaction].map((id) => `/api/ledger/transactions/${id}`),
+    ],
+    transactionIds: [hidden, soleTransaction],
+  });
+  await observe("before A leaves", reads());
+
+  // A's own request: the ids it mints are the same in both worlds, whatever A held.
+  world.startRequestIds();
+  await step(world, steps, "a", "A leaves", "POST", "/api/accounts/leave-household", {
+    confirm: true,
+  });
+  await observe("after A left", reads());
+
+  // B on what A handed over: the same answer in both worlds.
+  const joined = `/api/accounts/${joint}`;
+  await step(world, steps, "b", "B renames the joint account", "PATCH", joined, {
+    name: "Leave probe renamed",
+  });
+  await step(
+    world,
+    steps,
+    "b",
+    "B edits the formerly hidden entry",
+    "PATCH",
+    `/api/ledger/transactions/${hidden}`,
+    { notes: "B note" },
+  );
+  await step(
+    world,
+    steps,
+    "b",
+    "B closes the account A owned alone",
+    "POST",
+    `/api/accounts/${sole}/close`,
+    {},
+  );
+  await step(world, steps, "a", "A tries again", "POST", "/api/accounts/leave-household", {
+    confirm: true,
+  });
+  await observe("after B's writes", reads());
+  const ids: LeaveIds = {
+    joint,
+    hidden,
+    sole,
+    soleTransaction,
+    privateAccounts,
+    privateTransactions,
+    payee: scoped?.payee,
+    tag: scoped?.tag,
+    activity: scoped?.activity,
+    alias: scoped?.alias,
   };
   return { ids, steps };
 }

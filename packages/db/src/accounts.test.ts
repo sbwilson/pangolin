@@ -1,5 +1,6 @@
 // The accounts use cases on real SQLite (the app package may not import an adapter in its
 // sources). Their parity with the memory mirror is in packages/app/src/testing/accounts-parity.test.ts.
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,25 +12,35 @@ import {
   createIdGenerator,
   createInstitution,
   createPayee,
+  createPayeeAlias,
   createPerson,
+  createTag,
   createTransaction,
+  createTransferGroup,
+  defineReviewKind,
   deleteTransaction,
   getAccount,
   getTransaction,
+  hideTransactionName,
+  leaveHousehold,
   listAccounts,
   listBalanceSnapshots,
   listInstitutions,
   listReviewItems,
   listTransactions,
   personViewer,
+  raiseReviewItem,
   recordBalanceSnapshot,
   rejoinAccount,
   setPrivacy,
   setSplitField,
+  setSplitTags,
+  type TokenPort,
   type UseCaseContext,
   updateAccount,
   updateInstitution,
   updateTransaction,
+  write,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import type { Id } from "@pangolin/shared";
@@ -809,5 +820,514 @@ describe("closed accounts are archived, never deleted", () => {
     expect(() => listAccounts(as(a), { includeClosed: "yes" } as never)).toThrow(
       code("Validation"),
     );
+  });
+});
+
+// ------------------------------------------------------------------------ leaving the household
+
+const tokens: TokenPort = {
+  generate: () => randomBytes(32).toString("base64url"),
+  hash: (token) => `hash:${token}`,
+  randomBytes: (length) => new Uint8Array(randomBytes(length)),
+};
+const ACCOUNT_ITEM = defineReviewKind({
+  kind: "leave-test.account-item",
+  module: "system",
+  scope: "account",
+});
+const PERSON_ITEM = defineReviewKind({
+  kind: "leave-test.person-item",
+  module: "system",
+  scope: "person",
+});
+
+describe("leaving the household (story 26)", () => {
+  /** A context that can leave: `as` plus the token port, and a session this old. */
+  const leaver = (id: Id<"Person">, ageMs = 0) => ({
+    ...as(id),
+    viewer: personViewer(id, now.subtract({ milliseconds: ageMs })),
+    tokens,
+  });
+  const count = (sql: string, ...args: unknown[]) =>
+    db
+      .prepare(sql)
+      .pluck()
+      .get(...args) as number;
+  /** Every table's rows in rowid order: equal before and after proves a refusal changed nothing. */
+  const dump = (): string =>
+    (
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+        .pluck()
+        .all() as string[]
+    )
+      .sort()
+      .map(
+        (name) =>
+          `${name}: ${JSON.stringify(db.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all())}`,
+      )
+      .join("\n");
+  const at = "2026-09-27T00:00:00.000Z";
+  /** A login for `person`: password, TOTP, passkey, session and recovery codes. */
+  const login = (person: Id<"Person">, user: string) => {
+    db.prepare(
+      `INSERT INTO auth_user (id, name, email, email_verified, two_factor_enabled, created_at, updated_at)
+       VALUES (?, ?, ?, 0, 1, ?, ?)`,
+    ).run(user, user, `${user}@example.com`, at, at);
+    db.prepare(
+      `INSERT INTO auth_account (id, user_id, account_id, provider_id, password, created_at, updated_at)
+       VALUES (?, ?, ?, 'credential', 'old-hash', ?, ?)`,
+    ).run(`acc-${user}`, user, user, at, at);
+    db.prepare(
+      "INSERT INTO auth_two_factor (id, user_id, secret, backup_codes, verified) VALUES (?, ?, 's', '[]', 1)",
+    ).run(`tf-${user}`, user);
+    db.prepare(
+      `INSERT INTO auth_passkey (id, user_id, public_key, credential_id, counter, device_type, backed_up)
+       VALUES (?, ?, 'k', ?, 0, 'singleDevice', 0)`,
+    ).run(`pk-${user}`, user, `cred-${user}`);
+    db.prepare(
+      `INSERT INTO auth_session (id, user_id, token, expires_at, created_at, updated_at)
+       VALUES (?, ?, ?, '2026-09-28T00:00:00.000Z', ?, ?)`,
+    ).run(`s-${user}`, user, `t-${user}`, at, at);
+    db.prepare(
+      "INSERT INTO recovery_code (id, person_id, code_hash, created_at) VALUES (?, ?, ?, ?)",
+    ).run(`rc-${user}`, person, `h-${user}`, at);
+    db.prepare("UPDATE person SET user_id = ? WHERE id = ?").run(user, person);
+  };
+  const owners = (accountId: string) =>
+    db
+      .prepare(
+        "SELECT person_id, share_bp FROM account_owner WHERE account_id = ? ORDER BY person_id",
+      )
+      .all(accountId) as { person_id: string; share_bp: number }[];
+  const firstSplit = (id: string) => getTransaction(as(a), { id }).splits[0]?.id as string;
+
+  /** A's private data and what it touches: every row the matrix names. */
+  function household() {
+    login(a, "user-a");
+    login(b, "user-b");
+    const A = as(a);
+    const B = as(b);
+    const priv = make(A, { name: "A private", isPrivate: true, owners: own(a) });
+    const closed = make(A, { name: "A closed", isPrivate: true, owners: own(a) });
+    const shared = make(A, { name: "Joint" });
+    const sole = make(A, { name: "A alone", owners: own(a) });
+
+    const tag = createTag(A, { name: "A tag", originAccountId: priv });
+    const payee = createPayee(A, { name: "A payee", originAccountId: priv });
+    const alias = createPayeeAlias(A, {
+      payeeId: payee.id,
+      pattern: "A PAYEE",
+      matchKind: "contains",
+      originAccountId: priv,
+    });
+    const activity = createActivity(A, { name: "A trip", originAccountId: priv });
+    const t1 = createTransaction(A, {
+      accountId: priv,
+      postedOn: "2026-09-01",
+      amountCents: -500,
+      description: "A secret one",
+      payeeId: payee.id,
+    });
+    const split = firstSplit(t1);
+    setSplitTags(A, { transactionId: t1, splitId: split, tagIds: [tag.id] });
+    setSplitField(A, { transactionId: t1, splitId: split, field: "activity", value: activity.id });
+    recordBalanceSnapshot(A, { accountId: priv, asOf: "2026-09-01", balanceCents: 9000 });
+    const t2 = txn(A, closed, "2026-09-02", 700);
+    recordBalanceSnapshot(A, { accountId: closed, asOf: "2026-09-02", balanceCents: 700 });
+    closeAccount(A, { id: closed, closedOn: "2026-09-05" });
+
+    // A transfer from A's private entry to B's entry in the joint account.
+    const bSide = txn(B, shared, "2026-09-01", 500);
+    createTransferGroup(A, { transactionIds: [t1, bSide] });
+    // A shared transaction of A's, its name hidden from B.
+    const aShared = txn(A, shared, "2026-09-03", -900);
+    hideTransactionName(A, { id: aShared, until: "2026-12-01" });
+    const aSole = txn(A, sole, "2026-09-03", -100);
+
+    write(A, (tx, audit) => {
+      raiseReviewItem(tx, audit, A, {
+        kind: ACCOUNT_ITEM,
+        entityRef: "x:priv",
+        dedupeKey: "leave-test:priv",
+        accountId: priv,
+      });
+      raiseReviewItem(tx, audit, A, {
+        kind: PERSON_ITEM,
+        entityRef: "x:a",
+        dedupeKey: "leave-test:a",
+        personId: a,
+      });
+    });
+    return {
+      priv,
+      closed,
+      shared,
+      sole,
+      tag,
+      payee,
+      alias,
+      activity,
+      t1,
+      t2,
+      bSide,
+      aShared,
+      aSole,
+      split,
+    };
+  }
+
+  it("deletes the private data, lifts the hidings, hands over the shared accounts and revokes the login", () => {
+    const h = household();
+    // A shared row that points at A's scoped rows (a shape the use cases refuse, planted).
+    db.prepare('UPDATE "transaction" SET payee_id = ? WHERE id = ?').run(h.payee.id, h.aShared);
+    const sharedSplit = firstSplit(h.aShared);
+    db.prepare("UPDATE split SET activity_id = ? WHERE id = ?").run(h.activity.id, sharedSplit);
+    db.prepare(
+      "INSERT INTO split_tag (split_id, tag_id, created_at, updated_at) VALUES (?, ?, ?, ?)",
+    ).run(sharedSplit, h.tag.id, at, at);
+    const bBefore = listTransactions(as(b)).filter((row) => row.id === h.bSide);
+
+    leaveHousehold(leaver(a), { confirm: true });
+
+    // The private accounts and everything in them are gone.
+    for (const id of [h.priv, h.closed]) {
+      expect(count("SELECT count(*) FROM account WHERE id = ?", id)).toBe(0);
+      expect(count("SELECT count(*) FROM account_owner WHERE account_id = ?", id)).toBe(0);
+      expect(count('SELECT count(*) FROM "transaction" WHERE account_id = ?', id)).toBe(0);
+      expect(count("SELECT count(*) FROM balance_snapshot WHERE account_id = ?", id)).toBe(0);
+      expect(count("SELECT count(*) FROM review_item WHERE account_id = ?", id)).toBe(0);
+      expect(count("SELECT count(*) FROM audit_log WHERE account_id = ?", id)).toBe(0);
+    }
+    for (const id of [h.t1, h.t2]) {
+      expect(count("SELECT count(*) FROM split WHERE transaction_id = ?", id)).toBe(0);
+      expect(count("SELECT count(*) FROM audit_log WHERE entity_id = ?", id)).toBe(0);
+    }
+    expect(count("SELECT count(*) FROM transfer_group")).toBe(0);
+    // A's scoped rows, their audit rows and the person-scoped items are gone.
+    for (const table of ["payee", "payee_alias", "tag", "activity"]) {
+      expect(count(`SELECT count(*) FROM ${table} WHERE scope_person_id = ?`, a), table).toBe(0);
+    }
+    expect(count("SELECT count(*) FROM split_tag WHERE tag_id = ?", h.tag.id)).toBe(0);
+    expect(count("SELECT count(*) FROM audit_log WHERE person_id = ?", a)).toBe(0);
+    expect(
+      count(
+        "SELECT count(*) FROM audit_log WHERE entity_id IN (?, ?, ?, ?)",
+        h.payee.id,
+        h.alias.id,
+        h.tag.id,
+        h.activity.id,
+      ),
+    ).toBe(0);
+    expect(count("SELECT count(*) FROM review_item WHERE person_id = ?", a)).toBe(0);
+
+    // The shared row that used A's scoped rows is kept, the references cleared.
+    expect(
+      db.prepare('SELECT payee_id FROM "transaction" WHERE id = ?').pluck().get(h.aShared),
+    ).toBeNull();
+    expect(
+      db.prepare("SELECT activity_id FROM split WHERE id = ?").pluck().get(sharedSplit),
+    ).toBeNull();
+
+    // B's side of the transfer stays, unlinked, and says so only to the owner's scope.
+    const survivor = getTransaction(as(b), { id: h.bSide });
+    expect(survivor.transferGroupId).toBeNull();
+    expect(survivor.transferLabel ?? null).toBeNull();
+    expect(bBefore).toHaveLength(1);
+
+    // The hiding is lifted: B reads the real name.
+    const lifted = getTransaction(as(b), { id: h.aShared });
+    expect(lifted.descriptionRaw).toBe("2026-09-03 -900");
+    expect(lifted.nameHidden).toBe(false);
+    expect(lifted.nameHiddenBy).toBeNull();
+    expect(lifted.nameHiddenUntil).toBeNull();
+
+    // Every shared account and its expenses stay, B the sole owner of each; a public account A
+    // owned alone passes to B.
+    expect(owners(h.shared)).toEqual([{ person_id: b, share_bp: 10000 }]);
+    expect(owners(h.sole)).toEqual([{ person_id: b, share_bp: 10000 }]);
+    expect(
+      listAccounts(as(b))
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual([h.shared, h.sole].sort());
+    expect(getAccount(as(b), { id: h.shared }).pool).toBe(b);
+    for (const id of [h.aShared, h.aSole, h.bSide]) {
+      expect(
+        listTransactions(as(b)).some((row) => row.id === id),
+        id,
+      ).toBe(true);
+    }
+    // The owner swap is audited as the owner list change, in view of B.
+    const swap = auditFor("account", h.shared).map((row) => row.action);
+    expect(swap).toContain("update");
+
+    // The person is marked left; no credential, passkey, session or code remains.
+    expect(db.prepare("SELECT deleted_at FROM person WHERE id = ?").pluck().get(a)).toEqual(
+      expect.any(String),
+    );
+    for (const table of ["auth_session", "auth_passkey", "auth_two_factor"]) {
+      expect(count(`SELECT count(*) FROM ${table} WHERE user_id = 'user-a'`), table).toBe(0);
+    }
+    expect(count("SELECT count(*) FROM recovery_code WHERE person_id = ?", a)).toBe(0);
+    expect(count("SELECT two_factor_enabled FROM auth_user WHERE id = 'user-a'")).toBe(0);
+    const password = db
+      .prepare("SELECT password FROM auth_account WHERE user_id = 'user-a'")
+      .pluck()
+      .get() as string;
+    expect(password).not.toBe("old-hash");
+    expect(password).toMatch(/^[0-9a-f]{32}:[0-9a-f]{128}$/);
+    // B's login is untouched.
+    expect(count("SELECT count(*) FROM auth_session WHERE user_id = 'user-b'")).toBe(1);
+    expect(count("SELECT count(*) FROM auth_passkey WHERE user_id = 'user-b'")).toBe(1);
+    // The leave itself is on record, with no scope.
+    expect(auditFor("person", a).map((row) => row.action)).toEqual(["create", "leave"]);
+    // A can no longer act.
+    expect(() => leaveHousehold(leaver(a), { confirm: true })).toThrow(code("Unauthenticated"));
+  });
+
+  it("leaves with no private data: the shared accounts pass to the partner and nothing else changes", () => {
+    login(a, "user-a");
+    const shared = make(as(a), { name: "Joint" });
+    const entry = txn(as(a), shared, "2026-09-03", -900);
+    const before = listTransactions(as(b));
+
+    leaveHousehold(leaver(a), { confirm: true });
+
+    expect(owners(shared)).toEqual([{ person_id: b, share_bp: 10000 }]);
+    expect(listTransactions(as(b)).map((row) => row.id)).toEqual(before.map((row) => row.id));
+    expect(getTransaction(as(b), { id: entry }).amountCents).toBe(-900);
+    expect(count("SELECT count(*) FROM account")).toBe(1);
+    expect(count("SELECT count(*) FROM auth_session WHERE user_id = 'user-a'")).toBe(0);
+  });
+
+  it("changes nothing and answers ReauthRequired when the sign-in is older than the window", () => {
+    household();
+    const before = dump();
+    expect(() => leaveHousehold(leaver(a, 6 * 60_000), { confirm: true })).toThrow(
+      code("ReauthRequired"),
+    );
+    expect(dump()).toBe(before);
+    // Inside the window it goes through.
+    leaveHousehold(leaver(a, 4 * 60_000), { confirm: true });
+    expect(count("SELECT count(*) FROM person WHERE deleted_at IS NOT NULL")).toBe(1);
+  });
+
+  it("changes nothing and answers Validation without a confirmation", () => {
+    household();
+    const before = dump();
+    for (const input of [{}, { confirm: false }, { confirm: "true" }, { confirm: 1 }, null]) {
+      expect(() => leaveHousehold(leaver(a), input as never), JSON.stringify(input)).toThrow(
+        code("Validation"),
+      );
+    }
+    expect(() => leaveHousehold(leaver(a), { confirm: true, extra: 1 } as never)).toThrow(
+      code("Validation"),
+    );
+    expect(dump()).toBe(before);
+  });
+
+  it("checks the confirmation before the sign-in is asked for again", () => {
+    household();
+    const before = dump();
+    expect(() => leaveHousehold(leaver(a, 6 * 60_000), {} as never)).toThrow(code("Validation"));
+    expect(dump()).toBe(before);
+  });
+
+  it("answers Conflict, changing nothing, when there is no partner to hand over to", () => {
+    household();
+    db.prepare("UPDATE person SET deleted_at = ? WHERE id = ?").run(at, b);
+    const before = dump();
+    expect(() => leaveHousehold(leaver(a), { confirm: true })).toThrow(code("Conflict"));
+    expect(dump()).toBe(before);
+  });
+
+  it("is for a person: the system viewer cannot leave", () => {
+    household();
+    const before = dump();
+    expect(() => leaveHousehold({ ...sys, tokens }, { confirm: true })).toThrow(
+      code("Unauthenticated"),
+    );
+    expect(dump()).toBe(before);
+  });
+
+  it("is all or nothing: a failure at the end undoes the deletes", () => {
+    household();
+    db.exec(
+      "CREATE TRIGGER no_leave BEFORE UPDATE OF deleted_at ON person BEGIN SELECT RAISE(ABORT, 'no leave'); END",
+    );
+    const before = dump();
+    expect(() => leaveHousehold(leaver(a), { confirm: true })).toThrow(/no leave/);
+    expect(dump()).toBe(before);
+  });
+
+  it("deletes a closed private account despite its lock, and one that was soft-deleted", () => {
+    const closed = make(as(a), { isPrivate: true, owners: own(a) });
+    txn(as(a), closed, "2026-09-01", 100);
+    closeAccount(as(a), { id: closed, closedOn: "2026-09-02" });
+    const gone = make(as(a), { isPrivate: true, owners: own(a) });
+    txn(as(a), gone, "2026-09-01", 100);
+    db.prepare("UPDATE account SET deleted_at = ? WHERE id = ?").run(at, gone);
+
+    leaveHousehold(leaver(a), { confirm: true });
+
+    for (const id of [closed, gone]) {
+      expect(count("SELECT count(*) FROM account WHERE id = ?", id)).toBe(0);
+      expect(count('SELECT count(*) FROM "transaction" WHERE account_id = ?', id)).toBe(0);
+    }
+  });
+
+  it("unlinks the surviving side of a transfer and audits it as the owner's", () => {
+    const priv = make(as(a), { isPrivate: true, owners: own(a) });
+    const bPriv = make(as(b), { isPrivate: true, owners: own(b) });
+    const mine = txn(as(a), priv, "2026-09-01", -300);
+    const theirs = txn(as(b), bPriv, "2026-09-01", 300);
+    // Link them directly: a person cannot see the other's private entry.
+    const group = "01J0000000000000000000GROUP";
+    db.prepare(
+      "INSERT INTO transfer_group (id, matched_by, created_at, updated_at) VALUES (?, 'manual', ?, ?)",
+    ).run(group, at, at);
+    db.prepare('UPDATE "transaction" SET transfer_group_id = ? WHERE id IN (?, ?)').run(
+      group,
+      mine,
+      theirs,
+    );
+
+    leaveHousehold(leaver(a), { confirm: true });
+
+    expect(getTransaction(as(b), { id: theirs }).transferGroupId).toBeNull();
+    expect(count("SELECT count(*) FROM transfer_group")).toBe(0);
+    const row = db
+      .prepare(
+        "SELECT person_id, account_id FROM audit_log WHERE entity_id = ? AND action = 'update' ORDER BY at DESC, id DESC",
+      )
+      .get(theirs) as { person_id: string | null; account_id: string };
+    expect(row).toEqual({ person_id: b, account_id: bPriv });
+  });
+
+  it("lifts a hiding on an account that has turned private to the partner, audited as the partner's", () => {
+    const acct = make(as(a), { name: "Was joint" });
+    const entry = txn(as(a), acct, "2026-09-03", -900);
+    hideTransactionName(as(a), { id: entry, until: "2026-12-01" });
+    updateAccount(as(b), { id: acct, owners: own(b) });
+    setSplitField(as(b), {
+      transactionId: entry,
+      splitId: firstSplit(entry),
+      field: "beneficiary",
+      value: b,
+    });
+    setPrivacy(as(b), { id: acct, isPrivate: true });
+    // The hiding outlives the switch: A's, on B's own private account, until the leave lifts it.
+    expect(getTransaction(as(b), { id: entry }).nameHidden).toBe(true);
+    expect(
+      db.prepare('SELECT name_hidden_by FROM "transaction" WHERE id = ?').pluck().get(entry),
+    ).toBe(a);
+
+    leaveHousehold(leaver(a), { confirm: true });
+
+    expect(getTransaction(as(b), { id: entry }).nameHidden).toBe(false);
+    expect(
+      db.prepare('SELECT name_hidden_by FROM "transaction" WHERE id = ?').pluck().get(entry),
+    ).toBeNull();
+    const lift = db
+      .prepare(
+        "SELECT person_id, account_id, actor, after FROM audit_log WHERE entity_id = ? AND action = 'update' ORDER BY at DESC, id DESC",
+      )
+      .all(entry) as {
+      person_id: string | null;
+      account_id: string;
+      actor: string;
+      after: string;
+    }[];
+    const last = lift[0];
+    expect(last).toMatchObject({ person_id: b, account_id: acct, actor: `person:${a}` });
+    expect(JSON.parse(last?.after ?? "{}")).toMatchObject({
+      nameHiddenBy: null,
+      nameHiddenUntil: null,
+    });
+    // The lifted private account is the partner's alone, and kept.
+    expect(count("SELECT count(*) FROM account WHERE id = ?", acct)).toBe(1);
+  });
+
+  it("lifts a lapsed hiding and a hiding on a closed account, bypassing the closed-date lock", () => {
+    const acct = make(as(a), { name: "Closing" });
+    const entry = txn(as(a), acct, "2026-09-03", -900);
+    hideTransactionName(as(a), { id: entry, until: "2026-12-01" });
+    closeAccount(as(a), { id: acct, closedOn: "2026-09-03" });
+    // The entry sits on the closed date: moving the lock below it would refuse an unhide.
+    db.prepare('UPDATE "transaction" SET posted_on = ? WHERE id = ?').run("2026-09-10", entry);
+
+    leaveHousehold(leaver(a), { confirm: true });
+
+    expect(
+      db.prepare('SELECT name_hidden_until FROM "transaction" WHERE id = ?').pluck().get(entry),
+    ).toBeNull();
+  });
+
+  it("never lifts a hiding the partner made", () => {
+    const acct = make(as(a), { name: "Joint" });
+    const entry = txn(as(b), acct, "2026-09-03", -900);
+    hideTransactionName(as(b), { id: entry, until: "2026-12-01" });
+
+    leaveHousehold(leaver(a), { confirm: true });
+
+    expect(
+      db.prepare('SELECT name_hidden_by FROM "transaction" WHERE id = ?').pluck().get(entry),
+    ).toBe(b);
+  });
+
+  it("keeps the partner's own private data, scoped rows and items", () => {
+    const bPriv = make(as(b), { isPrivate: true, owners: own(b) });
+    const bPayee = createPayee(as(b), { name: "B payee", originAccountId: bPriv });
+    const entry = createTransaction(as(b), {
+      accountId: bPriv,
+      postedOn: "2026-09-01",
+      amountCents: -100,
+      description: "B secret",
+      payeeId: bPayee.id,
+    });
+    write(as(b), (tx, audit) =>
+      raiseReviewItem(tx, audit, as(b), {
+        kind: PERSON_ITEM,
+        entityRef: "x:b",
+        dedupeKey: "leave-test:b",
+        personId: b,
+      }),
+    );
+    const auditRows = count(
+      "SELECT count(*) FROM audit_log WHERE person_id = ? OR account_id = ?",
+      b,
+      bPriv,
+    );
+
+    leaveHousehold(leaver(a), { confirm: true });
+
+    expect(getTransaction(as(b), { id: entry }).payeeId).toBe(bPayee.id);
+    expect(count("SELECT count(*) FROM payee WHERE scope_person_id = ?", b)).toBe(1);
+    expect(count("SELECT count(*) FROM review_item WHERE person_id = ?", b)).toBe(1);
+    expect(
+      count("SELECT count(*) FROM audit_log WHERE person_id = ? OR account_id = ?", b, bPriv),
+    ).toBe(auditRows);
+  });
+
+  it("keeps the audit rows of shared data, whoever authored them", () => {
+    const shared = make(as(a), { name: "Joint" });
+    const entry = txn(as(a), shared, "2026-09-03", -900);
+    updateTransaction(as(b), { id: entry, notes: "B note" });
+    const rows = count("SELECT count(*) FROM audit_log WHERE entity_id IN (?, ?)", shared, entry);
+
+    leaveHousehold(leaver(a), { confirm: true });
+
+    // Authored by A or not, the shared rows stay (and the owner swap adds one).
+    expect(count("SELECT count(*) FROM audit_log WHERE entity_id IN (?, ?)", shared, entry)).toBe(
+      rows + 1,
+    );
+    expect(
+      count(
+        "SELECT count(*) FROM audit_log WHERE entity_id = ? AND actor = ?",
+        entry,
+        `person:${a}`,
+      ),
+    ).toBeGreaterThan(0);
   });
 });

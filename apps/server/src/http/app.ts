@@ -45,6 +45,7 @@ import {
   issueInitialRecoveryCodes,
   issueReEnrolmentLink,
   issueSetupLink,
+  leaveHousehold,
   listAccounts,
   listActivities,
   listBalanceSnapshots,
@@ -92,6 +93,7 @@ import {
 } from "@pangolin/app";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
+import { clearedSessionCookies } from "../auth/cookie.ts";
 import { cspOnHtml, serveIndex } from "./csp.ts";
 import { createErrorHandler, errorResponse, type InternalErrorLogger } from "./errors.ts";
 import { originCheck } from "./origin.ts";
@@ -401,6 +403,16 @@ export function createApi(deps: ApiDeps) {
       writable();
       const id = createAccount(ctx(c), await objectBody(c));
       return c.json({ account: getAccount(ctx(c), { id }) }, 201);
+    })
+    .post("/api/accounts/leave-household", async (c) => {
+      writable();
+      // Behind a recent sign-in and a confirmation in the body; the use case answers 403
+      // `ReauthRequired` or 400 `Validation` and changes nothing.
+      leaveHousehold(withTokens(c), await objectBody(c));
+      // Every session of the leaver is revoked: end this browser's cookie as well.
+      passCookies(c, clearedSessionCookies(deps.publicUrl));
+      c.set("sessionEnded", true);
+      return c.json({ left: true }, 200);
     })
     .get("/api/accounts/:id", (c) => {
       return c.json({ account: getAccount(ctx(c), { id: c.req.param("id") }) }, 200);

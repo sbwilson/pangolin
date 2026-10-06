@@ -60,6 +60,16 @@ export function createPersonRepo(orm: Orm, check: () => void): PersonRepo {
         .orderBy(asc(person.createdAt), asc(person.id))
         .all() as LoginRow[];
     },
+    markLeft: (id, at) => {
+      check();
+      return (
+        orm
+          .update(person)
+          .set({ deletedAt: at, updatedAt: at })
+          .where(and(eq(person.id, id), active))
+          .run().changes === 1
+      );
+    },
   };
 }
 

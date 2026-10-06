@@ -108,7 +108,7 @@ export function clearCredentials(
   tx: TxRepos,
   audit: Audit,
   person: PersonRow & { readonly userId: string },
-  reason: "re-enrolment-link" | "reset-user" | "restore",
+  reason: "re-enrolment-link" | "reset-user" | "restore" | "left-household",
   passwordHash?: string,
 ): ClearedCredentials {
   const userId = person.userId;

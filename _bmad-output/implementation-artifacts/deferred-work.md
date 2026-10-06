@@ -319,3 +319,11 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: none
   summary: Applying the demo seed costs about 1.4 s per call locally (732 events), roughly half of it Drizzle query building (`entity.is`) and SQLite `prepare` with no statement reuse, and seed-dependent tests each re-apply it.
   evidence: CPU profile of `applySeed` (3 runs, 1.35 to 1.44 s each): `entity.js is` 1242 ms and better-sqlite3 `prepare` 1029 ms of 5083 ms total. On CI (2 vCPU, beside `deploy/install.test.ts`, which alone runs 130 to 220 s) the same tests take 4 to 6 s. The 30 s default timeout stops the failures; caching prepared statements in the repositories, or seeding once per file and copying with `serialize()`, would cut the cost itself.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-leaving-the-household-deletes-the-leaver-s-private-data-plan.md`
+  summary: Rows deleted by `leaveHousehold` stay readable in SQLite free pages and the WAL because `PRAGMA secure_delete` is off.
+  evidence: `grep secure_delete` over `packages/db/src/open.ts` and `apps/server/src` finds nothing; a hard delete leaves the content in freed pages until they are reused or the file is vacuumed. A database-wide setting, not this change's, and the plan accepts only older backups as a residual.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-leaving-the-household-deletes-the-leaver-s-private-data-plan.md`
+  summary: Unverified (would be medium): the survivor of a transfer in a shared account carries an unscoped audit row when the leaver's private side is deleted, and the paired worlds link only private accounts.
+  evidence: `leave-household.ts` `deleteAccountRows` audits a survivor with `survivorScopeOf`, as decision 81's delete path does, and the partner already reads `Transfer from <leaver>` on it. Add a private-to-shared transfer to the leave scenario's flavour one and compare the partner's audit bytes to settle it.

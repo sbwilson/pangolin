@@ -1250,6 +1250,153 @@ describe("/api/accounts", () => {
   });
 });
 
+describe("POST /api/accounts/leave-household", () => {
+  const alex = "01J0000000000000000000000A";
+  const json = { Origin: ORIGIN, "Content-Type": "application/json", Cookie: SESSION_COOKIE };
+  const path = "/api/accounts/leave-household";
+
+  /** Alex is the signed-in login, with a private account and a joint one with Sam. */
+  function seed(db: Db) {
+    addPerson(db);
+    db.prepare(
+      `INSERT INTO auth_account (id, user_id, account_id, provider_id, password, created_at, updated_at)
+       VALUES ('acc-a', 'user-a', 'user-a', 'credential', 'old-hash', 'x', 'x')`,
+    ).run();
+    const d = deps(db);
+    const sys: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const sam = createPerson(sys, { displayName: "Sam", colour: "#000000" });
+    const make = (name: string, isPrivate: boolean, owners: [string, number][]) =>
+      createAccount(sys, {
+        name,
+        type: "transaction",
+        currency: "AUD",
+        isPrivate,
+        owners: owners.map(([personId, shareBp]) => ({ personId, shareBp })),
+      });
+    const joint = make("Joint", false, [
+      [alex, 5000],
+      [sam, 5000],
+    ]);
+    const mine = make("Alex private", true, [[alex, 10000]]);
+    const entry = createTransaction(sys, {
+      accountId: mine,
+      postedOn: "2026-09-01",
+      amountCents: -100,
+      description: "alex only",
+    });
+    return { sam, joint, mine, entry };
+  }
+
+  const send = (db: Db, body?: unknown, authn?: Authn) =>
+    createApp(deps(db, authn)).request(path, {
+      method: "POST",
+      headers: json,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  const count = (db: Db, sql: string, ...args: unknown[]) =>
+    db
+      .prepare(sql)
+      .pluck()
+      .get(...args) as number;
+
+  it("deletes Alex's private data, hands over the joint account and clears the session cookie", async () => {
+    const db = openDb();
+    const { sam, joint, mine, entry } = seed(db);
+    const refreshed = "pangolin.session_token=new; Path=/; HttpOnly; Secure; SameSite=Strict";
+    const res = await send(
+      db,
+      { confirm: true },
+      {
+        kind: "live",
+        gateway: fakeGateway(new Date(), [refreshed]),
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ left: true });
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    // The browser's session cookies are deleted, with their own attributes; the gateway's
+    // refreshed cookie does not follow them.
+    expect(res.headers.getSetCookie()).toEqual([
+      "pangolin.session_token=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict",
+      "pangolin.session_data=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict",
+    ]);
+    expect(count(db, "SELECT count(*) FROM account WHERE id = ?", mine)).toBe(0);
+    expect(count(db, 'SELECT count(*) FROM "transaction" WHERE id = ?', entry)).toBe(0);
+    expect(
+      db.prepare("SELECT person_id FROM account_owner WHERE account_id = ?").pluck().all(joint),
+    ).toEqual([sam]);
+    expect(
+      count(db, "SELECT count(*) FROM person WHERE id = ? AND deleted_at IS NOT NULL", alex),
+    ).toBe(1);
+    expect(count(db, "SELECT count(*) FROM auth_passkey WHERE user_id = 'user-a'")).toBe(0);
+  });
+
+  it("answers 400 and changes nothing without a confirmation", async () => {
+    const db = openDb();
+    seed(db);
+    const before = count(db, "SELECT count(*) FROM audit_log");
+    for (const body of [{}, { confirm: false }, { confirm: "yes" }, { confirm: true, x: 1 }]) {
+      const res = await send(db, body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect(res.headers.getSetCookie()).toEqual([]);
+    }
+    expect((await send(db, "not json" as never)).status).toBe(400);
+    expect(count(db, "SELECT count(*) FROM audit_log")).toBe(before);
+    expect(count(db, "SELECT count(*) FROM person WHERE deleted_at IS NOT NULL")).toBe(0);
+  });
+
+  it("answers 403 ReauthRequired and changes nothing when the session is older than the window", async () => {
+    const db = openDb();
+    const { mine } = seed(db);
+    const stale: Authn = {
+      kind: "live",
+      gateway: fakeGateway(new Date("2026-09-26T00:00:00Z")),
+    };
+    const res = await send(db, { confirm: true }, stale);
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("ReauthRequired");
+    expect(res.headers.getSetCookie()).toEqual([]);
+    expect(count(db, "SELECT count(*) FROM account WHERE id = ?", mine)).toBe(1);
+    expect(count(db, "SELECT count(*) FROM person WHERE deleted_at IS NOT NULL")).toBe(0);
+  });
+
+  it("answers 409 Conflict, changing nothing, when Alex is the only person", async () => {
+    const db = openDb();
+    const { sam, mine } = seed(db);
+    db.prepare("UPDATE person SET deleted_at = 'x' WHERE id = ?").run(sam);
+    const res = await send(db, { confirm: true });
+    expect(res.status).toBe(409);
+    expect(count(db, "SELECT count(*) FROM account WHERE id = ?", mine)).toBe(1);
+    expect(count(db, "SELECT count(*) FROM auth_passkey WHERE user_id = 'user-a'")).toBe(1);
+  });
+
+  it("needs a session, and is read-only in demo mode", async () => {
+    const db = openDb();
+    seed(db);
+    const anonymous = await createApp(deps(db)).request(path, {
+      method: "POST",
+      headers: { Origin: ORIGIN, "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: true }),
+    });
+    expect(anonymous.status).toBe(401);
+    const demo = await send(db, { confirm: true }, { kind: "demo" });
+    expect(demo.status).toBe(409);
+    expect(count(db, "SELECT count(*) FROM person WHERE deleted_at IS NOT NULL")).toBe(0);
+  });
+
+  it("is not shadowed by the account routes", async () => {
+    const db = openDb();
+    seed(db);
+    // `leave-household` is not an account id: a GET answers like any unknown account.
+    expect((await createApp(deps(db)).request(path, { headers: json })).status).toBe(404);
+  });
+});
+
 describe("/api/classify", () => {
   const alex = "01J0000000000000000000000A";
   const json = { Origin: ORIGIN, "Content-Type": "application/json", Cookie: SESSION_COOKIE };

@@ -2,6 +2,7 @@ import type { Id } from "@pangolin/shared";
 import { describe, expect, it } from "vitest";
 import { closeAccount } from "../accounts/close-account.ts";
 import { createAccount } from "../accounts/create-account.ts";
+import { leaveHousehold } from "../accounts/leave-household.ts";
 import { getAccount } from "../accounts/list-accounts.ts";
 import { createPayee } from "../classify/payees.ts";
 import type { UseCaseContext } from "../context.ts";
@@ -17,12 +18,14 @@ import {
 import { systemViewer } from "../system-viewer.ts";
 import { manualClock, sequentialIds } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
+import { fakeTokens } from "../testing/tokens.ts";
 import { personViewer, type Viewer } from "../viewer.ts";
 import { write } from "../write.ts";
 import { createTransaction } from "./create-transaction.ts";
 import { deleteTransaction } from "./delete-transaction.ts";
 import { fingerprintManual, MANUAL_FINGERPRINT_VERSION } from "./fingerprint.ts";
 import { getTransaction } from "./get-transaction.ts";
+import { hideTransactionName, unhideTransactionName } from "./hide-name.ts";
 import { listTransactions } from "./list-transactions.ts";
 import { transactionEntityRef } from "./needs-review.ts";
 import { updateTransaction } from "./update-transaction.ts";
@@ -569,5 +572,79 @@ describe("closing-balance review item in step with the ledger writes", () => {
     deleteTransaction(A, { id: first });
     expect(getAccount(A, { id: shared }).warning?.balanceCents).toBe(-900);
     expect(open()).toHaveLength(1);
+  });
+});
+
+describe("leaving the household (story 26) and the ledger", () => {
+  const leave = (ctx: UseCaseContext) =>
+    leaveHousehold({ ...ctx, tokens: fakeTokens() }, { confirm: true });
+
+  it("lifts a hiding on a closed account that the closed-date lock would refuse to unhide", () => {
+    const { uow, a, as, shared } = setup();
+    const A = as(a);
+    const id = createTransaction(A, { ...txn(shared), postedOn: "2026-09-20" });
+    hideTransactionName(A, { id, until: "2026-12-01" });
+    // Closed before the entry's date: the lock keeps `unhideTransactionName` out.
+    uow.state.accounts = uow.state.accounts.map((row) =>
+      row.id === shared ? { ...row, closedOn: "2026-09-10" } : row,
+    );
+    expect(() => unhideTransactionName(A, { id })).toThrow(AppError);
+
+    leave(A);
+
+    const row = uow.state.transactions.find((t) => t.id === id);
+    expect(row).toMatchObject({ nameHiddenBy: null, nameHiddenUntil: null });
+    expect(uow.state.people.find((p) => p.id === a)?.deletedAt).toEqual(expect.any(String));
+  });
+
+  it("is all or nothing: an audit failure leaves every row where it was", () => {
+    const { uow, a, as, privateA } = setup();
+    const A = as(a);
+    createTransaction(A, txn(privateA, "Secret"));
+    const before = JSON.stringify([
+      uow.state.people,
+      uow.state.accounts,
+      uow.state.accountOwners,
+      uow.state.transactions,
+      uow.state.splits,
+      uow.state.audit,
+    ]);
+    uow.failAudit = true;
+    expect(() => leave(A)).toThrow("audit append failed");
+    uow.failAudit = false;
+    expect(
+      JSON.stringify([
+        uow.state.people,
+        uow.state.accounts,
+        uow.state.accountOwners,
+        uow.state.transactions,
+        uow.state.splits,
+        uow.state.audit,
+      ]),
+    ).toBe(before);
+  });
+
+  it("removes the private account, keeps the shared one and revokes the sessions", () => {
+    const { uow, a, b, as, shared, privateA } = setup();
+    uow.state.people = uow.state.people.map((p) => (p.id === a ? { ...p, userId: "user-a" } : p));
+    uow.state.users.push("user-a");
+    uow.state.sessions = { "user-a": 2 };
+    uow.state.passwords = { "user-a": "old-hash" };
+    const secret = createTransaction(as(a), txn(privateA, "Secret"));
+    const kept = createTransaction(as(a), txn(shared, "Kept"));
+
+    leave(as(a));
+
+    expect(uow.state.accounts.map((row) => row.id)).toEqual([shared]);
+    expect(uow.state.transactions.map((row) => row.id)).toEqual([kept]);
+    expect(uow.state.transactions.some((row) => row.id === secret)).toBe(false);
+    expect(uow.state.accountOwners.map((o) => [o.accountId, o.personId, o.shareBp])).toEqual([
+      [shared, b, 10000],
+    ]);
+    expect(uow.state.sessions["user-a"]).toBe(0);
+    expect(uow.state.passwords["user-a"]).not.toBe("old-hash");
+    expect(uow.state.audit.some((row) => row.accountId === privateA)).toBe(false);
+    expect(uow.state.audit.some((row) => row.personId === a)).toBe(false);
+    expect(listAudit(as(b)).some((row) => row.entityId === kept)).toBe(true);
   });
 });

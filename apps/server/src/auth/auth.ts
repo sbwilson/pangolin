@@ -9,6 +9,7 @@ import { isAPIError } from "better-auth/api";
 import { twoFactor } from "better-auth/plugins";
 import type { AuthConfig } from "../config.ts";
 import { type AuthGateway, CLIENT_IP_HEADER, type SignUpRequest } from "../http/session.ts";
+import { cookiePrefix } from "./cookie.ts";
 import { authHooks, type SignUpPermit, signUpHooks } from "./hooks.ts";
 import { recoveryGateway, recoverySessions } from "./recovery.ts";
 import { recoveryCodeHasher } from "./secret.ts";
@@ -32,12 +33,11 @@ const defaultLog = (level: "warn" | "error", message: string): void => {
  * prefix when the public URL is https (browsers accept `Secure` from `http://localhost`).
  */
 export function cookieSettings(publicUrl: string) {
-  const https = new URL(publicUrl).protocol === "https:";
   return {
     // The prefix is ours (`__Host-` needs Secure, Path=/ and no Domain, all set below), so
     // better-auth's own `__Secure-` prefix stays off.
     useSecureCookies: false,
-    cookiePrefix: https ? "__Host-pangolin" : "pangolin",
+    cookiePrefix: cookiePrefix(publicUrl),
     defaultCookieAttributes: {
       httpOnly: true,
       secure: true,

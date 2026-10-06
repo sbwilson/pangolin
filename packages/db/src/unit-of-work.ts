@@ -223,6 +223,16 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
           .where(and(eq(auditLog.accountId, accountId), isNull(auditLog.personId), since))
           .run();
       },
+      // The only DELETEs of audit_log anywhere: the household leave erases a leaver's private
+      // data, and the trail of it with it.
+      deleteForAccount: (accountId) => {
+        guard(scope);
+        return orm.delete(auditLog).where(eq(auditLog.accountId, accountId)).run().changes;
+      },
+      deleteForPerson: (personId) => {
+        guard(scope);
+        return orm.delete(auditLog).where(eq(auditLog.personId, personId)).run().changes;
+      },
     },
     jobs: createJobRepo(orm, () => guard(scope)),
     reviewItems: createReviewItemRepo(orm, () => guard(scope)),

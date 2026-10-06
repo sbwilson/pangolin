@@ -6,6 +6,7 @@ import type {
   BalanceSnapshotRow,
   InstitutionRepo,
   InstitutionRow,
+  OwnedAccount,
   SplitRow,
   TransactionRepo,
   TransactionRow,
@@ -245,6 +246,36 @@ export function createAccountRepo(orm: Orm, check: () => void): AccountRepo {
         .all();
       return { payees, tags, activities };
     },
+
+    ownedBy: (personId) => {
+      check();
+      return orm
+        .select({ ...accountColumns, deletedAt: account.deletedAt })
+        .from(account)
+        .where(
+          inArray(
+            account.id,
+            orm
+              .select({ id: accountOwner.accountId })
+              .from(accountOwner)
+              .where(eq(accountOwner.personId, personId)),
+          ),
+        )
+        .orderBy(asc(account.createdAt), asc(account.id))
+        .all()
+        .map(
+          ({ deletedAt, ...row }): OwnedAccount => ({
+            row: row as AccountRow,
+            deleted: deletedAt !== null,
+          }),
+        );
+    },
+
+    deleteRows: (accountId) => {
+      check();
+      orm.delete(accountOwner).where(eq(accountOwner.accountId, accountId)).run();
+      orm.delete(account).where(eq(account.id, accountId)).run();
+    },
   };
 }
 
@@ -474,6 +505,68 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
         .all();
       return withSplits(orm, rows.map(toView));
     },
+
+    hidingsBy: (personId) => {
+      check();
+      const rows = orm
+        .select(transactionColumns)
+        .from(transaction)
+        .where(eq(transaction.nameHiddenBy, personId))
+        .orderBy(asc(transaction.id))
+        .all() as TransactionRow[];
+      return withSplits(orm, rows);
+    },
+
+    clearNameHidden: (ids, at) => {
+      check();
+      let changed = 0;
+      for (let i = 0; i < ids.length; i += 500) {
+        changed += orm
+          .update(transaction)
+          .set({ nameHiddenBy: null, nameHiddenUntil: null, updatedAt: at })
+          .where(inArray(transaction.id, ids.slice(i, i + 500) as string[]))
+          .run().changes;
+      }
+      return changed;
+    },
+
+    clearScopedPayees: (personId) => {
+      check();
+      return orm
+        .update(transaction)
+        .set({ payeeId: null })
+        .where(
+          inArray(
+            transaction.payeeId,
+            orm.select({ id: payee.id }).from(payee).where(eq(payee.scopePersonId, personId)),
+          ),
+        )
+        .run().changes;
+    },
+
+    unlinkGroup: (groupId) => {
+      check();
+      return orm
+        .update(transaction)
+        .set({ transferGroupId: null })
+        .where(eq(transaction.transferGroupId, groupId))
+        .run().changes;
+    },
+
+    deleteForAccount: (accountId) => {
+      check();
+      const rows = orm
+        .select({ id: transaction.id })
+        .from(transaction)
+        .where(eq(transaction.accountId, accountId));
+      const splits = orm
+        .select({ id: split.id })
+        .from(split)
+        .where(inArray(split.transactionId, rows));
+      orm.delete(splitTag).where(inArray(splitTag.splitId, splits)).run();
+      orm.delete(split).where(inArray(split.transactionId, rows)).run();
+      orm.delete(transaction).where(eq(transaction.accountId, accountId)).run();
+    },
   };
 }
 
@@ -587,6 +680,11 @@ export function createBalanceSnapshotRepo(
         .get();
       return seen === undefined ? undefined : balanceAsOf(orm.$client, accountId, date);
     },
+    deleteForAccount: (accountId) => {
+      check();
+      return orm.delete(balanceSnapshot).where(eq(balanceSnapshot.accountId, accountId)).run()
+        .changes;
+    },
   };
 }
 
@@ -650,6 +748,16 @@ export function createTransferGroupRepo(orm: Orm, check: () => void): TransferGr
         .where(and(eq(transaction.transferGroupId, id), isNull(transaction.deletedAt)))
         .orderBy(asc(transaction.id))
         .all() as TransactionRow[];
+    },
+    idsInAccount: (accountId) => {
+      check();
+      return orm
+        .selectDistinct({ id: transaction.transferGroupId })
+        .from(transaction)
+        .where(and(eq(transaction.accountId, accountId), isNotNull(transaction.transferGroupId)))
+        .orderBy(asc(transaction.transferGroupId))
+        .all()
+        .map((row) => row.id as string);
     },
   };
 }

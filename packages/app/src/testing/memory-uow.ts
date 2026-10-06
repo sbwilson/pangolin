@@ -31,6 +31,7 @@ import type {
   JobRow,
   LoginAttemptRepo,
   LoginAttemptRow,
+  OwnedAccount,
   OwnerChange,
   PayeeAliasRepo,
   PayeeAliasRow,
@@ -359,6 +360,14 @@ function personRepo(working: MemoryState, check: () => void): PersonRepo {
         `${a.createdAt}|${a.id}` < `${b.createdAt}|${b.id}` ? -1 : 1,
       );
     },
+    markLeft: (id, at) => {
+      check();
+      const index = working.people.findIndex((p) => p.id === id && p.deletedAt === null);
+      const row = working.people[index];
+      if (row === undefined) return false;
+      working.people[index] = { ...row, deletedAt: at, updatedAt: at };
+      return true;
+    },
     listLogins: () => {
       check();
       return [...active()]
@@ -642,6 +651,18 @@ function reviewItemRepo(working: MemoryState, check: () => void): ReviewItemRepo
         .filter((row) => row.resolvedAt === null && visible(working, viewer, row))
         .sort((a, b) => (`${a.createdAt}|${a.id}` < `${b.createdAt}|${b.id}` ? -1 : 1));
     },
+    deleteForAccount: (accountId) => {
+      check();
+      const before = working.reviewItems.length;
+      working.reviewItems = working.reviewItems.filter((row) => row.accountId !== accountId);
+      return before - working.reviewItems.length;
+    },
+    deleteForPerson: (personId) => {
+      check();
+      const before = working.reviewItems.length;
+      working.reviewItems = working.reviewItems.filter((row) => row.personId !== personId);
+      return before - working.reviewItems.length;
+    },
   };
 }
 
@@ -756,6 +777,37 @@ function accountRepo(working: MemoryState, check: () => void): AccountRepo {
           new Set(splits.flatMap((s) => (s.activityId === null ? [] : [s.activityId as string]))),
         ),
       };
+    },
+    ownedBy: (personId) => {
+      check();
+      const owned = new Set<string>(
+        working.accountOwners.filter((o) => o.personId === personId).map((o) => o.accountId),
+      );
+      return working.accounts
+        .filter((row) => owned.has(row.id))
+        .sort((a, b) => byText(`${a.createdAt}|${a.id}`, `${b.createdAt}|${b.id}`))
+        .map((row): OwnedAccount => ({ row, deleted: working.deleted.has(row.id) }));
+    },
+    deleteRows: (accountId) => {
+      check();
+      // As SQLite: foreign keys without cascade, so what still points at the account refuses.
+      const scopedOrigins = [
+        ...working.payees,
+        ...working.payeeAliases,
+        ...working.tags,
+        ...working.activities,
+      ];
+      if (
+        working.transactions.some((t) => t.accountId === accountId) ||
+        working.balanceSnapshots.some((s) => s.accountId === accountId) ||
+        working.reviewItems.some((r) => r.accountId === accountId) ||
+        scopedOrigins.some((row) => working.origins.get(row.id) === accountId)
+      ) {
+        throw new Error("FOREIGN KEY constraint failed: account.id");
+      }
+      working.accountOwners = working.accountOwners.filter((o) => o.accountId !== accountId);
+      working.accounts = working.accounts.filter((a) => a.id !== accountId);
+      working.deleted.delete(accountId);
     },
   };
 }
@@ -1045,6 +1097,60 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       working.transactions[working.transactions.indexOf(row)] = { ...row, updatedAt: at };
       return true;
     },
+    hidingsBy: (personId) => {
+      check();
+      return working.transactions
+        .filter((t) => t.nameHiddenBy === personId)
+        .sort((a, b) => byText(a.id, b.id))
+        .map((row) => withSplits({ ...row }));
+    },
+    clearNameHidden: (ids, at) => {
+      check();
+      const wanted = new Set<string>(ids);
+      let changed = 0;
+      working.transactions = working.transactions.map((row) => {
+        if (!wanted.has(row.id)) return row;
+        changed += 1;
+        return { ...row, nameHiddenBy: null, nameHiddenUntil: null, updatedAt: at };
+      });
+      return changed;
+    },
+    clearScopedPayees: (personId) => {
+      check();
+      const mine = new Set<string>(
+        working.payees.filter((p) => p.scopePersonId === personId).map((p) => p.id),
+      );
+      let changed = 0;
+      working.transactions = working.transactions.map((row) => {
+        if (row.payeeId === null || !mine.has(row.payeeId)) return row;
+        changed += 1;
+        return { ...row, payeeId: null };
+      });
+      return changed;
+    },
+    unlinkGroup: (groupId) => {
+      check();
+      let changed = 0;
+      working.transactions = working.transactions.map((row) => {
+        if (row.transferGroupId !== groupId) return row;
+        changed += 1;
+        return { ...row, transferGroupId: null };
+      });
+      return changed;
+    },
+    deleteForAccount: (accountId) => {
+      check();
+      const gone = new Set<string>(
+        working.transactions.filter((t) => t.accountId === accountId).map((t) => t.id),
+      );
+      const goneSplits = new Set<string>(
+        working.splits.filter((s) => gone.has(s.transactionId)).map((s) => s.id),
+      );
+      working.splitTags = working.splitTags.filter((t) => !goneSplits.has(t.splitId));
+      working.splits = working.splits.filter((s) => !gone.has(s.transactionId));
+      working.transactions = working.transactions.filter((t) => !gone.has(t.id));
+      for (const id of gone) working.deleted.delete(id);
+    },
     latestPostedOn: (viewer, accountId) => {
       requireViewer(viewer);
       check();
@@ -1207,6 +1313,18 @@ function auditRepo(working: MemoryState, check: () => void, failAudit: () => boo
           ? { ...row, personId }
           : row,
       );
+    },
+    deleteForAccount: (accountId: string): number => {
+      check();
+      const before = working.audit.length;
+      working.audit = working.audit.filter((row) => row.accountId !== accountId);
+      return before - working.audit.length;
+    },
+    deleteForPerson: (personId: string): number => {
+      check();
+      const before = working.audit.length;
+      working.audit = working.audit.filter((row) => row.personId !== personId);
+      return before - working.audit.length;
     },
     ownerChanges: (viewer: Viewer, accountId: string): OwnerChange[] => {
       requireViewer(viewer);
@@ -1387,6 +1505,12 @@ function balanceSnapshotRepo(working: MemoryState, check: () => void): BalanceSn
         .filter((row) => row.accountId === accountId)
         .sort((a, b) => byText(`${b.asOf}|${b.id}`, `${a.asOf}|${a.id}`));
     },
+    deleteForAccount: (accountId) => {
+      check();
+      const before = working.balanceSnapshots.length;
+      working.balanceSnapshots = working.balanceSnapshots.filter((s) => s.accountId !== accountId);
+      return before - working.balanceSnapshots.length;
+    },
     balanceAsOf: (viewer, accountId, date) => {
       requireViewer(viewer);
       check();
@@ -1461,6 +1585,18 @@ function transferGroupRepo(working: MemoryState, check: () => void): TransferGro
       return working.transactions
         .filter((t) => t.transferGroupId === id && !working.deleted.has(t.id))
         .sort((a, b) => byText(a.id, b.id));
+    },
+    idsInAccount: (accountId) => {
+      check();
+      return [
+        ...new Set(
+          working.transactions.flatMap((t) =>
+            t.accountId === accountId && t.transferGroupId !== null
+              ? [t.transferGroupId as string]
+              : [],
+          ),
+        ),
+      ].sort(byText);
     },
   };
 }
@@ -1681,6 +1817,21 @@ function scoped<R extends { readonly id: string; readonly scopePersonId: string 
       if (row === undefined) return undefined;
       return (working.origins.get(id) ?? null) as Id<"Account"> | null;
     },
+    /** Hard-deletes the rows (live or deleted) that match `where`; returns their IDs. */
+    removeWhere: (where: (row: R) => boolean): Set<string> => {
+      check();
+      const gone = new Set<string>(
+        rows()
+          .filter(where)
+          .map((row) => row.id),
+      );
+      setRows(rows().filter((row) => !gone.has(row.id)));
+      for (const id of gone) {
+        working.deleted.delete(id);
+        working.origins.delete(id);
+      }
+      return gone;
+    },
   };
 }
 
@@ -1708,6 +1859,11 @@ function tagRepo(working: MemoryState, check: () => void): TagRepo {
       })),
     softDelete: base.softDelete,
     originOf: base.originOf,
+    deleteScopedTo: (personId) => {
+      const gone = base.removeWhere((row) => row.scopePersonId === personId);
+      working.splitTags = working.splitTags.filter((t) => !gone.has(t.tagId));
+      return gone.size;
+    },
     replaceForSplit: (viewer, splitId, tagIds, at) => {
       requireViewer(viewer);
       check();
@@ -1802,6 +1958,13 @@ function activityRepo(working: MemoryState, check: () => void): ActivityRepo {
       ),
     softDelete: base.softDelete,
     originOf: base.originOf,
+    deleteScopedTo: (personId) => {
+      const gone = base.removeWhere((row) => row.scopePersonId === personId);
+      working.splits = working.splits.map((s) =>
+        s.activityId !== null && gone.has(s.activityId) ? { ...s, activityId: null } : s,
+      );
+      return gone.size;
+    },
   };
 }
 
@@ -1859,6 +2022,18 @@ function payeeRepo(working: MemoryState, check: () => void): PayeeRepo {
       ),
     softDelete: base.softDelete,
     originOf: base.originOf,
+    deleteScopedTo: (personId) => {
+      const mine = working.payees.filter((p) => p.scopePersonId === personId).map((p) => p.id);
+      // As SQLite: foreign keys without cascade, so a transaction or alias that still names one
+      // of them refuses.
+      if (
+        working.transactions.some((t) => t.payeeId !== null && mine.includes(t.payeeId)) ||
+        working.payeeAliases.some((a) => mine.includes(a.payeeId))
+      ) {
+        throw new Error("FOREIGN KEY constraint failed: payee.id");
+      }
+      return base.removeWhere((row) => row.scopePersonId === personId).size;
+    },
   };
 }
 
@@ -1914,6 +2089,13 @@ function payeeAliasRepo(working: MemoryState, check: () => void): PayeeAliasRepo
       ),
     softDelete: base.softDelete,
     originOf: base.originOf,
+    deleteScopedTo: (personId) => {
+      const payees = new Set<string>(
+        working.payees.filter((p) => p.scopePersonId === personId).map((p) => p.id),
+      );
+      return base.removeWhere((row) => row.scopePersonId === personId || payees.has(row.payeeId))
+        .size;
+    },
   };
 }
 

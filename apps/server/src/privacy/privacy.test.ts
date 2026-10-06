@@ -34,6 +34,7 @@ import {
   leakyWorld,
   nonexistentId,
   normaliseRequestIds,
+  ORIGIN,
   slotIds,
   type Variant,
   type World,
@@ -42,6 +43,9 @@ import {
   type Flavour,
   type HiddenRun,
   hiddenNameScenario,
+  LEAVE_HIDDEN_NAME,
+  type LeaveRun,
+  leaveScenario,
   type Observe,
   type Step,
   type SwitchRun,
@@ -1516,5 +1520,212 @@ describe("a deliberate leak of a figure of the whole database into the backup", 
       const problems = await drillFigureProblems(d);
       expect(problems.some((p) => p.endsWith("is not a restic snapshot id"))).toBe(true);
     }
+  });
+});
+
+// ----------------------------------------------------------------------- A leaves the household
+
+const LEAVE_PATH = "/api/accounts/leave-household";
+
+/** The count a query returns, from a world's database. */
+const countIn = (w: World, sql: string, ...args: unknown[]): number =>
+  w.db
+    .prepare(sql)
+    .pluck()
+    .get(...args) as number;
+
+/**
+ * What a leave must have done, read from the worlds of `leaveScenario`: B reads the formerly
+ * hidden name in both worlds (the hiding is lifted) and its columns are clear.
+ */
+function leaveProblems(pair: Pair<LeaveRun>): string[] {
+  const problems: string[] = [];
+  pair.worlds.forEach((w, i) => {
+    const { hidden } = (pair.runs[i] as LeaveRun).ids;
+    const seen = (pair.seen[i] as Seen).get("after A left");
+    const read = seen?.get(`GET /api/ledger/transactions/${hidden}`) ?? "";
+    if (!read.includes(LEAVE_HIDDEN_NAME)) problems.push(`world ${i + 1}: B cannot read the name`);
+    if (read.includes("Hidden until"))
+      problems.push(`world ${i + 1}: B still sees the placeholder`);
+    if (countIn(w, 'SELECT count(*) FROM "transaction" WHERE name_hidden_by = ?', w.people.a) > 0) {
+      problems.push(`world ${i + 1}: a hiding is still stored`);
+    }
+  });
+  return problems;
+}
+
+describe("A leaves the household", () => {
+  let pair: Pair<LeaveRun>;
+  beforeAll(async () => {
+    pair = await runPair(leaveScenario);
+  });
+
+  it("gives B the same reads in both worlds before A leaves, after, and after B writes on what A handed over", () => {
+    expect([...pair.seen[0].keys()]).toEqual([
+      "before A leaves",
+      "after A left",
+      "after B's writes",
+    ]);
+    expect(checkpointProblems(pair.seen)).toEqual([]);
+    // The probe is not empty: B reads A's former joint account, now B's alone.
+    const left = pair.seen[0].get("after A left");
+    expect(left?.get("GET /api/accounts")).toContain("Leave probe joint");
+    expect(left?.get("GET /api/accounts")).toContain("Leave probe sole");
+  });
+
+  it("answers each step the same in both worlds: A leaves, B writes, A is out", () => {
+    const [left, right] = pair.runs;
+    expect(outcomes(right.steps)).toEqual(outcomes(left.steps));
+    expect(left.steps.map((s) => [s.name, s.status])).toEqual([
+      ["A leaves", 200],
+      ["B renames the joint account", 200],
+      ["B edits the formerly hidden entry", 200],
+      ["B closes the account A owned alone", 200],
+      ["A tries again", 401],
+    ]);
+  });
+
+  it("lifts A's hiding: B reads the real name where B read a placeholder", () => {
+    expect(leaveProblems(pair)).toEqual([]);
+    const before = pair.seen[0].get("before A leaves");
+    const id = pair.runs[0].ids.hidden;
+    expect(before?.get(`GET /api/ledger/transactions/${id}`)).toContain("Hidden until");
+    expect(before?.get(`GET /api/ledger/transactions/${id}`)).not.toContain(LEAVE_HIDDEN_NAME);
+  });
+
+  it("deletes A's private data, scoped rows and audit rows, and keeps the shared accounts with B", () => {
+    pair.worlds.forEach((w, i) => {
+      const { ids } = pair.runs[i] as LeaveRun;
+      const a = w.people.a;
+      const b = w.people.b;
+      for (const id of ids.privateAccounts) {
+        expect(countIn(w, "SELECT count(*) FROM account WHERE id = ?", id)).toBe(0);
+        expect(countIn(w, 'SELECT count(*) FROM "transaction" WHERE account_id = ?', id)).toBe(0);
+        expect(countIn(w, "SELECT count(*) FROM balance_snapshot WHERE account_id = ?", id)).toBe(
+          0,
+        );
+        expect(countIn(w, "SELECT count(*) FROM audit_log WHERE account_id = ?", id)).toBe(0);
+      }
+      for (const [table, id] of [
+        ["payee", ids.payee],
+        ["payee_alias", ids.alias],
+        ["tag", ids.tag],
+        ["activity", ids.activity],
+      ] as const) {
+        if (id !== undefined) {
+          expect(countIn(w, `SELECT count(*) FROM ${table} WHERE id = ?`, id), table).toBe(0);
+          expect(countIn(w, "SELECT count(*) FROM audit_log WHERE entity_id = ?", id), table).toBe(
+            0,
+          );
+        }
+      }
+      expect(countIn(w, "SELECT count(*) FROM audit_log WHERE person_id = ?", a)).toBe(0);
+      expect(countIn(w, "SELECT count(*) FROM review_item WHERE person_id = ?", a)).toBe(0);
+      // A's rows in every account the seed gave them are gone too.
+      expect(
+        countIn(
+          w,
+          `SELECT count(*) FROM account acc JOIN account_owner o ON o.account_id = acc.id
+            WHERE acc.is_private = 1 AND o.person_id = ?`,
+          a,
+        ),
+      ).toBe(0);
+      expect(countIn(w, "SELECT count(*) FROM account_owner WHERE person_id = ?", a)).toBe(0);
+      for (const id of [ids.joint, ids.sole]) {
+        expect(
+          w.db
+            .prepare("SELECT person_id, share_bp FROM account_owner WHERE account_id = ?")
+            .all(id),
+        ).toEqual([{ person_id: b, share_bp: 10_000 }]);
+      }
+      for (const id of [ids.hidden, ids.soleTransaction]) {
+        expect(countIn(w, 'SELECT count(*) FROM "transaction" WHERE id = ?', id)).toBe(1);
+      }
+      // A is marked left, with no session, passkey or usable password.
+      expect(
+        countIn(w, "SELECT count(*) FROM person WHERE id = ? AND deleted_at IS NOT NULL", a),
+      ).toBe(1);
+      expect(countIn(w, "SELECT count(*) FROM auth_session WHERE user_id = 'user-a'")).toBe(0);
+      expect(countIn(w, "SELECT count(*) FROM auth_passkey WHERE user_id = 'user-a'")).toBe(0);
+      expect(
+        countIn(
+          w,
+          "SELECT count(*) FROM auth_account WHERE user_id = 'user-a' AND password = 'old-hash'",
+        ),
+      ).toBe(0);
+      // B's login is untouched.
+      expect(countIn(w, "SELECT count(*) FROM auth_session WHERE user_id = 'user-b'")).toBe(1);
+    });
+    // The worlds differ: only the first held private data before the leave.
+    expect(pair.runs[0].ids.privateAccounts).toHaveLength(2);
+    expect(pair.runs[1].ids.privateAccounts).toHaveLength(0);
+  });
+
+  it("clears the session cookie in the response", async () => {
+    const w = world("base");
+    w.startRequestIds();
+    const res = await w.app.request(LEAVE_PATH, {
+      method: "POST",
+      headers: { Origin: ORIGIN, "Content-Type": "application/json", Cookie: "session=user-a" },
+      body: JSON.stringify({ confirm: true }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.getSetCookie().map((c) => c.split(";")[0])).toEqual([
+      "pangolin.session_token=",
+      "pangolin.session_data=",
+    ]);
+  });
+});
+
+describe("a leaver with private data and one with none", () => {
+  it("leave B the same bytes on every GET route", async () => {
+    const [none, held] = [world("base"), world("delta")];
+    for (const w of [none, held]) {
+      w.startRequestIds();
+      const res = await w.request("a", "POST", LEAVE_PATH, { confirm: true });
+      expect(res.status, res.text).toBe(200);
+    }
+    const left = await readTranscript(none);
+    const right = await readTranscript(held);
+    expect(left.size).toBeGreaterThan(20);
+    expect(identicalProblems(left, right)).toEqual([]);
+    expect(left.get("GET /api/accounts")).toContain("Joint everyday");
+    // The delta world held a hiding, private accounts and scoped rows; all of it is gone.
+    expect(held.privateIds.account.length).toBeGreaterThanOrEqual(6);
+    for (const [table, ids] of [
+      ["account", held.privateIds.account],
+      ["payee", held.privateIds.payee],
+      ["tag", held.privateIds.tag],
+      ["payee_alias", held.privateIds.alias],
+      ["activity", held.privateIds.activity],
+    ] as const) {
+      for (const id of ids) {
+        expect(
+          countIn(held, `SELECT count(*) FROM ${table} WHERE id = ?`, id),
+          `${table} ${id}`,
+        ).toBe(0);
+      }
+    }
+    for (const id of held.privateIds.transaction) {
+      expect(countIn(held, 'SELECT count(*) FROM "transaction" WHERE id = ?', id), id).toBe(0);
+    }
+    expect(countIn(held, "SELECT count(*) FROM audit_log WHERE person_id = ?", held.people.a)).toBe(
+      0,
+    );
+    expect(
+      countIn(held, 'SELECT count(*) FROM "transaction" WHERE name_hidden_by = ?', held.people.a),
+    ).toBe(0);
+  });
+});
+
+describe("a deliberate leak in the leave worlds", () => {
+  it("is caught: with the hidings not lifted, B still reads the placeholder", async () => {
+    const pair = await runPair(leaveScenario, (variant) =>
+      leakyWorld(world(variant), "leave-hidings"),
+    );
+    const problems = leaveProblems(pair);
+    expect(problems).toContain("world 1: B still sees the placeholder");
+    expect(problems).toContain("world 1: a hiding is still stored");
+    expect(problems).toContain("world 2: B still sees the placeholder");
   });
 });

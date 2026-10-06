@@ -39,6 +39,12 @@ export {
   updateInstitutionInput,
 } from "./accounts/institutions.ts";
 export {
+  type LeaveHouseholdContext,
+  type LeaveHouseholdInput,
+  leaveHousehold,
+  leaveHouseholdInput,
+} from "./accounts/leave-household.ts";
+export {
   type GetAccountInput,
   getAccount,
   getAccountInput,
@@ -444,6 +450,7 @@ export {
   type InstitutionKind,
   type InstitutionRepo,
   type InstitutionRow,
+  type OwnedAccount,
   type PayeeAliasRepo,
   type PayeeAliasRow,
   type PayeeRepo,
