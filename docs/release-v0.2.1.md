@@ -373,9 +373,9 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | `/healthz` (step 8) | `{"ok":true,"warnings":["recovery-bundle-unconfirmed"]}` (the warning pre-dates the release; `sudo pangolin confirm-bundle` clears it), 2026-10-06 |
 | `pangolin status` showing the tag and schema 11 of 11 (step 9) | `Pangolin Money v0.2.1`, `Schema: 11 (this build expects 11)`, `Readiness: ok`; same warning, 3 pending jobs, 1 dead job (`backup-push`, 2026-10-02, pre-existing), 2026-10-06 |
 | **After the upgrade** | |
-| First backup: snapshot ID (step 10) | `ecaa220f85b42bf50cdc6824fe66683f9ef423fa0a5051ab5d5de75efd88b8ba`, backup `01M47NRX5ACDH1DHZ879E270M9`, done 2026-10-06T03:58:02.525Z by `v0.2.1`. The `pangolin status` after it was not pasted |
+| First backup: snapshot ID (step 10) | `ecaa220f85b42bf50cdc6824fe66683f9ef423fa0a5051ab5d5de75efd88b8ba`, backup `01M47NRX5ACDH1DHZ879E270M9`, done 2026-10-06T03:58:02.525Z by `v0.2.1`. The `pangolin status` after it was not pasted; the post-upgrade status (step 9) is recorded above |
 | First backup: manifest `format` | `"format": 2`, reported by the human from `restic dump` of the snapshot, 2026-10-06. Path in the snapshot: `/data/backup/staging/01M47NRX5ACDH1DHZ879E270M9/manifest.json` |
-| First backup: `balanceDate` and accounts section | `balanceDate` is today (reported by the human; the exact date was not pasted). Number of accounts: not yet reported |
+| First backup: `balanceDate` and accounts section | `balanceDate` `2026-10-06`; `accounts` has 0 entries (pang-dev has no ledger accounts yet, as at v0.2.0), reported by the human from the step 10 snapshot. A further backup was taken afterwards, `8f7749008d9344dd14f69b8e0bffc446c57dca823311b5f0fe55576bdd6f9416` (backup `01M47PD1HQQBEPDWSZE4CKK20S`, 2026-10-06T04:09:02.270Z); it is not step 10's |
 | **Decision** | |
 | Outcome (accepted / failed) and reason | |
 | Accepted by the human (name, date) | |
