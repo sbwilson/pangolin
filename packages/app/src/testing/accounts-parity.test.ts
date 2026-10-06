@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   type AccountView,
   balanceAsOf as accountBalanceAsOf,
+  closeAccount,
   createAccount,
   createIdGenerator,
   createPayee,
@@ -30,6 +31,7 @@ import {
   hideTransactionName,
   listAccounts,
   listAudit,
+  listReviewItems,
   listTransactions,
   personViewer,
   recordBalanceSnapshot,
@@ -40,6 +42,7 @@ import {
   type UseCaseContext,
   unhideTransactionName,
   updateAccount,
+  updateTransaction,
 } from "../index.ts";
 import { systemViewer } from "../system-viewer.ts";
 import { memoryUnitOfWork } from "./memory-uow.ts";
@@ -494,6 +497,87 @@ describe("ownership and privacy switches (story 2.15)", () => {
       // The two transitions; the redundant switch was inside the private era, so it is A's.
       expect(out.againBFlips, who).toBe(2);
       expect(out.aSeesAfterPublic, who).toBe("Hidden until 12 Mar 2027");
+    }
+  });
+});
+
+/** The closing-balance warning (story 24) on one adapter; a transcript with person IDs as PA/PB. */
+function closingBalance(ctxs: Ctxs) {
+  const { sys } = ctxs;
+  const pa = createPerson(sys, { displayName: "A", colour: "#000000" });
+  const pb = createPerson(sys, { displayName: "B", colour: "#ffffff" });
+  const A = ctxs.as(pa);
+  const B = ctxs.as(pb);
+  const make = (type: "savings" | "property", isPrivate: boolean) =>
+    createAccount(sys, {
+      name: "Acct",
+      type,
+      currency: "AUD",
+      isPrivate,
+      owners: isPrivate
+        ? own(pa)
+        : [
+            { personId: pa, shareBp: 5000 },
+            { personId: pb, shareBp: 5000 },
+          ],
+    });
+  const items = (ctx: UseCaseContext) =>
+    listReviewItems(ctx)
+      .filter((item) => item.kind === "accounts.closing-balance")
+      .map((item) => [item.accountId === null ? null : "ACCT", item.entityRef.split(":")[0]]);
+  const out: Record<string, unknown> = {};
+
+  const acct = make("savings", false);
+  const entry = txn(A, acct, "2026-09-01", 1000);
+  out.closed = closeAccount(A, { id: acct, closedOn: "2026-09-10" }).warning;
+  out.listed = listAccounts(B).find((row) => row.id === acct)?.warning;
+  out.itemsB = items(B);
+  out.edited =
+    updateTransaction(A, { id: entry, amountCents: 800 }) && getAccount(A, { id: acct }).warning;
+  out.itemsAfterEdit = items(A);
+  recordBalanceSnapshot(A, { accountId: acct, asOf: "2026-09-10", balanceCents: 0 });
+  out.zero = getAccount(A, { id: acct }).warning ?? null;
+  out.itemsZero = items(A);
+  out.reopened = updateAccount(A, { id: acct, closedOn: null }).warning ?? null;
+
+  const property = make("property", false);
+  txn(sys, property, "2026-09-01", 500);
+  out.property = closeAccount(A, { id: property, closedOn: "2026-09-10" }).warning ?? null;
+  out.itemsProperty = items(A);
+
+  const priv = make("savings", true);
+  txn(A, priv, "2026-09-01", 700);
+  const bAccounts = JSON.stringify(listAccounts(B));
+  const bItems = JSON.stringify(listReviewItems(B));
+  closeAccount(A, { id: priv, closedOn: "2026-09-10" });
+  out.privateAItems = items(A);
+  out.privateBSame =
+    JSON.stringify(listAccounts(B)) === bAccounts && JSON.stringify(listReviewItems(B)) === bItems;
+  return out;
+}
+
+describe("closing-balance warning (story 24)", () => {
+  it("is the same on SQLite and the memory mirror", () => {
+    migrate(db, loadMigrations(packageMigrationsDir));
+    const sqlite = closingBalance(sqliteCtxs(db));
+    const memory = closingBalance(memoryCtxs());
+    expect(memory).toEqual(sqlite);
+    for (const [who, out] of [
+      ["sqlite", sqlite],
+      ["memory", memory],
+    ] as const) {
+      expect(out.closed, who).toEqual({ kind: "closing-balance", balanceCents: 1000 });
+      expect(out.listed, who).toEqual(out.closed);
+      expect(out.itemsB, who).toEqual([["ACCT", "account"]]);
+      expect(out.edited, who).toEqual({ kind: "closing-balance", balanceCents: 800 });
+      expect(out.itemsAfterEdit, who).toEqual([["ACCT", "account"]]);
+      expect(out.zero, who).toBeNull();
+      expect(out.itemsZero, who).toEqual([]);
+      expect(out.reopened, who).toBeNull();
+      expect(out.property, who).toBeNull();
+      expect(out.itemsProperty, who).toEqual([]);
+      expect(out.privateAItems, who).toEqual([["ACCT", "account"]]);
+      expect(out.privateBSame, who).toBe(true);
     }
   });
 });

@@ -1,6 +1,7 @@
 import type { Id } from "@pangolin/shared";
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
+import { syncClosingBalance } from "../accounts/closing-balance.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import type { SplitRow, TransactionRow } from "../ports/unit-of-work.ts";
@@ -112,6 +113,7 @@ export function createTransaction(
       before: null,
       after: { ...row, splits: [split] },
     });
+    syncClosingBalance(tx, audit, ctx, account.id);
     return row.id;
   });
 }

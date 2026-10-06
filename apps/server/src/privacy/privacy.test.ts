@@ -8,7 +8,14 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hiddenLabel, listAudit, listReviewItems, redact, type Viewer } from "@pangolin/app";
+import {
+  hiddenLabel,
+  listAccounts,
+  listAudit,
+  listReviewItems,
+  redact,
+  type Viewer,
+} from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { generateSeedFile } from "../../scripts/demo-seed.ts";
@@ -677,6 +684,35 @@ describe("partner B against partner A's private data", () => {
     expect(a2).toEqual(
       expect.arrayContaining(["probe:a-private", "probe:a-person", "probe:household"]),
     );
+  });
+
+  it("keeps a private account closed with a balance to A: B's accounts, reviews and responses are unchanged", async () => {
+    // A's delta closes a private account holding -100: a warning on its view and an open item.
+    const aItems = listReviewItems(w2.ctx("a")).filter(
+      (item) => item.kind === "accounts.closing-balance",
+    );
+    expect(aItems).toHaveLength(1);
+    const accountId = aItems[0]?.accountId as string;
+    expect(aItems[0]?.entityRef).toBe(`account:${accountId}`);
+    const mine = listAccounts(w2.ctx("a")).find((row) => row.id === accountId);
+    expect(mine?.warning).toEqual({ kind: "closing-balance", balanceCents: -100 });
+    // B sees neither the item, the account nor a warning, and the two worlds answer alike.
+    for (const w of [w1, w2]) {
+      const b = w.ctx("b");
+      expect(listReviewItems(b).filter((item) => item.kind === "accounts.closing-balance")).toEqual(
+        [],
+      );
+      expect(listAccounts(b).some((row) => row.id === accountId)).toBe(false);
+      expect(listAccounts(b).some((row) => row.warning !== undefined)).toBe(false);
+    }
+    expect(JSON.stringify(listAccounts(w2.ctx("b")))).toBe(
+      JSON.stringify(listAccounts(w1.ctx("b"))),
+    );
+    const get = (w: World) => w.request("b", "GET", `/api/accounts/${accountId}`);
+    const [r1, r2] = [await get(w1), await get(w2)];
+    expect(r2.status).toBe(404);
+    expect(r1.status).toBe(r2.status);
+    expect(r1.text).toBe(r2.text);
   });
 
   it("writes an accountId on every audit row of an account-scoped entity", () => {

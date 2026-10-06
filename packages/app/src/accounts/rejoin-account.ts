@@ -4,6 +4,7 @@ import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import type { AccountOwnerRow } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
+import { closingBalanceWarning } from "./closing-balance.ts";
 import { FULL_SHARE_BP, idInput, ownerRows } from "./inputs.ts";
 import { type AccountView, accountView, removalOf } from "./pool.ts";
 
@@ -74,7 +75,7 @@ export function rejoinAccount(ctx: UseCaseContext, input: RejoinAccountInput): A
       before: { ...before, owners: beforeOwners },
       after: { ...after, owners: afterOwners },
     });
-    return accountView(after, afterOwners);
+    return accountView(after, afterOwners, undefined, closingBalanceWarning(tx, ctx.viewer, after));
   });
 }
 

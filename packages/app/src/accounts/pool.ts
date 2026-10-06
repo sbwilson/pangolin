@@ -2,10 +2,20 @@ import { AppError } from "../errors.ts";
 import type {
   AccountOwnerRow,
   AccountRow,
+  AccountType,
   AuditedOwner,
   OwnerChange,
 } from "../ports/unit-of-work.ts";
 import type { Viewer } from "../viewer.ts";
+
+/** The types whose balance is a snapshot plus the transactions after it (AD-19). */
+export const CASH_ACCOUNT_TYPES: readonly AccountType[] = [
+  "transaction",
+  "savings",
+  "offset",
+  "credit_card",
+  "home_loan",
+];
 
 /** Who took a person off an account's owners, when, and who the owners were before. */
 export interface AccountRemoval {
@@ -27,6 +37,17 @@ export interface AccountView extends AccountRow {
    * dropped them (derived from the audit log, nothing is stored).
    */
   readonly removal?: AccountRemoval;
+  /**
+   * Present only for a closed cash account whose balance as of `closedOn` is not zero (derived
+   * on read; a warning, never a block). `balanceCents` is that balance.
+   */
+  readonly warning?: AccountWarning;
+}
+
+/** A closed account still holds a balance. */
+export interface AccountWarning {
+  readonly kind: "closing-balance";
+  readonly balanceCents: number;
 }
 
 /**
@@ -55,12 +76,14 @@ export function accountView(
   row: AccountRow,
   owners: readonly AccountOwnerRow[],
   removal?: AccountRemoval,
+  warning?: AccountWarning,
 ): AccountView {
   return {
     ...row,
     owners: owners.map((owner) => ({ personId: owner.personId, shareBp: owner.shareBp })),
     pool: poolOf(owners),
     ...(removal === undefined ? {} : { removal }),
+    ...(warning === undefined ? {} : { warning }),
   };
 }
 

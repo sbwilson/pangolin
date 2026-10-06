@@ -7,6 +7,7 @@ import { requireClosableOn } from "../ledger/closed-lock.ts";
 import type { AccountOwnerRow, AccountRow } from "../ports/unit-of-work.ts";
 import type { Viewer } from "../viewer.ts";
 import { write } from "../write.ts";
+import { closingBalanceWarning, syncClosingBalance } from "./closing-balance.ts";
 import {
   dayInput,
   idInput,
@@ -103,7 +104,8 @@ export function updateAccount(ctx: UseCaseContext, input: UpdateAccountInput): A
       before: { ...before, owners: beforeOwners },
       after: { ...after, owners: afterOwners },
     });
-    return accountView(after, afterOwners);
+    if (closedOn !== before.closedOn) syncClosingBalance(tx, audit, ctx, before.id);
+    return accountView(after, afterOwners, undefined, closingBalanceWarning(tx, ctx.viewer, after));
   });
 }
 

@@ -19,6 +19,7 @@ import {
   listAccounts,
   listBalanceSnapshots,
   listInstitutions,
+  listReviewItems,
   personViewer,
   recordBalanceSnapshot,
   rejoinAccount,
@@ -27,6 +28,7 @@ import {
   type UseCaseContext,
   updateAccount,
   updateInstitution,
+  updateTransaction,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import type { Id } from "@pangolin/shared";
@@ -606,5 +608,134 @@ describe("balanceAsOf", () => {
     txn(as(a), id, "2026-09-01", -100);
     expect(dbBalanceAsOf(db, id, "2026-09-27")).toBe(-100);
     expect(() => dbBalanceAsOf(db, id, "tomorrow")).toThrow(TypeError);
+  });
+});
+
+describe("a non-zero closing balance is a warning", () => {
+  const items = (ctx: UseCaseContext) =>
+    listReviewItems(ctx).filter((item) => item.kind === "accounts.closing-balance");
+  const resolutions = () =>
+    db
+      .prepare("SELECT resolution FROM review_item WHERE kind = 'accounts.closing-balance'")
+      .pluck()
+      .all();
+
+  it("closes with a balance: the view names it and one account-scoped item opens", () => {
+    const id = make(as(a));
+    txn(as(a), id, "2026-09-01", 12500);
+    const closed = closeAccount(as(a), { id, closedOn: "2026-09-10" });
+    expect(closed.warning).toEqual({ kind: "closing-balance", balanceCents: 12500 });
+    expect(getAccount(as(b), { id }).warning).toEqual(closed.warning);
+    expect(listAccounts(as(a)).find((row) => row.id === id)?.warning).toEqual(closed.warning);
+    expect(items(as(b))).toMatchObject([{ accountId: id, entityRef: `account:${id}` }]);
+    expect(items(as(a))).toHaveLength(1);
+  });
+
+  it("has no warning and no item at a zero balance, or for a non-cash type", () => {
+    const zero = make(as(a));
+    expect(closeAccount(as(a), { id: zero, closedOn: "2026-09-10" }).warning).toBeUndefined();
+    const property = make(as(a), { type: "property" });
+    createTransaction(sys, {
+      accountId: property,
+      postedOn: "2026-09-01",
+      amountCents: 500,
+      description: "x",
+    });
+    expect(closeAccount(as(a), { id: property, closedOn: "2026-09-10" }).warning).toBeUndefined();
+    expect(getAccount(as(a), { id: property }).warning).toBeUndefined();
+    expect(items(as(a))).toEqual([]);
+  });
+
+  it("resolves when an entry, a snapshot or a deletion brings the balance to zero, and raises again", () => {
+    const id = make(as(a));
+    txn(as(a), id, "2026-09-01", 1000);
+    closeAccount(as(a), { id, closedOn: "2026-09-10" });
+    expect(items(as(a))).toHaveLength(1);
+    // A second non-zero balance changes nothing: still one open item.
+    const out = txn(as(a), id, "2026-09-05", -400);
+    expect(getAccount(as(a), { id }).warning?.balanceCents).toBe(600);
+    expect(items(as(a))).toHaveLength(1);
+    // An edit to zero resolves it.
+    updateTransaction(as(a), { id: out, amountCents: -1000 });
+    expect(getAccount(as(a), { id }).warning).toBeUndefined();
+    expect(items(as(a))).toEqual([]);
+    // Deleting that entry makes it non-zero again: a new item.
+    deleteTransaction(as(a), { id: out });
+    expect(getAccount(as(a), { id }).warning?.balanceCents).toBe(1000);
+    expect(items(as(a))).toHaveLength(1);
+    // A snapshot of zero on the closed date resolves it.
+    recordBalanceSnapshot(as(a), { accountId: id, asOf: "2026-09-10", balanceCents: 0 });
+    expect(getAccount(as(a), { id }).warning).toBeUndefined();
+    expect(items(as(a))).toEqual([]);
+    expect(resolutions()).toEqual([
+      "the closing balance reached zero",
+      "the closing balance reached zero",
+    ]);
+  });
+
+  it("follows a moved closed date and resolves when the account is opened again", () => {
+    const id = make(as(a));
+    txn(as(a), id, "2026-09-01", 1000);
+    closeAccount(as(a), { id, closedOn: "2026-09-05" });
+    expect(getAccount(as(a), { id }).warning?.balanceCents).toBe(1000);
+    expect(items(as(a))).toHaveLength(1);
+    // The system viewer is exempt from the lock: a later entry that zeroes the balance on the
+    // new date once the closed date moves later.
+    txn(sys, id, "2026-09-08", -1000);
+    expect(getAccount(as(a), { id }).warning?.balanceCents).toBe(1000);
+    expect(items(as(a))).toHaveLength(1);
+    expect(updateAccount(as(a), { id, closedOn: "2026-09-08" }).warning).toBeUndefined();
+    expect(items(as(a))).toEqual([]);
+    // Another account is reopened with its balance still non-zero.
+    const other = make(as(a));
+    txn(as(a), other, "2026-09-01", 300);
+    closeAccount(as(a), { id: other, closedOn: "2026-09-05" });
+    expect(items(as(a))).toHaveLength(1);
+    expect(updateAccount(as(a), { id: other, closedOn: null }).warning).toBeUndefined();
+    expect(items(as(a))).toEqual([]);
+    expect(resolutions()).toEqual([
+      "the closing balance reached zero",
+      "the account was opened again",
+    ]);
+  });
+
+  it("carries the warning on the views setPrivacy and rejoinAccount return", () => {
+    const warning = { kind: "closing-balance", balanceCents: 500 };
+    // A snapshot, not an entry, holds the balance: an entry's split for "shared" would stop a
+    // public account going private.
+    const held = () => {
+      const id = make(as(a));
+      recordBalanceSnapshot(as(a), { accountId: id, asOf: "2026-09-01", balanceCents: 500 });
+      closeAccount(as(a), { id, closedOn: "2026-09-10" });
+      return id;
+    };
+    const toPrivate = held();
+    updateAccount(as(a), { id: toPrivate, owners: own(a) });
+    expect(setPrivacy(as(a), { id: toPrivate, isPrivate: true }).warning).toEqual(warning);
+    expect(setPrivacy(as(a), { id: toPrivate, isPrivate: false }).warning).toEqual(warning);
+
+    const left = held();
+    updateAccount(as(a), { id: left, owners: own(a) });
+    expect(rejoinAccount(as(b), { id: left }).warning).toEqual(warning);
+
+    // Without a non-zero closing balance neither view carries one.
+    const clear = make(as(a));
+    closeAccount(as(a), { id: clear, closedOn: "2026-09-10" });
+    updateAccount(as(a), { id: clear, owners: own(a) });
+    expect(rejoinAccount(as(b), { id: clear }).warning).toBeUndefined();
+    updateAccount(as(b), { id: clear, owners: own(b) });
+    expect(setPrivacy(as(b), { id: clear, isPrivate: true }).warning).toBeUndefined();
+  });
+
+  it("is invisible to the partner for a private account", () => {
+    const priv = make(as(a), { isPrivate: true, owners: own(a) });
+    txn(as(a), priv, "2026-09-01", 700);
+    const listBefore = listAccounts(as(b));
+    const reviewBefore = listReviewItems(as(b));
+    closeAccount(as(a), { id: priv, closedOn: "2026-09-10" });
+    expect(listAccounts(as(b))).toEqual(listBefore);
+    expect(listReviewItems(as(b))).toEqual(reviewBefore);
+    expect(items(as(a))).toHaveLength(1);
+    expect(items(as(b))).toEqual([]);
   });
 });

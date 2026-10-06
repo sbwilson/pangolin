@@ -2,13 +2,14 @@ import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import type { AccountRow, ReadRepos } from "../ports/unit-of-work.ts";
+import { closingBalanceWarning } from "./closing-balance.ts";
 import { idInput } from "./inputs.ts";
 import { type AccountView, accountView, removalOf } from "./pool.ts";
 
 export const listAccountsInput = z.object({}).strict();
 export type ListAccountsInput = z.input<typeof listAccountsInput>;
 
-/** `accounts.listAccounts`: the accounts the viewer can see (public ones and their own private ones), oldest first, each with owners and pool, and a `removal` marker for a public account the viewer was taken off. */
+/** `accounts.listAccounts`: the accounts the viewer can see (public ones and their own private ones), oldest first, each with owners and pool, a `removal` marker for a public account the viewer was taken off, and a `warning` for a closed cash account with a non-zero closing balance. */
 export function listAccounts(ctx: UseCaseContext, input: ListAccountsInput = {}): AccountView[] {
   parseInput(listAccountsInput, input);
   return ctx.uow.read((repos) =>
@@ -19,7 +20,7 @@ export function listAccounts(ctx: UseCaseContext, input: ListAccountsInput = {})
 /** The view of one account the viewer can see, with the removal marker for a removed person. */
 function viewOf(
   ctx: UseCaseContext,
-  repos: Pick<ReadRepos, "accounts" | "audit">,
+  repos: Pick<ReadRepos, "accounts" | "audit" | "balanceSnapshots">,
   row: AccountRow,
 ): AccountView {
   const owners = repos.accounts.owners(row.id);
@@ -28,7 +29,7 @@ function viewOf(
   const removal = isOwner
     ? undefined
     : removalOf(ctx.viewer, owners, repos.audit.ownerChanges(ctx.viewer, row.id));
-  return accountView(row, owners, removal);
+  return accountView(row, owners, removal, closingBalanceWarning(repos, viewer, row));
 }
 
 export const getAccountInput = z.object({ id: idInput }).strict();

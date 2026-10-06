@@ -3,22 +3,13 @@ import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { requireOpenOn } from "../ledger/closed-lock.ts";
-import {
-  type AccountType,
-  BALANCE_SOURCES,
-  type BalanceSnapshotRow,
-} from "../ports/unit-of-work.ts";
+import { BALANCE_SOURCES, type BalanceSnapshotRow } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
+import { syncClosingBalance } from "./closing-balance.ts";
 import { dayInput, idInput } from "./inputs.ts";
+import { CASH_ACCOUNT_TYPES } from "./pool.ts";
 
-/** The types whose balance is a snapshot plus the transactions after it (AD-19). */
-export const CASH_ACCOUNT_TYPES: readonly AccountType[] = [
-  "transaction",
-  "savings",
-  "offset",
-  "credit_card",
-  "home_loan",
-];
+export { CASH_ACCOUNT_TYPES };
 
 export const recordBalanceSnapshotInput = z
   .object({
@@ -65,6 +56,7 @@ export function recordBalanceSnapshot(
       before: null,
       after: row,
     });
+    syncClosingBalance(tx, audit, ctx, account.id);
     return row;
   });
 }

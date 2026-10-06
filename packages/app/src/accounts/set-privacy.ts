@@ -4,6 +4,7 @@ import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import type { AccountOwnerRow, TxRepos } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
+import { closingBalanceWarning } from "./closing-balance.ts";
 import { FULL_SHARE_BP, idInput } from "./inputs.ts";
 import { type AccountView, accountView } from "./pool.ts";
 
@@ -73,7 +74,7 @@ export function setPrivacy(ctx: UseCaseContext, input: SetPrivacyInput): Account
       before: { ...before, owners },
       after: { ...after, owners },
     });
-    return accountView(after, owners);
+    return accountView(after, owners, undefined, closingBalanceWarning(tx, ctx.viewer, after));
   });
 }
 

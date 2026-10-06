@@ -924,6 +924,38 @@ describe("/api/accounts", () => {
     expect(reopened.status).toBe(201);
   });
 
+  it("carries a closing-balance warning on the account, never blocking the close", async () => {
+    const db = openDb();
+    const { joint } = seed(db);
+    const path = `/api/accounts/${joint}`;
+    type Warned = { id: string; warning?: { kind: string; balanceCents: number } };
+    const read = async () =>
+      ((await (await send(db, "GET", path)).json()) as { account: Warned }).account;
+    // The seed's joint account holds one line dated 2026-09-01; closing on it leaves a balance.
+    const balance = (await (await send(db, "GET", `${path}/balance?asOf=2026-09-01`)).json()) as {
+      balanceCents: number;
+    };
+    expect(balance.balanceCents).not.toBe(0);
+    expect((await read()).warning).toBeUndefined();
+    const closed = await send(db, "POST", `${path}/close`, { closedOn: "2026-09-01" });
+    expect(closed.status).toBe(200);
+    const warning = { kind: "closing-balance", balanceCents: balance.balanceCents };
+    expect(((await closed.json()) as { account: Warned }).account.warning).toEqual(warning);
+    expect((await read()).warning).toEqual(warning);
+    const list = (await (await send(db, "GET", "/api/accounts")).json()) as { accounts: Warned[] };
+    expect(list.accounts.find((row) => row.id === joint)?.warning).toEqual(warning);
+    expect(list.accounts.filter((row) => row.id !== joint && row.warning !== undefined)).toEqual(
+      [],
+    );
+    // A snapshot of zero on the closed date clears it.
+    const snap = await send(db, "POST", `${path}/snapshots`, {
+      asOf: "2026-09-01",
+      balanceCents: 0,
+    });
+    expect(snap.status).toBe(201);
+    expect((await read()).warning).toBeUndefined();
+  });
+
   it("refuses an id or unknown field in a create body, and a bad balance query", async () => {
     const db = openDb();
     const { joint } = seed(db);

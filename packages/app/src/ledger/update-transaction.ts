@@ -1,5 +1,6 @@
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
+import { syncClosingBalance } from "../accounts/closing-balance.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { write } from "../write.ts";
@@ -112,6 +113,7 @@ export function updateTransaction(
       before: auditSnapshot(stored),
       after: auditSnapshot(storedTransaction(tx, ctx.viewer, before.id)),
     });
+    syncClosingBalance(tx, audit, ctx, before.accountId);
     return toLedgerTransaction(ctx.viewer, after, tagsOf(tx, ctx.viewer, after));
   });
 }

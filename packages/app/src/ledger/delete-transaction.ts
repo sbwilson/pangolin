@@ -1,5 +1,6 @@
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
+import { syncClosingBalance } from "../accounts/closing-balance.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { requireRecentAuth } from "../identity/reauth.ts";
@@ -86,5 +87,6 @@ export function deleteTransaction(ctx: UseCaseContext, input: DeleteTransactionI
         after: { ...survivor, transferGroupId: null, updatedAt: at },
       });
     }
+    syncClosingBalance(tx, audit, ctx, before.accountId);
   });
 }

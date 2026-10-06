@@ -1,12 +1,19 @@
 import type { Id } from "@pangolin/shared";
 import { describe, expect, it } from "vitest";
+import { closeAccount } from "../accounts/close-account.ts";
 import { createAccount } from "../accounts/create-account.ts";
+import { getAccount } from "../accounts/list-accounts.ts";
 import { createPayee } from "../classify/payees.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
 import { createPerson } from "../identity/create-person.ts";
 import { listAudit } from "../system/list-audit.ts";
-import { defineReviewKind, raiseReviewItem, resolveReviewItem } from "../system/review-items.ts";
+import {
+  defineReviewKind,
+  listReviewItems,
+  raiseReviewItem,
+  resolveReviewItem,
+} from "../system/review-items.ts";
 import { systemViewer } from "../system-viewer.ts";
 import { manualClock, sequentialIds } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
@@ -537,5 +544,30 @@ describe("transaction.needs_review", () => {
     );
     expect(flag(id)).toBe(false);
     expect(uow.state.transactions.find((r) => r.id === id)?.needsReview).toBe(false);
+  });
+});
+
+describe("closing-balance review item in step with the ledger writes", () => {
+  it("raises on a close with a balance, follows entries, and never blocks", () => {
+    const { sys, a, as, shared } = setup();
+    const A = as(a);
+    const open = () =>
+      listReviewItems(A).filter((item) => item.kind === "accounts.closing-balance");
+    const first = createTransaction(A, { ...txn(shared), amountCents: 450 });
+    const closed = closeAccount(A, { id: shared, closedOn: "2026-09-10" });
+    expect(closed.warning).toEqual({ kind: "closing-balance", balanceCents: 450 });
+    expect(open()).toMatchObject([{ accountId: shared, entityRef: `account:${shared}` }]);
+    // An edit to another non-zero amount changes the warning, not the item.
+    updateTransaction(A, { id: first, amountCents: 900 });
+    expect(getAccount(A, { id: shared }).warning?.balanceCents).toBe(900);
+    expect(open()).toHaveLength(1);
+    // A system entry up to the closed date brings it to zero: warning and item go.
+    createTransaction(sys, { ...txn(shared, "Refund"), amountCents: -900 });
+    expect(getAccount(A, { id: shared }).warning).toBeUndefined();
+    expect(open()).toEqual([]);
+    // Deleting the refund raises it again.
+    deleteTransaction(A, { id: first });
+    expect(getAccount(A, { id: shared }).warning?.balanceCents).toBe(-900);
+    expect(open()).toHaveLength(1);
   });
 });

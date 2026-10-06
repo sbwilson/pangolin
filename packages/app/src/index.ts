@@ -46,7 +46,13 @@ export {
   listAccounts,
   listAccountsInput,
 } from "./accounts/list-accounts.ts";
-export { type AccountRemoval, type AccountView, payerOf, poolOf } from "./accounts/pool.ts";
+export {
+  type AccountRemoval,
+  type AccountView,
+  type AccountWarning,
+  payerOf,
+  poolOf,
+} from "./accounts/pool.ts";
 export {
   type RejoinAccountInput,
   rejoinAccount,
