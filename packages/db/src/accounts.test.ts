@@ -21,6 +21,7 @@ import {
   listInstitutions,
   personViewer,
   recordBalanceSnapshot,
+  rejoinAccount,
   setPrivacy,
   setSplitField,
   type UseCaseContext,
@@ -109,6 +110,7 @@ describe("privacy of ids (AD-5)", () => {
       () => updateAccount(bctx, { id: priv, name: "x" }),
       () => closeAccount(bctx, { id: priv }),
       () => setPrivacy(bctx, { id: priv, isPrivate: false }),
+      () => rejoinAccount(bctx, { id: priv }),
       () => accountBalanceAsOf(bctx, { accountId: priv, date: "2026-09-27" }),
       () => listBalanceSnapshots(bctx, { accountId: priv }),
       () => recordBalanceSnapshot(bctx, { accountId: priv, asOf: "2026-09-01", balanceCents: 1 }),
@@ -204,19 +206,179 @@ describe("updateAccount", () => {
     expect(updateAccount(as(a), { id, currency: "AUD" }).currency).toBe("AUD");
   });
 
-  it("lets a person remove only themself from the owners; the system may remove anyone", () => {
-    const id = make(as(a));
-    expect(() => updateAccount(as(a), { id, owners: own(a) })).toThrow(
-      expect.objectContaining({
-        code: "Validation",
-        message: "You can only remove yourself from an account's owners",
-      }),
-    );
-    expect(getAccount(as(a), { id }).owners).toEqual(joint());
-    expect(auditFor("account", id).map((row) => row.action)).toEqual(["create"]);
-    expect(updateAccount(as(b), { id, owners: own(a) }).owners).toEqual(own(a));
+  it("lets an owner share a public account, remove the other or change shares", () => {
+    const id = make(as(a), { owners: own(a) });
+    expect(updateAccount(as(a), { id, owners: joint() }).owners).toEqual(joint());
+    const audit = db
+      .prepare("SELECT before, after FROM audit_log WHERE entity_id = ? AND action = 'update'")
+      .get(id) as { before: string; after: string };
+    const listed = (json: string) =>
+      (JSON.parse(json) as { owners: { personId: string; shareBp: number }[] }).owners.map((o) => ({
+        personId: o.personId,
+        shareBp: o.shareBp,
+      }));
+    expect(listed(audit.before)).toEqual(own(a));
+    expect(listed(audit.after)).toEqual(joint());
+    const shares = [
+      { personId: a, shareBp: 2500 },
+      { personId: b, shareBp: 7500 },
+    ];
+    expect(updateAccount(as(b), { id, owners: shares }).owners).toEqual(shares);
+    expect(updateAccount(as(a), { id, owners: own(a) }).owners).toEqual(own(a));
+    expect(updateAccount(as(a), { id, owners: own(b) }).owners).toEqual(own(b));
     const other = make(as(a));
     expect(updateAccount(sys, { id: other, owners: own(b) }).owners).toEqual(own(b));
+    expect(() => updateAccount(as(a), { id: other, owners: [] })).toThrow(code("Validation"));
+  });
+
+  it("lets a non-owner only join: the new list is the owners plus themself", () => {
+    const id = make(as(a), { owners: own(a) });
+    const c = createPerson(sys, { displayName: "C", colour: "#888888" });
+    const refused = [
+      [], // empty
+      own(b), // drops the owner
+      [
+        { personId: a, shareBp: 5000 },
+        { personId: c, shareBp: 5000 },
+      ], // joins without themself, with a third person
+      [
+        { personId: a, shareBp: 4000 },
+        { personId: b, shareBp: 3000 },
+        { personId: c, shareBp: 3000 },
+      ], // owners plus themself plus a third person
+    ];
+    for (const owners of refused) {
+      expect(() => updateAccount(as(b), { id, owners })).toThrow(code("Validation"));
+    }
+    // Dropping an owner or adding someone else says what to do instead.
+    for (const owners of [
+      own(b),
+      [
+        { personId: a, shareBp: 5000 },
+        { personId: c, shareBp: 5000 },
+      ],
+    ]) {
+      expect(() => updateAccount(as(b), { id, owners })).toThrow(
+        expect.objectContaining({
+          code: "Validation",
+          message:
+            "Add yourself to the current owners: you cannot change who else owns this account",
+        }),
+      );
+    }
+    expect(getAccount(as(a), { id }).owners).toEqual(own(a));
+    expect(auditFor("account", id).map((row) => row.action)).toEqual(["create"]);
+    // By decision (Simon accepted it), a joiner sets the shares: the existing owner at 1 bp and
+    // the joiner at 9999 is allowed, as only the people are checked, not the split between them.
+    const skewed = [
+      { personId: a, shareBp: 1 },
+      { personId: b, shareBp: 9999 },
+    ];
+    expect(updateAccount(as(b), { id, owners: skewed }).owners).toEqual(skewed);
+    const plain = make(as(a), { owners: own(a) });
+    expect(updateAccount(as(b), { id: plain, owners: joint() }).owners).toEqual(joint());
+  });
+
+  it("marks a removed person and puts them back at their share on rejoin", () => {
+    const id = make(as(a), {
+      owners: [
+        { personId: a, shareBp: 3000 },
+        { personId: b, shareBp: 7000 },
+      ],
+    });
+    expect(getAccount(as(b), { id }).removal).toBeUndefined();
+    expect(() => rejoinAccount(as(b), { id })).toThrow(code("Validation"));
+    updateAccount(as(a), { id, owners: own(a) });
+    const removed = getAccount(as(b), { id });
+    expect(removed.owners).toEqual(own(a));
+    expect(removed.removal).toEqual({
+      by: a,
+      at: "2026-09-27T00:00:00.000Z",
+      previousOwners: [
+        { personId: a, shareBp: 3000 },
+        { personId: b, shareBp: 7000 },
+      ],
+    });
+    expect(listAccounts(as(b)).find((row) => row.id === id)?.removal?.by).toBe(a);
+    expect(getAccount(as(a), { id }).removal).toBeUndefined();
+    expect(getAccount(sys, { id }).removal).toBeUndefined();
+    expect(() => rejoinAccount(sys, { id })).toThrow(code("Validation"));
+    expect(() => rejoinAccount(as(a), { id })).toThrow(code("Validation"));
+
+    const back = rejoinAccount(as(b), { id });
+    expect(back.owners.map((o) => [o.personId, o.shareBp])).toEqual([
+      [a, 3000],
+      [b, 7000],
+    ]);
+    expect(back.removal).toBeUndefined();
+    expect(getAccount(as(b), { id }).removal).toBeUndefined();
+    expect(auditFor("account", id).at(-1)).toEqual({
+      action: "update",
+      account_id: id,
+      actor: `person:${b}`,
+    });
+    expect(() => rejoinAccount(as(b), { id })).toThrow(code("Validation"));
+  });
+
+  it("scales the current owner when a removed person rejoins, and marks a person who left", () => {
+    const id = make(as(a));
+    updateAccount(as(b), { id, owners: own(a) });
+    expect(getAccount(as(b), { id }).removal?.by).toBe(b);
+    // A changes the account while B is away; the latest removal still names B's leaving.
+    updateAccount(as(a), { id, name: "Renamed", owners: own(a) });
+    expect(getAccount(as(b), { id }).removal?.by).toBe(b);
+    expect(rejoinAccount(as(b), { id }).owners).toEqual([
+      { personId: a, shareBp: 5000 },
+      { personId: b, shareBp: 5000 },
+    ]);
+    // A hands the account over entirely: B's previous share leaves A one basis point.
+    updateAccount(as(b), { id, owners: own(a) });
+    updateAccount(as(a), { id, owners: own(b) });
+    expect(getAccount(as(a), { id }).removal?.previousOwners).toEqual(own(a));
+    expect(rejoinAccount(as(a), { id }).owners).toEqual([
+      { personId: b, shareBp: 1 },
+      { personId: a, shareBp: 9999 },
+    ]);
+  });
+
+  it("reads the latest removal of a person removed twice, and rejoins at the share held before it", () => {
+    const later = Temporal.Instant.from("2026-09-28T00:00:00Z");
+    const at = (id: Id<"Person">): UseCaseContext => ({
+      ...as(id),
+      clock: { now: () => later, today: () => later.toZonedDateTimeISO("UTC").toPlainDate() },
+    });
+    const id = make(as(a));
+    updateAccount(as(a), { id, owners: own(a) });
+    expect(getAccount(as(b), { id }).removal).toMatchObject({
+      by: a,
+      at: "2026-09-27T00:00:00.000Z",
+    });
+    rejoinAccount(as(b), { id });
+    // The shares change, so the second removal's previous owners differ from the first's.
+    const held = [
+      { personId: a, shareBp: 2000 },
+      { personId: b, shareBp: 8000 },
+    ];
+    updateAccount(as(a), { id, owners: held });
+    updateAccount(at(b), { id, owners: own(a) });
+    const removal = getAccount(as(b), { id }).removal;
+    expect(removal).toEqual({ by: b, at: "2026-09-28T00:00:00.000Z", previousOwners: held });
+    expect(listAccounts(as(b)).find((row) => row.id === id)?.removal).toEqual(removal);
+    expect(rejoinAccount(as(b), { id }).owners).toEqual(held);
+  });
+
+  it("does not show another person's private account or its removal, and a private account stays single", () => {
+    const gone = make(as(a));
+    updateAccount(as(a), { id: gone, owners: own(a) });
+    expect(getAccount(as(b), { id: gone }).removal?.by).toBe(a);
+    setPrivacy(as(a), { id: gone, isPrivate: true });
+    expect(() => getAccount(as(b), { id: gone })).toThrow(code("NotFound"));
+    expect(listAccounts(as(b)).map((row) => row.id)).not.toContain(gone);
+    expect(() => rejoinAccount(as(b), { id: gone })).toThrow(code("NotFound"));
+    const priv = make(as(a), { isPrivate: true, owners: own(a) });
+    expect(() => updateAccount(as(a), { id: priv, owners: joint() })).toThrow(code("Validation"));
+    expect(() => updateAccount(as(a), { id: priv, owners: own(b) })).toThrow(code("Validation"));
+    expect(() => updateAccount(as(b), { id: priv, owners: joint() })).toThrow(code("NotFound"));
   });
 
   it("reopens an account when closedOn is cleared", () => {

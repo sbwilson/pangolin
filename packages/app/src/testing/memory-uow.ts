@@ -10,6 +10,7 @@ import type {
   AccountRow,
   ActivityRepo,
   ActivityRow,
+  AuditedOwner,
   AuditRow,
   AuditView,
   BackupSnapshotRepo,
@@ -30,6 +31,7 @@ import type {
   JobRow,
   LoginAttemptRepo,
   LoginAttemptRow,
+  OwnerChange,
   PayeeAliasRepo,
   PayeeAliasRow,
   PayeeRepo,
@@ -1100,6 +1102,18 @@ function parseJson(json: string | null): unknown {
   }
 }
 
+/** The `owners` list of an account's audit JSON, or undefined when there is none (mirror of the SQL adapter). */
+function ownersOf(json: string | null): AuditedOwner[] | undefined {
+  const owners = (parseJson(json) as { owners?: unknown } | null)?.owners;
+  if (!Array.isArray(owners)) return undefined;
+  const out: AuditedOwner[] = [];
+  for (const owner of owners as { personId?: unknown; shareBp?: unknown }[]) {
+    if (typeof owner?.personId !== "string" || typeof owner.shareBp !== "number") return undefined;
+    out.push({ personId: owner.personId, shareBp: owner.shareBp });
+  }
+  return out;
+}
+
 /** The keys the audit scrub nulls while a name is hidden (mirror of `json_replace`). */
 const HIDDEN_AUDIT_KEYS = ["descriptionRaw", "payeeId", "fingerprint", "externalId"] as const;
 
@@ -1169,6 +1183,26 @@ function auditRepo(working: MemoryState, check: () => void, failAudit: () => boo
           ? { ...row, personId }
           : row,
       );
+    },
+    ownerChanges: (viewer: Viewer, accountId: string): OwnerChange[] => {
+      requireViewer(viewer);
+      check();
+      return working.audit
+        .filter(
+          (row) =>
+            row.accountId === accountId &&
+            row.entity === "account" &&
+            row.action === "update" &&
+            auditVisible(working, viewer, row),
+        )
+        .sort((a, b) => byText(`${a.at}|${a.id}`, `${b.at}|${b.id}`))
+        .flatMap((row) => {
+          const before = ownersOf(row.before);
+          const after = ownersOf(row.after);
+          return before === undefined || after === undefined
+            ? []
+            : [{ id: row.id, at: row.at, actor: row.actor, before, after }];
+        });
     },
     listVisible: (viewer: Viewer, today: string): AuditView[] => {
       requireViewer(viewer);
@@ -2054,7 +2088,10 @@ export function memoryUnitOfWork(
           find: jobRepo(uow.state, check).find,
           firstCreatedAt: jobRepo(uow.state, check).firstCreatedAt,
         },
-        audit: { listVisible: auditRepo(uow.state, check, () => false).listVisible },
+        audit: {
+          listVisible: auditRepo(uow.state, check, () => false).listVisible,
+          ownerChanges: auditRepo(uow.state, check, () => false).ownerChanges,
+        },
         reviewItems: { listOpenFor: reviewItemRepo(uow.state, check).listOpenFor },
         accounts: {
           findVisible: accountRepo(uow.state, check).findVisible,

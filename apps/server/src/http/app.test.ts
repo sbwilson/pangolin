@@ -916,38 +916,134 @@ describe("/api/accounts", () => {
     expect((await send(db, "GET", `/api/accounts/${joint}/balance?asOf=`)).status).toBe(400);
   });
 
-  it("lets a person remove only themself from the owners, with a Validation body", async () => {
+  it("lets either person share a public account and change who is on it (the I/O matrix)", async () => {
     const db = openDb();
-    const { joint, sam, sys } = seed(db);
+    const { joint, sam, mine, sys } = seed(db);
     type Body = { error: { code: string; message: string } };
-    const removeSam = await send(db, "PATCH", `/api/accounts/${joint}`, {
+    type Account = {
+      owners: { personId: string; shareBp: number }[];
+      pool: string;
+      removal?: { by: string; at: string; previousOwners: { personId: string; shareBp: number }[] };
+    };
+    const owners = (id: string) =>
+      db
+        .prepare("SELECT person_id FROM account_owner WHERE account_id = ? ORDER BY person_id")
+        .pluck()
+        .all(id);
+    const make = (name: string, who: string) =>
+      createAccount(sys, {
+        name,
+        type: "transaction",
+        currency: "AUD",
+        isPrivate: false,
+        owners: [{ personId: who, shareBp: 10000 }],
+      });
+    const two = (first: string, second: string) => [
+      { personId: first, shareBp: 5000 },
+      { personId: second, shareBp: 5000 },
+    ];
+    const get = async (id: string) =>
+      ((await (await send(db, "GET", `/api/accounts/${id}`)).json()) as { account: Account })
+        .account;
+
+    // Share: an owner adds the other person; the audit row carries both lists.
+    const own = make("Alex only", alex);
+    const share = await send(db, "PATCH", `/api/accounts/${own}`, { owners: two(alex, sam) });
+    expect(share.status).toBe(200);
+    expect(owners(own)).toEqual([alex, sam]);
+    const row = db
+      .prepare(
+        "SELECT before, after FROM audit_log WHERE account_id = ? AND action = 'update' ORDER BY at DESC, id DESC",
+      )
+      .get(own) as { before: string; after: string };
+    const listed = (json: string) =>
+      (JSON.parse(json) as Account).owners.map((o) => ({
+        personId: o.personId,
+        shareBp: o.shareBp,
+      }));
+    expect(listed(row.before)).toEqual([{ personId: alex, shareBp: 10000 }]);
+    expect(listed(row.after)).toEqual(two(alex, sam));
+
+    // Join: a non-owner adds themself to a sole-owner public account.
+    const theirs = make("Sam only", sam);
+    expect(
+      (await send(db, "PATCH", `/api/accounts/${theirs}`, { owners: two(sam, alex) })).status,
+    ).toBe(200);
+    expect(owners(theirs)).toEqual([alex, sam]);
+
+    // Takeover try: a non-owner who drops the owner, or who adds only themself, is refused.
+    const target = make("Sam again", sam);
+    const takeover = await send(db, "PATCH", `/api/accounts/${target}`, {
       owners: [{ personId: alex, shareBp: 10000 }],
     });
-    expect(removeSam.status).toBe(400);
-    expect((await removeSam.json()) as Body).toEqual({
+    expect(takeover.status).toBe(400);
+    expect((await takeover.json()) as Body).toEqual({
       error: {
         code: "Validation",
-        message: "You can only remove yourself from an account's owners",
+        message: "Add yourself to the current owners: you cannot change who else owns this account",
       },
     });
-    const owners = (id: string) =>
-      db.prepare("SELECT person_id FROM account_owner WHERE account_id = ?").pluck().all(id);
-    expect(owners(joint)).toHaveLength(2);
-    const other = createAccount(sys, {
-      name: "Other joint",
-      type: "transaction",
-      currency: "AUD",
-      isPrivate: false,
-      owners: [
-        { personId: alex, shareBp: 5000 },
-        { personId: sam, shareBp: 5000 },
-      ],
-    });
-    const leave = await send(db, "PATCH", `/api/accounts/${other}`, {
+    expect(owners(target)).toEqual([sam]);
+
+    // Remove other: an owner drops the other person from a shared account.
+    expect(
+      (
+        await send(db, "PATCH", `/api/accounts/${joint}`, {
+          owners: [{ personId: alex, shareBp: 10000 }],
+        })
+      ).status,
+    ).toBe(200);
+    expect(owners(joint)).toEqual([alex]);
+
+    // Leave, then read the marker and rejoin (Alex was on `theirs` at 50%).
+    const leave = await send(db, "PATCH", `/api/accounts/${theirs}`, {
       owners: [{ personId: sam, shareBp: 10000 }],
     });
     expect(leave.status).toBe(200);
-    expect(owners(other)).toEqual([sam]);
+    const left = await get(theirs);
+    expect(left.owners).toEqual([{ personId: sam, shareBp: 10000 }]);
+    expect(left.removal).toMatchObject({
+      by: alex,
+      previousOwners: expect.arrayContaining(two(sam, alex)),
+    });
+    expect(
+      (
+        (await (await send(db, "GET", "/api/accounts")).json()) as {
+          accounts: (Account & { id: string })[];
+        }
+      ).accounts.find((a) => a.id === theirs)?.removal?.by,
+    ).toBe(alex);
+    const back = await send(db, "POST", `/api/accounts/${theirs}/rejoin`);
+    expect(back.status).toBe(200);
+    const rejoined = ((await back.json()) as { account: Account }).account;
+    expect(rejoined.owners).toHaveLength(2);
+    expect(rejoined.owners).toEqual(expect.arrayContaining(two(sam, alex)));
+    expect(rejoined.removal).toBeUndefined();
+    expect((await get(theirs)).removal).toBeUndefined();
+
+    // Rejoin when already an owner, and for an account the person was never removed from.
+    for (const id of [theirs, own]) {
+      const again = await send(db, "POST", `/api/accounts/${id}/rejoin`);
+      expect(again.status).toBe(400);
+    }
+    const never = await send(db, "POST", `/api/accounts/${make("Sam third", sam)}/rejoin`);
+    expect(never.status).toBe(400);
+    expect((await never.json()) as Body).toEqual({
+      error: { code: "Validation", message: "You were not removed from this account" },
+    });
+
+    // Empty, and a private account's owners.
+    expect((await send(db, "PATCH", `/api/accounts/${own}`, { owners: [] })).status).toBe(400);
+    expect(
+      (await send(db, "PATCH", `/api/accounts/${mine}`, { owners: two(alex, sam) })).status,
+    ).toBe(400);
+    expect(
+      (
+        await send(db, "PATCH", `/api/accounts/${mine}`, {
+          owners: [{ personId: sam, shareBp: 10000 }],
+        })
+      ).status,
+    ).toBe(400);
   });
 
   it("guards both privacy switches with Conflict bodies", async () => {

@@ -46,7 +46,12 @@ export {
   listAccounts,
   listAccountsInput,
 } from "./accounts/list-accounts.ts";
-export { type AccountView, payerOf, poolOf } from "./accounts/pool.ts";
+export { type AccountRemoval, type AccountView, payerOf, poolOf } from "./accounts/pool.ts";
+export {
+  type RejoinAccountInput,
+  rejoinAccount,
+  rejoinAccountInput,
+} from "./accounts/rejoin-account.ts";
 export { type SetPrivacyInput, setPrivacy, setPrivacyInput } from "./accounts/set-privacy.ts";
 export {
   type UpdateAccountInput,
@@ -367,6 +372,7 @@ export type { Clock } from "./ports/clock.ts";
 export type { SystemHealthPort } from "./ports/system-health.ts";
 export type { CodeHasher, TokenPort } from "./ports/tokens.ts";
 export type {
+  AuditedOwner,
   AuditRepo,
   AuditRow,
   AuditView,
@@ -386,6 +392,7 @@ export type {
   LoginAttemptRepo,
   LoginAttemptRow,
   LoginRow,
+  OwnerChange,
   PendingJobRow,
   PersonRepo,
   PersonRow,

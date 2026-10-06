@@ -1,7 +1,9 @@
 import type {
+  AuditedOwner,
   AuditRow,
   AuditView,
   HouseholdSettingsRow,
+  OwnerChange,
   ReadRepos,
   TxRepos,
   UnitOfWork,
@@ -74,6 +76,25 @@ function getSettings(orm: Orm): HouseholdSettingsRow {
   return row;
 }
 
+/** The `owners` list of an account's audit JSON, or undefined when there is none. */
+function ownersOf(json: string | null): AuditedOwner[] | undefined {
+  if (json === null) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+  const owners = (parsed as { owners?: unknown } | null)?.owners;
+  if (!Array.isArray(owners)) return undefined;
+  const out: AuditedOwner[] = [];
+  for (const owner of owners as { personId?: unknown; shareBp?: unknown }[]) {
+    if (typeof owner?.personId !== "string" || typeof owner.shareBp !== "number") return undefined;
+    out.push({ personId: owner.personId, shareBp: owner.shareBp });
+  }
+  return out;
+}
+
 function txRepos(orm: Orm, scope: Scope): TxRepos {
   return {
     householdSettings: {
@@ -108,6 +129,36 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
       append: (row: AuditRow) => {
         guard(scope);
         orm.insert(auditLog).values(row).run();
+      },
+      ownerChanges: (viewer, accountId) => {
+        const visible = visibleAudit(viewer);
+        guard(scope);
+        return orm
+          .select({
+            id: auditLog.id,
+            at: auditLog.at,
+            actor: auditLog.actor,
+            before: auditLog.before,
+            after: auditLog.after,
+          })
+          .from(auditLog)
+          .where(
+            and(
+              eq(auditLog.accountId, accountId),
+              eq(auditLog.entity, "account"),
+              eq(auditLog.action, "update"),
+              visible,
+            ),
+          )
+          .orderBy(asc(auditLog.at), asc(auditLog.id))
+          .all()
+          .flatMap((row) => {
+            const before = ownersOf(row.before);
+            const after = ownersOf(row.after);
+            return before === undefined || after === undefined
+              ? []
+              : [{ id: row.id as OwnerChange["id"], at: row.at, actor: row.actor, before, after }];
+          });
       },
       listVisible: (viewer, today) => {
         const visible = visibleAudit(viewer);
@@ -248,7 +299,10 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               find: repos.jobs.find,
               firstCreatedAt: repos.jobs.firstCreatedAt,
             },
-            audit: { listVisible: repos.audit.listVisible },
+            audit: {
+              listVisible: repos.audit.listVisible,
+              ownerChanges: repos.audit.ownerChanges,
+            },
             reviewItems: { listOpenFor: repos.reviewItems.listOpenFor },
             accounts: {
               findVisible: repos.accounts.findVisible,

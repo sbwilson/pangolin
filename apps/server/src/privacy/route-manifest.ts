@@ -226,6 +226,7 @@ export const MANIFEST: readonly ManifestEntry[] = [
     params: { id: "account" },
     body: () => ({ name: "Privacy probe account" }),
   }),
+  write("POST", "/api/accounts/:id/rejoin", { params: { id: "account" }, body: () => ({}) }),
   write("POST", "/api/accounts/:id/close", { params: { id: "account" }, body: () => ({}) }),
   write("POST", "/api/accounts/:id/privacy", {
     params: { id: "account" },

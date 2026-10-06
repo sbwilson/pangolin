@@ -1130,6 +1130,85 @@ function scenario(
   out["switch.stampedNew"] = tx(stamps(swNew));
   out["switch.stampedOther"] = tx(stamps(swOwn));
 
+  // The owner-change read behind the removal marker: `update` rows of the account with owner
+  // lists in both states, oldest first, by viewer; others and states without an owner list are left out.
+  const ocPub = newId<"Account">();
+  const ocPriv = newId<"Account">();
+  tx((r) => {
+    r.accounts.insert(account(ocPub, false), [owner(ocPub, a, 5000), owner(ocPub, b, 5000)]);
+    r.accounts.insert(account(ocPriv, true), [owner(ocPriv, a, 10000)]);
+  });
+  const ocRow = (
+    accountId: Id<"Account">,
+    action: string,
+    at: string,
+    before: string | null,
+    after: string | null,
+    over: { personId?: string; id?: Id<"AuditLog"> } = {},
+  ) => ({
+    id: over.id ?? newId<"AuditLog">(),
+    at,
+    actor: `person:${a}`,
+    entity: "account",
+    entityId: accountId,
+    accountId,
+    personId: over.personId ?? null,
+    action,
+    before,
+    after,
+  });
+  const ownersJson = (...owners: [Id<"Person">, number][]) =>
+    JSON.stringify({ owners: owners.map(([personId, shareBp]) => ({ personId, shareBp })) });
+  const ocLowId = newId<"AuditLog">();
+  tx((r) => {
+    for (const row of [
+      ocRow(ocPub, "update", T2, ownersJson([a, 5000], [b, 5000]), ownersJson([a, 10000])),
+      ocRow(ocPub, "update", T, ownersJson([a, 10000]), ownersJson([a, 5000], [b, 5000])),
+      ocRow(ocPub, "update", T2, ownersJson([a, 10000]), ownersJson([a, 5000], [b, 5000]), {
+        id: ocLowId,
+      }),
+      ocRow(ocPub, "close", T3, ownersJson([a, 10000]), ownersJson([a, 10000])),
+      ocRow(ocPub, "update", T3, "{}", ownersJson([a, 10000])),
+      ocRow(ocPub, "update", T3, ownersJson([a, 10000]), null),
+      ocRow(ocPub, "update", T3, '{"owners":[{"personId":1,"shareBp":1}]}', ownersJson([a, 10000])),
+      ocRow(ocPub, "update", T4, ownersJson([a, 10000]), ownersJson([a, 10000]), {
+        personId: a,
+      }),
+      ocRow(ocPriv, "update", T, ownersJson([a, 10000]), ownersJson([a, 10000])),
+    ]) {
+      r.audit.append(row);
+    }
+  });
+  const ownerChangesFor = (viewer: Viewer, accountId: Id<"Account">) => (r: TxRepos) =>
+    r.audit
+      .ownerChanges(viewer, accountId)
+      .map((c) => [
+        c.at,
+        c.actor === `person:${a}` ? "A" : c.actor,
+        c.before.map((o) => [
+          o.personId === a ? "A" : o.personId === b ? "B" : o.personId,
+          o.shareBp,
+        ]),
+        c.after.map((o) => [
+          o.personId === a ? "A" : o.personId === b ? "B" : o.personId,
+          o.shareBp,
+        ]),
+      ]);
+  out["owners.changesSystem"] = tx(ownerChangesFor(system, ocPub));
+  out["owners.changesA"] = tx(ownerChangesFor(asA, ocPub));
+  out["owners.changesB"] = tx(ownerChangesFor(asB, ocPub));
+  out["owners.changesPrivateA"] = tx(ownerChangesFor(asA, ocPriv));
+  out["owners.changesPrivateB"] = tx(ownerChangesFor(asB, ocPriv));
+  out["owners.changesUnknown"] = tx(ownerChangesFor(asA, newId<"Account">()));
+  out["owners.changesNoViewer"] = tx((r) => {
+    try {
+      r.audit.ownerChanges(undefined as never, ocPub);
+      return "no throw";
+    } catch (error) {
+      return error instanceof TypeError;
+    }
+  });
+
   step("institution.badKind", (r) =>
     r.institutions.insert({
       id: newId<"Institution">(),
@@ -1427,6 +1506,49 @@ describe("ledger and classification schema on SQLite", () => {
       ["private", "A"],
     ]);
     expect(out["switch.stampedOther"]).toEqual([["otherAccount", null]]);
+    // The owner-change read: only `update` rows with owner lists, oldest first (by at, then id),
+    // for the rows the viewer may see (the row scoped to A is A's alone), none for a private account
+    // of another person.
+    const T2 = "2026-09-28T00:00:00.000Z";
+    const plain = [
+      [
+        T,
+        "A",
+        [["A", 10000]],
+        [
+          ["A", 5000],
+          ["B", 5000],
+        ],
+      ],
+      [
+        T2,
+        "A",
+        [["A", 10000]],
+        [
+          ["A", 5000],
+          ["B", 5000],
+        ],
+      ],
+      [
+        T2,
+        "A",
+        [
+          ["A", 5000],
+          ["B", 5000],
+        ],
+        [["A", 10000]],
+      ],
+    ];
+    const scoped = ["2026-09-30T00:00:00.000Z", "A", [["A", 10000]], [["A", 10000]]];
+    expect(out["owners.changesB"]).toEqual(plain);
+    expect(out["owners.changesA"]).toEqual([...plain, scoped]);
+    expect(out["owners.changesSystem"]).toEqual([...plain, scoped]);
+    expect(out["owners.changesPrivateA"]).toEqual([
+      ["2026-09-27T00:00:00.000Z", "A", [["A", 10000]], [["A", 10000]]],
+    ]);
+    expect(out["owners.changesPrivateB"]).toEqual([]);
+    expect(out["owners.changesUnknown"]).toEqual([]);
+    expect(out["owners.changesNoViewer"]).toBe(true);
     // findStored: the true row for any viewer who may see it; never a private or deleted one.
     const storedB = out["priv.storedHiddenAsB"] as unknown[];
     expect(storedB[0]).toBe("secret");

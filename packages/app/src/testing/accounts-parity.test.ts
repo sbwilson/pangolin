@@ -28,14 +28,17 @@ import {
   getAccount,
   getTransaction,
   hideTransactionName,
+  listAccounts,
   listAudit,
   listTransactions,
   personViewer,
   recordBalanceSnapshot,
+  rejoinAccount,
   setPrivacy,
   setSplitField,
   setSplitTags,
   type UseCaseContext,
+  unhideTransactionName,
   updateAccount,
 } from "../index.ts";
 import { systemViewer } from "../system-viewer.ts";
@@ -162,8 +165,8 @@ describe("memory mirror parity", () => {
     ] as const) {
       expect(result.balances, who).toEqual([0, 5000, 4800, 4100, 4125]);
       expect(result.pool, who).toBe("shared");
-      expect(result.removedOther, who).toBe("Validation");
-      expect(result.edited, who).toBe("ok");
+      expect(result.removedOther, who).toBe("ok");
+      expect(result.edited, who).toBe("Validation");
       expect(result.pooled, who).not.toBe("shared");
       expect(result.madePrivate, who).toBe("Conflict");
     }
@@ -229,7 +232,7 @@ function switches(ctxs: Ctxs) {
     });
   const out: Record<string, unknown> = {};
 
-  // Only a person can remove themselves; adding someone while leaving is fine; system exempt.
+  // An owner may swap the other person out; a non-owner may only join; system exempt.
   const three = joint([
     [pa, 5000],
     [pb, 5000],
@@ -252,7 +255,7 @@ function switches(ctxs: Ctxs) {
   out.selfFromPrivate = outcome(() => updateAccount(A, { id: mine, owners: own(pb) }));
   out.privateOwners = getAccount(A, { id: mine }).owners;
 
-  // The takeover path: B hid a name on the joint account, left it, and A made it private.
+  // The takeover path: B hid a name on the joint account, A removed B, and A made it private.
   const acct = joint([
     [pa, 5000],
     [pb, 5000],
@@ -335,6 +338,57 @@ function switches(ctxs: Ctxs) {
   out.againBFlips = againFor(B).filter((row) => row.action === "set_privacy").length;
   out.bSeesOwnName = nameFor(B);
   out.aSeesAfterPublic = nameFor(A);
+  // Share, join, remove and rejoin, with a hiding kept and the removal marker (ticket 20).
+  const grp = joint([
+    [pa, 6000],
+    [pb, 4000],
+  ]);
+  const note = createTransaction(B, {
+    accountId: grp,
+    postedOn: "2026-09-04",
+    amountCents: -300,
+    description: "Gift for A too",
+  });
+  hideTransactionName(B, { id: note, until: "2027-03-12" });
+  const noteFor = (ctx: UseCaseContext) =>
+    listTransactions(ctx).find((t) => t.id === note)?.descriptionRaw;
+  out.grpRejoinAsOwner = outcome(() => rejoinAccount(B, { id: grp }));
+  out.grpAShares = outcome(() =>
+    updateAccount(A, {
+      id: grp,
+      owners: [
+        { personId: pa, shareBp: 3000 },
+        { personId: pb, shareBp: 7000 },
+      ],
+    }),
+  );
+  out.grpARemovesB = outcome(() => updateAccount(A, { id: grp, owners: own(pa) }));
+  out.grpBMarker = getAccount(B, { id: grp }).removal ?? null;
+  out.grpBListMarker = listAccounts(B).find((row) => row.id === grp)?.removal ?? null;
+  out.grpAMarker = getAccount(A, { id: grp }).removal ?? null;
+  out.grpSysMarker = getAccount(sys, { id: grp }).removal ?? null;
+  out.grpBTakesOver = outcome(() => updateAccount(B, { id: grp, owners: own(pb) }));
+  out.grpASeesHidden = noteFor(A);
+  out.grpBRejoins = outcome(() => rejoinAccount(B, { id: grp }));
+  out.grpAfterRejoin = getAccount(A, { id: grp }).owners;
+  out.grpBMarkerGone = getAccount(B, { id: grp }).removal ?? null;
+  out.grpRejoinTwice = outcome(() => rejoinAccount(B, { id: grp }));
+  out.grpBUnhides = outcome(() => unhideTransactionName(B, { id: note }));
+  out.grpASeesAfterUnhide = noteFor(A);
+  // The audit read behind the marker, per viewer; another person's private account gives none.
+  const changes = (ctx: UseCaseContext, id: string) =>
+    ctx.uow.read((r) =>
+      r.audit.ownerChanges(ctx.viewer, id).map(({ at, actor, before, after }) => ({
+        at,
+        actor,
+        before: before.map((o) => [o.personId, o.shareBp]),
+        after: after.map((o) => [o.personId, o.shareBp]),
+      })),
+    );
+  out.grpChangesA = changes(A, grp);
+  out.grpChangesB = changes(B, grp);
+  out.grpChangesSys = changes(sys, grp);
+  out.grpChangesPrivate = [changes(B, mine), changes(A, mine)];
   const named: [string, string][] = [
     [pa, "PA"],
     [pb, "PB"],
@@ -356,8 +410,8 @@ describe("ownership and privacy switches (story 2.15)", () => {
       ["sqlite", sqlite],
       ["memory", memory],
     ] as const) {
-      expect(out.aSwapsBForC, who).toBe("Validation");
-      expect(out.bSwapsSelfForC, who).toBe("ok");
+      expect(out.aSwapsBForC, who).toBe("ok");
+      expect(out.bSwapsSelfForC, who).toBe("Validation");
       expect(out.afterSwap, who).toEqual([
         { personId: "PA", shareBp: 5000 },
         { personId: "PC", shareBp: 5000 },
@@ -365,8 +419,8 @@ describe("ownership and privacy switches (story 2.15)", () => {
       expect(out.systemRemovesC, who).toBe("ok");
       expect(out.selfFromPrivate, who).toBe("Validation");
       expect(out.privateOwners, who).toEqual([{ personId: "PA", shareBp: 10000 }]);
-      expect(out.removeOther, who).toBe("Validation");
-      expect(out.removeSelf, who).toBe("ok");
+      expect(out.removeOther, who).toBe("ok");
+      expect(out.removeSelf, who).toBe("Validation");
       expect(out.privateWhileShared, who).toBe("Conflict");
       expect(out.privateWithPartner, who).toBe("Conflict");
       expect(out.madePrivate, who).toBe("ok");
@@ -395,6 +449,42 @@ describe("ownership and privacy switches (story 2.15)", () => {
       ).toHaveLength(2);
       expect(auditB, who).toContain("transaction:create");
       expect(out.bSeesOwnName, who).toBe("Gift for A");
+      expect(out.grpRejoinAsOwner, who).toBe("Validation");
+      expect(out.grpAShares, who).toBe("ok");
+      expect(out.grpARemovesB, who).toBe("ok");
+      const previous = [
+        { personId: "PA", shareBp: 3000 },
+        { personId: "PB", shareBp: 7000 },
+      ];
+      for (const marker of [out.grpBMarker, out.grpBListMarker]) {
+        expect(marker, who).toEqual({
+          by: "PA",
+          at: "2026-09-27T00:00:00.000Z",
+          previousOwners: previous,
+        });
+      }
+      expect(out.grpAMarker, who).toBeNull();
+      expect(out.grpSysMarker, who).toBeNull();
+      expect(out.grpBTakesOver, who).toBe("Validation");
+      expect(out.grpASeesHidden, who).toBe("Hidden until 12 Mar 2027");
+      expect(out.grpBRejoins, who).toBe("ok");
+      expect(out.grpAfterRejoin, who).toEqual(previous);
+      expect(out.grpBMarkerGone, who).toBeNull();
+      expect(out.grpRejoinTwice, who).toBe("Validation");
+      expect(out.grpBUnhides, who).toBe("ok");
+      expect(out.grpASeesAfterUnhide, who).toBe("Gift for A too");
+      const lists = (out.grpChangesA as { before: unknown[][]; after: unknown[][] }[]).map((c) => [
+        c.before.length,
+        c.after.length,
+      ]);
+      expect(lists, who).toEqual([
+        [2, 2],
+        [2, 1],
+        [1, 2],
+      ]);
+      expect(out.grpChangesB, who).toEqual(out.grpChangesA);
+      expect(out.grpChangesSys, who).toEqual(out.grpChangesA);
+      expect(out.grpChangesPrivate, who).toEqual([[], []]);
       expect(out.againPrivate, who).toBe("ok");
       expect(out.againRepeat, who).toBe("ok");
       expect(out.againPublic, who).toBe("ok");

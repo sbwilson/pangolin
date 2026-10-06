@@ -67,6 +67,7 @@ import {
   recoveryBundleStatus,
   reEnrolmentUrl,
   regenerateRecoveryCodes,
+  rejoinAccount,
   revokeMyReEnrolmentLinks,
   type SetSplitFieldInput,
   type SystemHealthPort,
@@ -401,6 +402,11 @@ export function createApi(deps: ApiDeps) {
       writable();
       const id = c.req.param("id");
       return c.json({ account: updateAccount(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .post("/api/accounts/:id/rejoin", async (c) => {
+      writable();
+      const id = c.req.param("id");
+      return c.json({ account: rejoinAccount(ctx(c), await objectBody(c, { id }, true)) }, 200);
     })
     .post("/api/accounts/:id/close", async (c) => {
       writable();

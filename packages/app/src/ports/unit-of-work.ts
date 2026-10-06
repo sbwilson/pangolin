@@ -1001,8 +1001,31 @@ export interface AuditView extends AuditRow {
   readonly hiddenUntil: string | null;
 }
 
+/** One owner of an account in an audit row's owner list. */
+export interface AuditedOwner {
+  readonly personId: string;
+  readonly shareBp: number;
+}
+
+/** An `update` audit row of an account, read for its owner lists. */
+export interface OwnerChange {
+  readonly id: Id<"AuditLog">;
+  /** UTC ISO-8601 timestamp of the change. */
+  readonly at: string;
+  /** `person:<id>`, `job:<kind>` or `cli:<command>`. */
+  readonly actor: string;
+  readonly before: readonly AuditedOwner[];
+  readonly after: readonly AuditedOwner[];
+}
+
 export interface AuditRepo {
   append(row: AuditRow): void;
+  /**
+   * The account's `update` audit rows that `viewer` may see and that carry an owner list in both
+   * `before` and `after` (rows without one are left out), oldest first (by `at`, then `id`). It
+   * returns every such row, whether or not the owners changed. Throws when given no viewer.
+   */
+  ownerChanges(viewer: Viewer, accountId: string): OwnerChange[];
   /**
    * The audit rows `viewer` may see, oldest first: rows with no scope, rows of an account the
    * viewer can see and rows scoped to the viewer. Throws when given no viewer.
@@ -1061,7 +1084,7 @@ export interface ReadRepos {
     JobRepo,
     "listDead" | "listPending" | "listRunning" | "countByStatus" | "find" | "firstCreatedAt"
   >;
-  readonly audit: Pick<AuditRepo, "listVisible">;
+  readonly audit: Pick<AuditRepo, "listVisible" | "ownerChanges">;
   readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
   readonly accounts: Pick<AccountRepo, "findVisible" | "list" | "owners" | "any">;
   readonly transactions: Pick<TransactionRepo, "listVisible" | "findVisible">;

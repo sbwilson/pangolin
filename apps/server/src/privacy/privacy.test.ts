@@ -1056,7 +1056,7 @@ describe("owner changes and privacy switches", () => {
   });
 
   it("gives B the same reads in both worlds at every checkpoint", () => {
-    expect(pair.seen[0].size).toBe(9);
+    expect(pair.seen[0].size).toBe(11);
     expect(checkpointProblems(pair.seen)).toEqual([]);
   });
 
@@ -1066,8 +1066,12 @@ describe("owner changes and privacy switches", () => {
       outcomes(left.steps).map(({ name, status }) => ({ name, status })),
     );
     expect(left.steps.map((s) => [s.name, s.status])).toEqual([
-      ["B strips A from the joint account", 400],
+      ["B strips A from the joint account", 200],
+      ["A tries to take it back", 400],
+      ["A rejoins it", 200],
       ["A removes themself from it", 200],
+      ["A joins it again", 200],
+      ["B removes A again", 200],
       ["B takes the split", 200],
       ["B makes it private", 200],
       ["B makes it public", 200],
@@ -1086,7 +1090,7 @@ describe("owner changes and privacy switches", () => {
     ]);
   });
 
-  it("keeps a hidden name hidden through an owner change and a switch to private and back", () => {
+  it("keeps a hidden name hidden through owner changes and a switch to private and back", () => {
     pair.runs.forEach((run, i) => {
       const id = run.ids.hiddenTransaction;
       for (const checkpoint of ["joint account private", "joint account public again"]) {

@@ -272,8 +272,9 @@ export interface SwitchRun {
  * transaction had in its private era and in the one a joint account's hidden transaction carries;
  * both end the same, so B reads the same whatever they were.
  *
- *   joint     B tries to strip A from a joint account A hid a name on (refused), A removes
- *             themself, B makes it private and public again: the name stays hidden throughout
+ *   joint     B strips A from a joint account A hid a name on, A's takeover back is refused, A
+ *             rejoins, leaves, joins again and is removed again, B makes it private and public
+ *             again: the name stays hidden throughout
  *   private   A's private account uses a private activity, so making it public is refused; it
  *             goes public once the activity is cleared, and its private-era audit rows stay A's
  *   public    A's public account refuses a private activity on its split and B's hiding of a name
@@ -356,21 +357,43 @@ export async function switchScenario(
   // joint: the hiding outlives an owner change and both switches.
   await observe("start", all);
   world.startRequestIds();
+  const owners = (...people: [string, number][]) => ({
+    owners: people.map(([personId, shareBp]) => ({ personId, shareBp })),
+  });
+  const jointPath = `/api/accounts/${joint}`;
   await step(
     world,
     steps,
     "b",
     "B strips A from the joint account",
     "PATCH",
-    `/api/accounts/${joint}`,
-    {
-      owners: [{ personId: B, shareBp: 10_000 }],
-    },
+    jointPath,
+    owners([B, 10_000]),
   );
-  await observe("B's takeover refused", all);
-  await step(world, steps, "a", "A removes themself from it", "PATCH", `/api/accounts/${joint}`, {
-    owners: [{ personId: B, shareBp: 10_000 }],
-  });
+  await observe("A removed", all);
+  await step(world, steps, "a", "A tries to take it back", "PATCH", jointPath, owners([A, 10_000]));
+  await observe("A's takeover refused", all);
+  await step(world, steps, "a", "A rejoins it", "POST", `${jointPath}/rejoin`, {});
+  await observe("A rejoined", all);
+  await step(
+    world,
+    steps,
+    "a",
+    "A removes themself from it",
+    "PATCH",
+    jointPath,
+    owners([B, 10_000]),
+  );
+  await step(
+    world,
+    steps,
+    "a",
+    "A joins it again",
+    "PATCH",
+    jointPath,
+    owners([B, 5000], [A, 5000]),
+  );
+  await step(world, steps, "b", "B removes A again", "PATCH", jointPath, owners([B, 10_000]));
   await step(world, steps, "b", "B takes the split", "PATCH", patch(hidden, hiddenSplit), {
     field: "beneficiary",
     value: B,

@@ -13,17 +13,20 @@ import {
   createTransaction,
   createTransferGroup,
   deleteTransaction,
+  getAccount,
   getTransaction,
   hideTransactionName,
   listAudit,
   listReviewItems,
   listTransactions,
   personViewer,
+  rejoinAccount,
   setPrivacy,
   setSplitField,
   setSplits,
   setSplitTags,
   type UseCaseContext,
+  unhideTransactionName,
   updateAccount,
   updateTransaction,
 } from "@pangolin/app";
@@ -167,10 +170,8 @@ describe("hidden names", () => {
     hideTransactionName(as(b), { id, until: "2027-03-12" });
     const splitId = getTransaction(as(b), { id }).splits[0]?.id ?? "";
     setSplitField(as(b), { transactionId: id, splitId, field: "beneficiary", value: a });
-    expect(() =>
-      updateAccount(as(a), { id: shared, owners: [{ personId: a, shareBp: 10000 }] }),
-    ).toThrow(expect.objectContaining({ code: "Validation" }));
-    updateAccount(as(b), { id: shared, owners: [{ personId: a, shareBp: 10000 }] });
+    // Either person may take the other off a public account; the hiding stays with its hider.
+    updateAccount(as(a), { id: shared, owners: [{ personId: a, shareBp: 10000 }] });
     setPrivacy(as(a), { id: shared, isPrivate: true });
     const row = listTransactions(as(a)).find((t) => t.id === id);
     expect(row?.descriptionRaw).toBe("Hidden until 12 Mar 2027");
@@ -183,6 +184,23 @@ describe("hidden names", () => {
       "Gift for Alex",
     );
     expect(listTransactions(as(b)).length).toBe(0);
+  });
+
+  it("keeps a hiding after its hider is removed, and lets them unhide once they rejoin", () => {
+    const id = createTransaction(as(b), txn(shared, "Gift for Alex"));
+    hideTransactionName(as(b), { id, until: "2027-03-12" });
+    updateAccount(as(a), { id: shared, owners: [{ personId: a, shareBp: 10000 }] });
+    expect(listTransactions(as(a)).find((t) => t.id === id)?.nameHidden).toBe(true);
+    expect(listTransactions(as(a)).find((t) => t.id === id)?.descriptionRaw).not.toBe(
+      "Gift for Alex",
+    );
+    expect(getAccount(as(b), { id: shared }).removal?.by).toBe(a);
+    rejoinAccount(as(b), { id: shared });
+    expect(getAccount(as(b), { id: shared }).removal).toBeUndefined();
+    unhideTransactionName(as(b), { id });
+    const shown = listTransactions(as(a)).find((t) => t.id === id);
+    expect(shown?.nameHidden).toBe(false);
+    expect(shown?.descriptionRaw).toBe("Gift for Alex");
   });
 
   it("nulls a scoped payee's id for the other person", () => {
