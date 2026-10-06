@@ -221,7 +221,7 @@ unknown = "Whether the real upgrade from v0.2.0 runs cleanly on the home server.
 id = 20
 type = "story"
 title = "Either person may share a public account and change who is on it"
-description = "Replaces updateAccount's self-removal-only rule (packages/app/src/accounts/update-account.ts:62,105-117, requireOnlySelfRemoved, entry 15) with Simon's relaxed rule: either person may mark a public account shared by adding themself or the other person, and may remove themself or the other person, provided at least one owner remains (the last owner cannot be removed; closing the account is how it ends) and the account is not private (owner changes on a private account stay refused); a person removed by the other still sees the account, now marked on it as 'you've been removed, undo?', where undo adds them back, and the marker comes from the owner change itself, not from the review inbox, which does not exist yet; the system viewer stays exempt; the hide rule is unchanged (only an owner may hide a name, which a person can now become by adding themself). Updates the tests that encode self-removal only, in packages/db/src/accounts.test.ts, packages/app/src/testing/accounts-parity.test.ts and apps/server/src/http/app.test.ts, and the privacy suite step of entry 18 (privacy-scenarios.ts) that expects the refusals (retro N1, reclassified as a decision)."
+description = "Replaces updateAccount's self-removal-only rule (packages/app/src/accounts/update-account.ts:62,105-117, requireOnlySelfRemoved, entry 15) with Simon's relaxed rule: either person may mark a public account shared by adding themself or the other person, and may remove themself or the other person, provided at least one owner remains (the last owner cannot be removed; closing the account is how it ends) and the account is not private (owner changes on a private account stay refused); a person removed by the other still sees the account, now marked on it as 'you've been removed, undo?', where undo adds them back, and the marker comes from the owner change itself, not from the review inbox, which does not exist yet; the system viewer stays exempt; a transfer of an account to the other person (a home loan moved with a property, say) is the same two steps on a public account, adding them and then removing oneself, and the account keeps its whole history, with the contribution of past periods untouched; the hide rule is unchanged (only an owner may hide a name, which a person can now become by adding themself). Updates the tests that encode self-removal only, in packages/db/src/accounts.test.ts, packages/app/src/testing/accounts-parity.test.ts and apps/server/src/http/app.test.ts, and the privacy suite step of entry 18 (privacy-scenarios.ts) that expects the refusals (retro N1, reclassified as a decision)."
 verify = "Over HTTP, B (not an owner) adds themself to A's sole-owner public account, and either owner removes the other, each with 200 and the owners as asked; removing the last owner is refused with Validation; an owner change on a private account is refused; the removed person's read of the account shows that they were removed and by whom, and an undo adds them back; a hiding made by a person still holds after that person is removed or leaves the account (it is lifted only when the person leaves the household); and the privacy-suite worlds and parity tests pass with the new expectations."
 covers = ["CAP-3", "CAP-14"]
 after = [15, 18]
@@ -252,3 +252,51 @@ after = [20, 21]
 hitl = false
 risk = "low"
 unknown = "None known."
+
+[[entry]]
+id = 23
+type = "story"
+title = "A closed account locks after its closed date"
+description = "Builds on entry 20's rewritten updateAccount (packages/app/src/accounts/update-account.ts) and makes every person-initiated ledger write on a closed account (create, update, delete, splits, tags, hide and unhide, transfer groups and balance snapshots, in packages/app/src/ledger and accounts) refuse a change dated after the account's closedOn (packages/db/src/schema/account.ts) while changes on or before closedOn stay allowed, until the account is opened again by clearing closedOn; invariant upkeep (decision 81's transfer unlink, and the cascades of entries 25 and 26) bypasses the lock, with a test; closing an account that has entries after the chosen date, and a write dated after it, answer with a Conflict that carries both options (move the closed date to the latest entry's date, or move the manually entered entry's date, where manually entered means importId and externalId are null, to the closed date) and keeps the server stateless, so the client then calls updateAccount or updateTransaction (Simon, 2026-10-06); epic-import-dedupe-transfers must honour the lock at import commit (handoff note there)."
+verify = "Over HTTP, an entry dated on or before closedOn can still be added, amended and deleted on a closed account and one dated after it is refused with a Conflict that names the latest entry date and the manually entered entries; the same holds for hide and unhide, tags and splits, a transfer group and a balance snapshot dated after closedOn; closing an account with later entries answers with the same choice; clearing closedOn lets later entries in again; moving an entry's date across closedOn is refused; deleting one side of a transfer still unlinks a survivor on a closed account; and the memory mirror and SQLite repositories agree in the parity suite."
+covers = ["CAP-3", "CAP-18"]
+after = [20]   # order: both edit update-account.ts and the accounts tests
+hitl = false
+risk = "medium"
+unknown = "Whether imports and the seed (system viewer) are locked too: imports are, through the handoff, and the seed is the builder's call."
+
+[[entry]]
+id = 24
+type = "story"
+title = "A non-zero closing balance is a warning"
+description = "Adds a warning state to the account read model (packages/app/src/accounts/list-accounts.ts and balance.ts) when a closed cash-type account's balance as of its closedOn is not zero (MANIFEST_CASH_TYPES in packages/db/src/manifest.ts), naming the amount, and raises an account-scoped review item for it (ReviewScope account, entityRef account:<id>, one dedupe key per account, so everyone who can see the account sees it and a partner who cannot never does) that is re-evaluated on transaction create, update and delete, balance snapshot record, closeAccount and updateAccount moving or clearing closedOn, and resolves when the balance reaches zero or the account is opened again; the account page and settings page show the warning (screens: epic-ledger-workspace and epic-app-shell-settings-theming, handoff notes there) and the inbox shows the item once its UI exists (epic-import-dedupe-transfers); the warning is a state and never blocks closing (Simon, 2026-10-06)."
+verify = "An account closed with a non-zero balance as of closedOn reads with a closing-balance warning and an open account-scoped review item; adding or deleting an entry that brings the balance to zero, moving the closed date, or reopening the account clears both; a non-cash account type never warns; a partner who cannot see a private account never sees the warning or the item, in the privacy suite."
+covers = ["CAP-3", "CAP-18"]
+after = [23]   # order: both edit the ledger write use cases
+hitl = false
+risk = "low"
+unknown = "None known."
+
+[[entry]]
+id = 25
+type = "story"
+title = "Closed accounts are archived, never deleted"
+description = "Makes a closed account an archived one: the account list read model (packages/app/src/accounts/list-accounts.ts) separates open accounts from closed ones, which stay as a read-only historical record with all their rows and audit rows, are left out of the default lists and pickers and are included on request, and reopening (clearing closedOn) brings an account back; no delete route or use case for an account exists, and a test asserts it (Simon, 2026-10-06: closing is the soft delete, closed accounts are archived, not deleted)."
+verify = "A closed account is absent from the default account list and present when closed accounts are asked for, with its transactions and audit rows intact; reopening it returns it to the default list; no route or use case deletes an account; and a partner who cannot see a private account never sees it among the closed ones, in the privacy suite."
+covers = ["CAP-3", "CAP-18"]
+after = [23, 24]   # order: all three edit list-accounts and the accounts read model
+hitl = false
+risk = "low"
+unknown = "[ASSUMPTION] Archived means closed: no separate archived state or migration; the list view makes the difference. Settings and list screens belong to epic-app-shell-settings-theming and epic-ledger-workspace (handoff notes there)."
+
+[[entry]]
+id = 26
+type = "story"
+title = "Leaving the household deletes the leaver's private data"
+description = "Adds a leaveHousehold use case in packages/app/src/accounts that requires the leaver to re-authenticate and confirm, then hard-deletes the leaver's private data only: the leaver's private accounts and all their own rows through an internal cascade deleteAccountRows (transactions, splits, split tags, balance snapshots, owners, transfer-group links, account-scoped review items; the surviving side of any transfer is unlinked as decision 81 allows), the leaver-scoped payees, aliases, tags and activities (scope_person_id; where partner-visible shared rows still reference them the references are nulled), the leaver's person-scoped review items (person_id) and the audit rows scoped to the leaver or belonging to their deleted private accounts; it lifts every hiding the leaver made, through an owner-audited upkeep write that works even when the account has since turned private to the partner; it keeps every shared account and its expenses, removing the leaver from the owners so the partner is the sole owner (the internal path, since entry 20's last-owner rule forbids it through updateAccount), and keeps the audit rows of shared data; it revokes the leaver's sessions and credentials and marks the person as having left (person.deleted_at, which identity-repos already filters); the upkeep writes bypass entry 23's closed-date lock; earlier backups keep the data, accepted; the confirmation and re-authentication screens belong to epic-app-shell-settings-theming (handoff note there) (Simon, 2026-10-06)."
+verify = "In paired worlds, one where the leaver had private accounts, hidings and scoped payees and one where they had none, after a confirmed and re-authenticated departure the partner's responses are byte-identical; the leaver's private accounts, scoped rows and their audit rows are gone, their hidings are lifted and readable by the partner, every shared account and its expenses remain with the partner as sole owner, and the leaver has no session or credential left; leaving without the re-authentication or the confirmation changes nothing."
+covers = ["CAP-3"]
+after = [20, 23]   # order and collision: both edit update-account.ts and the ledger write use cases; 23's lock has the upkeep bypass this entry relies on
+hitl = false
+risk = "high"
+unknown = "None open. Settled by Simon on 2026-10-06: a public account owned only by the leaver passes to the partner as sole owner, as when ownership of an account (a home loan, say) is transferred with a property; 'their audit rows' are the rows scoped to the leaver and the rows of their deleted private accounts, while audit rows the leaver authored on shared data stay as shared history, shown as a former member. Re-authentication reuses the sign-in flow of identity; whether it needs a fresh passkey or a recovery step is the builder's call."

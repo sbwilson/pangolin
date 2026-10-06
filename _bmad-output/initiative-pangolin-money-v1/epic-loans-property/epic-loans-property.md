@@ -56,3 +56,4 @@ Each of us sees what our loans cost and what our properties really earn, from fi
 - Waits on epic-ledger-accounts-privacy because: loans and properties hang off accounts and their owners and shares.
 - Waits on epic-forecasting because: it builds `domain/amortise`, which this epic extends for the loan schedule.
 - Waits on epic-llm-categorisation-pdf because: it builds `row_interpret` purpose, to which this epic adds the loan rate-change target.
+- Handoff (2026-10-06, from epic-ledger-accounts-privacy entry 20): an account (a home loan, say) can be transferred to the other person by adding them as an owner and removing oneself, with its history kept; a property takes the most restrictive scope of its value and loan accounts (AD-22), so transferring either account changes who can see the property: this epic checks that and decides whether a property's ownership moves with its loan account.
