@@ -1,14 +1,130 @@
 ---
 epic: epic-ledger-accounts-privacy
-date: 2026-10-06
-verdict: rejected
+date: 2026-10-07
+verdict: accepted-with-open-items
 criteria: declared
 headless: false
 ---
 
 # Retrospective: Ledger core and privacy (epic 2)
 
-Two passes are recorded here. The **second pass** (2026-10-06) follows this line and is the current state; the sections headed "First pass" are the original retrospective of 2026-10-05, kept as the record.
+Three passes are recorded here. The **third pass** (2026-10-07) follows this line and is the current state; the second pass (2026-10-06) and the sections headed "First pass" (2026-10-05) are kept as the record.
+
+## Third pass (2026-10-07)
+
+The second pass (below) rejected epic 2 at `6541bc7` and named three remediation items: N1 (sharing and removal rule), N3 (drop the backup figures) and N2 (the account lifecycle). Stories 2.20 to 2.26 landed after it. This pass re-reads the epic on that range and asks whether the second pass's items closed and whether the new tickets left defects no single session could see. The user had no going-in concerns ("Go"). Findings carry source references; reviewer claims were re-checked against the code where they rest the verdict, and unchecked ones are marked.
+
+**Run:** interactive. Evidence: `git_evidence.py` over seven plan ranges (`scratchpad/retro4/evidence-*.json`), four sub-agents (a behaviour check over a real server, aggregate views, spec reconciliation with follow-through, and a `bmad-review` pass with the adversarial, edge-case and verification-gap lenses over the diff `2925774..a36a64d`, 327 KB), and my own re-reads of `closing-balance.ts`, `list-accounts.ts`, `set-privacy.ts` and `admin/restore.ts`. The team discussion (Phase 3) was not run. No session logs were read.
+
+### Third pass: Epic summary
+
+All 26 tickets are at `built` (board state `review`); `pending_tickets` is empty. Tickets 2.20 to 2.26 are new since the second pass; none has a story file.
+
+| Ref | Title | Plan range | Commit | Files | +/− |
+|---|---|---|---|---|---|
+| 2.20 | Either person may share a public account and change who is on it | `2925774..03d6fe3` | `03d6fe3` | 18 | +1,020 / −81 |
+| 2.21 | Drop the backup figures from the stored row | `03d6fe3..513085a` | `513085a` | 22 | +3,653 / −103 (3,299 is the migration snapshot) |
+| 2.22 | Backup status in the privacy suite | `513085a..97ae1df` | `97ae1df` | 4 | +426 / −67 |
+| 2.23 | A closed account locks after its closed date | `97ae1df..bf81e3e` | `bf81e3e` | 21 | +865 / −9 |
+| 2.24 | A non-zero closing balance is a warning | `bf81e3e..31ddc19` | `31ddc19` | 18 | +550 / −24 |
+| 2.25 | Closed accounts are archived, never deleted | `31ddc19..daf5976` | `daf5976` | 8 | +394 / −20 |
+| 2.26 | Leaving the household deletes the leaver's private data | `daf5976..a36a64d` | `a36a64d` | 27 | +2,479 / −8 |
+| Overall | | `2925774..a36a64d` | 7 commits, 0 merges | 71 | +9,387 / −312 |
+
+- The first range starts at `2925774`, the docs commit that sliced entries 23 to 26. `cd53c0b` (the second pass and stories 20 to 22) and `6541bc7` (release acceptance) precede it. The last range ends at `HEAD` (`a36a64d`), inferred.
+- Every story landed directly on `develop`, one commit each, no merges. CI is green on all seven (`gh run list`: `a36a64d` run 37538502361, `daf5976` 37530323463, `31ddc19` 37523297919, `bf81e3e` 37519335514, `97ae1df` 37513036065, `513085a` 37454329410, `03d6fe3` 37451322493).
+- Raw evidence: scratchpad `retro4/` (`evidence-*.json`, `behave4/`, `agg/`).
+
+**Evidence missing or narrowed:** no `## Code Review` blocks (review evidence is each plan's Review Triage Log); no session logs; the behaviour check ran without WebAuthn (the `auth_passkey` row was inserted as the repo's test helper does) and without restic (backup unconfigured), reviewed the review items from the scratch database because no HTTP review route exists, and forced a locked entry through the database; the home server and pang-dev were not driven; `pnpm check:upgrade` was not run; the review lenses read the diff and tests but did not run the code.
+
+### Third pass: Findings
+
+**Second-pass items re-verified at HEAD.**
+
+| ID | Status | Evidence |
+|---|---|---|
+| N1 | closed | `03d6fe3`: an owner may set the owners; a non-owner may only join (`update-account.ts` `requireOwnerChangeAllowed`); `rejoinAccount` and the `removal` marker. Behaviour check: B joined, B removed A (200), A's `removal` marker and `POST /rejoin` restored 5000 bp, `owners: []` and a non-owner replacement gave 400. |
+| N3 | closed | `513085a` (migration 0011, schema 12; stored row and audit rows scrubbed) and `97ae1df` (paired worlds). Behaviour check: `GET /api/system/backup` carries no `rowCount`, `tableCount` or `manifestSha256`. The manifest pushed to restic still carries per-table counts and account balances, by the 2.17 and 2.21 plans (operator-only). |
+| N2 | closed, with a reversal | 2.23 lock (`closed-lock.ts:57-120`), 2.24 warning, 2.25 archive, 2.26 leave. The second pass's "closed accounts are deleted from settings" became "archived, never deleted" on 2026-10-06 (epic file lines 65, 73, 74; `tickets.toml:283-285`). |
+| N4, N6, N7, N8 | still deferred | Routed to epic-ledger-workspace entry 9; not in any 2.20 to 2.26 diff. |
+
+**Behaviour check (real server, HEAD `a36a64d`).** Run over real HTTP on a scratch data directory; checks 1 to 6 passed with no 500. Observed: closing before the latest entry gave 409 with the choice in the body; an entry after `closedOn` gave 409, on or before gave 201; a closed account with balance 12,345 carried `warning` `closing-balance` and one open review item, resolved by an offsetting entry or a reopen; `GET /api/accounts` omitted the closed account and `?includeClosed=true` returned it; `DELETE /api/accounts/:id` gave 404; a future `closedOn` stayed in the default list; a confirmed leave gave 200 with both session cookies cleared, A's old cookies and sign-in gave 401, B read the joint account as sole owner at 10000 bp and read the formerly hidden name, and A's private ids gave B 404. Without `confirm` it gave 400, with a stale sign-in 403. A closed credit card with −900 also warned (`credit_card` is in `CASH_ACCOUNT_TYPES`).
+
+**Findings, by aggregate view and lens.**
+
+| ID | View / lens | Finding | Source | Disposition |
+|---|---|---|---|---|
+| Q1 | Spec reconciliation; pattern divergence | **Three tickets decided "closed" independently.** The lock refuses dates after `closedOn` (`closed-lock.ts:71`); the warning and review item apply whenever `closedOn` is set (`closing-balance.ts:28-30`); the list archives only when `closedOn <= today` (`list-accounts.ts:26-28`); `closeAccount` refuses a second close on any set `closedOn` (`close-account.ts:35`). For a future `closedOn` the account stays in the default list yet carries a warning and an open item, and later entries are already refused. `syncClosingBalance` runs only on writes, so nothing re-evaluates when the date arrives. 2.25's `<= today` rule was decided in session on 2026-10-07 and is recorded only in that plan's Change Log. Re-checked in code; confirmed by the adversarial, edge-case and verification-gap lenses. No test pins the future-date warning (`accounts.test.ts` ~L803). | fix now: one `closedState(row, today)` predicate; decide the warning for a future date |
+| Q2 | Spec reconciliation; edge | **A restore of a pre-leave snapshot brings the leaver back.** `admin/restore.ts:224-239` clears credentials of persons present only in the snapshot and re-applies nothing about a leave; the leaver's `deleted_at` and private rows return with the snapshot. `leave-household.ts` records only "Backups taken earlier keep the data (accepted)". Re-checked by reading `restore.ts`; not exercised. | accepted by Simon, 2026-10-07: a restore brings the leaver back; no tombstone |
+| Q3 | Boundary between 2.20 and 2.26 | **A can delete B's joint-era history.** 2.20 lets an owner remove the other owner; `setPrivacy` needs only one owner (`set-privacy.ts:40-43`); the leave then deletes the whole private account with its transactions, including rows B entered while it was joint. Read from the code and the behaviour check's owner-removal result; no test combines the three steps. | accepted by Simon, 2026-10-07: "that's fine"; in that case both people will likely stop using the software |
+| Q4 | Pattern divergence; verification | **"Never deleted" is a name check.** `no-delete.test.ts` and the route scan in `app.test.ts` match export and route names; `leaveHousehold` hard-deletes accounts (by ticket 26) through `deleteRows`, `deleteForAccount` and related port methods any use case may call. The `tx-repos-viewer.test.ts` allow-list says only the leave calls them; nothing enforces it. | accept the exception, record it in the epic Notes; defer a caller-scan test |
+| Q5 | Process | The Verification section of all seven plans holds commands and expected results, with no recorded outcomes; the Plan Change Log is empty in six of seven (only 2.25 logs the intent change), though epic-file decisions changed 2.20, 2.25 and 2.26's intent (R5 again). | plans 2.20 to 2.26 | process lesson |
+| Q6 | Verification gap | The "lapsed hiding" leave test uses a future `until` (`accounts.test.ts` ~L1252) and asserts only `name_hidden_until`; the repo-parity row uses 2030. Only `setSplits` is pinned for the no-op-before-lock ordering (`closed-lock.test.ts` ~L3316); the other four short-circuits are not. | verification-gap lens (pre-verified) | defer |
+| Q7 | Spec reconciliation | The epic's Done when 1 to 5 say nothing about sharing, the last-owner rule, the lock, the warning, the archive or leaving; `SPEC.md` has no text on them (CAP-3 lines 36 to 38, CAP-16 75 to 77, CAP-18 81 to 83); no spec commit since `e8a92b8`. The epic file owes this reconciliation (line 71, Simon). The ticket's `covers` still point at CAP-3 and CAP-18. | epic file; `SPEC.md` | spec reconciliation (Simon) |
+| Q8 | God-class growth | `memory-uow.ts` 2,123 to 2,366 lines, `ports/unit-of-work.ts` 1,092 to 1,227, `ledger-repos.ts` 618 to 763, `accounts.test.ts` 447 to 1,333, `privacy.test.ts` 1,258 to 1,731, `app.test.ts` 2,049 to 2,431. The refactor sweep (epic-ledger-workspace entry 9) is not done; the leave added 15 viewerless port methods. `as never` casts 66 to 77, all in tests. | `wc -l` at `2925774` and HEAD; `agg/` | defer to the sweep |
+| Q9 | Duplication | Surviving-side transfer unlink and audit is written twice (`leave-household.ts:219-239`, `delete-transaction.ts:49-88`, with the owner-scope helper duplicated); the owner swap three times (`handOver`, `update-account.ts:97-98`, `rejoin-account.ts:56-69`). | `agg/` | defer to the sweep |
+| Q10 | Architecture delta | `accounts` and `ledger` now import each other at folder level (`accounts/{balance,close-account,update-account}.ts` import `ledger/closed-lock.ts`; `ledger/{create,update,delete}-transaction.ts` import `accounts/closing-balance.ts`). No file cycle; `check-boundaries` passes; the `list-transactions` and `transaction-view` type cycle predates the range. | `agg/graph.mjs` | accept; watch |
+| Q11 | Leave edge cases | More than one other active person gives the first as the partner; a household of one cannot leave; a partner removed by the leaver is handed the account; leave clears payee, tag and activity references on shared rows without an audit row or `updatedAt`; two better-auth cookies (`dont_remember`, `two_factor`) are not cleared; the survivor-of-a-transfer audit row in a shared account is unscoped and the SQLite free pages keep deleted rows (the last two are in `deferred-work.md`). | edge-case and adversarial lenses | accept (two-person household by design; sessions revoked in the database); the last two stay deferred |
+| Q12 | Migration | 0011 is the only schema change in the range, has a migration test and passes `check:strict`; it rewrites append-only audit rows (accepted in the 2.21 triage). | `agg/`; `migrate.test.ts` | accept |
+
+### Third pass: Previous-retro follow-through
+
+Items of the second pass's action list (owner Simon unless noted), with evidence at HEAD:
+
+1. **N1 remediation (dev loop).** Landed: `03d6fe3` (2.20).
+2. **N3 remediation (dev loop).** Landed: `513085a` (2.21) and `97ae1df` (2.22); the digest and snapshot-id deferred entry is closed by 2.21 (`deferred-work.md:313`).
+3. **N2 and the account lifecycle (slice as a story or epic).** Landed: `2925774` sliced entries 23 to 26; built as `bf81e3e`, `31ddc19`, `daf5976`, `a36a64d`. One decision changed on the way: deleting a closed account in settings became archiving (epic file lines 65, 73, 74).
+4. **Deferred N4, N6, N7, N8 (next sweep or hardening).** Not landed; routed to epic-ledger-workspace entry 9.
+5. **R3 prevention (read the deferred entries a story adds against the stories ahead).** No evidence found of a mechanism. `deferred-work.md` holds 87 entries (85 at the second pass), 67 without a disposition; the two new ones are from 2.26.
+6. **Accepted items (N5, I4, P9, 2.19 gaps).** Recorded; not re-flagged.
+7. **R1 and R2 (CI watch, one landing flow).** No mechanism found. The seven commits all landed on `develop` directly and CI is green on all, so the failure did not recur in this range.
+8. **R5 (log decisions in the Plan Change Log).** Partly: 2.25 logged its loopback; the other six Plan Change Logs are empty (Q5).
+
+Second-pass open questions: the N2 residual was answered and built (2.26 hands shared accounts to the partner as sole owner; re-authentication is `requireRecentAuth`); N6 (a sole owner's "shared" splits blocking a private switch) was not revisited; the as-built schema against `data-model.md` was not re-examined.
+
+### Third pass: Action items
+
+Proposed, not applied.
+
+**Remediation (fix now; one small story)**
+1. **Q1.** Add one closed-state predicate for the lock, the warning and the list, and decide whether a future `closedOn` warns; re-evaluate the item when the date arrives; add the future-date warning test. Owner: dev loop.
+
+**Decided (Simon, 2026-10-07)**
+2. **Q2: accepted.** After a restore of a pre-leave snapshot the leaver is active again with their private rows. Write it next to "backups keep the data" in the epic Notes (with item 4); no leave record or tombstone.
+3. **Q3: accepted.** A removes B, makes the account private and leaves, and B's joint-era entries go with it. No guard. His reason: in that situation both people will probably stop using the software anyway.
+
+**Decision owed (Simon)**
+4. **Q7.** Reconcile the epic's Done when and `SPEC.md` with entries 20 to 26, and record the `closedOn <= today` rule and the leave's exception to "never deleted" in the epic Notes.
+
+**Deferred (tracked)**
+5. Q4 caller-scan test, Q6 test gaps, Q8 and Q9 (the refactor sweep, epic-ledger-workspace entry 9), Q11's last two items (already in `deferred-work.md`). Owner: next sweep or a hardening ticket.
+
+**Process lessons**
+6. **Q5.** Record outcomes in each plan's Verification and log intent-changing decisions in its Plan Change Log (R5, third time). Owner: Simon and the build workflow.
+7. **Q1, Q3.** A concept that three tickets decide in separate sessions ("closed"), and an interaction of rules from two tickets (2.20's removal, 2.26's delete), are the defects no single session saw: when slicing a cluster of stories, state the shared definition and the cross-ticket cases in the epic decisions before the first is built. Owner: ticketing.
+
+### Third pass: Acceptance verdict
+
+**Verdict: accepted-with-open-items (machine verdict; awaiting the human's confirmation).** Criteria **declared**: the epic file's Done when, items 1 to 5. No ticket is unfinished.
+
+1. **Cross-user reads fail through every route; B is byte-identical; private IDs are NotFound; hidden names lift.** **Met.** N1 and N3, the two open blockers of the second pass, are closed and the behaviour check passed over HTTP: B reads the lifted name after the leave, A's private ids give B 404, and the backup status carries no figures.
+2. **Read rule through the visibility helpers, enforced by lint or test.** **Met, with deferred bypasses (N7).** Unchanged; the leave's 15 viewerless methods carry allow-list reasons, some boilerplate (Q4).
+3. **API flows on the seeded ledger.** **Met** (unchanged).
+4. **Manifest per-account counts, sums and `balanceAsOf`; a format-1 backup restores.** **Met** (unchanged; schema 12 adds a scrubbing migration with a test).
+5. **Deployed with `pangolin upgrade`; CI green on the release tag.** **Met for `v0.2.1`.** Seven later commits are green on CI; no release since includes the 2.20 to 2.26 changes, so they have not been deployed or seen on a real household's data.
+
+Open items: Q1 (fix), Q7 (spec reconciliation), and the deferred and process items above. Q2 and Q3 were accepted by Simon and are recorded, not open. None contradicts a Done when item, so none blocks acceptance.
+
+**Human decision:** Simon, interactive, 2026-10-07, accepted Q2 and Q3 as above. He has not yet confirmed or overridden the verdict itself, so it stands as the machine verdict. The second pass's decision was that epic 2 moves to accepted-with-open-items once action items 1 to 3 are done and this retrospective is re-run, if nothing new blocks; the machine verdict follows that.
+
+### Third pass: Open questions
+
+1. **Q2: answered (2026-10-07).** Yes: a restore of a pre-leave snapshot brings the leaver back, as it does now.
+2. **Q3: answered (2026-10-07).** The leave may delete rows another person entered while an account was joint; accepted.
+3. **Q1.** For a future `closedOn`, should the closing-balance warning appear before the date, or only once the account is archived?
+4. **Not checked:** the as-built schema against `data-model.md`; the N6 question; a deployed run of 2.20 to 2.26 (no release since `v0.2.1`).
+
+---
 
 ## Second pass (2026-10-06)
 

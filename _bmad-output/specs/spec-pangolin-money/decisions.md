@@ -28,6 +28,10 @@ All are settled.
 | Name | Pangolin Money |
 | Host hardening (2026-10-03) | Outside the application. Host hardening and the network tunnel to the NAS are the operator's concern, not requirements of this app |
 | Recovery notice (2026-10-03) | In-app notice only in this version; email notification is deferred to the next version |
+| Sharing (2026-10-06) | Either partner may share a public account and add or remove themself or the other; a removed person can add themself back; the last owner cannot be removed; visibility changes only on an unshared account |
+| Closing an account (2026-10-06) | Closing is the soft delete: a closed account is archived, never deleted, locked after its closed date until reopened; a non-zero closing balance is a warning; archived means the closed date is today or earlier (2026-10-07) |
+| Leaving the household (2026-10-06) | The leaver's private data is hard-deleted after re-authentication and confirmation; shared accounts and their expenses stay with the partner as sole owner; the leaver's own audit rows are removed, audit rows of kept data stay; earlier backups keep the data, and a restore of an earlier snapshot brings the leaver back (accepted 2026-10-07) |
+| Leaving after removing the partner (2026-10-07) | If one person removes the other from a joint account, makes it private and leaves, the account and its joint-era rows are deleted with it (accepted) |
 | Outbound allowlist (2026-10-03) | The firewall `install.sh` generates is the only enforcement in this version; an in-app check and re-authentication to change the list are deferred to the next version |
 | Import errors (2026-10-05) | CSV/OFX/QIF commit good rows and set aside unreadable rows; PDF stays all-or-nothing |
 | AI row reading (2026-10-05) | `row_interpret` is local by default, cloud only if explicitly enabled, never for a private account's rows; proposes only |
