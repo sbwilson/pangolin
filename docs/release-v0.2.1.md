@@ -377,5 +377,5 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | First backup: manifest `format` | `"format": 2`, reported by the human from `restic dump` of the snapshot, 2026-10-06. Path in the snapshot: `/data/backup/staging/01M47NRX5ACDH1DHZ879E270M9/manifest.json` |
 | First backup: `balanceDate` and accounts section | `balanceDate` `2026-10-06`; `accounts` has 0 entries (pang-dev has no ledger accounts yet, as at v0.2.0), reported by the human from the step 10 snapshot. A further backup was taken afterwards, `8f7749008d9344dd14f69b8e0bffc446c57dca823311b5f0fe55576bdd6f9416` (backup `01M47PD1HQQBEPDWSZE4CKK20S`, 2026-10-06T04:09:02.270Z); it is not step 10's |
 | **Decision** | |
-| Outcome (accepted / failed) and reason | |
-| Accepted by the human (name, date) | |
+| Outcome (accepted / failed) and reason | Accepted. The release run is green on the tag, pang-dev was upgraded from the `v0.2.0` tag after a recorded manual backup, runs `v0.2.1` healthy at schema 11 of 11 on the verified digest, and the first backup after the upgrade is manifest format 2 with the current `balanceDate`. Not seen on a real host: the privacy fixes themselves and a per-account manifest entry, because pang-dev has no ledger accounts; both are covered by the test suite. The step 10 `pangolin status` was not pasted. |
+| Accepted by the human (name, date) | Simon Wilson, 2026-10-06 |
