@@ -6,15 +6,26 @@ import { closingBalanceWarning } from "./closing-balance.ts";
 import { idInput } from "./inputs.ts";
 import { type AccountView, accountView, removalOf } from "./pool.ts";
 
-export const listAccountsInput = z.object({}).strict();
+export const listAccountsInput = z.object({ includeClosed: z.boolean().optional() }).strict();
 export type ListAccountsInput = z.input<typeof listAccountsInput>;
 
-/** `accounts.listAccounts`: the accounts the viewer can see (public ones and their own private ones), oldest first, each with owners and pool, a `removal` marker for a public account the viewer was taken off, and a `warning` for a closed cash account with a non-zero closing balance. */
+/**
+ * `accounts.listAccounts`: the open accounts the viewer can see (public ones and their own private ones), oldest first, each with owners and pool and a `removal` marker for a public account the viewer was taken off. A closed account is archived, never deleted: `closedOn` is the only archive state, and an account is closed once `closedOn` is today or earlier (an account with a later `closedOn` is still open). The default list leaves closed accounts out; `includeClosed: true` adds them. A closed cash account's closing-balance `warning` therefore shows only with `includeClosed`, on `getAccount` and in the review item. Which accounts the viewer can see does not change.
+ */
 export function listAccounts(ctx: UseCaseContext, input: ListAccountsInput = {}): AccountView[] {
-  parseInput(listAccountsInput, input);
-  return ctx.uow.read((repos) =>
-    repos.accounts.list(ctx.viewer).map((row) => viewOf(ctx, repos, row)),
-  );
+  const parsed = parseInput(listAccountsInput, input);
+  return ctx.uow.read((repos) => {
+    const rows = repos.accounts.list(ctx.viewer);
+    const today = ctx.clock.today().toString();
+    const shown =
+      parsed.includeClosed === true ? rows : rows.filter((row) => !isArchived(row, today));
+    return shown.map((row) => viewOf(ctx, repos, row));
+  });
+}
+
+/** Archived is closed: the closed date has come, so the ledger refuses later entries. */
+function isArchived(row: AccountRow, today: string): boolean {
+  return row.closedOn !== null && row.closedOn <= today;
 }
 
 /** The view of one account the viewer can see, with the removal marker for a removed person. */

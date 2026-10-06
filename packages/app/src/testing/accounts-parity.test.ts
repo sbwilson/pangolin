@@ -530,7 +530,7 @@ function closingBalance(ctxs: Ctxs) {
   const acct = make("savings", false);
   const entry = txn(A, acct, "2026-09-01", 1000);
   out.closed = closeAccount(A, { id: acct, closedOn: "2026-09-10" }).warning;
-  out.listed = listAccounts(B).find((row) => row.id === acct)?.warning;
+  out.listed = listAccounts(B, { includeClosed: true }).find((row) => row.id === acct)?.warning;
   out.itemsB = items(B);
   out.edited =
     updateTransaction(A, { id: entry, amountCents: 800 }) && getAccount(A, { id: acct }).warning;
@@ -547,12 +547,13 @@ function closingBalance(ctxs: Ctxs) {
 
   const priv = make("savings", true);
   txn(A, priv, "2026-09-01", 700);
-  const bAccounts = JSON.stringify(listAccounts(B));
+  const bAccounts = JSON.stringify(listAccounts(B, { includeClosed: true }));
   const bItems = JSON.stringify(listReviewItems(B));
   closeAccount(A, { id: priv, closedOn: "2026-09-10" });
   out.privateAItems = items(A);
   out.privateBSame =
-    JSON.stringify(listAccounts(B)) === bAccounts && JSON.stringify(listReviewItems(B)) === bItems;
+    JSON.stringify(listAccounts(B, { includeClosed: true })) === bAccounts &&
+    JSON.stringify(listReviewItems(B)) === bItems;
   return out;
 }
 
@@ -578,6 +579,88 @@ describe("closing-balance warning (story 24)", () => {
       expect(out.itemsProperty, who).toEqual([]);
       expect(out.privateAItems, who).toEqual([["ACCT", "account"]]);
       expect(out.privateBSame, who).toBe(true);
+    }
+  });
+});
+
+/** The archive (story 25) on one adapter: what each list holds, with accounts named by label. */
+function archive(ctxs: Ctxs) {
+  const { sys } = ctxs;
+  const pa = createPerson(sys, { displayName: "A", colour: "#000000" });
+  const pb = createPerson(sys, { displayName: "B", colour: "#ffffff" });
+  const A = ctxs.as(pa);
+  const B = ctxs.as(pb);
+  const labels = new Map<string, string>();
+  const make = (label: string, isPrivate: boolean) => {
+    const id = createAccount(sys, {
+      name: label,
+      type: "savings",
+      currency: "AUD",
+      isPrivate,
+      owners: isPrivate
+        ? own(pa)
+        : [
+            { personId: pa, shareBp: 5000 },
+            { personId: pb, shareBp: 5000 },
+          ],
+    });
+    labels.set(id, label);
+    return id;
+  };
+  const listed = (ctx: UseCaseContext, includeClosed?: boolean) =>
+    listAccounts(ctx, includeClosed === undefined ? {} : { includeClosed })
+      .map((row) => `${labels.get(row.id)}${row.closedOn === null ? "" : `@${row.closedOn}`}`)
+      .sort();
+  const out: Record<string, unknown> = {};
+
+  make("open", false);
+  const closed = make("closed", false);
+  const future = make("future", false);
+  const priv = make("private", true);
+  txn(A, closed, "2026-09-01", 500);
+  closeAccount(A, { id: closed, closedOn: "2026-09-10" });
+  closeAccount(A, { id: future, closedOn: "2026-12-31" });
+  closeAccount(A, { id: priv, closedOn: "2026-09-10" });
+  out.defaultB = listed(B);
+  out.defaultFalseB = listed(B, false);
+  out.allB = listed(B, true);
+  out.defaultA = listed(A);
+  out.allA = listed(A, true);
+  out.record = [
+    getAccount(B, { id: closed }).closedOn,
+    listTransactions(B).filter((t) => t.accountId === closed).length,
+    accountBalanceAsOf(B, { accountId: closed, date: "2026-09-27" }),
+    listAudit(B).some((entry) => entry.entity === "account" && entry.entityId === closed),
+  ];
+  out.badInput = outcome(() => listAccounts(A, { includeClosed: "yes" } as never));
+  updateAccount(A, { id: closed, closedOn: null });
+  out.reopened = listed(B);
+  return out;
+}
+
+describe("closed accounts are archived (story 25)", () => {
+  it("lists the same on SQLite and the memory mirror", () => {
+    migrate(db, loadMigrations(packageMigrationsDir));
+    const sqlite = archive(sqliteCtxs(db));
+    const memory = archive(memoryCtxs());
+    expect(memory).toEqual(sqlite);
+    for (const [who, out] of [
+      ["sqlite", sqlite],
+      ["memory", memory],
+    ] as const) {
+      expect(out.defaultB, who).toEqual(["future@2026-12-31", "open"]);
+      expect(out.defaultFalseB, who).toEqual(out.defaultB);
+      expect(out.allB, who).toEqual(["closed@2026-09-10", "future@2026-12-31", "open"]);
+      expect(out.defaultA, who).toEqual(["future@2026-12-31", "open"]);
+      expect(out.allA, who).toEqual([
+        "closed@2026-09-10",
+        "future@2026-12-31",
+        "open",
+        "private@2026-09-10",
+      ]);
+      expect(out.record, who).toEqual(["2026-09-10", 1, 500, true]);
+      expect(out.badInput, who).toBe("Validation");
+      expect(out.reopened, who).toEqual(["closed", "future@2026-12-31", "open"]);
     }
   });
 });

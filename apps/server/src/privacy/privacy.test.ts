@@ -694,7 +694,9 @@ describe("partner B against partner A's private data", () => {
     expect(aItems).toHaveLength(1);
     const accountId = aItems[0]?.accountId as string;
     expect(aItems[0]?.entityRef).toBe(`account:${accountId}`);
-    const mine = listAccounts(w2.ctx("a")).find((row) => row.id === accountId);
+    const mine = listAccounts(w2.ctx("a"), { includeClosed: true }).find(
+      (row) => row.id === accountId,
+    );
     expect(mine?.warning).toEqual({ kind: "closing-balance", balanceCents: -100 });
     // B sees neither the item, the account nor a warning, and the two worlds answer alike.
     for (const w of [w1, w2]) {
@@ -702,12 +704,25 @@ describe("partner B against partner A's private data", () => {
       expect(listReviewItems(b).filter((item) => item.kind === "accounts.closing-balance")).toEqual(
         [],
       );
-      expect(listAccounts(b).some((row) => row.id === accountId)).toBe(false);
-      expect(listAccounts(b).some((row) => row.warning !== undefined)).toBe(false);
+      for (const includeClosed of [false, true]) {
+        expect(listAccounts(b, { includeClosed }).some((row) => row.id === accountId)).toBe(false);
+        expect(listAccounts(b, { includeClosed }).some((row) => row.warning !== undefined)).toBe(
+          false,
+        );
+      }
     }
-    expect(JSON.stringify(listAccounts(w2.ctx("b")))).toBe(
-      JSON.stringify(listAccounts(w1.ctx("b"))),
-    );
+    for (const includeClosed of [false, true]) {
+      expect(JSON.stringify(listAccounts(w2.ctx("b"), { includeClosed }))).toBe(
+        JSON.stringify(listAccounts(w1.ctx("b"), { includeClosed })),
+      );
+    }
+    for (const path of ["/api/accounts", "/api/accounts?includeClosed=true"]) {
+      const [l1, l2] = [await w1.request("b", "GET", path), await w2.request("b", "GET", path)];
+      expect(l1.status, path).toBe(200);
+      expect(l2.status, path).toBe(200);
+      expect(l2.text, path).toBe(l1.text);
+      expect(l2.text, path).not.toContain(accountId);
+    }
     const get = (w: World) => w.request("b", "GET", `/api/accounts/${accountId}`);
     const [r1, r2] = [await get(w1), await get(w2)];
     expect(r2.status).toBe(404);

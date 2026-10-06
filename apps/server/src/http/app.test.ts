@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  closeAccount,
   createAccount,
   createActivity,
   createCategory,
@@ -942,7 +943,13 @@ describe("/api/accounts", () => {
     const warning = { kind: "closing-balance", balanceCents: balance.balanceCents };
     expect(((await closed.json()) as { account: Warned }).account.warning).toEqual(warning);
     expect((await read()).warning).toEqual(warning);
-    const list = (await (await send(db, "GET", "/api/accounts")).json()) as { accounts: Warned[] };
+    const archived = (await (await send(db, "GET", "/api/accounts")).json()) as {
+      accounts: Warned[];
+    };
+    expect(archived.accounts.some((row) => row.id === joint)).toBe(false);
+    const list = (await (await send(db, "GET", "/api/accounts?includeClosed=true")).json()) as {
+      accounts: Warned[];
+    };
     expect(list.accounts.find((row) => row.id === joint)?.warning).toEqual(warning);
     expect(list.accounts.filter((row) => row.id !== joint && row.warning !== undefined)).toEqual(
       [],
@@ -954,6 +961,44 @@ describe("/api/accounts", () => {
     });
     expect(snap.status).toBe(201);
     expect((await read()).warning).toBeUndefined();
+  });
+
+  it("archives a closed account: the list holds it only with includeClosed=true", async () => {
+    const db = openDb();
+    const { mine, theirs, sys } = seed(db);
+    closeAccount(sys, { id: theirs, closedOn: "2026-09-10" });
+    expect(
+      (await send(db, "POST", `/api/accounts/${mine}/close`, { closedOn: "2026-09-10" })).status,
+    ).toBe(200);
+    const names = async (path: string) =>
+      ((await (await send(db, "GET", path)).json()) as { accounts: { name: string }[] }).accounts
+        .map((a) => a.name)
+        .sort();
+    expect(await names("/api/accounts")).toEqual(["Joint"]);
+    for (const other of [
+      "includeClosed=false",
+      "includeClosed=yes",
+      "includeClosed=1",
+      "includeClosed=",
+    ]) {
+      expect(await names(`/api/accounts?${other}`), other).toEqual(["Joint"]);
+    }
+    // Sam's closed private account is never Alex's, closed or not.
+    expect(await names("/api/accounts?includeClosed=true")).toEqual(["Alex private", "Joint"]);
+    const closed = (await (await send(db, "GET", `/api/accounts/${mine}`)).json()) as {
+      account: { closedOn: string };
+    };
+    expect(closed.account.closedOn).toBe("2026-09-10");
+    expect((await send(db, "PATCH", `/api/accounts/${mine}`, { closedOn: null })).status).toBe(200);
+    expect(await names("/api/accounts")).toEqual(["Alex private", "Joint"]);
+  });
+
+  it("registers no route that deletes an account", () => {
+    const routes = createApp(deps(openDb())).routes;
+    const deleting = routes.filter((r) => r.method === "DELETE" || r.method === "ALL");
+    // The scan is live: some DELETE route exists (transactions), so a missing one would show.
+    expect(routes.some((r) => r.method === "DELETE")).toBe(true);
+    expect(deleting.filter((r) => /account/i.test(r.path))).toEqual([]);
   });
 
   it("refuses an id or unknown field in a create body, and a bad balance query", async () => {

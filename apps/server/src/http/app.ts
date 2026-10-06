@@ -388,7 +388,14 @@ export function createApi(deps: ApiDeps) {
     })
     .get("/api/accounts", (c) => {
       // Per viewer (AD-3, AD-5): another person's private account is absent. Never cached.
-      return c.json({ accounts: listAccounts(ctx(c), {}) }, 200);
+      return c.json(
+        {
+          accounts: listAccounts(ctx(c), {
+            includeClosed: c.req.query("includeClosed") === "true",
+          }),
+        },
+        200,
+      );
     })
     .post("/api/accounts", async (c) => {
       writable();

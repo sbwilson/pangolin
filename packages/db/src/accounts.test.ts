@@ -20,6 +20,7 @@ import {
   listBalanceSnapshots,
   listInstitutions,
   listReviewItems,
+  listTransactions,
   personViewer,
   recordBalanceSnapshot,
   rejoinAccount,
@@ -626,7 +627,10 @@ describe("a non-zero closing balance is a warning", () => {
     const closed = closeAccount(as(a), { id, closedOn: "2026-09-10" });
     expect(closed.warning).toEqual({ kind: "closing-balance", balanceCents: 12500 });
     expect(getAccount(as(b), { id }).warning).toEqual(closed.warning);
-    expect(listAccounts(as(a)).find((row) => row.id === id)?.warning).toEqual(closed.warning);
+    expect(listAccounts(as(a)).some((row) => row.id === id)).toBe(false);
+    expect(
+      listAccounts(as(a), { includeClosed: true }).find((row) => row.id === id)?.warning,
+    ).toEqual(closed.warning);
     expect(items(as(b))).toMatchObject([{ accountId: id, entityRef: `account:${id}` }]);
     expect(items(as(a))).toHaveLength(1);
   });
@@ -730,12 +734,80 @@ describe("a non-zero closing balance is a warning", () => {
   it("is invisible to the partner for a private account", () => {
     const priv = make(as(a), { isPrivate: true, owners: own(a) });
     txn(as(a), priv, "2026-09-01", 700);
-    const listBefore = listAccounts(as(b));
+    const listBefore = listAccounts(as(b), { includeClosed: true });
     const reviewBefore = listReviewItems(as(b));
     closeAccount(as(a), { id: priv, closedOn: "2026-09-10" });
-    expect(listAccounts(as(b))).toEqual(listBefore);
+    expect(listAccounts(as(b), { includeClosed: true })).toEqual(listBefore);
     expect(listReviewItems(as(b))).toEqual(reviewBefore);
     expect(items(as(a))).toHaveLength(1);
     expect(items(as(b))).toEqual([]);
+  });
+});
+
+describe("closed accounts are archived, never deleted", () => {
+  const ids = (ctx: UseCaseContext, includeClosed?: boolean) =>
+    listAccounts(ctx, includeClosed === undefined ? {} : { includeClosed })
+      .map((row) => row.id)
+      .sort();
+
+  it("leaves a closed account out of the default list and adds it on request", () => {
+    const open = make(as(a));
+    const closed = make(as(a));
+    closeAccount(as(a), { id: closed, closedOn: "2026-09-10" });
+    expect(ids(as(a))).toEqual([open]);
+    expect(ids(as(a), false)).toEqual([open]);
+    expect(ids(as(a), true)).toEqual([open, closed].sort());
+    expect(
+      listAccounts(as(b), { includeClosed: true }).find((r) => r.id === closed)?.closedOn,
+    ).toBe("2026-09-10");
+  });
+
+  it("keeps the record of a closed account intact", () => {
+    const id = make(as(a));
+    const entry = txn(as(a), id, "2026-09-01", 500);
+    recordBalanceSnapshot(as(a), { accountId: id, asOf: "2026-09-05", balanceCents: 500 });
+    closeAccount(as(a), { id, closedOn: "2026-09-10" });
+    expect(ids(as(b))).not.toContain(id);
+    expect(getAccount(as(b), { id }).closedOn).toBe("2026-09-10");
+    expect(getTransaction(as(b), { id: entry }).accountId).toBe(id);
+    expect(listTransactions(as(b)).some((t) => t.id === entry)).toBe(true);
+    expect(listBalanceSnapshots(as(b), { accountId: id })).toHaveLength(1);
+    expect(accountBalanceAsOf(as(b), { accountId: id, date: "2026-09-27" })).toBe(500);
+    expect(auditFor("account", id).map((row) => row.action)).toEqual(["create", "close"]);
+    expect(auditFor("transaction", entry).map((row) => row.action)).toEqual(["create"]);
+  });
+
+  it("returns a reopened account to the default list", () => {
+    const id = make(as(a));
+    closeAccount(as(a), { id, closedOn: "2026-09-10" });
+    expect(ids(as(a))).not.toContain(id);
+    updateAccount(as(a), { id, closedOn: null });
+    expect(ids(as(a))).toContain(id);
+  });
+
+  it("keeps an account with a future closed date in the default list until that date", () => {
+    const today = make(as(a));
+    const future = make(as(a));
+    const past = make(as(a));
+    closeAccount(as(a), { id: today, closedOn: "2026-09-27" });
+    closeAccount(as(a), { id: future, closedOn: "2026-09-28" });
+    closeAccount(as(a), { id: past, closedOn: "2026-09-26" });
+    expect(ids(as(a))).toEqual([future]);
+    expect(ids(as(a), true)).toEqual([today, future, past].sort());
+  });
+
+  it("never shows a partner a closed private account, with or without includeClosed", () => {
+    const priv = make(as(a), { isPrivate: true, owners: own(a) });
+    closeAccount(as(a), { id: priv, closedOn: "2026-09-10" });
+    expect(ids(as(b))).not.toContain(priv);
+    expect(ids(as(b), true)).not.toContain(priv);
+    expect(ids(as(a), true)).toContain(priv);
+    expect(ids(as(a))).not.toContain(priv);
+  });
+
+  it("rejects an includeClosed that is not a boolean", () => {
+    expect(() => listAccounts(as(a), { includeClosed: "yes" } as never)).toThrow(
+      code("Validation"),
+    );
   });
 });
