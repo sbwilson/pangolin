@@ -101,6 +101,7 @@ describe("the backup jobs", () => {
       "backup-push",
       "backup-check",
       "backup-drill",
+      "closing-balance-sync",
     ]);
     expect(EXTERNAL_EFFECT_KINDS).toEqual(["backup-push"]);
     const jobs = createJobs({
@@ -112,13 +113,19 @@ describe("the backup jobs", () => {
     expect(jobs.kinds.map((r) => r.kind.kind)).toEqual(JOB_KINDS.map((k) => k.kind));
   });
 
-  it("schedules the backup, check and drill in household time only when a repository is set", () => {
+  it("schedules the closing-balance sync always, and the backup, check and drill in household time only when a repository is set", () => {
     const r = runner();
     r.ensureSchedules();
     // 2026-09-27 00:00Z is Sunday 10:00 in Sydney (AEST): the next 02:30 is 2026-09-27T16:30Z;
     // the next Sunday 03:30 is 2026-10-04 (AEDT, UTC+11, the day the clocks go forward); the
-    // next 1st at 04:00 is 2026-10-01 (AEST).
+    // next 1st at 04:00 is 2026-10-01 (AEST); the closing-balance sync is the next 00:05.
     expect(jobRows()).toEqual([
+      {
+        kind: "closing-balance-sync",
+        status: "pending",
+        dedupe_key: "schedule:closing-balance-daily",
+        run_at: "2026-09-27T14:05:00.000Z",
+      },
       {
         kind: "backup-snapshot",
         status: "pending",
@@ -140,7 +147,14 @@ describe("the backup jobs", () => {
     ]);
     db.exec("DELETE FROM job");
     runner(false).ensureSchedules();
-    expect(jobRows()).toEqual([]);
+    expect(jobRows()).toEqual([
+      {
+        kind: "closing-balance-sync",
+        status: "pending",
+        dedupe_key: "schedule:closing-balance-daily",
+        run_at: "2026-09-27T14:05:00.000Z",
+      },
+    ]);
   });
 
   it("takes a snapshot, pushes it with the attachments, records it and empties the staging directory", async () => {

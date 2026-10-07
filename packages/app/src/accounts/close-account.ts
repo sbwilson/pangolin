@@ -22,9 +22,11 @@ export type CloseAccountInput = z.input<typeof closeAccountInput>;
  * `updateAccount` with `closedOn: null` reopens the account. An open account only: closing a
  * closed one is a `Conflict`, and so is a date before the account's latest transaction or balance
  * snapshot (its details say which dates and which manual entries to move; see
- * `ClosedAccountDetails`). From then on the ledger refuses entries after `closedOn`. Another person's private account is `NotFound`. A non-zero balance as of `closedOn` on a cash account is a
- * warning on the returned view and one open review item, never a block. Audited as one
- * `close` of `account` with its `accountId`.
+ * `ClosedAccountDetails`). From then on the ledger refuses entries after `closedOn`. Another
+ * person's private account is `NotFound`. A non-zero balance as of `closedOn` on a cash account
+ * is a warning on the returned view and one open review item once `closedOn` is today or earlier
+ * (`isClosed`), never a block; for a later `closedOn` the daily `closing-balance-sync` job raises
+ * the item when the date arrives. Audited as one `close` of `account` with its `accountId`.
  */
 export function closeAccount(ctx: UseCaseContext, input: CloseAccountInput): AccountView {
   const parsed = parseInput(closeAccountInput, input);
@@ -47,6 +49,11 @@ export function closeAccount(ctx: UseCaseContext, input: CloseAccountInput): Acc
       after: { ...after, owners },
     });
     syncClosingBalance(tx, audit, ctx, before.id);
-    return accountView(after, owners, undefined, closingBalanceWarning(tx, ctx.viewer, after));
+    return accountView(
+      after,
+      owners,
+      undefined,
+      closingBalanceWarning(tx, ctx.viewer, after, ctx.clock.today().toString()),
+    );
   });
 }

@@ -35,6 +35,7 @@ import {
   setPrivacy,
   setSplitField,
   setSplitTags,
+  syncClosingBalances,
   type TokenPort,
   type UseCaseContext,
   updateAccount,
@@ -59,14 +60,20 @@ let sys: UseCaseContext;
 let as: (id: Id<"Person">) => UseCaseContext;
 let a: Id<"Person">;
 let b: Id<"Person">;
+/** The clock's today, moved by a test with `setToday`; reset to `now`'s day before each test. */
+let clockDay: string;
+const setToday = (day: string) => {
+  clockDay = day;
+};
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "pangolin-accounts-"));
   db = openDatabase(join(dir, "test.sqlite"));
   migrate(db, loadMigrations(packageMigrationsDir));
   let ms = now.epochMilliseconds;
+  clockDay = "2026-09-27";
   const base = {
-    clock: { now: () => now, today: () => now.toZonedDateTimeISO("UTC").toPlainDate() },
+    clock: { now: () => now, today: () => Temporal.PlainDate.from(clockDay) },
     newId: createIdGenerator({ now: () => ++ms, random: Math.random }),
     uow: createUnitOfWork(db),
   };
@@ -1329,5 +1336,130 @@ describe("leaving the household (story 26)", () => {
         `person:${a}`,
       ),
     ).toBeGreaterThan(0);
+  });
+});
+
+describe("one closed state for the list, the warning and the review item", () => {
+  const items = () =>
+    listReviewItems(sys).filter((item) => item.kind === "accounts.closing-balance");
+  const inList = (id: string, includeClosed = false) =>
+    listAccounts(as(a), { includeClosed }).some((row) => row.id === id);
+  const auditCount = () => db.prepare("SELECT COUNT(*) FROM audit_log").pluck().get();
+  /** A cash account with 12 500 cents at its future closed date, 2026-10-05. */
+  const closedForTheFuture = () => {
+    const id = make(as(a));
+    txn(as(a), id, "2026-09-01", 12500);
+    closeAccount(as(a), { id, closedOn: "2026-10-05" });
+    return id;
+  };
+
+  it("lists a future-closed account with no warning and no item, and the job changes nothing", () => {
+    const id = closedForTheFuture();
+    expect(inList(id)).toBe(true);
+    expect(getAccount(as(a), { id }).warning).toBeUndefined();
+    expect(
+      listAccounts(as(a), { includeClosed: true }).find((row) => row.id === id)?.warning,
+    ).toBeUndefined();
+    expect(items()).toEqual([]);
+    const before = auditCount();
+    syncClosingBalances(sys);
+    expect(items()).toEqual([]);
+    expect(auditCount()).toBe(before);
+  });
+
+  it("archives it, warns and raises one item when the date arrives and the job runs; a second run changes nothing", () => {
+    const id = closedForTheFuture();
+    setToday("2026-10-05");
+    // The warning is derived on read; the item waits for the job.
+    expect(inList(id)).toBe(false);
+    expect(inList(id, true)).toBe(true);
+    const warning = { kind: "closing-balance", balanceCents: 12500 };
+    expect(getAccount(as(a), { id }).warning).toEqual(warning);
+    expect(
+      listAccounts(as(a), { includeClosed: true }).find((row) => row.id === id)?.warning,
+    ).toEqual(warning);
+    expect(items()).toEqual([]);
+    syncClosingBalances(sys);
+    expect(items()).toMatchObject([{ accountId: id, entityRef: `account:${id}` }]);
+    expect(auditFor("review_item", items()[0]?.id ?? "").map((row) => row.actor)).toEqual([
+      "cli:test",
+    ]);
+    const before = auditCount();
+    syncClosingBalances(sys);
+    expect(items()).toHaveLength(1);
+    expect(auditCount()).toBe(before);
+  });
+
+  it("raises nothing at a zero balance when the date arrives", () => {
+    const id = make(as(a));
+    txn(as(a), id, "2026-09-01", 300);
+    txn(as(a), id, "2026-09-02", -300);
+    closeAccount(as(a), { id, closedOn: "2026-10-05" });
+    setToday("2026-10-05");
+    syncClosingBalances(sys);
+    expect(getAccount(as(a), { id }).warning).toBeUndefined();
+    expect(items()).toEqual([]);
+  });
+
+  it("moves the closed date into the future: the item is resolved until the date comes", () => {
+    const id = make(as(a));
+    txn(as(a), id, "2026-09-01", 700);
+    closeAccount(as(a), { id, closedOn: "2026-09-10" });
+    expect(items()).toHaveLength(1);
+    updateAccount(as(a), { id, closedOn: "2026-10-05" });
+    expect(items()).toEqual([]);
+    expect(getAccount(as(a), { id }).warning).toBeUndefined();
+    expect(inList(id)).toBe(true);
+    expect(
+      db
+        .prepare("SELECT resolution FROM review_item WHERE kind = 'accounts.closing-balance'")
+        .all(),
+    ).toEqual([{ resolution: "the closed date has not come" }]);
+    setToday("2026-10-05");
+    syncClosingBalances(sys);
+    expect(items()).toHaveLength(1);
+  });
+
+  it("resolves the item at reopening after the date arrived, and the job leaves open accounts alone", () => {
+    const id = closedForTheFuture();
+    setToday("2026-10-06");
+    syncClosingBalances(sys);
+    expect(items()).toHaveLength(1);
+    updateAccount(as(a), { id, closedOn: null });
+    expect(items()).toEqual([]);
+    expect(getAccount(as(a), { id }).warning).toBeUndefined();
+    const before = auditCount();
+    syncClosingBalances(sys);
+    expect(auditCount()).toBe(before);
+  });
+
+  it("keeps a closing on today's date raising in the close write, as before", () => {
+    const id = make(as(a));
+    txn(as(a), id, "2026-09-01", 900);
+    expect(closeAccount(as(a), { id, closedOn: "2026-09-27" }).warning).toEqual({
+      kind: "closing-balance",
+      balanceCents: 900,
+    });
+    expect(items()).toHaveLength(1);
+  });
+
+  it("raises no item for a closed property account, and none for a private account a person cannot see", () => {
+    const property = make(as(a), { type: "property" });
+    createTransaction(sys, {
+      accountId: property,
+      postedOn: "2026-09-01",
+      amountCents: 500,
+      description: "x",
+    });
+    closeAccount(as(a), { id: property, closedOn: "2026-10-05" });
+    const priv = make(as(a), { isPrivate: true, owners: own(a) });
+    txn(as(a), priv, "2026-09-01", 100);
+    closeAccount(as(a), { id: priv, closedOn: "2026-10-05" });
+    setToday("2026-10-05");
+    syncClosingBalances(sys);
+    expect(getAccount(as(a), { id: property }).warning).toBeUndefined();
+    // The job sees every account, so the private one gets its item; the partner sees neither.
+    expect(items().map((item) => item.accountId)).toEqual([priv]);
+    expect(listReviewItems(as(b))).toEqual([]);
   });
 });

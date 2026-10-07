@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import type { AccountRow, ReadRepos } from "../ports/unit-of-work.ts";
+import { isClosed } from "./closed-state.ts";
 import { closingBalanceWarning } from "./closing-balance.ts";
 import { idInput } from "./inputs.ts";
 import { type AccountView, accountView, removalOf } from "./pool.ts";
@@ -18,14 +19,9 @@ export function listAccounts(ctx: UseCaseContext, input: ListAccountsInput = {})
     const rows = repos.accounts.list(ctx.viewer);
     const today = ctx.clock.today().toString();
     const shown =
-      parsed.includeClosed === true ? rows : rows.filter((row) => !isArchived(row, today));
-    return shown.map((row) => viewOf(ctx, repos, row));
+      parsed.includeClosed === true ? rows : rows.filter((row) => !isClosed(row, today));
+    return shown.map((row) => viewOf(ctx, repos, row, today));
   });
-}
-
-/** Archived is closed: the closed date has come, so the ledger refuses later entries. */
-function isArchived(row: AccountRow, today: string): boolean {
-  return row.closedOn !== null && row.closedOn <= today;
 }
 
 /** The view of one account the viewer can see, with the removal marker for a removed person. */
@@ -33,6 +29,7 @@ function viewOf(
   ctx: UseCaseContext,
   repos: Pick<ReadRepos, "accounts" | "audit" | "balanceSnapshots">,
   row: AccountRow,
+  today: string,
 ): AccountView {
   const owners = repos.accounts.owners(row.id);
   const viewer = ctx.viewer;
@@ -40,7 +37,7 @@ function viewOf(
   const removal = isOwner
     ? undefined
     : removalOf(ctx.viewer, owners, repos.audit.ownerChanges(ctx.viewer, row.id));
-  return accountView(row, owners, removal, closingBalanceWarning(repos, viewer, row));
+  return accountView(row, owners, removal, closingBalanceWarning(repos, viewer, row, today));
 }
 
 export const getAccountInput = z.object({ id: idInput }).strict();
@@ -52,6 +49,6 @@ export function getAccount(ctx: UseCaseContext, input: GetAccountInput): Account
   return ctx.uow.read((repos) => {
     const row = repos.accounts.findVisible(ctx.viewer, parsed.id);
     if (row === undefined) throw new AppError("NotFound", "Account not found");
-    return viewOf(ctx, repos, row);
+    return viewOf(ctx, repos, row, ctx.clock.today().toString());
   });
 }

@@ -6,12 +6,15 @@ import {
   BACKUP_SNAPSHOT_JOB,
   backupCheckSchedule,
   backupDrillSchedule,
+  CLOSING_BALANCE_SYNC_JOB,
+  closingBalanceSchedule,
   type JobKind,
   type JobRegistration,
   nightlyBackupSchedule,
   type Schedule,
 } from "@pangolin/app";
 import { type BackupJobDeps, backupJobs } from "./backup.ts";
+import { closingBalanceJobs } from "./closing-balance.ts";
 
 export { type BackupJobDeps, backupJobs } from "./backup.ts";
 export {
@@ -32,6 +35,7 @@ export const JOB_KINDS: readonly JobKind[] = [
   BACKUP_PUSH_JOB,
   BACKUP_CHECK_JOB,
   BACKUP_DRILL_JOB,
+  CLOSING_BALANCE_SYNC_JOB,
 ];
 
 /** The kinds that reach outside the process; a restore cancels their pending jobs (AD-16). */
@@ -53,18 +57,20 @@ export interface Jobs {
  * The production registry: every kind with its handler, and the schedules. The nightly backup,
  * the weekly repository check and the monthly restore drill are scheduled only when a backup
  * repository is configured; their kinds are always registered, so jobs left from a configured
- * past still run (and do nothing).
+ * past still run (and do nothing). The daily closing-balance sync is always scheduled.
  */
 export function createJobs(deps: JobsDeps): Jobs {
   return {
-    kinds: [...backupJobs(deps)],
-    schedules:
-      deps.backup.repository === null
+    kinds: [...backupJobs(deps), ...closingBalanceJobs()],
+    schedules: [
+      closingBalanceSchedule(deps.timezone),
+      ...(deps.backup.repository === null
         ? []
         : [
             nightlyBackupSchedule(deps.timezone),
             backupCheckSchedule(deps.timezone),
             backupDrillSchedule(deps.timezone),
-          ],
+          ]),
+    ],
   };
 }

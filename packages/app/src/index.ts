@@ -24,6 +24,14 @@ export {
   closeAccount,
   closeAccountInput,
 } from "./accounts/close-account.ts";
+export { isClosed } from "./accounts/closed-state.ts";
+export {
+  CLOSING_BALANCE_SCHEDULE_NAME,
+  CLOSING_BALANCE_SYNC_JOB,
+  CLOSING_BALANCE_TIME,
+  closingBalanceSchedule,
+  syncClosingBalances,
+} from "./accounts/closing-balance-sync.ts";
 export {
   type CreateAccountInput,
   createAccount,

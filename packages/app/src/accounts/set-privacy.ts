@@ -74,7 +74,12 @@ export function setPrivacy(ctx: UseCaseContext, input: SetPrivacyInput): Account
       before: { ...before, owners },
       after: { ...after, owners },
     });
-    return accountView(after, owners, undefined, closingBalanceWarning(tx, ctx.viewer, after));
+    return accountView(
+      after,
+      owners,
+      undefined,
+      closingBalanceWarning(tx, ctx.viewer, after, ctx.clock.today().toString()),
+    );
   });
 }
 

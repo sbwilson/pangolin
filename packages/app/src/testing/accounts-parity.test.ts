@@ -49,6 +49,7 @@ import {
   setPrivacy,
   setSplitField,
   setSplitTags,
+  syncClosingBalances,
   type UseCaseContext,
   unhideTransactionName,
   updateAccount,
@@ -591,6 +592,93 @@ describe("closing-balance warning (story 24)", () => {
       expect(out.itemsProperty, who).toEqual([]);
       expect(out.privateAItems, who).toEqual([["ACCT", "account"]]);
       expect(out.privateBSame, who).toBe(true);
+    }
+  });
+});
+
+/** The one closed state (finding Q1) on one adapter: a future closed date, then the clock moves. */
+function closedState(ctxs: Ctxs) {
+  const { sys } = ctxs;
+  const pa = createPerson(sys, { displayName: "A", colour: "#000000" });
+  const pb = createPerson(sys, { displayName: "B", colour: "#ffffff" });
+  const A = ctxs.as(pa);
+  const open = ctxs.as(pa, "2026-10-05");
+  const jobAt = (day: string): UseCaseContext => ({
+    ...sys,
+    clock: { now: () => now, today: () => Temporal.PlainDate.from(day) },
+  });
+  const items = () =>
+    listReviewItems(sys)
+      .filter((item) => item.kind === "accounts.closing-balance")
+      .map((item) => item.entityRef.split(":")[0]);
+  const make = (type: "savings" | "property") =>
+    createAccount(sys, {
+      name: "Acct",
+      type,
+      currency: "AUD",
+      isPrivate: false,
+      owners: [
+        { personId: pa, shareBp: 5000 },
+        { personId: pb, shareBp: 5000 },
+      ],
+    });
+  const out: Record<string, unknown> = {};
+
+  const acct = make("savings");
+  txn(A, acct, "2026-09-01", 1000);
+  closeAccount(A, { id: acct, closedOn: "2026-10-05" });
+  out.futureListed = listAccounts(A).some((row) => row.id === acct);
+  out.futureWarning = getAccount(A, { id: acct }).warning ?? null;
+  out.futureItems = items();
+  syncClosingBalances(jobAt("2026-09-27"));
+  out.futureJobItems = items();
+
+  out.arrivedListed = listAccounts(open).some((row) => row.id === acct);
+  out.arrivedWarning = getAccount(open, { id: acct }).warning ?? null;
+  out.arrivedBeforeJob = items();
+  const audits = () => listAudit(sys, {}).length;
+  syncClosingBalances(jobAt("2026-10-05"));
+  out.arrivedItems = items();
+  const before = audits();
+  syncClosingBalances(jobAt("2026-10-05"));
+  out.secondRunItems = items();
+  out.secondRunAudit = audits() - before;
+
+  const property = make("property");
+  txn(sys, property, "2026-09-01", 500);
+  closeAccount(A, { id: property, closedOn: "2026-10-05" });
+  syncClosingBalances(jobAt("2026-10-05"));
+  out.property = getAccount(open, { id: property }).warning ?? null;
+  out.propertyItems = items();
+
+  updateAccount(open, { id: acct, closedOn: null });
+  out.reopenedItems = items();
+  return out;
+}
+
+describe("one closed state (finding Q1)", () => {
+  it("is the same on SQLite and the memory mirror", () => {
+    migrate(db, loadMigrations(packageMigrationsDir));
+    const sqlite = closedState(sqliteCtxs(db));
+    const memory = closedState(memoryCtxs());
+    expect(memory).toEqual(sqlite);
+    for (const [who, out] of [
+      ["sqlite", sqlite],
+      ["memory", memory],
+    ] as const) {
+      expect(out.futureListed, who).toBe(true);
+      expect(out.futureWarning, who).toBeNull();
+      expect(out.futureItems, who).toEqual([]);
+      expect(out.futureJobItems, who).toEqual([]);
+      expect(out.arrivedListed, who).toBe(false);
+      expect(out.arrivedWarning, who).toEqual({ kind: "closing-balance", balanceCents: 1000 });
+      expect(out.arrivedBeforeJob, who).toEqual([]);
+      expect(out.arrivedItems, who).toEqual(["account"]);
+      expect(out.secondRunItems, who).toEqual(["account"]);
+      expect(out.secondRunAudit, who).toBe(0);
+      expect(out.property, who).toBeNull();
+      expect(out.propertyItems, who).toEqual(["account"]);
+      expect(out.reopenedItems, who).toEqual([]);
     }
   });
 });

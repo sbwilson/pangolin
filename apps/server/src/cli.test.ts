@@ -158,14 +158,17 @@ describe("pangolin (the admin CLI)", () => {
     const schema = loadMigrations(packageMigrationsDir).length;
     expect(result.out).toContain(`Schema:    ${schema} (this build expects ${schema})`);
     expect(result.out).toMatch(/Readiness: ok/);
-    expect(result.out).toMatch(/Jobs: +0 pending, 0 running, 0 dead/);
-    // No jobs: no lists, not even a header.
-    expect(result.out).not.toMatch(/Pending jobs|Running jobs|Dead jobs/);
+    // Only the daily closing-balance sync is waiting; nothing runs and nothing is dead.
+    expect(result.out).toMatch(/Jobs: +1 pending, 0 running, 0 dead/);
+    expect(result.out).toMatch(/Pending jobs[^\n]*\n {2}\S+ {2}closing-balance-sync\n/);
+    expect(result.out).not.toMatch(/Running jobs|Dead jobs/);
   });
 
   it("status lists the next pending jobs and the running ones, kind and time only", async () => {
     await boot();
     withDb((db) => {
+      // Leave the schedule's own row out, so the count is the test's alone.
+      db.prepare("DELETE FROM job WHERE dedupe_key = 'schedule:closing-balance-daily'").run();
       const insert = db.prepare(
         `INSERT INTO job (id, kind, lane, payload, status, attempts, max_attempts, run_at,
            lease_owner, lease_expires_at, created_at, updated_at)
@@ -434,8 +437,10 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
     const status = (await cli(["status"])).out;
     expect(status).toContain("Backups:   not configured (PANGOLIN_BACKUP_REPOSITORY is empty)");
     expect(status).not.toMatch(/^(Check|Drill|Warning):/m);
-    // Nothing was enqueued, and no nightly schedule exists.
-    expect(withDb((db) => db.prepare("SELECT COUNT(*) FROM job").pluck().get())).toBe(0);
+    // Nothing was enqueued, and no nightly schedule exists: only the closing-balance sync waits.
+    expect(withDb((db) => db.prepare("SELECT dedupe_key FROM job").pluck().all())).toEqual([
+      "schedule:closing-balance-daily",
+    ]);
   });
 
   it("backup fails before enqueueing when the backup server is unreachable", async () => {
@@ -489,6 +494,7 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
       "schedule:backup-check-weekly",
       "schedule:backup-drill-monthly",
       "schedule:backup-nightly",
+      "schedule:closing-balance-daily",
     ]);
     const result = await cli(["backup"]);
     expect(result.err).toBe("");

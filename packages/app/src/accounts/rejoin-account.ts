@@ -75,7 +75,12 @@ export function rejoinAccount(ctx: UseCaseContext, input: RejoinAccountInput): A
       before: { ...before, owners: beforeOwners },
       after: { ...after, owners: afterOwners },
     });
-    return accountView(after, afterOwners, undefined, closingBalanceWarning(tx, ctx.viewer, after));
+    return accountView(
+      after,
+      afterOwners,
+      undefined,
+      closingBalanceWarning(tx, ctx.viewer, after, ctx.clock.today().toString()),
+    );
   });
 }
 

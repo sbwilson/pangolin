@@ -327,3 +327,11 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/story-leaving-the-household-deletes-the-leaver-s-private-data-plan.md`
   summary: Unverified (would be medium): the survivor of a transfer in a shared account carries an unscoped audit row when the leaver's private side is deleted, and the paired worlds link only private accounts.
   evidence: `leave-household.ts` `deleteAccountRows` audits a survivor with `survivorScopeOf`, as decision 81's delete path does, and the partner already reads `Transfer from <leaver>` on it. Add a private-to-shared transfer to the leave scenario's flavour one and compare the partner's audit bytes to settle it.
+
+- source_plan: `_bmad-output/implementation-artifacts/plan-q1-one-closed-state.md`
+  summary: Unverified (would be medium once the review inbox exists): a closing-balance item that a person resolves by hand is raised again at the next nightly `closing-balance-sync` run while the account stays closed with a balance.
+  evidence: `raiseReviewItem` is idempotent only among open items for a dedupe key (`system/review-items.ts`), and `syncClosingBalances` calls `syncClosingBalance` for every closed account each night. No screen resolves an item yet. Settle it with the inbox: suppress while the balance is unchanged, or accept the nightly reminder.
+
+- source_plan: `_bmad-output/implementation-artifacts/plan-q1-one-closed-state.md`
+  summary: No test seeds an open closing-balance item on an account with a future `closedOn` and runs the job to see it resolved with "the closed date has not come".
+  evidence: Only data raised under the pre-fix rule can be in that state; the resolve branch is covered through `updateAccount` (accounts.test.ts "moves the closed date into the future"). Add a case with a pre-seeded item to the "one closed state" describe block if such data ever exists.

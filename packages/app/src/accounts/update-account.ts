@@ -105,7 +105,12 @@ export function updateAccount(ctx: UseCaseContext, input: UpdateAccountInput): A
       after: { ...after, owners: afterOwners },
     });
     if (closedOn !== before.closedOn) syncClosingBalance(tx, audit, ctx, before.id);
-    return accountView(after, afterOwners, undefined, closingBalanceWarning(tx, ctx.viewer, after));
+    return accountView(
+      after,
+      afterOwners,
+      undefined,
+      closingBalanceWarning(tx, ctx.viewer, after, ctx.clock.today().toString()),
+    );
   });
 }
 
