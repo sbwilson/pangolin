@@ -1285,7 +1285,13 @@ export interface ReadRepos {
   readonly accounts: Pick<AccountRepo, "findVisible" | "list" | "owners" | "any">;
   readonly transactions: Pick<
     TransactionRepo,
-    "listVisible" | "findVisible" | "listPage" | "summarise" | "countBefore" | "dayNets"
+    | "listVisible"
+    | "findVisible"
+    | "listPage"
+    | "summarise"
+    | "countBefore"
+    | "dayNets"
+    | "latestPostedOn"
   >;
   readonly institutions: Pick<InstitutionRepo, "find" | "list">;
   readonly balanceSnapshots: Pick<BalanceSnapshotRepo, "listVisible" | "balanceAsOf">;

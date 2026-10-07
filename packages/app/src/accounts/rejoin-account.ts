@@ -80,6 +80,7 @@ export function rejoinAccount(ctx: UseCaseContext, input: RejoinAccountInput): A
       afterOwners,
       undefined,
       closingBalanceWarning(tx, ctx.viewer, after, ctx.clock.today().toString()),
+      tx.transactions.latestPostedOn(ctx.viewer, after.id) ?? null,
     );
   });
 }

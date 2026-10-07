@@ -2407,6 +2407,7 @@ export function memoryUnitOfWork(
           summarise: transactionRepo(uow.state, check).summarise,
           countBefore: transactionRepo(uow.state, check).countBefore,
           dayNets: transactionRepo(uow.state, check).dayNets,
+          latestPostedOn: transactionRepo(uow.state, check).latestPostedOn,
         },
         institutions: {
           find: institutionRepo(uow.state, check).find,

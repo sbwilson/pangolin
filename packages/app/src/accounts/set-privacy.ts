@@ -79,6 +79,7 @@ export function setPrivacy(ctx: UseCaseContext, input: SetPrivacyInput): Account
       owners,
       undefined,
       closingBalanceWarning(tx, ctx.viewer, after, ctx.clock.today().toString()),
+      tx.transactions.latestPostedOn(ctx.viewer, after.id) ?? null,
     );
   });
 }

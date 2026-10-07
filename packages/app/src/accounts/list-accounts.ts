@@ -27,7 +27,7 @@ export function listAccounts(ctx: UseCaseContext, input: ListAccountsInput = {})
 /** The view of one account the viewer can see, with the removal marker for a removed person. */
 function viewOf(
   ctx: UseCaseContext,
-  repos: Pick<ReadRepos, "accounts" | "audit" | "balanceSnapshots">,
+  repos: Pick<ReadRepos, "accounts" | "audit" | "balanceSnapshots" | "transactions">,
   row: AccountRow,
   today: string,
 ): AccountView {
@@ -37,7 +37,13 @@ function viewOf(
   const removal = isOwner
     ? undefined
     : removalOf(ctx.viewer, owners, repos.audit.ownerChanges(ctx.viewer, row.id));
-  return accountView(row, owners, removal, closingBalanceWarning(repos, viewer, row, today));
+  return accountView(
+    row,
+    owners,
+    removal,
+    closingBalanceWarning(repos, viewer, row, today),
+    repos.transactions.latestPostedOn(viewer, row.id) ?? null,
+  );
 }
 
 export const getAccountInput = z.object({ id: idInput }).strict();

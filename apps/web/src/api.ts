@@ -372,8 +372,12 @@ export async function fetchTags(): Promise<LedgerTag[]> {
   return (await res.json()).tags.map(({ id, name }) => ({ id, name }));
 }
 
-/** A JSON write (PATCH, PUT or DELETE) to one of our routes; throws `ApiError` on failure. */
-async function sendJson<T>(method: "PATCH" | "PUT" | "DELETE", path: string, body?: unknown) {
+/** A JSON write (POST, PATCH, PUT or DELETE) to one of our routes; throws `ApiError` on failure. */
+async function sendJson<T>(
+  method: "POST" | "PATCH" | "PUT" | "DELETE",
+  path: string,
+  body?: unknown,
+) {
   const res = await fetch(path, {
     method,
     ...(body === undefined
@@ -468,4 +472,113 @@ export async function unhideName(id: string): Promise<LedgerTransaction> {
     `${transactionPath(id)}/name-hidden`,
   );
   return transaction;
+}
+
+/** The kinds of account the server knows (`account.type`). */
+export type AccountType =
+  | "transaction"
+  | "savings"
+  | "offset"
+  | "credit_card"
+  | "home_loan"
+  | "brokerage"
+  | "super"
+  | "property"
+  | "vehicle"
+  | "other";
+
+/** An account as the accounts API returns it: the row, its owners and shares, and its pool. */
+export interface AccountView {
+  readonly id: string;
+  readonly name: string;
+  readonly type: AccountType;
+  readonly currency: string;
+  readonly isPrivate: boolean;
+  readonly institutionId: string | null;
+  readonly openedOn: string | null;
+  readonly closedOn: string | null;
+  readonly isSavings: boolean;
+  /** Owners and their shares in basis points (5000 is 50%). */
+  readonly owners: readonly { readonly personId: string; readonly shareBp: number }[];
+  /** `shared`, or the sole owner's person ID. */
+  readonly pool: string;
+  /** The newest `postedOn` among the account's live transactions; null when it has none. */
+  readonly newestPostedOn: string | null;
+}
+
+/** A bank, broker or super fund. */
+export interface InstitutionSummary {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** The open accounts the signed-in person may see (their own private ones and every public one). */
+export async function listAccounts(): Promise<AccountView[]> {
+  const res = await api.api.accounts.$get({ query: {} } as never);
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()).accounts as unknown as AccountView[];
+}
+
+/** One account by ID; another person's private account is a 404 `NotFound`. */
+export async function fetchAccount(id: string): Promise<AccountView> {
+  const res = await fetch(`/api/accounts/${encodeURIComponent(id)}`);
+  if (!res.ok) throw await apiError(res);
+  return ((await res.json()) as { account: AccountView }).account;
+}
+
+export async function fetchInstitutions(): Promise<InstitutionSummary[]> {
+  const res = await api.api.accounts.institutions.$get();
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()).institutions.map(({ id, name }) => ({ id, name }));
+}
+
+/** What the create form sends: the server mints the ID and checks every rule. */
+export interface NewAccount {
+  readonly name: string;
+  readonly type: AccountType;
+  readonly currency: string;
+  readonly isPrivate: boolean;
+  readonly owners: readonly { readonly personId: string; readonly shareBp: number }[];
+  readonly institutionId?: string | null;
+  readonly isSavings?: boolean;
+}
+
+export async function createAccount(input: NewAccount): Promise<AccountView> {
+  const { account } = await sendJson<{ account: AccountView }>("POST", "/api/accounts", input);
+  return account;
+}
+
+/** Changes the details and owners of an account; an omitted field stays as it is. */
+export async function updateAccount(
+  id: string,
+  changes: {
+    readonly name?: string;
+    readonly institutionId?: string | null;
+    readonly isSavings?: boolean;
+    readonly owners?: readonly { readonly personId: string; readonly shareBp: number }[];
+  },
+): Promise<AccountView> {
+  const { account } = await sendJson<{ account: AccountView }>(
+    "PATCH",
+    `/api/accounts/${encodeURIComponent(id)}`,
+    changes,
+  );
+  return account;
+}
+
+/** Makes an account private or public; a refusal is an `ApiError` carrying the server's message. */
+export async function setAccountPrivacy(id: string, isPrivate: boolean): Promise<AccountView> {
+  const { account } = await sendJson<{ account: AccountView }>(
+    "POST",
+    `/api/accounts/${encodeURIComponent(id)}/privacy`,
+    { isPrivate },
+  );
+  return account;
+}
+
+/** The server's balance of a cash account in cents (signed: loans and cards are negative). */
+export async function fetchAccountBalance(id: string): Promise<number> {
+  const res = await fetch(`/api/accounts/${encodeURIComponent(id)}/balance`);
+  if (!res.ok) throw await apiError(res);
+  return ((await res.json()) as { balanceCents: number }).balanceCents;
 }

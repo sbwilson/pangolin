@@ -43,6 +43,11 @@ export interface AccountView extends AccountRow {
    * warning, never a block). `balanceCents` is that balance.
    */
   readonly warning?: AccountWarning;
+  /**
+   * The latest `postedOn` (`YYYY-MM-DD`) among the account's live transactions the viewer can
+   * see, pending or posted; null when it has none. How fresh the account's data is.
+   */
+  readonly newestPostedOn: string | null;
 }
 
 /** A closed account still holds a balance. */
@@ -76,8 +81,9 @@ export function payerOf(
 export function accountView(
   row: AccountRow,
   owners: readonly AccountOwnerRow[],
-  removal?: AccountRemoval,
-  warning?: AccountWarning,
+  removal: AccountRemoval | undefined,
+  warning: AccountWarning | undefined,
+  newestPostedOn: string | null,
 ): AccountView {
   return {
     ...row,
@@ -85,6 +91,7 @@ export function accountView(
     pool: poolOf(owners),
     ...(removal === undefined ? {} : { removal }),
     ...(warning === undefined ? {} : { warning }),
+    newestPostedOn,
   };
 }
 

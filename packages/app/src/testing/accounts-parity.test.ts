@@ -147,6 +147,7 @@ describe("memory mirror parity", () => {
         balances,
         pool: view.pool,
         owners: view.owners,
+        newestPostedOn: view.newestPostedOn,
         removedOther,
         edited,
         pooled,
@@ -181,6 +182,8 @@ describe("memory mirror parity", () => {
     ] as const) {
       expect(result.balances, who).toEqual([0, 5000, 4800, 4100, 4125]);
       expect(result.pool, who).toBe("shared");
+      // The newest live line; the soft-deleted 14 Sep does not count.
+      expect(result.newestPostedOn, who).toBe("2026-09-12");
       expect(result.removedOther, who).toBe("ok");
       expect(result.edited, who).toBe("Validation");
       expect(result.pooled, who).not.toBe("shared");

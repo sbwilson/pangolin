@@ -327,6 +327,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               summarise: repos.transactions.summarise,
               countBefore: repos.transactions.countBefore,
               dayNets: repos.transactions.dayNets,
+              latestPostedOn: repos.transactions.latestPostedOn,
             },
             institutions: { find: repos.institutions.find, list: repos.institutions.list },
             balanceSnapshots: {

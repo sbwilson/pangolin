@@ -17,6 +17,7 @@
   --accent: oklch(0.94 0.015 150);
   --accent-foreground: oklch(0.22 0.02 150);
   --sidebar: oklch(0.97 0.008 95);
+  --warning: #8a5600;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -33,6 +34,7 @@
     --accent: oklch(0.3 0.02 150);
     --accent-foreground: oklch(0.96 0.005 95);
     --sidebar: oklch(0.23 0.012 150);
+    --warning: #e6b455;
   }
 }
 
@@ -49,6 +51,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-sidebar: var(--sidebar);
+  --color-warning: var(--warning);
 }
 
 @layer base {

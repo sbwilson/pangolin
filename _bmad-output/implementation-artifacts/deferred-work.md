@@ -355,3 +355,16 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-transaction-sheet-splits-tags-notes-beneficiary-and-hiding-plan.md`
   summary: Add e2e coverage of the transaction sheet's split, tag, note, beneficiary and hide/unhide writes against the real server.
   evidence: Review found these verified only by jsdom component tests with mocked writes; the e2e specs cannot run without docker, so real-route behaviour is unverified (medium, unverified until CI runs them).
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-account-screens-plan.md`
+  summary: Show `property` accounts on the Accounts page, which currently renders them in no group.
+  evidence: ACCOUNT_GROUPS has no property entry and only a Properties placeholder card exists; the review confirmed a property account never appears (epic-loans-property owns it).
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-account-screens-plan.md`
+  summary: Strip a stray `?account=` from `/accounts/:id` so Clear and the empty-state message ignore it.
+  evidence: TransactionList's `hasFilters(search)` counts a pasted account param that the pinned query overrides.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-account-screens-plan.md`
+  summary: Carry over owners other than me and my partner when the owners are edited in AccountSheet.
+  evidence: Drafts are built from me and me.partner only, so an unknown owner would be dropped; unreachable in a two-person household.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-account-screens-plan.md`
+  summary: Make the e2e `accounts` Playwright project not skip when the chromium project fails.
+  evidence: It depends on chromium so the seeded ledger exists first; a chromium failure hides its results.

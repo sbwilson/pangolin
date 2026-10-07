@@ -32,8 +32,16 @@ export default defineConfig({
         {
           name: "chromium",
           testMatch: "**/*.spec.ts",
-          testIgnore: ["auth.spec.ts", "restored.spec.ts"],
+          testIgnore: ["auth.spec.ts", "restored.spec.ts", "accounts.spec.ts"],
           dependencies: ["auth"],
+          use: chrome,
+        },
+        // Reads the ledger that ledger.spec seeds (once, into an empty ledger), so it runs after
+        // the rest of the suite rather than in file order.
+        {
+          name: "accounts",
+          testMatch: "accounts.spec.ts",
+          dependencies: ["chromium"],
           use: chrome,
         },
       ],

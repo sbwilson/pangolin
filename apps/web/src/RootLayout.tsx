@@ -14,6 +14,7 @@ import { ME_KEY, SessionContext } from "./session.tsx";
 const NAV = [
   { to: "/", label: "Home" },
   { to: "/transactions", label: "Transactions" },
+  { to: "/accounts", label: "Accounts" },
 ] as const;
 
 /**

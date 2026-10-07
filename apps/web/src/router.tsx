@@ -1,4 +1,5 @@
 import { createMemoryHistory, createRouter, type RouterHistory } from "@tanstack/react-router";
+import { accountRoute, accountsRoute } from "./routes/accounts.tsx";
 import { homeRoute } from "./routes/home.tsx";
 import { ledgerRoute } from "./routes/ledger.tsx";
 import { recoverRoute } from "./routes/recover.tsx";
@@ -11,6 +12,8 @@ import { transactionsRoute } from "./routes/transactions.tsx";
 const routeTree = rootRoute.addChildren([
   homeRoute,
   transactionsRoute,
+  accountsRoute,
+  accountRoute,
   ledgerRoute,
   setupRoute,
   recoverRoute,
