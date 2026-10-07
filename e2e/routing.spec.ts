@@ -231,7 +231,7 @@ for (const width of [375, 320]) {
       await expect(page.getByRole("combobox", { name: "Category" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Quarter" })).toBeVisible();
       await expect(
-        page.getByText("30 transactions \u00b7 In $0.00 \u00b7 Out $465.00"),
+        page.getByText("30 transactions \u00b7 In $0.00 \u00b7 Out $4.65"),
       ).toBeVisible();
       await expect(table.getByRole("cell", { name: "Row 0", exact: true })).toBeVisible();
       await expect(table.getByRole("columnheader", { name: "Account" })).toBeHidden();
