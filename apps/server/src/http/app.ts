@@ -59,6 +59,7 @@ import {
   listTaxCategories,
   listTransactions,
   me,
+  parseTransactionQuery,
   type ReadinessOutput,
   type RecordBalanceSnapshotInput,
   type RunnerLiveness,
@@ -309,7 +310,9 @@ export function createApi(deps: ApiDeps) {
     })
     .get("/api/ledger/transactions", (c) => {
       // Per viewer (AD-3): shared accounts plus the viewer's own private ones. Never cached.
-      return c.json({ transactions: listTransactions(ctx(c), {}) }, 200);
+      // Filters and paging come from the query string (`parseTransactionQuery`); a bad one is 400.
+      const query = parseTransactionQuery(c.req.queries());
+      return c.json(listTransactions(ctx(c), query), 200);
     })
     .post("/api/ledger/transactions", async (c) => {
       writable();

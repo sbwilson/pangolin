@@ -74,6 +74,22 @@ vi.setConfig({ testTimeout: SLOW_MS, hookTimeout: SLOW_MS });
 const fill = (path: string, ids: Record<string, string>): string =>
   path.replace(/:([A-Za-z]+)/g, (_, name: string) => ids[name] ?? `:${name}`);
 
+/** The filters and paging B's transaction reads are replayed with (ids B may use in this world). */
+const TRANSACTION_QUERIES = (world: World): string[] => [
+  "page=1",
+  "hidden=true",
+  "uncategorised=true",
+  "transfers=true",
+  "type=in",
+  "type=out",
+  "minCents=1&maxCents=100000",
+  "from=2000-01-01&to=2100-01-01",
+  `account=${world.ok("account")}`,
+  `payee=${world.ok("payee")}`,
+  `tag=${world.ok("tag")}`,
+  `category=${world.ok("category")}`,
+];
+
 /** Every `GET` route that returns person data, as B sees it, keyed by route and ids. */
 async function readTranscript(world: World): Promise<Map<string, string>> {
   const out = new Map<string, string>();
@@ -87,6 +103,14 @@ async function readTranscript(world: World): Promise<Map<string, string>> {
       const res = await world.request("b", "GET", path);
       out.set(`GET ${path}`, normaliseRequestIds(`${res.status} ${res.text}`));
     }
+  }
+  // B's filtered and paged reads of the transaction list, whose query the manifest does not carry:
+  // each narrows by something A's private data could change (a hidden name, a payee or tag, a
+  // type, an amount, a paging position), so the paired worlds must still read the same.
+  for (const query of TRANSACTION_QUERIES(world)) {
+    const path = `/api/ledger/transactions?${query}`;
+    const res = await world.request("b", "GET", path);
+    out.set(`GET ${path}`, normaliseRequestIds(`${res.status} ${res.text}`));
   }
   const b = world.ctx("b");
   out.set("use case listAudit(B)", normaliseRequestIds(JSON.stringify(listAudit(b))));
@@ -660,6 +684,33 @@ describe("partner B against partner A's private data", () => {
     expect(sameBytes(right)).toEqual(sameBytes(left));
     // After the writes B's reads are still identical to each other.
     expect(identicalProblems(await readTranscript(w1), await readTranscript(w2))).toEqual([]);
+  });
+
+  it("lists nothing, the same as for an id that never existed, when B filters by A's private ids", async () => {
+    const w = w2;
+    const aimed = {
+      account: w.privateIds.account,
+      payee: w.privateIds.payee,
+      tag: w.privateIds.tag,
+    };
+    expect(aimed.account.length).toBeGreaterThan(0);
+    expect(aimed.payee.length).toBeGreaterThan(0);
+    expect(aimed.tag.length).toBeGreaterThan(0);
+    for (const [param, ids] of Object.entries(aimed)) {
+      const reference = await w.request(
+        "b",
+        "GET",
+        `/api/ledger/transactions?${param}=${nonexistentId()}`,
+      );
+      expect(reference.status).toBe(200);
+      expect(JSON.parse(reference.text).page.total).toBe(0);
+      for (const id of ids) {
+        const res = await w.request("b", "GET", `/api/ledger/transactions?${param}=${id}`);
+        expect(`${param} ${res.status} ${res.text}`).toBe(
+          `${param} ${reference.status} ${reference.text}`,
+        );
+      }
+    }
   });
 
   it("answers 404, the same as for a nonexistent id, for every id of A's private data", async () => {

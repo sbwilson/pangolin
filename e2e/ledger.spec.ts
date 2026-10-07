@@ -86,10 +86,36 @@ function expectedRows(person: Person): string[] {
 const rowOf = (t: ApiTransaction): string =>
   `${t.postedOn}|${t.amountCents}|${HIDDEN.test(t.descriptionRaw) ? "HIDDEN" : t.descriptionRaw}`;
 
-async function fetchTransactions(page: Page): Promise<ApiTransaction[]> {
-  const res = await page.request.get("/api/ledger/transactions");
+/** One page of the list API: 50 rows, and the server's own total, page count and cursors. */
+interface ApiPage {
+  transactions: ApiTransaction[];
+  page: {
+    total: number;
+    pageCount: number;
+    page: number;
+    next: string | null;
+    prev: string | null;
+  };
+  summary: { count: number; inCents: number; outCents: number };
+  dayNets: Record<string, number>;
+}
+
+async function fetchPage(page: Page, query = ""): Promise<ApiPage> {
+  const res = await page.request.get(`/api/ledger/transactions${query}`);
   expect(res.status()).toBe(200);
-  return ((await res.json()) as { transactions: ApiTransaction[] }).transactions;
+  return (await res.json()) as ApiPage;
+}
+
+/** Every transaction the person sees, by following `next` from the first page. */
+async function fetchTransactions(page: Page): Promise<ApiTransaction[]> {
+  const rows: ApiTransaction[] = [];
+  let query = "";
+  for (;;) {
+    const body = await fetchPage(page, query);
+    rows.push(...body.transactions);
+    if (body.page.next === null) return rows;
+    query = `?after=${encodeURIComponent(body.page.next)}`;
+  }
 }
 
 const seedCommand = (): string => {
@@ -134,12 +160,64 @@ async function expectSeededView(page: Page, person: Person): Promise<ApiTransact
   ] as number;
   expect(visible).toBeGreaterThan(300);
 
-  // The UI lists them all (a long list is virtualised, and says how many rows it has).
+  // The UI shows the first page of 50 with the server's total and page count.
   await page.getByRole("button", { name: "Transactions" }).click();
+  await expect(page).toHaveURL((url) => url.pathname === "/transactions");
   const table = page.getByRole("table", { name: "Transactions" });
   await expect(table).toBeVisible();
-  if (visible > 200) await expect(table).toHaveAttribute("aria-rowcount", String(visible + 1));
-  else await expect(table.locator("tbody tr")).toHaveCount(visible);
+  await expect(table.getByRole("checkbox")).toHaveCount(50);
+  const first = await fetchPage(page);
+  expect(first.transactions).toHaveLength(50);
+  expect(first.page.total).toBe(visible);
+  expect(first.page.pageCount).toBe(Math.ceil(visible / 50));
+  expect(first.summary.count).toBe(visible);
+  await expect(
+    page.getByText(`Showing 50 of ${visible} \u00b7 Page 1 of ${first.page.pageCount}`),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page).toHaveURL((url) => url.searchParams.has("after"));
+  await expect(page.getByText(`Page 2 of ${first.page.pageCount}`)).toBeVisible();
+
+  // Changing a filter from page 2 goes back to page 1: no paging position stays in the URL.
+  const out = await fetchPage(page, "?type=out");
+  expect(out.page.pageCount).toBeGreaterThan(1);
+  await page.getByRole("combobox", { name: "Type" }).selectOption("out");
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.get("type") === "out" &&
+      !url.searchParams.has("after") &&
+      !url.searchParams.has("before") &&
+      !url.searchParams.has("page"),
+  );
+  await expect(page.getByText(`Page 1 of ${out.page.pageCount}`)).toBeVisible();
+  await expect(page.getByText(`${out.page.total} transactions`)).toBeVisible();
+
+  // Next, then Previous (a `before` cursor), then a jump to a page number: each leaves one
+  // paging position in the URL, and the pager follows.
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page).toHaveURL(
+    (url) => url.searchParams.has("after") && url.searchParams.get("type") === "out",
+  );
+  await expect(page.getByText(`Page 2 of ${out.page.pageCount}`)).toBeVisible();
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.has("before") &&
+      !url.searchParams.has("after") &&
+      !url.searchParams.has("page") &&
+      url.searchParams.get("type") === "out",
+  );
+  await expect(page.getByText(`Page 1 of ${out.page.pageCount}`)).toBeVisible();
+  await page.getByLabel("Go to page").fill("2");
+  await page.getByRole("button", { name: "Go", exact: true }).click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.get("page") === "2" &&
+      !url.searchParams.has("after") &&
+      !url.searchParams.has("before") &&
+      url.searchParams.get("type") === "out",
+  );
+  await expect(page.getByText(`Page 2 of ${out.page.pageCount}`)).toBeVisible();
 
   // The API holds the detail: the same rows, hidden names and transfer labels as the seed says.
   const rows = await fetchTransactions(page);

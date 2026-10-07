@@ -294,7 +294,7 @@ function switches(ctxs: Ctxs) {
   beneficiary(pa);
   out.madePrivate = outcome(() => setPrivacy(A, { id: acct, isPrivate: true }));
   const nameFor = (ctx: UseCaseContext) =>
-    listTransactions(ctx).find((t) => t.id === gift)?.descriptionRaw;
+    listTransactions(ctx).transactions.find((t) => t.id === gift)?.descriptionRaw;
   out.aSeesWhilePrivate = nameFor(A);
   out.aAuditLeaks = JSON.stringify(listAudit(A)).includes("Gift");
   out.aSeesOnTheDay = nameFor(ctxs.as(pa, "2027-03-12"));
@@ -367,7 +367,7 @@ function switches(ctxs: Ctxs) {
   });
   hideTransactionName(B, { id: note, until: "2027-03-12" });
   const noteFor = (ctx: UseCaseContext) =>
-    listTransactions(ctx).find((t) => t.id === note)?.descriptionRaw;
+    listTransactions(ctx).transactions.find((t) => t.id === note)?.descriptionRaw;
   out.grpRejoinAsOwner = outcome(() => rejoinAccount(B, { id: grp }));
   out.grpAShares = outcome(() =>
     updateAccount(A, {
@@ -751,7 +751,7 @@ function archive(ctxs: Ctxs) {
   out.allA = listed(A, true);
   out.record = [
     getAccount(B, { id: closed }).closedOn,
-    listTransactions(B).filter((t) => t.accountId === closed).length,
+    listTransactions(B).transactions.filter((t) => t.accountId === closed).length,
     accountBalanceAsOf(B, { accountId: closed, date: "2026-09-27" }),
     listAudit(B).some((entry) => entry.entity === "account" && entry.entityId === closed),
   ];
@@ -886,7 +886,7 @@ function leaving(ctxs: Ctxs) {
       .map((row) => `${name(row.id)}:${row.owners.map((o) => `${name(o.personId)}=${o.shareBp}`)}`)
       .sort(),
     transactions: listTransactions(ctx)
-      .map((row) => [
+      .transactions.map((row) => [
         name(row.id),
         name(row.accountId),
         row.descriptionRaw,

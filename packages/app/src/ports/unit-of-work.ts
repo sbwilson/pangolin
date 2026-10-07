@@ -437,6 +437,59 @@ export interface VisibleTransaction
   readonly splits: readonly SplitRow[];
 }
 
+/**
+ * What a transaction list may be narrowed by. Every field is optional and they combine with AND.
+ * The name-bearing ones (`payeeId`, `hidden`) are decided on the viewer's projection, never the
+ * stored columns, so a filter by another person's scoped payee, tag or hidden name matches
+ * nothing (AD-4, AD-18).
+ */
+export interface TransactionFilter {
+  readonly accountId?: string | undefined;
+  /** `YYYY-MM-DD`, inclusive. */
+  readonly from?: string | undefined;
+  /** `YYYY-MM-DD`, inclusive. */
+  readonly to?: string | undefined;
+  /** Some split carries this category. */
+  readonly categoryId?: string | undefined;
+  /** Some split carries this tag (a tag the viewer may not see matches nothing). */
+  readonly tagId?: string | undefined;
+  /** The payee as the viewer sees it (NULL while hidden or scoped to another person). */
+  readonly payeeId?: string | undefined;
+  /** The least `abs(amountCents)`. */
+  readonly minCents?: number | undefined;
+  /** The most `abs(amountCents)`. */
+  readonly maxCents?: number | undefined;
+  /** `in` is a positive amount, `out` a negative one. */
+  readonly type?: "in" | "out" | undefined;
+  /** At least one split has no category. */
+  readonly uncategorised?: true | undefined;
+  /** Rows that belong to a transfer group. */
+  readonly transfers?: true | undefined;
+  /** Rows whose name is hidden from this viewer now. */
+  readonly hidden?: true | undefined;
+}
+
+/** A position in the list order (`postedOn` desc, `id` desc). */
+export interface TransactionCursor {
+  readonly postedOn: string;
+  readonly id: string;
+}
+
+/** Where a page starts: strictly after or before a cursor, or `offset` rows in. */
+export type TransactionPageAt =
+  | { readonly after: TransactionCursor }
+  | { readonly before: TransactionCursor }
+  | { readonly offset: number };
+
+/** Money in and out over a filter, worked out in SQL (the web never sums). */
+export interface TransactionSummary {
+  readonly count: number;
+  /** The sum of the positive amounts. */
+  readonly inCents: number;
+  /** The sum of the negative amounts, as a non-negative number. */
+  readonly outCents: number;
+}
+
 export interface TransactionRepo {
   /**
    * Inserts the transaction and its splits. A second line with the same `(accountId,
@@ -535,6 +588,37 @@ export interface TransactionRepo {
    * clock). Throws when given no viewer.
    */
   listVisible(viewer: Viewer, today: string): VisibleTransaction[];
+  /**
+   * One page of `listVisible` narrowed by `filter`, at most `limit` rows, in list order (newest
+   * first, `id` descending): `after` the rows that follow a cursor, `before` the `limit` rows
+   * that precede it (still newest first), or `offset` rows in. Throws when given no viewer.
+   */
+  listPage(
+    viewer: Viewer,
+    today: string,
+    filter: TransactionFilter,
+    at: TransactionPageAt,
+    limit: number,
+  ): VisibleTransaction[];
+  /** The count and the money in and out of every row `listPage` could return for `filter`. */
+  summarise(viewer: Viewer, today: string, filter: TransactionFilter): TransactionSummary;
+  /** How many rows `filter` leaves that come strictly before `cursor` in list order. */
+  countBefore(
+    viewer: Viewer,
+    today: string,
+    filter: TransactionFilter,
+    cursor: TransactionCursor,
+  ): number;
+  /**
+   * The net (sum of amounts) of every row `filter` leaves on each of `days` (`YYYY-MM-DD`); a
+   * day with no row is absent.
+   */
+  dayNets(
+    viewer: Viewer,
+    today: string,
+    filter: TransactionFilter,
+    days: readonly string[],
+  ): Record<string, number>;
   /**
    * Every transaction, soft-deleted ones included, whose name `personId` hid (`nameHiddenBy`),
    * with its splits, as stored, whatever the viewer or the account's privacy. For the household
@@ -1199,7 +1283,10 @@ export interface ReadRepos {
   readonly audit: Pick<AuditRepo, "listVisible" | "ownerChanges">;
   readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
   readonly accounts: Pick<AccountRepo, "findVisible" | "list" | "owners" | "any">;
-  readonly transactions: Pick<TransactionRepo, "listVisible" | "findVisible">;
+  readonly transactions: Pick<
+    TransactionRepo,
+    "listVisible" | "findVisible" | "listPage" | "summarise" | "countBefore" | "dayNets"
+  >;
   readonly institutions: Pick<InstitutionRepo, "find" | "list">;
   readonly balanceSnapshots: Pick<BalanceSnapshotRepo, "listVisible" | "balanceAsOf">;
   readonly transferGroups: Pick<TransferGroupRepo, "find">;

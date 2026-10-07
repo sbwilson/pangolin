@@ -419,7 +419,10 @@ export type LeakMode =
 
 type Repos = {
   accounts: Pick<AccountRepo, "findVisible" | "list">;
-  transactions: Pick<TransactionRepo, "findVisible" | "listVisible">;
+  transactions: Pick<
+    TransactionRepo,
+    "findVisible" | "listVisible" | "listPage" | "summarise" | "countBefore" | "dayNets"
+  >;
   payees: Pick<PayeeRepo, "list">;
   tags: Pick<TagRepo, "list">;
   payeeAliases: Pick<PayeeAliasRepo, "list">;
@@ -472,6 +475,18 @@ function tamperRepos<R extends Repos>(repos: R, mode: LeakMode, a: PersonViewer)
       const rows = repos.transactions.listVisible(viewer, today);
       return mode === "redact-identity" ? rows.map(unrendered) : rows;
     },
+    // The paged list the API serves: a list leak or an unprojected name reaches it as well.
+    listPage: (...[viewer, ...rest]: Parameters<TransactionRepo["listPage"]>) => {
+      if (when("list", "hidden-name")) return repos.transactions.listPage(lift(viewer), ...rest);
+      const rows = repos.transactions.listPage(viewer, ...rest);
+      return mode === "redact-identity" ? rows.map(unrendered) : rows;
+    },
+    summarise: (...[viewer, ...rest]: Parameters<TransactionRepo["summarise"]>) =>
+      repos.transactions.summarise(when("list", "hidden-name") ? lift(viewer) : viewer, ...rest),
+    countBefore: (...[viewer, ...rest]: Parameters<TransactionRepo["countBefore"]>) =>
+      repos.transactions.countBefore(when("list", "hidden-name") ? lift(viewer) : viewer, ...rest),
+    dayNets: (...[viewer, ...rest]: Parameters<TransactionRepo["dayNets"]>) =>
+      repos.transactions.dayNets(when("list", "hidden-name") ? lift(viewer) : viewer, ...rest),
     findVisible: (viewer: Viewer, id: string, today: string) => {
       if (when("by-id", "by-id-write", "hidden-name")) {
         return repos.transactions.findVisible(lift(viewer), id, today);

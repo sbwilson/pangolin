@@ -288,7 +288,7 @@ export function HomePage() {
       <Button
         type="button"
         variant="outline"
-        onClick={() => navigate({ to: "/ledger", replace: true })}
+        onClick={() => navigate({ to: "/transactions", replace: true })}
       >
         Transactions
       </Button>

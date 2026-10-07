@@ -68,7 +68,7 @@ describe("hide and unhide a transaction name", () => {
     });
     const seen = getTransaction(as(b), { id });
     expect(seen.descriptionRaw).toBe("Hidden until 27 Sep 2027");
-    expect(JSON.stringify(listTransactions(as(b)))).not.toContain("Surprise");
+    expect(JSON.stringify(listTransactions(as(b)).transactions)).not.toContain("Surprise");
     // Amounts and notes stay visible; the partner's later private edits change nothing for them.
     expect(seen.amountCents).toBe(-500);
     updateTransaction(as(a), { id, description: "Renamed" });
@@ -265,7 +265,7 @@ describe("transfer groups", () => {
     createTransferGroup(as(a), { transactionIds: [sharedSide, privateSide] });
     const seen = getTransaction(as(b), { id: sharedSide });
     expect(seen.transferLabel).toBe("Transfer from Ann");
-    const all = JSON.stringify(listTransactions(as(b)));
+    const all = JSON.stringify(listTransactions(as(b)).transactions);
     expect(all).not.toContain("Secret savings");
     expect(all).not.toContain(privateSide);
     expect(JSON.stringify(listAudit(as(b)))).not.toContain("Secret savings");
@@ -569,9 +569,11 @@ describe("the partner's writes on a row whose name is hidden from them", () => {
     };
     const seen = getTransaction(as(b), { id });
     expect(seen).toMatchObject({ fingerprint: null, externalId: null, descriptionRaw: LABEL });
-    const listed = listTransactions(as(b)).find((t) => t.id === id);
+    const listed = listTransactions(as(b)).transactions.find((t) => t.id === id);
     expect(listed).toMatchObject({ fingerprint: null, externalId: null });
-    expect(JSON.stringify(listTransactions(as(b)))).not.toContain("v1-hash-of-surprise");
+    expect(JSON.stringify(listTransactions(as(b)).transactions)).not.toContain(
+      "v1-hash-of-surprise",
+    );
     expect(getTransaction(as(a), { id })).toMatchObject({
       fingerprint: "v1-hash-of-surprise",
       externalId: "BANK-123",

@@ -638,7 +638,9 @@ describe("ledger.setSplitTags", () => {
     expect(JSON.parse(row?.after ?? "{}").splits[0].tagIds).toEqual([t1.id, t2.id].sort());
     setSplitTags(of(a), { transactionId: id, splitId: sid, tagIds: [t2.id] });
     expect(uow.state.splitTags).toHaveLength(1);
-    expect(listTransactions(of(a))[0]?.splits[0]?.tags.map((t) => t.id)).toEqual([t2.id]);
+    expect(listTransactions(of(a)).transactions[0]?.splits[0]?.tags.map((t) => t.id)).toEqual([
+      t2.id,
+    ]);
     setSplitTags(of(a), { transactionId: id, splitId: sid, tagIds: [] });
     expect(uow.state.splitTags).toEqual([]);
   });
@@ -781,12 +783,12 @@ describe("transaction reads", () => {
     const tag = createTag(of(a), { name: "t" });
     setSplitTags(of(a), { transactionId: id, splitId: sid, tagIds: [tag.id] });
     expect(getTransaction(of(b), { id })).toMatchObject({ remainingCents: 0 });
-    expect(listTransactions(of(b))[0]?.splits[0]?.tags).toHaveLength(1);
+    expect(listTransactions(of(b)).transactions[0]?.splits[0]?.tags).toHaveLength(1);
     // A transaction whose splits do not add up (a seeded or imported state) reports the gap.
     const row = uow.state.splits[0];
     if (row === undefined) throw new Error("missing");
     uow.state.splits[0] = { ...row, amountCents: -400 };
     expect(getTransaction(of(a), { id }).remainingCents).toBe(-600);
-    expect(listTransactions(of(a))[0]?.remainingCents).toBe(-600);
+    expect(listTransactions(of(a)).transactions[0]?.remainingCents).toBe(-600);
   });
 });

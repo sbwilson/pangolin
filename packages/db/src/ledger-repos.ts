@@ -8,13 +8,32 @@ import type {
   InstitutionRow,
   OwnedAccount,
   SplitRow,
+  TransactionCursor,
+  TransactionFilter,
   TransactionRepo,
   TransactionRow,
   TransferGroupRepo,
   TransferGroupRow,
+  Viewer,
   VisibleTransaction,
 } from "@pangolin/app";
-import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { balanceAsOf } from "./balance.ts";
 import type { Db } from "./open.ts";
@@ -23,6 +42,7 @@ import {
   requireViewer,
   type TxnProjection,
   visibleAccounts,
+  visibleScope,
   visibleTxn,
 } from "./privacy.ts";
 import { account } from "./schema/account.ts";
@@ -308,6 +328,46 @@ function toView(row: { nameHidden: unknown; [key: string]: unknown }): VisibleTr
   return { ...row, nameHidden: Number(row.nameHidden) === 1 } as unknown as VisibleTransaction;
 }
 
+/**
+ * The conditions a `TransactionFilter` adds to the viewer's projection. Payee and hidden are
+ * decided on the projection (`payeeId`, `hidden`), so another person's scoped payee or a name
+ * hidden from the viewer cannot be probed; a tag is matched only through the viewer's tag scope.
+ */
+function filterConditions(
+  viewer: Viewer,
+  projection: TxnProjection,
+  f: TransactionFilter,
+): (SQL | undefined)[] {
+  const hasSplit = (extra: SQL) =>
+    sql`EXISTS (SELECT 1 FROM ${split} WHERE ${split.transactionId} = ${transaction.id} AND ${extra})`;
+  const tagScope = visibleScope(tag.scopePersonId, viewer);
+  return [
+    f.accountId === undefined ? undefined : eq(transaction.accountId, f.accountId),
+    f.from === undefined ? undefined : gte(transaction.postedOn, f.from),
+    f.to === undefined ? undefined : lte(transaction.postedOn, f.to),
+    f.categoryId === undefined ? undefined : hasSplit(sql`${split.categoryId} = ${f.categoryId}`),
+    f.tagId === undefined
+      ? undefined
+      : hasSplit(
+          sql`EXISTS (SELECT 1 FROM ${splitTag} INNER JOIN ${tag} ON ${tag.id} = ${splitTag.tagId} WHERE ${splitTag.splitId} = ${split.id} AND ${tag.id} = ${f.tagId} AND ${tag.deletedAt} IS NULL${tagScope === undefined ? sql`` : sql` AND ${tagScope}`})`,
+        ),
+    f.payeeId === undefined ? undefined : sql`${projection.payeeId} = ${f.payeeId}`,
+    f.minCents === undefined ? undefined : sql`abs(${transaction.amountCents}) >= ${f.minCents}`,
+    f.maxCents === undefined ? undefined : sql`abs(${transaction.amountCents}) <= ${f.maxCents}`,
+    f.type === "in" ? sql`${transaction.amountCents} > 0` : undefined,
+    f.type === "out" ? sql`${transaction.amountCents} < 0` : undefined,
+    f.uncategorised === true ? hasSplit(sql`${split.categoryId} IS NULL`) : undefined,
+    f.transfers === true ? isNotNull(transaction.transferGroupId) : undefined,
+    f.hidden === true ? sql`${projection.hidden} = 1` : undefined,
+  ];
+}
+
+/** Rows strictly after (`older`) or before (newer than) a cursor in list order. */
+function pastCursor(cursor: TransactionCursor, direction: "after" | "before"): SQL {
+  const op = direction === "after" ? sql`<` : sql`>`;
+  return sql`(${transaction.postedOn} ${op} ${cursor.postedOn} OR (${transaction.postedOn} = ${cursor.postedOn} AND ${transaction.id} ${op} ${cursor.id}))`;
+}
+
 /** The `transaction` and `split` repository. */
 export function createTransactionRepo(orm: Orm, check: () => void): TransactionRepo {
   return {
@@ -504,6 +564,91 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
         .orderBy(desc(transaction.postedOn), desc(transaction.id))
         .all();
       return withSplits(orm, rows.map(toView));
+    },
+
+    listPage: (viewer, today, filter, at, limit) => {
+      const projection = visibleTxn(viewer, today);
+      const narrowed = filterConditions(viewer, projection, filter);
+      check();
+      const position =
+        "after" in at
+          ? pastCursor(at.after, "after")
+          : "before" in at
+            ? pastCursor(at.before, "before")
+            : undefined;
+      const newerFirst = !("before" in at);
+      const rows = orm
+        .select(viewColumns(projection))
+        .from(transaction)
+        .where(and(projection.where, ...narrowed, position))
+        .orderBy(
+          ...(newerFirst
+            ? [desc(transaction.postedOn), desc(transaction.id)]
+            : [asc(transaction.postedOn), asc(transaction.id)]),
+        )
+        .limit(limit)
+        .offset("offset" in at ? at.offset : 0)
+        .all();
+      if (!newerFirst) rows.reverse();
+      return withSplits(orm, rows.map(toView));
+    },
+
+    summarise: (viewer, today, filter) => {
+      const projection = visibleTxn(viewer, today);
+      const narrowed = filterConditions(viewer, projection, filter);
+      check();
+      const row = orm
+        .select({
+          count: count(),
+          inCents: sql<number>`coalesce(sum(CASE WHEN ${transaction.amountCents} > 0 THEN ${transaction.amountCents} ELSE 0 END), 0)`,
+          outCents: sql<number>`coalesce(sum(CASE WHEN ${transaction.amountCents} < 0 THEN -${transaction.amountCents} ELSE 0 END), 0)`,
+        })
+        .from(transaction)
+        .where(and(projection.where, ...narrowed))
+        .get();
+      return {
+        count: Number(row?.count ?? 0),
+        inCents: Number(row?.inCents ?? 0),
+        outCents: Number(row?.outCents ?? 0),
+      };
+    },
+
+    countBefore: (viewer, today, filter, cursor) => {
+      const projection = visibleTxn(viewer, today);
+      const narrowed = filterConditions(viewer, projection, filter);
+      check();
+      const row = orm
+        .select({ n: count() })
+        .from(transaction)
+        .where(and(projection.where, ...narrowed, pastCursor(cursor, "before")))
+        .get();
+      return Number(row?.n ?? 0);
+    },
+
+    dayNets: (viewer, today, filter, days) => {
+      const projection = visibleTxn(viewer, today);
+      const narrowed = filterConditions(viewer, projection, filter);
+      check();
+      const nets: Record<string, number> = {};
+      for (let i = 0; i < days.length; i += 400) {
+        const rows = orm
+          .select({
+            day: transaction.postedOn,
+            net: sql<number>`sum(${transaction.amountCents})`,
+          })
+          .from(transaction)
+          .where(
+            and(
+              projection.where,
+              ...narrowed,
+              inArray(transaction.postedOn, days.slice(i, i + 400) as string[]),
+            ),
+          )
+          .groupBy(transaction.postedOn)
+          .all();
+        for (const r of rows) nets[r.day] = Number(r.net);
+      }
+      return nets;
     },
 
     hidingsBy: (personId) => {

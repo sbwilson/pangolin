@@ -636,7 +636,7 @@ export function linkSeed(uow: UnitOfWork, deps: SeedDeps, seedJson: string): App
   };
   return uow.transaction(() => {
     const logins = listLogins(ctx);
-    if (uow.read((repos) => repos.accounts.any()) || listTransactions(ctx).length > 0) {
+    if (uow.read((repos) => repos.accounts.any()) || listTransactions(ctx).page.total > 0) {
       throw new AppError(
         "Conflict",
         "The ledger already has accounts or transactions: seed an empty ledger",

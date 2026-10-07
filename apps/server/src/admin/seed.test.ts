@@ -6,9 +6,9 @@ import {
   balanceAsOf,
   createIdGenerator,
   fixedClockAt,
+  listAllTransactions,
   listPayees,
   listTags,
-  listTransactions,
   personViewer,
   systemClock,
 } from "@pangolin/app";
@@ -607,8 +607,8 @@ describe("linkSeed", () => {
   it("shows each partner the shared accounts plus their own private ones, as many as the seed states", () => {
     const { alex, sam } = linked();
     const counts = ex("transfers-and-privacy.visibleCounts") as Record<string, number>;
-    expect(listTransactions(as(alex))).toHaveLength(counts["person-a"] as number);
-    expect(listTransactions(as(sam))).toHaveLength(counts["person-b"] as number);
+    expect(listAllTransactions(as(alex))).toHaveLength(counts["person-a"] as number);
+    expect(listAllTransactions(as(sam))).toHaveLength(counts["person-b"] as number);
     const accountOfTxn = (id: string) =>
       db
         .prepare(
@@ -616,7 +616,8 @@ describe("linkSeed", () => {
         )
         .pluck()
         .get(id) as string;
-    const names = (id: string) => new Set(listTransactions(as(id)).map((t) => accountOfTxn(t.id)));
+    const names = (id: string) =>
+      new Set(listAllTransactions(as(id)).map((t) => accountOfTxn(t.id)));
     expect(names(alex).has("Person A private")).toBe(true);
     expect(names(alex).has("Person B private")).toBe(false);
     expect(names(sam).has("Person B private")).toBe(true);
@@ -626,7 +627,7 @@ describe("linkSeed", () => {
   it("gives every seeded split its sum, with nothing remaining", () => {
     const { alex, sam } = linked();
     for (const id of [alex, sam]) {
-      for (const t of listTransactions(as(id))) {
+      for (const t of listAllTransactions(as(id))) {
         expect(t.splits.length).toBeGreaterThan(0);
         expect(t.splits.reduce((sum, split) => sum + split.amountCents, 0)).toBe(t.amountCents);
         expect(t.remainingCents).toBe(0);
@@ -636,7 +637,7 @@ describe("linkSeed", () => {
     expect(multi.length).toBeGreaterThan(0);
     const bySeedKey = (key: string) => {
       const seeded = seedTxns().find((t) => t.key === key) as SeedEventShape;
-      return listTransactions(as(alex)).find(
+      return listAllTransactions(as(alex)).find(
         (t) =>
           t.descriptionRaw === seeded.description &&
           t.postedOn === seeded.postedOn &&
@@ -650,7 +651,7 @@ describe("linkSeed", () => {
 
   it("classifies: payees, categories, tags, notes and beneficiaries come through", () => {
     const { alex } = linked();
-    const all = listTransactions(as(alex));
+    const all = listAllTransactions(as(alex));
     expect(all.some((t) => t.payeeName !== null)).toBe(true);
     expect(all.some((t) => t.splits.some((s) => s.categoryId !== null))).toBe(true);
     expect(all.some((t) => t.splits.some((s) => s.tags.length > 0))).toBe(true);
@@ -678,7 +679,7 @@ describe("linkSeed", () => {
       const other = h.by === "person-a" ? "person-b" : "person-a";
       const seeded = seedTxns().find((t) => t.key === h.transaction) as SeedEventShape;
       const find = (who: string) =>
-        listTransactions(as(viewer[who] as string)).find(
+        listAllTransactions(as(viewer[who] as string)).find(
           (t) =>
             t.postedOn === seeded.postedOn &&
             t.amountCents === seeded.amountCents &&
@@ -691,7 +692,7 @@ describe("linkSeed", () => {
 
   it("hides names until exactly 12 months from the clock's today", () => {
     const { sam } = linked();
-    const labels = listTransactions(as(sam))
+    const labels = listAllTransactions(as(sam))
       .map((t) => t.descriptionRaw)
       .filter((d) => d.startsWith("Hidden until"));
     const until = systemClock("UTC").today().add({ months: 12 });
@@ -768,7 +769,7 @@ describe("linkSeed", () => {
       )?.by;
       const viewerId = owner === "person-a" ? sam : alex;
       const ownerName = owner === "person-a" ? "Alex" : "Sam";
-      const row = listTransactions(as(viewerId)).find(
+      const row = listAllTransactions(as(viewerId)).find(
         (t) =>
           t.postedOn === side.postedOn &&
           t.amountCents === side.amountCents &&
@@ -783,7 +784,7 @@ describe("linkSeed", () => {
     }
     // Both partners' own private sides are not visible to the other.
     const aPrivate = seedTxns().filter((t) => t.acct.key === "person-a-private").length;
-    expect(listTransactions(as(sam)).length).toBe(
+    expect(listAllTransactions(as(sam)).length).toBe(
       (ex("transfers-and-privacy.visibleCounts") as Record<string, number>)["person-b"],
     );
     expect(aPrivate).toBeGreaterThan(0);

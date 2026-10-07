@@ -1,5 +1,6 @@
 import type { AppType } from "@pangolin/server";
 import { hc } from "hono/client";
+import type { TransactionsSearch } from "./routes/search.ts";
 
 export const api = hc<AppType>("/");
 
@@ -256,9 +257,62 @@ export interface LedgerTransaction {
   readonly splits: readonly LedgerSplit[];
 }
 
-/** Shared accounts' transactions plus the signed-in person's own private ones, newest first. */
-export async function fetchTransactions(): Promise<LedgerTransaction[]> {
-  const res = await api.api.ledger.transactions.$get();
+/** Where a page sits in the whole filtered list; the server's numbers, never worked out here. */
+export interface TransactionPageInfo {
+  readonly total: number;
+  readonly pageCount: number;
+  readonly page: number;
+  /** Pass as `after` for the following page; null on the last. */
+  readonly next: string | null;
+  /** Pass as `before` for the preceding page; null on the first. */
+  readonly prev: string | null;
+}
+
+/** One page of the transaction list, its summary and the day nets, all from the server. */
+export interface TransactionList {
+  readonly transactions: LedgerTransaction[];
+  readonly page: TransactionPageInfo;
+  /** Count and money in and out over the whole filter (`outCents` is not negative). */
+  readonly summary: { readonly count: number; readonly inCents: number; readonly outCents: number };
+  /** The net of each date shown on the page, over the whole filter. */
+  readonly dayNets: Readonly<Record<string, number>>;
+}
+
+/**
+ * One page of the transactions the signed-in person may see (shared accounts and their own private
+ * ones), newest first, narrowed and positioned by `params` (the page's URL search params, which
+ * are the API's query names).
+ */
+export async function fetchTransactions(params: TransactionsSearch = {}): Promise<TransactionList> {
+  // The route reads its query by hand (`parseTransactionQuery`), so the typed client has no
+  // `query` input for it; the client still sends one.
+  const res = await api.api.ledger.transactions.$get({ query: params } as never);
   if (!res.ok) throw await apiError(res);
-  return (await res.json()).transactions;
+  return (await res.json()) as TransactionList;
+}
+
+/** An account the signed-in person can see, for the Account filter and the Account column. */
+export interface AccountSummary {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** Every account the list can name, closed ones included (a closed account still has rows). */
+export async function fetchAccounts(): Promise<AccountSummary[]> {
+  // The route reads `includeClosed` by hand, so the typed client has no `query` input for it.
+  const res = await api.api.accounts.$get({ query: { includeClosed: "true" } } as never);
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()).accounts.map(({ id, name }) => ({ id, name }));
+}
+
+/** A category, for the Category filter. */
+export interface CategorySummary {
+  readonly id: string;
+  readonly name: string;
+}
+
+export async function fetchCategories(): Promise<CategorySummary[]> {
+  const res = await api.api.classify.categories.$get();
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()).categories.map(({ id, name }) => ({ id, name }));
 }

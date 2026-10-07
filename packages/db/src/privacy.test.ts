@@ -109,30 +109,32 @@ const hide = (id: string, until: string | null, by: string | null) =>
 
 const names = (ctx: UseCaseContext) =>
   listTransactions(ctx)
-    .map((row) => row.descriptionRaw)
+    .transactions.map((row) => row.descriptionRaw)
     .sort();
 
 describe("hidden names", () => {
   it("shows the partner a placeholder until the date, the hider the real name, everyone on it", () => {
     const id = createTransaction(as(a), txn(shared, "Surprise gift"));
     hide(id, "2027-03-12", a);
-    const seenByB = listTransactions(as(b))[0];
+    const seenByB = listTransactions(as(b)).transactions[0];
     expect(seenByB?.descriptionRaw).toBe("Hidden until 12 Mar 2027");
     expect(seenByB?.nameHidden).toBe(true);
-    expect(listTransactions(as(a))[0]?.descriptionRaw).toBe("Surprise gift");
-    expect(listTransactions(sys)[0]?.descriptionRaw).toBe("Surprise gift");
-    expect(listTransactions(as(b, "2027-03-11"))[0]?.descriptionRaw).toBe(
+    expect(listTransactions(as(a)).transactions[0]?.descriptionRaw).toBe("Surprise gift");
+    expect(listTransactions(sys).transactions[0]?.descriptionRaw).toBe("Surprise gift");
+    expect(listTransactions(as(b, "2027-03-11")).transactions[0]?.descriptionRaw).toBe(
       "Hidden until 12 Mar 2027",
     );
-    expect(listTransactions(as(b, "2027-03-12"))[0]?.descriptionRaw).toBe("Surprise gift");
-    expect(listTransactions(as(b, "2027-03-13"))[0]?.nameHidden).toBe(false);
+    expect(listTransactions(as(b, "2027-03-12")).transactions[0]?.descriptionRaw).toBe(
+      "Surprise gift",
+    );
+    expect(listTransactions(as(b, "2027-03-13")).transactions[0]?.nameHidden).toBe(false);
   });
 
   it("keeps notes visible and never lets the real name into the response", () => {
     const id = createTransaction(as(a), txn(shared, "Surprise gift"));
     db.prepare('UPDATE "transaction" SET notes = ? WHERE id = ?').run("for May", id);
     hide(id, "2027-03-12", a);
-    const row = listTransactions(as(b))[0];
+    const row = listTransactions(as(b)).transactions[0];
     expect(row?.notes).toBe("for May");
     expect(JSON.stringify(row)).not.toContain("Surprise");
   });
@@ -162,7 +164,7 @@ describe("hidden names", () => {
     expect(as(b).uow.read((r) => r.transactions.findVisible(as(b).viewer, id, "2026-09-27"))).toBe(
       undefined,
     );
-    expect(listTransactions(as(a))[0]?.nameHidden).toBe(false);
+    expect(listTransactions(as(a)).transactions[0]?.nameHidden).toBe(false);
   });
 
   it("keeps a partner's hiding after they leave and the account turns private (takeover)", () => {
@@ -173,32 +175,32 @@ describe("hidden names", () => {
     // Either person may take the other off a public account; the hiding stays with its hider.
     updateAccount(as(a), { id: shared, owners: [{ personId: a, shareBp: 10000 }] });
     setPrivacy(as(a), { id: shared, isPrivate: true });
-    const row = listTransactions(as(a)).find((t) => t.id === id);
+    const row = listTransactions(as(a)).transactions.find((t) => t.id === id);
     expect(row?.descriptionRaw).toBe("Hidden until 12 Mar 2027");
     expect(row?.nameHidden).toBe(true);
     const audit = listAudit(as(a)).filter((r) => r.entityId === id);
     expect(audit.length).toBeGreaterThan(0);
     expect(audit.every((r) => r.hiddenUntil === "2027-03-12")).toBe(true);
     expect(JSON.stringify(listAudit(as(a)))).not.toContain("Gift for Alex");
-    expect(listTransactions(as(a, "2027-03-12")).find((t) => t.id === id)?.descriptionRaw).toBe(
-      "Gift for Alex",
-    );
-    expect(listTransactions(as(b)).length).toBe(0);
+    expect(
+      listTransactions(as(a, "2027-03-12")).transactions.find((t) => t.id === id)?.descriptionRaw,
+    ).toBe("Gift for Alex");
+    expect(listTransactions(as(b)).transactions.length).toBe(0);
   });
 
   it("keeps a hiding after its hider is removed, and lets them unhide once they rejoin", () => {
     const id = createTransaction(as(b), txn(shared, "Gift for Alex"));
     hideTransactionName(as(b), { id, until: "2027-03-12" });
     updateAccount(as(a), { id: shared, owners: [{ personId: a, shareBp: 10000 }] });
-    expect(listTransactions(as(a)).find((t) => t.id === id)?.nameHidden).toBe(true);
-    expect(listTransactions(as(a)).find((t) => t.id === id)?.descriptionRaw).not.toBe(
+    expect(listTransactions(as(a)).transactions.find((t) => t.id === id)?.nameHidden).toBe(true);
+    expect(listTransactions(as(a)).transactions.find((t) => t.id === id)?.descriptionRaw).not.toBe(
       "Gift for Alex",
     );
     expect(getAccount(as(b), { id: shared }).removal?.by).toBe(a);
     rejoinAccount(as(b), { id: shared });
     expect(getAccount(as(b), { id: shared }).removal).toBeUndefined();
     unhideTransactionName(as(b), { id });
-    const shown = listTransactions(as(a)).find((t) => t.id === id);
+    const shown = listTransactions(as(a)).transactions.find((t) => t.id === id);
     expect(shown?.nameHidden).toBe(false);
     expect(shown?.descriptionRaw).toBe("Gift for Alex");
   });
@@ -209,8 +211,8 @@ describe("hidden names", () => {
       "INSERT INTO payee (id, name, scope_person_id, created_at, updated_at) VALUES ('P1','Mine',?,'t','t')",
     ).run(a);
     db.prepare('UPDATE "transaction" SET payee_id = ? WHERE id = ?').run("P1", id);
-    expect(listTransactions(as(a))[0]?.payeeId).toBe("P1");
-    const asB = listTransactions(as(b))[0];
+    expect(listTransactions(as(a)).transactions[0]?.payeeId).toBe("P1");
+    const asB = listTransactions(as(b)).transactions[0];
     expect(asB?.payeeId).toBeNull();
     expect(asB?.payeeName).toBeNull();
   });
@@ -245,22 +247,26 @@ describe("transfer label", () => {
 
   it("says where an inflow came from and where an outflow went, and nothing else", () => {
     transfer(900);
-    const inflow = listTransactions(as(a))[0];
+    const inflow = listTransactions(as(a)).transactions[0];
     expect(inflow?.transferLabel).toBe("Transfer from Bea");
     db.prepare(
       "UPDATE \"transaction\" SET amount_cents = -900 WHERE description_raw = 'transfer leg'",
     ).run();
-    expect(listTransactions(as(a))[0]?.transferLabel).toBe("Transfer to Bea");
-    const json = JSON.stringify(listTransactions(as(a)));
+    expect(listTransactions(as(a)).transactions[0]?.transferLabel).toBe("Transfer to Bea");
+    const json = JSON.stringify(listTransactions(as(a)).transactions);
     expect(json).not.toContain(privateB);
     expect(json).not.toContain("other leg");
   });
 
   it("leaves the owner's own view and a visible counterpart unlabelled", () => {
     const { theirs } = transfer(900);
-    expect(listTransactions(as(b)).find((t) => t.id === theirs)?.transferLabel).toBeNull();
-    expect(listTransactions(as(b)).find((t) => t.id !== theirs)?.transferLabel).toBeNull();
-    expect(listTransactions(sys).every((t) => t.transferLabel === null)).toBe(true);
+    expect(
+      listTransactions(as(b)).transactions.find((t) => t.id === theirs)?.transferLabel,
+    ).toBeNull();
+    expect(
+      listTransactions(as(b)).transactions.find((t) => t.id !== theirs)?.transferLabel,
+    ).toBeNull();
+    expect(listTransactions(sys).transactions.every((t) => t.transferLabel === null)).toBe(true);
   });
 });
 
@@ -463,7 +469,7 @@ describe("audit read", () => {
     ).run("BANK-123", "v1-hash-of-surprise", id);
     hide(id, "2027-03-12", a);
     expect(getTransaction(as(b), { id })).toMatchObject({ fingerprint: null, externalId: null });
-    expect(listTransactions(as(b)).find((t) => t.id === id)).toMatchObject({
+    expect(listTransactions(as(b)).transactions.find((t) => t.id === id)).toMatchObject({
       fingerprint: null,
       externalId: null,
     });

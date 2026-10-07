@@ -339,3 +339,15 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/implementation-artifacts/plan-epic2-retro-fix-now.md`
   summary: The future-closed message from `closeAccount` says "change that date with updateAccount", naming a use case where the lock's message speaks in user terms.
   evidence: `close-account.ts` (the "closes on" branch); the text is the plan's wording. Have the account screens (epic-ledger-workspace) map the structured Conflict to their own copy, or reword the API message then.
+
+- source_plan: none
+  summary: Wire the CSP nonce for the popover, the sheet and the toast, with an e2e check that opening each raises no violation (split from ticket 12.2).
+  evidence: Ticket 12.2 owns it, but it does not depend on the transaction list; split from the list goal by Simon on 2026-10-07 at the build's scope check.
+
+- source_plan: none
+  summary: Add the nav badge that counts the viewer's uncategorised rows on the sidebar's Transactions item, showing a check at zero (split from ticket 12.2).
+  evidence: Ticket 12.2 owns it ([ASSUMPTION] that it counts uncategorised rows); it needs a per-viewer count read and a sidebar change and can ship apart from the list. Split by Simon on 2026-10-07 at the build's scope check.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-transaction-list-url-filters-keyset-paging-virtualised-plan.md`
+  summary: The transactions page has no web unit tests (`groupByDate`, `withChanges`, `activeChip`, the page jump), no loading cue while a page loads, stale rows beside an error alert, a today fixed at mount, and chips that can disagree with a URL that sets both `uncategorised` and `transfers`.
+  evidence: Review pass 1 of ticket 12.2; the web vitest runs in node with no DOM setup, so the page logic is covered only by e2e. None corrupts data. Add a component-test setup when the page next changes (entries 3, 4 or 12).

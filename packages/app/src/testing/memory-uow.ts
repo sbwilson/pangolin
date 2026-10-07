@@ -56,6 +56,8 @@ import type {
   TagRow,
   TaxCategoryRepo,
   TaxCategoryRow,
+  TransactionCursor,
+  TransactionFilter,
   TransactionRepo,
   TransactionRow,
   TransferGroupRepo,
@@ -938,6 +940,50 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       (row) => visibleIds.has(row.accountId) && !working.deleted.has(row.id),
     );
   };
+  /** Rows of `visibleRows` a filter keeps, in list order (mirror of `filterConditions`). */
+  const filtered = (viewer: Viewer, today: string, f: TransactionFilter): TransactionRow[] => {
+    const tagVisible =
+      f.tagId === undefined
+        ? undefined
+        : tagRepo(working, check)
+            .list(viewer)
+            .some((t) => t.id === f.tagId);
+    return visibleRows(viewer)
+      .filter((row) => {
+        const splits = working.splits.filter((s) => s.transactionId === row.id);
+        if (f.accountId !== undefined && row.accountId !== f.accountId) return false;
+        if (f.from !== undefined && row.postedOn < f.from) return false;
+        if (f.to !== undefined && row.postedOn > f.to) return false;
+        if (f.categoryId !== undefined && !splits.some((s) => s.categoryId === f.categoryId)) {
+          return false;
+        }
+        if (f.tagId !== undefined) {
+          const carries = splits.some((s) =>
+            working.splitTags.some((st) => st.splitId === s.id && st.tagId === f.tagId),
+          );
+          if (!tagVisible || !carries) return false;
+        }
+        if (f.payeeId !== undefined && view(viewer, row, today).payeeId !== f.payeeId) {
+          return false;
+        }
+        const size = Math.abs(row.amountCents);
+        if (f.minCents !== undefined && size < f.minCents) return false;
+        if (f.maxCents !== undefined && size > f.maxCents) return false;
+        if (f.type === "in" && row.amountCents <= 0) return false;
+        if (f.type === "out" && row.amountCents >= 0) return false;
+        if (f.uncategorised === true && !splits.some((s) => s.categoryId === null)) return false;
+        if (f.transfers === true && row.transferGroupId === null) return false;
+        if (f.hidden === true && !nameHiddenFor(viewer, row, today)) return false;
+        return true;
+      })
+      .sort((a, b) => byText(`${b.postedOn}|${b.id}`, `${a.postedOn}|${a.id}`));
+  };
+  /** After `cursor` in list order (older, then lower `id`). */
+  const follows = (r: TransactionRow, c: TransactionCursor) =>
+    byText(`${r.postedOn}|${r.id}`, `${c.postedOn}|${c.id}`) < 0;
+  /** Before `cursor` in list order (newer, then higher `id`). */
+  const precedes = (r: TransactionRow, c: TransactionCursor) =>
+    byText(`${r.postedOn}|${r.id}`, `${c.postedOn}|${c.id}`) > 0;
   return {
     insert: (row, splits) => {
       check();
@@ -1182,6 +1228,55 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       return visibleRows(viewer)
         .sort((a, b) => byText(`${b.postedOn}|${b.id}`, `${a.postedOn}|${a.id}`))
         .map((row) => view(viewer, row, today));
+    },
+    listPage: (viewer, today, filter, at, limit) => {
+      requireViewer(viewer);
+      requireDay(today, "visibleTxn");
+      check();
+      const rows = filtered(viewer, today, filter);
+      if ("after" in at) {
+        return rows
+          .filter((r) => follows(r, at.after))
+          .slice(0, limit)
+          .map((row) => view(viewer, row, today));
+      }
+      if ("before" in at) {
+        const earlier = rows.filter((r) => precedes(r, at.before));
+        return earlier
+          .slice(Math.max(0, earlier.length - limit))
+          .map((row) => view(viewer, row, today));
+      }
+      return rows.slice(at.offset, at.offset + limit).map((row) => view(viewer, row, today));
+    },
+    summarise: (viewer, today, filter) => {
+      requireViewer(viewer);
+      requireDay(today, "visibleTxn");
+      check();
+      const rows = filtered(viewer, today, filter);
+      let inCents = 0;
+      let outCents = 0;
+      for (const r of rows) {
+        if (r.amountCents > 0) inCents += r.amountCents;
+        else if (r.amountCents < 0) outCents -= r.amountCents;
+      }
+      return { count: rows.length, inCents, outCents };
+    },
+    countBefore: (viewer, today, filter, cursor) => {
+      requireViewer(viewer);
+      requireDay(today, "visibleTxn");
+      check();
+      return filtered(viewer, today, filter).filter((r) => precedes(r, cursor)).length;
+    },
+    dayNets: (viewer, today, filter, days) => {
+      requireViewer(viewer);
+      requireDay(today, "visibleTxn");
+      check();
+      const wanted = new Set(days);
+      const nets: Record<string, number> = {};
+      for (const r of filtered(viewer, today, filter)) {
+        if (wanted.has(r.postedOn)) nets[r.postedOn] = (nets[r.postedOn] ?? 0) + r.amountCents;
+      }
+      return nets;
     },
   };
 }
@@ -2308,6 +2403,10 @@ export function memoryUnitOfWork(
         transactions: {
           listVisible: transactionRepo(uow.state, check).listVisible,
           findVisible: transactionRepo(uow.state, check).findVisible,
+          listPage: transactionRepo(uow.state, check).listPage,
+          summarise: transactionRepo(uow.state, check).summarise,
+          countBefore: transactionRepo(uow.state, check).countBefore,
+          dayNets: transactionRepo(uow.state, check).dayNets,
         },
         institutions: {
           find: institutionRepo(uow.state, check).find,

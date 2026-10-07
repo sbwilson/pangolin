@@ -788,7 +788,7 @@ describe("closed accounts are archived, never deleted", () => {
     expect(ids(as(b))).not.toContain(id);
     expect(getAccount(as(b), { id }).closedOn).toBe("2026-09-10");
     expect(getTransaction(as(b), { id: entry }).accountId).toBe(id);
-    expect(listTransactions(as(b)).some((t) => t.id === entry)).toBe(true);
+    expect(listTransactions(as(b)).transactions.some((t) => t.id === entry)).toBe(true);
     expect(listBalanceSnapshots(as(b), { accountId: id })).toHaveLength(1);
     expect(accountBalanceAsOf(as(b), { accountId: id, date: "2026-09-27" })).toBe(500);
     expect(auditFor("account", id).map((row) => row.action)).toEqual(["create", "close"]);
@@ -993,7 +993,7 @@ describe("leaving the household (story 26)", () => {
     db.prepare(
       "INSERT INTO split_tag (split_id, tag_id, created_at, updated_at) VALUES (?, ?, ?, ?)",
     ).run(sharedSplit, h.tag.id, at, at);
-    const bBefore = listTransactions(as(b)).filter((row) => row.id === h.bSide);
+    const bBefore = listTransactions(as(b)).transactions.filter((row) => row.id === h.bSide);
 
     leaveHousehold(leaver(a), { confirm: true });
 
@@ -1061,7 +1061,7 @@ describe("leaving the household (story 26)", () => {
     expect(getAccount(as(b), { id: h.shared }).pool).toBe(b);
     for (const id of [h.aShared, h.aSole, h.bSide]) {
       expect(
-        listTransactions(as(b)).some((row) => row.id === id),
+        listTransactions(as(b)).transactions.some((row) => row.id === id),
         id,
       ).toBe(true);
     }
@@ -1097,12 +1097,14 @@ describe("leaving the household (story 26)", () => {
     login(a, "user-a");
     const shared = make(as(a), { name: "Joint" });
     const entry = txn(as(a), shared, "2026-09-03", -900);
-    const before = listTransactions(as(b));
+    const before = listTransactions(as(b)).transactions;
 
     leaveHousehold(leaver(a), { confirm: true });
 
     expect(owners(shared)).toEqual([{ person_id: b, share_bp: 10000 }]);
-    expect(listTransactions(as(b)).map((row) => row.id)).toEqual(before.map((row) => row.id));
+    expect(listTransactions(as(b)).transactions.map((row) => row.id)).toEqual(
+      before.map((row) => row.id),
+    );
     expect(getTransaction(as(b), { id: entry }).amountCents).toBe(-900);
     expect(count("SELECT count(*) FROM account")).toBe(1);
     expect(count("SELECT count(*) FROM auth_session WHERE user_id = 'user-a'")).toBe(0);

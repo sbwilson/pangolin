@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   dismissNotice,
+  fetchAccounts,
   fetchBackupStatus,
   fetchDeadJobs,
   fetchHealth,
@@ -167,8 +168,8 @@ describe("recovery", () => {
 });
 
 describe("fetchTransactions", () => {
-  it("returns the transactions list", async () => {
-    const transactions = [
+  const list = {
+    transactions: [
       {
         id: "t1",
         accountId: "a1",
@@ -178,13 +179,52 @@ describe("fetchTransactions", () => {
         status: "posted",
         splits: [],
       },
-    ];
-    stubFetch(200, { transactions });
-    expect(await fetchTransactions()).toEqual(transactions);
+    ],
+    page: { total: 1, pageCount: 1, page: 1, next: null, prev: null },
+    summary: { count: 1, inCents: 0, outCents: 450 },
+    dayNets: { "2026-09-01": -450 },
+  };
+
+  it("returns the page with the server's total, summary and day nets", async () => {
+    stubFetch(200, list);
+    expect(await fetchTransactions()).toEqual(list);
+  });
+
+  it("sends the search params as the query, and only those", async () => {
+    stubFetch(200, list);
+    await fetchTransactions({ type: "in", account: "a1", after: "2026-09-01~t0" });
+    const fetchMock = vi.mocked(fetch);
+    const request = fetchMock.mock.calls[0]?.[0] as Request | string | URL;
+    const url = new URL(
+      typeof request === "string" ? request : String((request as Request).url ?? request),
+      "http://localhost",
+    );
+    expect(url.pathname).toBe("/api/ledger/transactions");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      type: "in",
+      account: "a1",
+      after: "2026-09-01~t0",
+    });
   });
 
   it("throws an ApiError on an error response", async () => {
     stubFetch(401, { error: { code: "Unauthenticated", message: "Sign in" } });
     await expect(fetchTransactions()).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("fetchAccounts", () => {
+  it("asks for closed accounts too and returns each one's id and name", async () => {
+    stubFetch(200, {
+      accounts: [{ id: "a1", name: "Old savings", closedOn: "2026-01-01", type: "savings" }],
+    });
+    expect(await fetchAccounts()).toEqual([{ id: "a1", name: "Old savings" }]);
+    const request = vi.mocked(fetch).mock.calls[0]?.[0] as Request | string | URL;
+    const url = new URL(
+      typeof request === "string" ? request : String((request as Request).url ?? request),
+      "http://localhost",
+    );
+    expect(url.pathname).toBe("/api/accounts");
+    expect(url.searchParams.get("includeClosed")).toBe("true");
   });
 });

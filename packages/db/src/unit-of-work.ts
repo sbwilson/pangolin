@@ -323,6 +323,10 @@ export function createUnitOfWork(db: Db): UnitOfWork {
             transactions: {
               listVisible: repos.transactions.listVisible,
               findVisible: repos.transactions.findVisible,
+              listPage: repos.transactions.listPage,
+              summarise: repos.transactions.summarise,
+              countBefore: repos.transactions.countBefore,
+              dayNets: repos.transactions.dayNets,
             },
             institutions: { find: repos.institutions.find, list: repos.institutions.list },
             balanceSnapshots: {

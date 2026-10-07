@@ -379,7 +379,7 @@ describe("scoped payees (AD-18)", () => {
     db.prepare('UPDATE "transaction" SET payee_id = ? WHERE id = ?').run(used.id, txnId);
     deletePayee(asA, { id: used.id });
     expect(fails(() => getPayee(asA, { id: used.id })).code).toBe("NotFound");
-    expect(listTransactions(asA).find((t) => t.id === txnId)).toMatchObject({
+    expect(listTransactions(asA).transactions.find((t) => t.id === txnId)).toMatchObject({
       payeeId: used.id,
       payeeName: "Used",
     });
@@ -395,7 +395,7 @@ describe("scoped payees (AD-18)", () => {
     });
     db.prepare('UPDATE "transaction" SET payee_id = ? WHERE id = ?').run(shared.id, privTxn);
     expect(() => deletePayee(asB, { id: shared.id })).not.toThrow();
-    expect(listTransactions(asA).find((t) => t.id === privTxn)).toMatchObject({
+    expect(listTransactions(asA).transactions.find((t) => t.id === privTxn)).toMatchObject({
       payeeId: shared.id,
       payeeName: "Hidden use",
     });
@@ -652,9 +652,9 @@ describe("transactions referencing scoped payees", () => {
     });
     db.prepare('UPDATE "transaction" SET payee_id = ? WHERE id = ?').run(scoped.id, txnId);
 
-    const mine = listTransactions(asA).find((t) => t.id === txnId);
+    const mine = listTransactions(asA).transactions.find((t) => t.id === txnId);
     expect(mine).toMatchObject({ payeeId: scoped.id, payeeName: "Secret Shop" });
-    const theirs = listTransactions(asB).find((t) => t.id === txnId);
+    const theirs = listTransactions(asB).transactions.find((t) => t.id === txnId);
     expect(theirs).toBeDefined();
     expect(theirs?.payeeId).toBeNull();
     expect(theirs?.payeeName).toBeNull();

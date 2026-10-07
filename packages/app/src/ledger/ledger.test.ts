@@ -4,6 +4,8 @@ import { closeAccount } from "../accounts/close-account.ts";
 import { createAccount } from "../accounts/create-account.ts";
 import { leaveHousehold } from "../accounts/leave-household.ts";
 import { getAccount } from "../accounts/list-accounts.ts";
+import { createCategory } from "../classify/categories.ts";
+import { createCategoryGroup } from "../classify/category-groups.ts";
 import { createPayee } from "../classify/payees.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
@@ -26,8 +28,9 @@ import { deleteTransaction } from "./delete-transaction.ts";
 import { fingerprintManual, MANUAL_FINGERPRINT_VERSION } from "./fingerprint.ts";
 import { getTransaction } from "./get-transaction.ts";
 import { hideTransactionName, unhideTransactionName } from "./hide-name.ts";
-import { listTransactions } from "./list-transactions.ts";
+import { listAllTransactions, listTransactions } from "./list-transactions.ts";
 import { transactionEntityRef } from "./needs-review.ts";
+import { setSplits } from "./set-splits.ts";
 import { updateTransaction } from "./update-transaction.ts";
 
 const clock = manualClock("2026-09-27T00:00:00Z");
@@ -152,7 +155,8 @@ describe("ledger.createTransaction and listTransactions", () => {
     const { as, a, b, shared, privateA } = setup();
     createTransaction(as(a), txn(shared, "Groceries"));
     createTransaction(as(a), txn(privateA, "Secret"));
-    const names = (id: Id<"Person">) => listTransactions(as(id)).map((row) => row.descriptionRaw);
+    const names = (id: Id<"Person">) =>
+      listTransactions(as(id)).transactions.map((row) => row.descriptionRaw);
     expect(names(a).sort()).toEqual(["Groceries", "Secret"]);
     expect(names(b)).toEqual(["Groceries"]);
   });
@@ -161,7 +165,7 @@ describe("ledger.createTransaction and listTransactions", () => {
     const { as, a, shared, privateA } = setup();
     createTransaction(as(a), txn(shared));
     createTransaction(as(a), txn(privateA));
-    const rows = listTransactions(as(a));
+    const rows = listTransactions(as(a)).transactions;
     const byAccount = (id: string) => rows.find((row) => row.accountId === id);
     expect(byAccount(privateA)?.splits.map((s) => s.beneficiary)).toEqual([a]);
     expect(byAccount(shared)?.splits.map((s) => s.beneficiary)).toEqual(["shared"]);
@@ -206,7 +210,7 @@ describe("ledger.createTransaction and listTransactions", () => {
     createTransaction(as(a), txn(shared, "Tea"));
     createTransaction(as(a), txn(privateA));
     expect(uow.state.transactions).toHaveLength(4);
-    expect(listTransactions(as(a))).toHaveLength(4);
+    expect(listTransactions(as(a)).transactions).toHaveLength(4);
   });
 
   it("validates input", () => {
@@ -221,7 +225,10 @@ describe("ledger.createTransaction and listTransactions", () => {
     const { as, a, shared } = setup();
     createTransaction(as(a), { ...txn(shared, "old"), postedOn: "2026-01-01" });
     createTransaction(as(a), { ...txn(shared, "new"), postedOn: "2026-03-01" });
-    expect(listTransactions(as(a)).map((row) => row.descriptionRaw)).toEqual(["new", "old"]);
+    expect(listTransactions(as(a)).transactions.map((row) => row.descriptionRaw)).toEqual([
+      "new",
+      "old",
+    ]);
   });
 });
 
@@ -304,10 +311,12 @@ describe("audit scope", () => {
       nameHiddenUntil: "2026-09-27",
     };
     // Lifts on the date itself.
-    expect(listTransactions(as(b))[0]?.descriptionRaw).toBe("Surprise");
+    expect(listTransactions(as(b)).transactions[0]?.descriptionRaw).toBe("Surprise");
     uow.state.transactions[0] = { ...row, nameHiddenBy: a, nameHiddenUntil: "2026-09-28" };
-    expect(listTransactions(as(b))[0]?.descriptionRaw).toBe("Hidden until 28 Sep 2026");
-    expect(listTransactions(as(a))[0]?.descriptionRaw).toBe("Surprise");
+    expect(listTransactions(as(b)).transactions[0]?.descriptionRaw).toBe(
+      "Hidden until 28 Sep 2026",
+    );
+    expect(listTransactions(as(a)).transactions[0]?.descriptionRaw).toBe("Surprise");
   });
 });
 
@@ -468,7 +477,7 @@ describe("ledger.deleteTransaction", () => {
     expect(uow.state.transactions[0]?.needsReview).toBe(true);
     const audits = uow.state.audit.length;
     deleteTransaction(as(a), { id });
-    expect(listTransactions(as(a))).toEqual([]);
+    expect(listTransactions(as(a)).transactions).toEqual([]);
     expect(uow.state.reviewItems[0]).toMatchObject({ resolution: "transaction deleted" });
     expect(uow.state.reviewItems[0]?.resolvedAt).not.toBeNull();
     expect(uow.state.transactions[0]?.needsReview).toBe(false);
@@ -495,7 +504,7 @@ describe("ledger.deleteTransaction", () => {
     const audits = uow.state.audit.length;
     expect(codeOf(() => deleteTransaction(stale, { id }))).toBe("ReauthRequired");
     expect(uow.state.audit).toHaveLength(audits);
-    expect(listTransactions(as(a))).toHaveLength(1);
+    expect(listTransactions(as(a)).transactions).toHaveLength(1);
   });
 
   it("answers NotFound the second time", () => {
@@ -646,5 +655,168 @@ describe("leaving the household (story 26) and the ledger", () => {
     expect(uow.state.audit.some((row) => row.accountId === privateA)).toBe(false);
     expect(uow.state.audit.some((row) => row.personId === a)).toBe(false);
     expect(listAudit(as(b)).some((row) => row.entityId === kept)).toBe(true);
+  });
+});
+
+describe("ledger.listTransactions paging and filters", () => {
+  /** 120 shared rows over 30 days (four a day), a category on two in three, money in on 1 in 5. */
+  function rows() {
+    const world = setup();
+    const { as, a, shared } = world;
+    const group = createCategoryGroup(as(a), { name: "Food", kind: "expense" });
+    const food = createCategory(as(a), { groupId: group.id, name: "Groceries" });
+    for (let n = 1; n <= 120; n++) {
+      const id = createTransaction(as(a), {
+        accountId: shared,
+        postedOn: `2026-08-${String(1 + ((n - 1) % 30)).padStart(2, "0")}`,
+        amountCents: n % 5 === 0 ? 1000 : -100,
+        description: `row ${n}`,
+      });
+      if (n % 3 !== 0)
+        setSplits(as(a), {
+          transactionId: id,
+          splits: [{ amountCents: n % 5 === 0 ? 1000 : -100, categoryId: food.id }],
+        });
+    }
+    return { ...world, food };
+  }
+
+  it("pages 120 rows by next, prev and a jump to the same 50 rows, with the server's numbers", () => {
+    const { as, a } = rows();
+    const first = listTransactions(as(a));
+    expect(first.transactions).toHaveLength(50);
+    expect(first.page).toMatchObject({ total: 120, pageCount: 3, page: 1, prev: null });
+    expect(first.summary).toEqual({ count: 120, inCents: 24 * 1000, outCents: 96 * 100 });
+    const second = listTransactions(as(a), { after: first.page.next as string });
+    const third = listTransactions(as(a), { after: second.page.next as string });
+    expect([second.page.page, third.page.page]).toEqual([2, 3]);
+    expect(third.transactions).toHaveLength(20);
+    expect(third.page.next).toBeNull();
+    const ids = (list: { transactions: { id: string }[] }) => list.transactions.map((t) => t.id);
+    expect(ids(listTransactions(as(a), { before: third.page.prev as string }))).toEqual(
+      ids(second),
+    );
+    expect(ids(listTransactions(as(a), { before: second.page.prev as string }))).toEqual(
+      ids(first),
+    );
+    for (const [p, expected] of [
+      [1, first],
+      [2, second],
+      [3, third],
+    ] as const) {
+      const jumped = listTransactions(as(a), { page: p });
+      expect(ids(jumped)).toEqual(ids(expected));
+      expect(jumped.page).toEqual(expected.page);
+    }
+    expect(new Set([...ids(first), ...ids(second), ...ids(third)]).size).toBe(120);
+    expect(listAllTransactions(as(a))).toHaveLength(120);
+  });
+
+  it("refuses a page past the last", () => {
+    const { as, a } = rows();
+    expect(() => listTransactions(as(a), { page: 4 })).toThrow(
+      expect.objectContaining({ code: "Validation" }),
+    );
+    // No rows at all still has a first page.
+    const { as: asB, b } = setup();
+    expect(listTransactions(asB(b), { page: 1 }).page).toMatchObject({ total: 0, pageCount: 1 });
+    expect(() => listTransactions(asB(b), { page: 2 })).toThrow(AppError);
+  });
+
+  it("lands a stale cursor on a whole page", () => {
+    const { as, a } = rows();
+    const first = listTransactions(as(a));
+    const last = first.transactions[first.transactions.length - 1];
+    // Before the very first row there is nothing newer: the first page again.
+    const top = first.transactions[0];
+    const stale = listTransactions(as(a), { before: `${top?.postedOn}~${top?.id}` });
+    expect(stale.page.page).toBe(1);
+    expect(stale.transactions.map((t) => t.id)).toEqual(first.transactions.map((t) => t.id));
+    // After the very last row there is nothing older: the last page.
+    const lastRow = listAllTransactions(as(a)).at(-1);
+    const end = listTransactions(as(a), { after: `${lastRow?.postedOn}~${lastRow?.id}` });
+    expect(end.page.page).toBe(3);
+    expect(end.transactions).toHaveLength(20);
+    expect(last).toBeDefined();
+  });
+
+  it("narrows by each filter, and the total, summary and day nets follow", () => {
+    const { as, a, shared, food } = rows();
+    const none = listTransactions(as(a), { categoryId: food.id });
+    expect(none.page.total).toBe(80);
+    expect(listTransactions(as(a), { uncategorised: true }).page.total).toBe(40);
+    expect(listTransactions(as(a), { type: "in" }).summary).toEqual({
+      count: 24,
+      inCents: 24000,
+      outCents: 0,
+    });
+    expect(listTransactions(as(a), { accountId: shared }).page.total).toBe(120);
+    expect(listTransactions(as(a), { accountId: "nope" }).page.total).toBe(0);
+    const range = listTransactions(as(a), { from: "2026-08-01", to: "2026-08-02" });
+    expect(range.page.total).toBe(8);
+    expect(range.dayNets["2026-08-01"]).toBeDefined();
+    expect(Object.keys(range.dayNets).sort()).toEqual(["2026-08-01", "2026-08-02"]);
+    const sized = listTransactions(as(a), { minCents: 500 });
+    expect(sized.summary.outCents).toBe(0);
+    expect(sized.page.total).toBe(24);
+  });
+
+  it("works out each day net over the whole day under the filter, not the page or the unfiltered day", () => {
+    const { as, a, shared } = rows();
+    // 1 August has four money-out rows (-100 each); add one money-in row to make a mixed day.
+    createTransaction(as(a), {
+      accountId: shared,
+      postedOn: "2026-08-01",
+      amountCents: 500,
+      description: "refund",
+    });
+    expect(listTransactions(as(a), { from: "2026-08-01", to: "2026-08-01" }).dayNets).toEqual({
+      "2026-08-01": 100,
+    });
+    expect(
+      listTransactions(as(a), { type: "in", from: "2026-08-01", to: "2026-08-01" }).dayNets,
+    ).toEqual({ "2026-08-01": 500 });
+    expect(
+      listTransactions(as(a), { type: "out", from: "2026-08-01", to: "2026-08-01" }).dayNets,
+    ).toEqual({ "2026-08-01": -400 });
+
+    // A day split across the first page boundary: the net includes the rows on the next page.
+    const all = listAllTransactions(as(a));
+    const first = listTransactions(as(a));
+    const lastDay = first.transactions[first.transactions.length - 1]?.postedOn as string;
+    const onDay = all.filter((t) => t.postedOn === lastDay);
+    const onPage = first.transactions.filter((t) => t.postedOn === lastDay);
+    expect(onPage.length).toBeGreaterThan(0);
+    expect(onPage.length).toBeLessThan(onDay.length);
+    const whole = onDay.reduce((sum, t) => sum + t.amountCents, 0);
+    expect(first.dayNets[lastDay]).toBe(whole);
+    expect(first.dayNets[lastDay]).not.toBe(onPage.reduce((sum, t) => sum + t.amountCents, 0));
+    // Every date on the page has exactly its whole-day net, and no other date appears.
+    const days = [...new Set(first.transactions.map((t) => t.postedOn))].sort();
+    expect(Object.keys(first.dayNets).sort()).toEqual(days);
+    for (const day of days) {
+      const net = all.filter((t) => t.postedOn === day).reduce((sum, t) => sum + t.amountCents, 0);
+      expect(first.dayNets[day], day).toBe(net);
+    }
+  });
+
+  it("is as if the partner's private rows and scoped names did not exist", () => {
+    const { as, a, b, privateA, shared } = rows();
+    const secret = createPayee(as(a), { name: "Secret shop", originAccountId: privateA });
+    createTransaction(as(a), { ...txn(privateA, "secret"), payeeId: secret.id });
+    createTransaction(as(a), { ...txn(shared, "surprise"), postedOn: "2026-09-01" });
+    const id = listAllTransactions(as(a)).find((t) => t.descriptionRaw === "surprise")
+      ?.id as string;
+    hideTransactionName(as(a), { id, until: "2026-12-01" });
+    expect(listTransactions(as(b)).page.total).toBe(121);
+    expect(listTransactions(as(a)).page.total).toBe(122);
+    // B probing with A's payee id gets what a nonexistent id gets; A's hiding shows B one row.
+    expect(listTransactions(as(b), { payeeId: secret.id })).toEqual(
+      listTransactions(as(b), { payeeId: "nope" }),
+    );
+    expect(listTransactions(as(a), { payeeId: secret.id }).page.total).toBe(1);
+    expect(listTransactions(as(b), { hidden: true }).page.total).toBe(1);
+    expect(listTransactions(as(a), { hidden: true }).page.total).toBe(0);
+    expect(listTransactions(as(b), { accountId: privateA }).page.total).toBe(0);
   });
 });

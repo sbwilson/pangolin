@@ -5,9 +5,16 @@ import { recoverRoute } from "./routes/recover.tsx";
 import { rootRoute } from "./routes/root.tsx";
 import { parseSearch, stringifySearch } from "./routes/search.ts";
 import { setupRoute } from "./routes/setup.tsx";
+import { transactionsRoute } from "./routes/transactions.tsx";
 
 // A later page adds its route object here, and nothing else in the shell changes.
-const routeTree = rootRoute.addChildren([homeRoute, ledgerRoute, setupRoute, recoverRoute]);
+const routeTree = rootRoute.addChildren([
+  homeRoute,
+  transactionsRoute,
+  ledgerRoute,
+  setupRoute,
+  recoverRoute,
+]);
 
 /** The app's router. It uses browser history unless given one (tests pass a memory history). */
 export function createAppRouter(history?: RouterHistory) {

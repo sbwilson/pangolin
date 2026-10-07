@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AppError, listTransactions, personViewer } from "@pangolin/app";
+import { AppError, listAllTransactions, personViewer } from "@pangolin/app";
 import { packageMigrationsDir } from "@pangolin/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { generateSeedFile } from "../scripts/demo-seed.ts";
@@ -82,8 +82,10 @@ describe("the demo ledger", () => {
         .pluck()
         .get() as string;
       const [personA, personB] = ownerOfA === a ? [a, b] : [b, a];
-      expect(listTransactions(view(personA as string))).toHaveLength(counts["person-a"] as number);
-      const seen = listTransactions(view(personB as string));
+      expect(listAllTransactions(view(personA as string))).toHaveLength(
+        counts["person-a"] as number,
+      );
+      const seen = listAllTransactions(view(personB as string));
       expect(seen).toHaveLength(counts["person-b"] as number);
       // Fixed today 2026-07-15 plus 12 months.
       expect(

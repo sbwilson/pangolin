@@ -121,7 +121,7 @@ describe("transactions per viewer", () => {
     createTransaction(as(b), txn(privateB, "b-only"));
     const names = (ctx: UseCaseContext) =>
       listTransactions(ctx)
-        .map((row) => row.descriptionRaw)
+        .transactions.map((row) => row.descriptionRaw)
         .sort();
     expect(names(as(a))).toEqual(["a-only", "joint"]);
     expect(names(as(b))).toEqual(["b-only", "joint"]);
@@ -131,7 +131,7 @@ describe("transactions per viewer", () => {
   it("returns splits, newest first, with the owner as a private split's beneficiary", () => {
     createTransaction(as(a), txn(privateA, "old", "2026-01-01"));
     createTransaction(as(a), txn(shared, "new", "2026-03-01"));
-    const rows = listTransactions(as(a));
+    const rows = listTransactions(as(a)).transactions;
     expect(rows.map((row) => row.descriptionRaw)).toEqual(["new", "old"]);
     expect(rows[0]?.splits.map((s) => s.beneficiary)).toEqual(["shared"]);
     expect(rows[1]?.splits.map((s) => s.beneficiary)).toEqual([a]);
@@ -212,7 +212,7 @@ describe("transaction edit, delete and needs_review on SQLite", () => {
     const second = createTransaction(as(a), txn(shared, "same"));
     expect(row(first).fingerprint_version).toBe(2);
     expect(row(first).fingerprint).not.toBe(row(second).fingerprint);
-    expect(listTransactions(as(a))).toHaveLength(2);
+    expect(listTransactions(as(a)).transactions).toHaveLength(2);
   });
 
   it("edits a manual row and its split together, keeping the fingerprint, with one audit row", () => {
@@ -312,7 +312,7 @@ describe("transaction edit, delete and needs_review on SQLite", () => {
     expect(
       db.prepare("SELECT resolution FROM review_item WHERE dedupe_key = 'k1'").pluck().get(),
     ).toBe("transaction deleted");
-    expect(listTransactions(as(a))).toHaveLength(0);
+    expect(listTransactions(as(a)).transactions).toHaveLength(0);
     expect(() => deleteTransaction(as(a), { id })).toThrow(
       expect.objectContaining({ code: "NotFound" }),
     );
@@ -381,9 +381,9 @@ describe("splits, provenance and tags on SQLite", () => {
     expect(setSplitField(as(a), { ...base, value: null }).applied).toBe(true);
     expect(setSplitField(sys, { ...base, source: "rule" }).applied).toBe(false);
     setSplitTags(as(a), { transactionId: id, splitId: second.id, tagIds: [tag] });
-    expect(listTransactions(as(b))[0]?.splits.find((s) => s.id === second.id)?.tags).toHaveLength(
-      1,
-    );
+    expect(
+      listTransactions(as(b)).transactions[0]?.splits.find((s) => s.id === second.id)?.tags,
+    ).toHaveLength(1);
     expect(
       db.prepare("SELECT category_id, category_source FROM split WHERE id = ?").get(first.id),
     ).toEqual({ category_id: null, category_source: "user" });
@@ -601,9 +601,9 @@ describe("hidden names and transfer groups on SQLite", () => {
   it("leaves the partner's responses byte-identical across the hider's later edits", () => {
     const id = line(as(a), shared, -500, "Surprise");
     hideTransactionName(as(a), { id });
-    const before = JSON.stringify(listTransactions(as(b)));
+    const before = JSON.stringify(listTransactions(as(b)).transactions);
     updateTransaction(as(a), { id, description: "Other secret" });
-    expect(JSON.stringify(listTransactions(as(b)))).toBe(before);
+    expect(JSON.stringify(listTransactions(as(b)).transactions)).toBe(before);
   });
 
   it("links and unlinks a private and a shared transaction, hiding the private side", () => {
@@ -619,7 +619,7 @@ describe("hidden names and transfer groups on SQLite", () => {
       db.prepare("SELECT matched_by FROM transfer_group WHERE id = ?").pluck().get(groupId),
     ).toBe("manual");
     expect(getTransaction(as(b), { id: sharedSide }).transferLabel).toBe("Transfer from A");
-    expect(JSON.stringify(listTransactions(as(b)))).not.toContain("Secret savings");
+    expect(JSON.stringify(listTransactions(as(b)).transactions)).not.toContain("Secret savings");
     expect(() => createTransferGroup(as(a), { transactionIds: [sharedSide, privateSide] })).toThrow(
       expect.objectContaining({ code: "Conflict" }),
     );

@@ -662,7 +662,7 @@ describe("GET /api/ledger/transactions", () => {
   const alex = "01J0000000000000000000000A";
 
   /** A shared account and each person's private one, one transaction in each. */
-  function seedLedger(db: Db): void {
+  function seedLedger(db: Db) {
     addPerson(db);
     const d = deps(db);
     const ctx: UseCaseContext = {
@@ -693,7 +693,168 @@ describe("GET /api/ledger/transactions", () => {
     ] as const) {
       createTransaction(ctx, { accountId, postedOn: "2026-09-01", amountCents: -100, description });
     }
+    return { ctx, joint, mine, theirs };
   }
+
+  type Page = {
+    transactions: {
+      id: string;
+      descriptionRaw: string;
+      postedOn: string;
+      amountCents: number;
+    }[];
+    page: {
+      total: number;
+      pageCount: number;
+      page: number;
+      next: string | null;
+      prev: string | null;
+    };
+    summary: { count: number; inCents: number; outCents: number };
+    dayNets: Record<string, number>;
+  };
+
+  const getPage = async (db: Db, query = ""): Promise<{ status: number; body: Page }> => {
+    const res = await createApp(deps(db)).request(`/api/ledger/transactions${query}`, signedIn);
+    return { status: res.status, body: (await res.json()) as Page };
+  };
+
+  /** 118 more rows in the joint account (120 in all with the seed's two), across ten days. */
+  function manyRows(db: Db) {
+    const { ctx, joint } = seedLedger(db);
+    for (let n = 1; n <= 118; n++) {
+      createTransaction(ctx, {
+        accountId: joint,
+        postedOn: `2026-08-${String(1 + (n % 10)).padStart(2, "0")}`,
+        amountCents: n % 4 === 0 ? 500 : -100,
+        description: `row ${n}`,
+      });
+    }
+    return joint;
+  }
+
+  it("pages 120 rows by keyset and by page number, with the server's total, summary and day nets", async () => {
+    const db = openDb();
+    manyRows(db);
+    const first = await getPage(db);
+    expect(first.status).toBe(200);
+    expect(first.body.transactions).toHaveLength(50);
+    expect(first.body.page).toMatchObject({ total: 120, pageCount: 3, page: 1, prev: null });
+    expect(first.body.page.next).not.toBeNull();
+    // 118 made rows (29 of them money in at 500) and the seed's two visible ones at -100.
+    expect(first.body.summary).toEqual({ count: 120, inCents: 29 * 500, outCents: (89 + 2) * 100 });
+    // Each date on the page has its net.
+    for (const day of new Set(first.body.transactions.map((t) => t.postedOn))) {
+      expect(first.body.dayNets[day]).toEqual(expect.any(Number));
+    }
+
+    const second = await getPage(db, `?after=${encodeURIComponent(first.body.page.next ?? "")}`);
+    const third = await getPage(db, `?after=${encodeURIComponent(second.body.page.next ?? "")}`);
+    expect(second.body.page).toMatchObject({ page: 2 });
+    expect(third.body.transactions).toHaveLength(20);
+    expect(third.body.page).toMatchObject({ page: 3, next: null });
+    const back = await getPage(db, `?before=${encodeURIComponent(third.body.page.prev ?? "")}`);
+    expect(back.body.transactions.map((t) => t.id)).toEqual(
+      second.body.transactions.map((t) => t.id),
+    );
+    expect(back.body.page.page).toBe(2);
+
+    const jumped = await getPage(db, "?page=3");
+    expect(jumped.body.transactions.map((t) => t.id)).toEqual(
+      third.body.transactions.map((t) => t.id),
+    );
+    expect(jumped.body.page).toEqual(third.body.page);
+    const ids = [first, second, third].flatMap((p) => p.body.transactions.map((t) => t.id));
+    expect(new Set(ids).size).toBe(120);
+  });
+
+  it("filters, and the total, summary and day nets follow the filter", async () => {
+    const db = openDb();
+    manyRows(db);
+    // Every row, by following `next`, as the reference the filtered answers are checked against.
+    const all: Page["transactions"] = [];
+    for (let query = ""; ; ) {
+      const { body } = await getPage(db, query);
+      all.push(...body.transactions);
+      if (body.page.next === null) break;
+      query = `?after=${encodeURIComponent(body.page.next)}`;
+    }
+    expect(all).toHaveLength(120);
+    const net = (rows: Page["transactions"], day: string) =>
+      rows.filter((t) => t.postedOn === day).reduce((n, t) => n + t.amountCents, 0);
+    // A day with money in and out: 1 August holds n = 10, 20, 30, ... (20 is +500, 10 is -100).
+    const mixed = "2026-08-01";
+    const ins = all.filter((t) => t.amountCents > 0);
+    const outs = all.filter((t) => t.amountCents < 0);
+    expect(net(ins, mixed)).toBeGreaterThan(0);
+    expect(net(outs, mixed)).toBeLessThan(0);
+
+    const out = await getPage(db, "?type=out&from=2026-08-01&to=2026-08-02");
+    expect(out.status).toBe(200);
+    expect(out.body.page.total).toBe(out.body.summary.count);
+    expect(out.body.summary.inCents).toBe(0);
+    expect(out.body.dayNets).toEqual({
+      "2026-08-01": net(outs, "2026-08-01"),
+      "2026-08-02": net(outs, "2026-08-02"),
+    });
+    const inbound = await getPage(db, "?type=in&from=2026-08-01&to=2026-08-01");
+    expect(inbound.body.dayNets).toEqual({ [mixed]: net(ins, mixed) });
+    expect(inbound.body.summary).toEqual({
+      count: ins.filter((t) => t.postedOn === mixed).length,
+      inCents: net(ins, mixed),
+      outCents: 0,
+    });
+    // A filter that is ignored would return all 120 rows.
+    const big = await getPage(db, "?minCents=500");
+    expect(big.body.page.total).toBe(ins.length);
+    expect(big.body.page.total).toBeLessThan(120);
+    expect((await getPage(db, "?category=nope")).body.page.total).toBe(0);
+    expect((await getPage(db, "?transfers=true")).body.page.total).toBe(0);
+    expect((await getPage(db, "?transfers=false")).body.page.total).toBe(120);
+
+    // A day split across the first page boundary: its net counts the rows on the next page.
+    const first = await getPage(db);
+    const edge = first.body.transactions[49]?.postedOn as string;
+    const onPage = first.body.transactions.filter((t) => t.postedOn === edge).length;
+    expect(onPage).toBeLessThan(all.filter((t) => t.postedOn === edge).length);
+    expect(first.body.dayNets[edge]).toBe(net(all, edge));
+    expect(Object.keys(first.body.dayNets).sort()).toEqual(
+      [...new Set(first.body.transactions.map((t) => t.postedOn))].sort(),
+    );
+  });
+
+  it("answers 400 Validation for a bad value, an unknown or repeated name, or a page past the end", async () => {
+    const db = openDb();
+    manyRows(db);
+    for (const query of [
+      "?page=4",
+      "?page=0",
+      "?page=x",
+      "?type=sideways",
+      "?from=2026-13-01",
+      "?from=2026-09-02&to=2026-09-01",
+      "?minCents=9&maxCents=1",
+      "?minCents=-1",
+      "?uncategorised=yes",
+      "?after=nonsense",
+      "?page=1&after=2026-08-01~x",
+      "?colour=red",
+      "?type=in&type=out",
+    ]) {
+      const res = await getPage(db, query);
+      expect(res.status, query).toBe(400);
+      expect((res.body as unknown as { error: { code: string } }).error.code).toBe("Validation");
+    }
+  });
+
+  it("shows another person's private rows to nobody, whatever the filter", async () => {
+    const db = openDb();
+    const { theirs } = seedLedger(db);
+    const res = await getPage(db, `?account=${theirs}`);
+    expect(res.status).toBe(200);
+    expect(res.body.page.total).toBe(0);
+    expect(res.body.transactions).toEqual([]);
+  });
 
   it("needs a session", async () => {
     const res = await createApp(deps(openDb())).request("/api/ledger/transactions");

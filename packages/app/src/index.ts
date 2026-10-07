@@ -342,9 +342,12 @@ export {
   unhideTransactionNameInput,
 } from "./ledger/hide-name.ts";
 export {
+  type LedgerPage,
   type LedgerSplit,
   type LedgerTransaction,
+  type LedgerTransactionList,
   type ListTransactionsInput,
+  listAllTransactions,
   listTransactions,
   listTransactionsInput,
 } from "./ledger/list-transactions.ts";
@@ -374,6 +377,11 @@ export {
   setSplitTags,
   setSplitTagsInput,
 } from "./ledger/split-tags.ts";
+export {
+  parseTransactionQuery,
+  TRANSACTION_PAGE_SIZE,
+  type TransactionQuery,
+} from "./ledger/transaction-query.ts";
 export { remainingCents } from "./ledger/transaction-view.ts";
 export {
   type CreateTransferGroupInput,
@@ -476,8 +484,12 @@ export {
   type TaxCategoryRepo,
   type TaxCategoryRow,
   TRANSFER_MATCHES,
+  type TransactionCursor,
+  type TransactionFilter,
+  type TransactionPageAt,
   type TransactionRepo,
   type TransactionRow,
+  type TransactionSummary,
   type TransactionWithSplits,
   type TransferGroupRepo,
   type TransferGroupRow,
