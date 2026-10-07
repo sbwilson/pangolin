@@ -632,6 +632,21 @@ function closedState(ctxs: Ctxs) {
   out.futureItems = items();
   syncClosingBalances(jobAt("2026-09-27"));
   out.futureJobItems = items();
+  const refusal = (fn: () => unknown) => {
+    try {
+      fn();
+      return "ok";
+    } catch (error) {
+      return `${(error as { code?: string }).code}: ${(error as Error).message}`;
+    }
+  };
+  out.futureAfter = refusal(() => txn(A, acct, "2026-10-06", -100));
+  // The two accepted probes cancel on purpose (-100 and +100), so the closing balance stays 1000.
+  out.futureOn = refusal(() => txn(A, acct, "2026-10-05", -100));
+  out.futureBefore = refusal(() => txn(A, acct, "2026-09-10", 100));
+  out.futureSecondClose = refusal(() => closeAccount(A, { id: acct }));
+  out.arrivedAfter = refusal(() => txn(open, acct, "2026-10-06", -100));
+  out.arrivedSecondClose = refusal(() => closeAccount(open, { id: acct }));
 
   out.arrivedListed = listAccounts(open).some((row) => row.id === acct);
   out.arrivedWarning = getAccount(open, { id: acct }).warning ?? null;
@@ -670,6 +685,14 @@ describe("one closed state (finding Q1)", () => {
       expect(out.futureWarning, who).toBeNull();
       expect(out.futureItems, who).toEqual([]);
       expect(out.futureJobItems, who).toEqual([]);
+      expect(out.futureAfter, who).toMatch(/^Conflict: This account closes on 2026-10-05, so/);
+      expect(out.futureOn, who).toBe("ok");
+      expect(out.futureBefore, who).toBe("ok");
+      expect(out.futureSecondClose, who).toBe(
+        "Conflict: The account closes on 2026-10-05; change that date with updateAccount, or reopen it",
+      );
+      expect(out.arrivedAfter, who).toMatch(/^Conflict: This account was closed on 2026-10-05, so/);
+      expect(out.arrivedSecondClose, who).toBe("Conflict: The account is already closed");
       expect(out.arrivedListed, who).toBe(false);
       expect(out.arrivedWarning, who).toEqual({ kind: "closing-balance", balanceCents: 1000 });
       expect(out.arrivedBeforeJob, who).toEqual([]);

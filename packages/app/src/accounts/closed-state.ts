@@ -6,9 +6,11 @@
 //   closing-balance warning and its review item exist only for a closed account.
 // - The lock (`ledger/closed-lock.ts`): the ledger refuses an entry dated after `closedOn`. It
 //   applies as soon as `closedOn` is set, even for a future date, so it never looks at the clock.
-//   The closed date itself is archived and still takes entries dated that day.
+//   The closed date itself is archived and still takes entries dated that day. Its message says
+//   "was closed on" once the account is closed and "closes on" before that.
 // - The `closeAccount` refusal: any set `closedOn`, past or future, makes a second close a
-//   `Conflict`; the date is moved with `updateAccount`.
+//   `Conflict`; the date is moved with `updateAccount`. Its message says "already closed" once
+//   the account is closed and "closes on <date>" before that.
 //
 // A future `closedOn` is therefore not closed yet: the account is listed, carries no warning and
 // no review item, but already refuses later entries. A daily job (`closing-balance-sync`) brings

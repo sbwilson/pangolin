@@ -38,8 +38,9 @@ export interface AccountView extends AccountRow {
    */
   readonly removal?: AccountRemoval;
   /**
-   * Present only for a closed cash account whose balance as of `closedOn` is not zero (derived
-   * on read; a warning, never a block). `balanceCents` is that balance.
+   * Present only for a closed cash account (`closedOn` today or earlier, `isClosed`; a later
+   * `closedOn` is not closed yet) whose balance as of `closedOn` is not zero (derived on read; a
+   * warning, never a block). `balanceCents` is that balance.
    */
   readonly warning?: AccountWarning;
 }

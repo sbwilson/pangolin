@@ -1367,6 +1367,34 @@ describe("one closed state for the list, the warning and the review item", () =>
     expect(auditCount()).toBe(before);
   });
 
+  it("locks entries after a future closed date, with its own wording, and takes those on or before it", () => {
+    const id = closedForTheFuture();
+    const message = (fn: () => unknown) => {
+      try {
+        fn();
+      } catch (error) {
+        expect((error as { code?: string }).code).toBe("Conflict");
+        return (error as Error).message;
+      }
+      return "accepted";
+    };
+    expect(message(() => txn(as(a), id, "2026-10-06", -100))).toBe(
+      "This account closes on 2026-10-05, so a transaction dated 2026-10-06 is locked. " +
+        "Move the closed date to 2026-10-06 or later, move its manually entered transactions dated after 2026-10-05 back to on or before it, or reopen the account.",
+    );
+    expect(message(() => txn(as(a), id, "2026-10-05", -100))).toBe("accepted");
+    expect(message(() => txn(as(a), id, "2026-09-10", -100))).toBe("accepted");
+    expect(message(() => closeAccount(as(a), { id }))).toBe(
+      "The account closes on 2026-10-05; change that date with updateAccount, or reopen it",
+    );
+    // The date arrives: the same refusals, in the closed wording.
+    setToday("2026-10-05");
+    expect(message(() => txn(as(a), id, "2026-10-06", -100))).toMatch(
+      /^This account was closed on 2026-10-05, so a transaction dated 2026-10-06 is locked\./,
+    );
+    expect(message(() => closeAccount(as(a), { id }))).toBe("The account is already closed");
+  });
+
   it("archives it, warns and raises one item when the date arrives and the job runs; a second run changes nothing", () => {
     const id = closedForTheFuture();
     setToday("2026-10-05");

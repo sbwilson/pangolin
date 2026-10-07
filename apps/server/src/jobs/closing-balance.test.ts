@@ -57,16 +57,16 @@ afterEach(() => {
 });
 
 /** The production registry with no backup repository: only the closing-balance sync is scheduled. */
-function runner(): Runner {
+function runner(timezone = "UTC", runnerClock: Clock = clock): Runner {
   const jobs = createJobs({
-    timezone: "UTC",
+    timezone,
     dataDir: dir,
     backup: DEFAULT_BACKUP_CONFIG,
     migrationsDir: packageMigrationsDir,
   });
   return createRunner({
     uow: ctx.uow,
-    clock,
+    clock: runnerClock,
     newId: ctx.newId,
     ...jobs,
     leaseMs: 60_000,
@@ -132,5 +132,43 @@ describe("the closing-balance sync job", () => {
     expect(syncJobs().filter((row) => (row as { status: string }).status === "done")).toHaveLength(
       2,
     );
+  });
+
+  it("raises the item on the run at 00:06 local when the household date is ahead of UTC", async () => {
+    // Sydney moves to UTC+11 on 2026-10-04, so 00:06 on the 5th there is still the 4th in UTC.
+    const sydney = systemClock("Australia/Sydney", () => now);
+    const sydneyCtx: UseCaseContext = { ...ctx, clock: sydney };
+    const pa = createPerson(ctx, { displayName: "A", colour: "#000000" });
+    const id = createAccount(ctx, {
+      name: "Acct",
+      type: "savings",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [{ personId: pa, shareBp: 10000 }],
+    });
+    createTransaction(ctx, {
+      accountId: id,
+      postedOn: "2026-09-01",
+      amountCents: 4200,
+      description: "x",
+    });
+    closeAccount(ctx, { id, closedOn: "2026-10-05" });
+
+    now = fixedClockAt("2026-10-04").now().add({ hours: 12 });
+    const r = runner("Australia/Sydney", sydney);
+    r.ensureSchedules();
+    expect(syncJobs()).toEqual([{ status: "pending", run_at: "2026-10-04T13:05:00.000Z" }]);
+    await r.tick();
+    expect(items()).toEqual([]);
+
+    now = fixedClockAt("2026-10-04").now().add({ hours: 13, minutes: 6 });
+    expect(now.toString().slice(0, 10)).toBe("2026-10-04");
+    expect(sydney.today().toString()).toBe("2026-10-05");
+    await r.tick();
+    expect(items()).toMatchObject([{ accountId: id, entityRef: `account:${id}` }]);
+    expect(getAccount(sydneyCtx, { id }).warning).toEqual({
+      kind: "closing-balance",
+      balanceCents: 4200,
+    });
   });
 });

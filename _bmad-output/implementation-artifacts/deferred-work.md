@@ -335,3 +335,7 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/implementation-artifacts/plan-q1-one-closed-state.md`
   summary: No test seeds an open closing-balance item on an account with a future `closedOn` and runs the job to see it resolved with "the closed date has not come".
   evidence: Only data raised under the pre-fix rule can be in that state; the resolve branch is covered through `updateAccount` (accounts.test.ts "moves the closed date into the future"). Add a case with a pre-seeded item to the "one closed state" describe block if such data ever exists.
+
+- source_plan: `_bmad-output/implementation-artifacts/plan-epic2-retro-fix-now.md`
+  summary: The future-closed message from `closeAccount` says "change that date with updateAccount", naming a use case where the lock's message speaks in user terms.
+  evidence: `close-account.ts` (the "closes on" branch); the text is the plan's wording. Have the account screens (epic-ledger-workspace) map the structured Conflict to their own copy, or reword the API message then.

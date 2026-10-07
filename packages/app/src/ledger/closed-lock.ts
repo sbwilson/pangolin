@@ -1,3 +1,4 @@
+import { isClosed } from "../accounts/closed-state.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
 import type { TxRepos } from "../ports/unit-of-work.ts";
@@ -56,8 +57,10 @@ export function closedAccountDetails(
  * A closed account is a historical record: an entry (or a balance snapshot) dated after its
  * `closedOn` is locked until the account is opened again. Throws `Conflict` carrying
  * `ClosedAccountDetails` when `date` (`YYYY-MM-DD`) is after the account's `closedOn`. An open
- * account never refuses, and neither does the system viewer (the seed and jobs). Call it on a
- * person-initiated write only, never on invariant upkeep (decision 81's transfer unlink).
+ * account never refuses, and neither does the system viewer (the seed and jobs). The message
+ * says "was closed on" once `closedOn` is today or earlier (`isClosed`) and "closes on" before
+ * that; the rule is the same. Call it on a person-initiated write only, never on invariant
+ * upkeep (decision 81's transfer unlink).
  */
 export function requireOpenOn(
   ctx: UseCaseContext,
@@ -69,9 +72,10 @@ export function requireOpenOn(
   if (ctx.viewer.kind === "system") return;
   const { closedOn } = account;
   if (closedOn === null || date <= closedOn) return;
+  const state = isClosed(account, ctx.clock.today().toString()) ? "was closed" : "closes";
   throw new AppError(
     "Conflict",
-    `This account was closed on ${closedOn}, so a ${kind} dated ${date} is locked. ` +
+    `This account ${state} on ${closedOn}, so a ${kind} dated ${date} is locked. ` +
       `Move the closed date to ${date} or later, move its manually entered transactions dated after ${closedOn} back to on or before it, or reopen the account.`,
     closedAccountDetails(tx, ctx.viewer, account.id, closedOn),
   );

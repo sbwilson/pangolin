@@ -119,6 +119,9 @@ describe("a closed account locks after its closed date", () => {
     };
     const refused = (fn: () => unknown) => expect(conflict(fn).details).toEqual(details);
     refused(() => line(as(a), joint, "2026-09-01"));
+    expect(conflict(() => line(as(a), joint, "2026-09-01")).message).toMatch(
+      /^This account was closed on 2026-08-31, so a transaction dated 2026-09-01 is locked\./,
+    );
     refused(() => updateTransaction(as(a), { id: manualLate, notes: "no" }));
     refused(() => updateTransaction(as(a), { id: manualLate, amountCents: -1 }));
     refused(() => deleteTransaction(as(a), { id: manualLate }));

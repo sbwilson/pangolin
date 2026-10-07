@@ -4,6 +4,7 @@ import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { requireClosableOn } from "../ledger/closed-lock.ts";
 import { write } from "../write.ts";
+import { isClosed } from "./closed-state.ts";
 import { closingBalanceWarning, syncClosingBalance } from "./closing-balance.ts";
 import { dayInput, idInput, requireDatesInOrder } from "./inputs.ts";
 import { type AccountView, accountView } from "./pool.ts";
@@ -30,11 +31,19 @@ export type CloseAccountInput = z.input<typeof closeAccountInput>;
  */
 export function closeAccount(ctx: UseCaseContext, input: CloseAccountInput): AccountView {
   const parsed = parseInput(closeAccountInput, input);
-  const closedOn = parsed.closedOn ?? ctx.clock.today().toString();
+  const today = ctx.clock.today().toString();
+  const closedOn = parsed.closedOn ?? today;
   return write(ctx, (tx, audit) => {
     const before = tx.accounts.findVisible(ctx.viewer, parsed.id);
     if (before === undefined) throw new AppError("NotFound", "Account not found");
-    if (before.closedOn !== null) throw new AppError("Conflict", "The account is already closed");
+    if (before.closedOn !== null) {
+      throw new AppError(
+        "Conflict",
+        isClosed(before, today)
+          ? "The account is already closed"
+          : `The account closes on ${before.closedOn}; change that date with updateAccount, or reopen it`,
+      );
+    }
     requireDatesInOrder(before.openedOn, closedOn);
     requireClosableOn(ctx, tx, before.id, closedOn);
     const after = { ...before, closedOn, updatedAt: formatInstant(ctx.clock.now()) };
@@ -53,7 +62,7 @@ export function closeAccount(ctx: UseCaseContext, input: CloseAccountInput): Acc
       after,
       owners,
       undefined,
-      closingBalanceWarning(tx, ctx.viewer, after, ctx.clock.today().toString()),
+      closingBalanceWarning(tx, ctx.viewer, after, today),
     );
   });
 }
