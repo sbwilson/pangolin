@@ -452,25 +452,15 @@ test("at 375 px a row opens its sheet from the bottom, and a category chip edits
     const categories = (await (await page.request.get("/api/classify/categories")).json()) as {
       categories: { id: string; name: string }[];
     };
-    // Category names repeat across groups, and the combobox options are picked by name: use names
-    // that are unique, so the option clicked is the category the API read-back expects.
-    const unique = (id: string | null) =>
-      id === null ||
-      categories.categories.filter(
-        (c) => c.name === categories.categories.find((x) => x.id === id)?.name,
-      ).length === 1;
     type SingleTransaction = ApiTransaction & {
       splits: { id: string; categoryId: string | null }[];
     };
     const single = ((await fetchPage(page)).transactions as unknown as SingleTransaction[]).find(
-      (t) =>
-        t.splits.length === 1 &&
-        !HIDDEN.test(t.descriptionRaw) &&
-        unique((t.splits[0] as { categoryId: string | null }).categoryId),
+      (t) => t.splits.length === 1 && !HIDDEN.test(t.descriptionRaw),
     ) as SingleTransaction;
     const split = single.splits[0] as { id: string; categoryId: string | null };
     const current = categories.categories.find((c) => c.id === split.categoryId);
-    const other = categories.categories.find((c) => c.id !== split.categoryId && unique(c.id)) as {
+    const other = categories.categories.find((c) => c.id !== split.categoryId) as {
       id: string;
       name: string;
     };
@@ -481,7 +471,7 @@ test("at 375 px a row opens its sheet from the bottom, and a category chip edits
         })
         .first();
     await chip(current?.name ?? "Uncategorised").click();
-    await page.getByRole("option", { name: other.name, exact: true }).click();
+    await page.getByRole("listbox").getByRole("option", { name: other.name, exact: true }).click();
     await expect(chip(other.name)).toBeVisible();
     const after = await page.request.get(`/api/ledger/transactions/${single.id}`);
     const body = (await after.json()) as {
@@ -489,7 +479,10 @@ test("at 375 px a row opens its sheet from the bottom, and a category chip edits
     };
     expect(body.transaction.splits[0]?.categoryId).toBe(other.id);
     await chip(other.name).click();
-    await page.getByRole("option", { name: current?.name ?? "Uncategorised", exact: true }).click();
+    await page
+      .getByRole("listbox")
+      .getByRole("option", { name: current?.name ?? "Uncategorised", exact: true })
+      .click();
     await expect(chip(current?.name ?? "Uncategorised")).toBeVisible();
   } finally {
     await context.close();
