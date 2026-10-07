@@ -28,6 +28,7 @@ import { split } from "./schema/split.ts";
 import { splitTag } from "./schema/split-tag.ts";
 import { tag } from "./schema/tag.ts";
 import { taxCategory } from "./schema/tax-category.ts";
+import { optimizeSearchIndex } from "./search-index.ts";
 
 type Orm = BetterSQLite3Database;
 
@@ -351,7 +352,9 @@ export function createTagRepo(orm: Orm, check: () => void): TagRepo {
       check();
       const mine = orm.select({ id: tag.id }).from(tag).where(eq(tag.scopePersonId, personId));
       orm.delete(splitTag).where(inArray(splitTag.tagId, mine)).run();
-      return orm.delete(tag).where(eq(tag.scopePersonId, personId)).run().changes;
+      const changes = orm.delete(tag).where(eq(tag.scopePersonId, personId)).run().changes;
+      optimizeSearchIndex(orm);
+      return changes;
     },
   };
 }
@@ -536,7 +539,9 @@ export function createPayeeRepo(orm: Orm, check: () => void): PayeeRepo {
     },
     deleteScopedTo: (personId) => {
       check();
-      return orm.delete(payee).where(eq(payee.scopePersonId, personId)).run().changes;
+      const changes = orm.delete(payee).where(eq(payee.scopePersonId, personId)).run().changes;
+      optimizeSearchIndex(orm);
+      return changes;
     },
   };
 }

@@ -467,6 +467,12 @@ export interface TransactionFilter {
   readonly transfers?: true | undefined;
   /** Rows whose name is hidden from this viewer now. */
   readonly hidden?: true | undefined;
+  /**
+   * Text search (`parseSearch`): every term matches the description, notes, split memos, payee
+   * or tag names, or the whole query is an amount whose magnitude the row matches. A row whose
+   * name is hidden from the viewer never matches, by any field. Blank means no filter.
+   */
+  readonly q?: string | undefined;
 }
 
 /** A position in the list order (`postedOn` desc, `id` desc). */

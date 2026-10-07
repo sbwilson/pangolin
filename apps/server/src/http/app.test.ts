@@ -141,7 +141,7 @@ describe("GET /api/system/health", () => {
     const app = createApp(deps(openDb()));
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 12, writable: true });
+    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 13, writable: true });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
@@ -288,6 +288,49 @@ describe("/api/ledger/transactions/:id", () => {
     postedOn: "2026-09-01",
     amountCents: -450,
     description: "Coffee",
+  });
+
+  it("searches the list by text and amount, refuses a blank search and stays out of syntax errors", async () => {
+    const db = openDb();
+    const { joint } = seed(db);
+    await send(db, "POST", "/api/ledger/transactions", line(joint));
+    await send(db, "POST", "/api/ledger/transactions", {
+      ...line(joint),
+      amountCents: -14285,
+      description: "Plumber",
+    });
+    const search = async (q: string) =>
+      createApp(deps(db)).request(`/api/ledger/search?${new URLSearchParams({ q })}`, {
+        headers: json,
+      });
+    const names = async (q: string) => {
+      const res = await search(q);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      const body = (await res.json()) as {
+        transactions: { descriptionRaw: string }[];
+        page: { total: number };
+      };
+      expect(body.page.total).toBe(body.transactions.length);
+      return body.transactions.map((t) => t.descriptionRaw);
+    };
+    expect(await names("coff")).toEqual(["Coffee"]);
+    expect(await names("142.85")).toEqual(["Plumber"]);
+    expect(await names("142")).toEqual(["Plumber"]);
+    expect(await names('"AND *')).toEqual([]);
+    for (const q of ["", "   ", '"', "*"]) expect((await search(q)).status, q).toBe(400);
+    expect(
+      (await createApp(deps(db)).request("/api/ledger/search", { headers: json })).status,
+    ).toBe(400);
+    // The list takes the same `q`, and a blank one is no filter.
+    const list = await createApp(deps(db)).request("/api/ledger/transactions?q=plumb", {
+      headers: json,
+    });
+    expect(((await list.json()) as { page: { total: number } }).page.total).toBe(1);
+    const all = await createApp(deps(db)).request("/api/ledger/transactions?q=%20", {
+      headers: json,
+    });
+    expect(((await all.json()) as { page: { total: number } }).page.total).toBe(2);
   });
 
   it("creates, reads, edits and deletes a transaction", async () => {

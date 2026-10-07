@@ -43,7 +43,7 @@ describe("committed migrations", () => {
     expect(loadMigrations(packageMigrationsDir)[0]?.name).toBe("0000_baseline");
   });
 
-  it("migrates a fresh database to version 12, then re-applies nothing", () => {
+  it("migrates a fresh database to version 13, then re-applies nothing", () => {
     const migrations = loadMigrations(packageMigrationsDir);
     const names = [
       "0000_baseline",
@@ -58,10 +58,11 @@ describe("committed migrations", () => {
       "0009_ledger_classification_schema",
       "0010_split_provenance",
       "0011_backup_snapshot_drop_figures",
+      "0012_search_index",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 12 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 12 });
-    expect(schemaVersion(db)).toBe(12);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 13 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 13 });
+    expect(schemaVersion(db)).toBe(13);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });
@@ -155,7 +156,9 @@ describe("committed migrations", () => {
     auditVerification("V4", "drill", false, oddFail);
     auditVerification("V5", "check", true, oddCheck);
 
-    expect(migrate(db, migrations).applied).toEqual(["0011_backup_snapshot_drop_figures"]);
+    expect(migrate(db, migrations.slice(0, 12)).applied).toEqual([
+      "0011_backup_snapshot_drop_figures",
+    ]);
     expect(schemaVersion(db)).toBe(12);
     expect(db.pragma("foreign_key_check")).toEqual([]);
 
@@ -241,6 +244,195 @@ describe("committed migrations", () => {
     );
     expect(auditedSummary("V4")).toBe(oddFail);
     expect(auditedSummary("V5")).toBe(oddCheck);
+  });
+
+  describe("0012 search index", () => {
+    const seed = `
+      INSERT INTO account (id, name, type, currency, is_private, created_at, updated_at) VALUES ('A1','Joint','transaction','AUD',0,'t','t');
+      INSERT INTO payee (id, name, created_at, updated_at) VALUES ('P1','Bunnings','t','t');
+      INSERT INTO "transaction" (id, account_id, posted_on, amount_cents, description_raw, payee_id, notes, status, fingerprint, fingerprint_version, created_at, updated_at)
+        VALUES ('T1','A1','2026-09-01',-100,'Hardware run','P1','for the shed','posted','fp1',1,'t','t');
+      INSERT INTO "transaction" (id, account_id, posted_on, amount_cents, description_raw, status, fingerprint, fingerprint_version, created_at, updated_at)
+        VALUES ('T2','A1','2026-09-02',-200,'Groceries','posted','fp2',1,'t','t');
+      INSERT INTO split (id, transaction_id, amount_cents, beneficiary, memo, created_at, updated_at) VALUES ('S1','T1',-100,'shared','screws','t','t');
+      INSERT INTO split (id, transaction_id, amount_cents, beneficiary, created_at, updated_at) VALUES ('S2','T2',-200,'shared','t','t');
+      INSERT INTO tag (id, name, created_at, updated_at) VALUES ('G1','renovation','t','t');
+      INSERT INTO split_tag (split_id, tag_id, created_at, updated_at) VALUES ('S1','G1','t','t');
+    `;
+    const find = (term: string, column = "txn_fts"): string[] =>
+      db
+        .prepare(
+          `SELECT t.id FROM txn_fts JOIN "transaction" t ON t.search_id = txn_fts.rowid
+           WHERE ${column} MATCH ? ORDER BY t.id`,
+        )
+        .pluck()
+        .all(`"${term}"*`) as string[];
+
+    it("indexes the rows already there when 0011 upgrades to 0012", () => {
+      const migrations = loadMigrations(packageMigrationsDir);
+      migrate(db, migrations.slice(0, 12));
+      db.exec(seed);
+      expect(migrate(db, migrations).applied).toEqual(["0012_search_index"]);
+      expect(
+        db.prepare('SELECT count(*) FROM "transaction" WHERE search_id IS NULL').pluck().get(),
+      ).toBe(0);
+      expect(find("hardware")).toEqual(["T1"]);
+      expect(find("bunn")).toEqual(["T1"]);
+      expect(find("shed")).toEqual(["T1"]);
+      expect(find("screws")).toEqual(["T1"]);
+      expect(find("renovation")).toEqual(["T1"]);
+      expect(find("groceries")).toEqual(["T2"]);
+    });
+
+    it("follows inserts, edits and deletes of a transaction, its payee, splits and tags", () => {
+      migrate(db, loadMigrations(packageMigrationsDir));
+      db.exec(seed);
+      const ids = db.prepare('SELECT id, search_id FROM "transaction" ORDER BY id').all();
+      expect(ids).toEqual([
+        { id: "T1", search_id: 1 },
+        { id: "T2", search_id: 2 },
+      ]);
+      expect(find("hardware")).toEqual(["T1"]);
+
+      db.exec(
+        "UPDATE \"transaction\" SET description_raw = 'Timber', notes = NULL WHERE id = 'T1'",
+      );
+      expect(find("hardware")).toEqual([]);
+      expect(find("shed")).toEqual([]);
+      expect(find("timber")).toEqual(["T1"]);
+
+      db.exec("UPDATE payee SET name = 'Mitre 10' WHERE id = 'P1'");
+      expect(find("bunnings")).toEqual([]);
+      expect(find("mitre")).toEqual(["T1"]);
+
+      db.exec("UPDATE tag SET name = 'garden' WHERE id = 'G1'");
+      expect(find("renovation")).toEqual([]);
+      expect(find("garden")).toEqual(["T1"]);
+
+      db.exec("UPDATE split SET memo = 'bolts' WHERE id = 'S1'");
+      expect(find("screws")).toEqual([]);
+      expect(find("bolts")).toEqual(["T1"]);
+
+      db.exec(
+        "INSERT INTO split_tag (split_id, tag_id, created_at, updated_at) VALUES ('S2','G1','t','t')",
+      );
+      expect(find("garden")).toEqual(["T1", "T2"]);
+      db.exec("DELETE FROM split_tag WHERE split_id = 'S1'");
+      expect(find("garden")).toEqual(["T2"]);
+
+      db.exec("DELETE FROM split WHERE id = 'S1'");
+      expect(find("bolts")).toEqual([]);
+
+      db.exec("UPDATE tag SET deleted_at = 't' WHERE id = 'G1'");
+      expect(find("garden")).toEqual([]);
+
+      db.exec("DELETE FROM split_tag WHERE split_id = 'S2'");
+      db.exec("DELETE FROM split WHERE transaction_id = 'T2'");
+      db.exec("DELETE FROM \"transaction\" WHERE id = 'T2'");
+      expect(find("groceries")).toEqual([]);
+      db.exec(
+        "INSERT INTO \"transaction\" (id, account_id, posted_on, amount_cents, description_raw, status, fingerprint, fingerprint_version, created_at, updated_at) VALUES ('T3','A1','2026-09-03',-5,'Bakery','posted','fp3',1,'t','t')",
+      );
+      expect(
+        db.prepare("SELECT search_id FROM \"transaction\" WHERE id = 'T3'").pluck().get(),
+      ).toBe(2);
+      expect(find("bakery")).toEqual(["T3"]);
+    });
+
+    it("follows a payee reassignment, a split_tag update and a split moved to another transaction", () => {
+      migrate(db, loadMigrations(packageMigrationsDir));
+      db.exec(seed);
+      db.exec(`
+        INSERT INTO payee (id, name, created_at, updated_at) VALUES ('P2','Kmart','t','t');
+        INSERT INTO tag (id, name, created_at, updated_at) VALUES ('G2','birthday','t','t');
+      `);
+      db.exec("UPDATE \"transaction\" SET payee_id = 'P2' WHERE id = 'T1'");
+      expect(find("bunnings")).toEqual([]);
+      expect(find("kmart")).toEqual(["T1"]);
+
+      db.exec("UPDATE split_tag SET tag_id = 'G2' WHERE split_id = 'S1'");
+      expect(find("renovation")).toEqual([]);
+      expect(find("birthday")).toEqual(["T1"]);
+
+      db.exec("UPDATE split SET transaction_id = 'T2' WHERE id = 'S1'");
+      expect(find("screws")).toEqual(["T2"]);
+      expect(find("birthday")).toEqual(["T2"]);
+    });
+
+    it("indexes shared and scoped payee and tag names in separate columns", () => {
+      migrate(db, loadMigrations(packageMigrationsDir));
+      db.exec(seed);
+      db.exec(`
+        INSERT INTO person (id, display_name, colour, created_at, updated_at) VALUES ('U1','Una','#fff','t','t');
+        UPDATE payee SET scope_person_id = 'U1' WHERE id = 'P1';
+        UPDATE tag SET scope_person_id = 'U1' WHERE id = 'G1';
+      `);
+      expect(find("bunnings", "payee")).toEqual([]);
+      expect(find("bunnings", "payee_scoped")).toEqual(["T1"]);
+      expect(find("renovation", "tags")).toEqual([]);
+      expect(find("renovation", "tags_scoped")).toEqual(["T1"]);
+    });
+
+    it("keeps the index and its triggers working after a table rebuild that carries search_id", () => {
+      migrate(db, loadMigrations(packageMigrationsDir));
+      db.exec(seed);
+      db.exec("PRAGMA foreign_keys = OFF");
+      db.exec("BEGIN");
+      // The documented rebuild: save and drop the txn_fts triggers (a RENAME fails while one names
+      // a missing table), rebuild, then re-create them.
+      const triggers = db
+        .prepare(
+          "SELECT name, sql FROM sqlite_schema WHERE type = 'trigger' AND name LIKE 'txn\\_fts\\_%' ESCAPE '\\'",
+        )
+        .all() as { name: string; sql: string }[];
+      expect(triggers.length).toBeGreaterThan(8);
+      for (const t of triggers) db.exec(`DROP TRIGGER ${t.name}`);
+      const indexes = db
+        .prepare(
+          "SELECT sql FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'transaction' AND sql IS NOT NULL",
+        )
+        .pluck()
+        .all() as string[];
+      const ddl = db
+        .prepare("SELECT sql FROM sqlite_schema WHERE name = 'transaction'")
+        .pluck()
+        .get() as string;
+      db.exec(
+        ddl
+          .replace(/^CREATE TABLE \W?transaction\W?/, "CREATE TABLE __new_transaction")
+          .replaceAll('"transaction".', '"__new_transaction".'),
+      );
+      // Reverse order, so the table rowids no longer match search_id.
+      db.exec('INSERT INTO __new_transaction SELECT * FROM "transaction" ORDER BY rowid DESC');
+      db.exec('DROP TABLE "transaction"');
+      db.exec('ALTER TABLE __new_transaction RENAME TO "transaction"');
+      for (const sql of indexes) db.exec(sql);
+      for (const t of triggers) db.exec(t.sql);
+      db.exec("COMMIT");
+      db.exec("PRAGMA foreign_keys = ON");
+
+      expect(db.pragma("foreign_key_check")).toEqual([]);
+      expect(
+        db.prepare('SELECT rowid, id, search_id FROM "transaction" ORDER BY id').all(),
+      ).toEqual([
+        { rowid: 2, id: "T1", search_id: 1 },
+        { rowid: 1, id: "T2", search_id: 2 },
+      ]);
+      expect(find("hardware")).toEqual(["T1"]);
+      expect(find("groceries")).toEqual(["T2"]);
+      db.exec("UPDATE \"transaction\" SET description_raw = 'Timber' WHERE id = 'T1'");
+      expect(find("hardware")).toEqual([]);
+      expect(find("timber")).toEqual(["T1"]);
+      db.exec(
+        "INSERT INTO \"transaction\" (id, account_id, posted_on, amount_cents, description_raw, status, fingerprint, fingerprint_version, created_at, updated_at) VALUES ('T3','A1','2026-09-03',-5,'Bakery','posted','fp3',1,'t','t')",
+      );
+      expect(find("bakery")).toEqual(["T3"]);
+      db.exec("UPDATE payee SET name = 'Mitre 10' WHERE id = 'P1'");
+      expect(find("mitre")).toEqual(["T1"]);
+      db.exec("DELETE FROM split WHERE transaction_id = 'T3'");
+      db.exec("DELETE FROM \"transaction\" WHERE id = 'T3'");
+      expect(find("bakery")).toEqual([]);
+    });
   });
 
   it("opens in WAL mode with foreign keys on", () => {

@@ -73,6 +73,7 @@ import {
   revokeMyReEnrolmentLinks,
   type SetSplitFieldInput,
   type SystemHealthPort,
+  searchTransactions,
   setPrivacy,
   setSplitField,
   setSplits,
@@ -313,6 +314,11 @@ export function createApi(deps: ApiDeps) {
       // Filters and paging come from the query string (`parseTransactionQuery`); a bad one is 400.
       const query = parseTransactionQuery(c.req.queries());
       return c.json(listTransactions(ctx(c), query), 200);
+    })
+    .get("/api/ledger/search", (c) => {
+      // The list with `q` required, so a hidden name stays out of every row, total and summary.
+      const query = parseTransactionQuery(c.req.queries());
+      return c.json(searchTransactions(ctx(c), query), 200);
     })
     .post("/api/ledger/transactions", async (c) => {
       writable();

@@ -117,6 +117,16 @@ describe("transactions search", () => {
     expect(validateTransactionsSearch({ page: "2" })).toEqual({ page: "2" });
   });
 
+  it("keeps the search text trimmed, and drops it when blank, too long or not a string", () => {
+    expect(validateTransactionsSearch({ q: "  coffee 142.85 " })).toEqual({ q: "coffee 142.85" });
+    expect(validateTransactionsSearch({ q: '"*' })).toEqual({ q: '"*' });
+    expect(validateTransactionsSearch({ q: "   " })).toEqual({});
+    expect(validateTransactionsSearch({ q: "x".repeat(201) })).toEqual({});
+    expect(validateTransactionsSearch({ q: 5 })).toEqual({});
+    expect(hasClearableFilters({ q: "coffee" })).toBe(true);
+    expect(clearedFilters({ q: "coffee", from: "2026-07-01" })).toEqual({ from: "2026-07-01" });
+  });
+
   it("drops what is malformed, unknown or not a string", () => {
     expect(
       validateTransactionsSearch({

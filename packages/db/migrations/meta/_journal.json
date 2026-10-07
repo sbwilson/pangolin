@@ -85,6 +85,13 @@
       "when": 1791283542878,
       "tag": "0011_backup_snapshot_drop_figures",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1791371363318,
+      "tag": "0012_search_index",
+      "breakpoints": true
     }
   ]
 }

@@ -554,11 +554,14 @@ async function requestVia(
   return { status: response.status, text: await response.text() };
 }
 
-/** Every table's rows in rowid order, as one string. */
+/**
+ * Every table's rows in rowid order, as one string. The FTS5 shadow tables of the search index
+ * (`txn_fts_*`, some without a rowid) are left out; `txn_fts` itself is dumped.
+ */
 export function dumpTables(db: Db): string {
   const tables = column(
     db,
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'txn\\_fts\\_%' ESCAPE '\\' ORDER BY name",
   );
   return tables
     .map((name) => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.ts";
+import { parseSearch, searchMatches } from "./search-query.ts";
 import {
   decodeCursor,
   encodeCursor,
@@ -11,7 +12,7 @@ import {
 describe("parseTransactionQuery", () => {
   it("reads every filter and the paging position from a query string", () => {
     const query = new URLSearchParams(
-      "account=a1&from=2026-07-01&to=2026-09-30&category=c1&tag=t1&payee=p1&minCents=100&maxCents=900&type=out&uncategorised=true&transfers=true&hidden=true&page=2",
+      "account=a1&from=2026-07-01&to=2026-09-30&category=c1&tag=t1&payee=p1&minCents=100&maxCents=900&type=out&uncategorised=true&transfers=true&hidden=true&q=coffee+142.85&page=2",
     );
     expect(parseTransactionQuery(query)).toEqual({
       accountId: "a1",
@@ -26,6 +27,7 @@ describe("parseTransactionQuery", () => {
       uncategorised: true,
       transfers: true,
       hidden: true,
+      q: "coffee 142.85",
       page: 2,
     });
   });
@@ -52,12 +54,55 @@ describe("parseTransactionQuery", () => {
   });
 });
 
+describe("parseSearch", () => {
+  it("cuts terms into folded tokens and drops what holds none", () => {
+    expect(parseSearch("Café  Zürich-Bar")).toEqual({
+      terms: [["cafe"], ["zurich", "bar"]],
+      magnitude: undefined,
+    });
+    expect(parseSearch('" * AND')).toEqual({ terms: [["and"]], magnitude: undefined });
+    for (const blank of ["", "   ", '"', "*", "- ( )"])
+      expect(parseSearch(blank), blank).toBeUndefined();
+  });
+
+  it("uses only the first eight terms", () => {
+    const terms = parseSearch("a b c d e f g h i j")?.terms;
+    expect(terms?.map((t) => t[0])).toEqual(["a", "b", "c", "d", "e", "f", "g", "h"]);
+  });
+
+  it("reads a plain amount as a magnitude range beside its text", () => {
+    const range = (q: string) => parseSearch(q)?.magnitude;
+    expect(range("142")).toEqual({ minCents: 14200, maxCents: 14299 });
+    expect(range("$1,142")).toEqual({ minCents: 114200, maxCents: 114299 });
+    expect(range("142.8")).toEqual({ minCents: 14280, maxCents: 14289 });
+    expect(range("142.85")).toEqual({ minCents: 14285, maxCents: 14285 });
+    expect(range("-142.85")).toEqual({ minCents: 14285, maxCents: 14285 });
+    expect(range("142.855")).toBeUndefined();
+    expect(range("142 coffee")).toBeUndefined();
+    expect(range("1e3")).toBeUndefined();
+    expect(parseSearch("142")?.terms).toEqual([["142"]]);
+  });
+});
+
+describe("searchMatches", () => {
+  it("needs every term in some field, as adjacent tokens with the last a prefix", () => {
+    const fields = ["Coffee-shop Cafe", "latte run"];
+    expect(searchMatches([["coff"], ["lat"]], fields)).toBe(true);
+    expect(searchMatches([["coffee", "shop"]], fields)).toBe(true);
+    expect(searchMatches([["shop", "coffee"]], fields)).toBe(false);
+    expect(searchMatches([["offee"]], fields)).toBe(false);
+    expect(searchMatches([["cafe", "latte"]], fields)).toBe(false);
+  });
+});
+
 describe("listTransactionsInput", () => {
   const parse = (input: unknown) => listTransactionsInput.safeParse(input).success;
 
   it("accepts the empty input and each filter", () => {
     expect(parse({})).toBe(true);
     expect(parse({ type: "in", from: "2026-01-01", to: "2026-01-01", minCents: 0 })).toBe(true);
+    expect(parse({ q: "coffee" })).toBe(true);
+    expect(parse({ q: "x".repeat(201) })).toBe(false);
   });
 
   it("refuses two paging positions, a reversed range, a fake date and an unknown key", () => {

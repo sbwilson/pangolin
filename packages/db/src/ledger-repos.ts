@@ -17,6 +17,7 @@ import type {
   Viewer,
   VisibleTransaction,
 } from "@pangolin/app";
+import { parseSearch } from "@pangolin/app";
 import {
   and,
   asc,
@@ -56,6 +57,7 @@ import { splitTag } from "./schema/split-tag.ts";
 import { tag } from "./schema/tag.ts";
 import { transaction } from "./schema/transaction.ts";
 import { transferGroup } from "./schema/transfer-group.ts";
+import { optimizeSearchIndex } from "./search-index.ts";
 
 type Orm = BetterSQLite3Database;
 /** An `Orm` that also hands out its connection, which the balance function runs on. */
@@ -328,6 +330,44 @@ function toView(row: { nameHidden: unknown; [key: string]: unknown }): VisibleTr
   return { ...row, nameHidden: Number(row.nameHidden) === 1 } as unknown as VisibleTransaction;
 }
 
+/** The FTS5 columns whose text any viewer may match; the `*_scoped` ones belong to one person. */
+const PUBLIC_FTS_COLUMNS = "{description notes memo payee tags}";
+
+/**
+ * The `q` condition (AD-4): never a row whose name is hidden from the viewer, whatever the field
+ * (the index holds no visibility, so this is decided here, on the projection). Otherwise a row
+ * matches by amount magnitude, or when every term matches the public columns, or every column
+ * when no payee or tag on the row is another person's (so a scoped name cannot be probed). Terms
+ * are quoted tokens (`parseSearch`), so no input is an FTS syntax error. The index only filters:
+ * the sort stays on `posted_on`, `id`.
+ */
+function searchCondition(viewer: Viewer, projection: TxnProjection, q: string): SQL | undefined {
+  const search = parseSearch(q);
+  if (search === undefined) return undefined;
+  const parts: SQL[] = [];
+  if (search.terms.length > 0) {
+    const terms = search.terms.map((tokens) => `"${tokens.join(" ")}"*`).join(" ");
+    const inIndex = (match: string) =>
+      sql`${transaction.searchId} IN (SELECT rowid FROM txn_fts WHERE txn_fts MATCH ${match})`;
+    const payeeScope = visibleScope(payee.scopePersonId, viewer);
+    const tagScope = visibleScope(tag.scopePersonId, viewer);
+    const noForeign =
+      payeeScope === undefined || tagScope === undefined
+        ? sql`1`
+        : sql`(NOT EXISTS (SELECT 1 FROM ${payee} WHERE ${payee.id} = ${transaction.payeeId} AND NOT ${payeeScope})
+            AND NOT EXISTS (SELECT 1 FROM ${split} INNER JOIN ${splitTag} ON ${splitTag.splitId} = ${split.id} INNER JOIN ${tag} ON ${tag.id} = ${splitTag.tagId}
+              WHERE ${split.transactionId} = ${transaction.id} AND ${tag.deletedAt} IS NULL AND NOT ${tagScope}))`;
+    parts.push(inIndex(`${PUBLIC_FTS_COLUMNS} : (${terms})`));
+    parts.push(sql`(${inIndex(`(${terms})`)} AND ${noForeign})`);
+  }
+  if (search.magnitude !== undefined) {
+    parts.push(
+      sql`abs(${transaction.amountCents}) BETWEEN ${search.magnitude.minCents} AND ${search.magnitude.maxCents}`,
+    );
+  }
+  return sql`(${projection.hidden} = 0 AND (${sql.join(parts, sql` OR `)}))`;
+}
+
 /**
  * The conditions a `TransactionFilter` adds to the viewer's projection. Payee and hidden are
  * decided on the projection (`payeeId`, `hidden`), so another person's scoped payee or a name
@@ -359,6 +399,7 @@ function filterConditions(
     f.uncategorised === true ? hasSplit(sql`${split.categoryId} IS NULL`) : undefined,
     f.transfers === true ? isNotNull(transaction.transferGroupId) : undefined,
     f.hidden === true ? sql`${projection.hidden} = 1` : undefined,
+    f.q === undefined ? undefined : searchCondition(viewer, projection, f.q),
   ];
 }
 
@@ -711,6 +752,7 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
       orm.delete(splitTag).where(inArray(splitTag.splitId, splits)).run();
       orm.delete(split).where(inArray(split.transactionId, rows)).run();
       orm.delete(transaction).where(eq(transaction.accountId, accountId)).run();
+      optimizeSearchIndex(orm);
     },
   };
 }

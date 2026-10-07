@@ -416,6 +416,74 @@ test("the partner sees the hidden row as Hidden until a long date, with the wink
   }
 });
 
+/** The ids of every row the search API returns for `q`, following `next`. */
+async function searchIds(page: Page, q: string): Promise<string[]> {
+  const ids: string[] = [];
+  let cursor: string | null = null;
+  do {
+    const params = new URLSearchParams({ q });
+    if (cursor !== null) params.set("after", cursor);
+    const res = await page.request.get(`/api/ledger/search?${params}`);
+    expect(res.status()).toBe(200);
+    expect(res.headers()["cache-control"]).toBe("no-store");
+    const body = (await res.json()) as ApiPage;
+    ids.push(...body.transactions.map((t) => t.id));
+    cursor = body.page.next;
+  } while (cursor !== null);
+  return ids;
+}
+
+const hiddenSearchTerms = (row: ApiTransaction) => {
+  const hidden = expectation<{ by: Person; description: string }[]>(
+    "transfers-and-privacy.hidden",
+  ).find((h) => h.by === "person-a") as { description: string };
+  return { name: hidden.description, amount: (Math.abs(row.amountCents) / 100).toFixed(2) };
+};
+
+test("the owner of a hidden name finds the row by name and amount, from the search box too", async ({
+  page,
+}) => {
+  await signInWithPassword(page, loadAccount());
+  await expect(page.getByText(`Signed in as ${SIGNED_UP_AS["person-a"]}`)).toBeVisible();
+  const row = await hiddenTransaction(page, "person-a");
+  const { name, amount } = hiddenSearchTerms(row);
+  expect(await searchIds(page, name)).toContain(row.id);
+  expect(await searchIds(page, amount)).toContain(row.id);
+
+  await page.goto("/transactions");
+  await page.getByRole("searchbox", { name: "Search transactions" }).fill(name);
+  await expect(page).toHaveURL((url) => url.searchParams.get("q") === name);
+  const table = page.getByRole("table", { name: "Transactions" });
+  await expect(
+    table.getByRole("button", { name: row.descriptionRaw, exact: true }).first(),
+  ).toBeVisible();
+});
+
+test("a search never reveals the partner's hidden name by name, amount or the box", async ({
+  browser,
+  cspViolations,
+}) => {
+  const context = await browser.newContext({ storageState: partnerSessionFile });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+    await page.goto("/");
+    await expect(page.getByText(`Signed in as ${SIGNED_UP_AS["person-b"]}`)).toBeVisible();
+    const row = await hiddenTransaction(page, "person-a");
+    const { name, amount } = hiddenSearchTerms(row);
+    expect(await searchIds(page, name)).not.toContain(row.id);
+    expect(await searchIds(page, amount)).not.toContain(row.id);
+
+    await page.goto(`/transactions?from=${row.postedOn}&to=${row.postedOn}`);
+    await page.getByRole("searchbox", { name: "Search transactions" }).fill(amount);
+    await expect(page).toHaveURL((url) => url.searchParams.get("q") === amount);
+    const table = page.getByRole("table", { name: "Transactions" });
+    await expect(table.getByRole("button", { name: HIDDEN_LONG })).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
 test("at 375 px a row opens its sheet from the bottom, and a category chip edits inline", async ({
   browser,
   cspViolations,

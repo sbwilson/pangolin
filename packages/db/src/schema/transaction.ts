@@ -9,7 +9,8 @@ import { transferGroup } from "./transfer-group.ts";
  * One bank line. `amount_cents` is signed integer minor units; `posted_on` is `YYYY-MM-DD`.
  * `fingerprint` (hashed by `fingerprint_version`) and `external_id` are unique per account and
  * kept on soft-deleted rows, so a deleted line is not imported again. `import_id` has no foreign
- * key until the import epic adds `import_batch`.
+ * key until the import epic adds `import_batch`. `search_id` is the stable integer key of the
+ * row in the `txn_fts` index (set by a trigger); it is not in `TransactionRow`.
  */
 export const transaction = sqliteTable(
   "transaction",
@@ -34,6 +35,7 @@ export const transaction = sqliteTable(
     nameHiddenBy: text("name_hidden_by").references(() => person.id),
     nameHiddenUntil: text("name_hidden_until"),
     notes: text("notes"),
+    searchId: integer("search_id"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
     deletedAt: text("deleted_at"),
@@ -44,6 +46,7 @@ export const transaction = sqliteTable(
     uniqueIndex("transaction_account_fingerprint_idx").on(t.accountId, t.fingerprint),
     index("transaction_payee_idx").on(t.payeeId),
     index("transaction_transfer_group_idx").on(t.transferGroupId),
+    uniqueIndex("transaction_search_id_idx").on(t.searchId),
     check("transaction_needs_review", sql`${t.needsReview} IN (0, 1)`),
     check("transaction_is_hidden", sql`${t.isHidden} IN (0, 1)`),
     check("transaction_status", sql`${t.status} IN ('pending', 'posted')`),

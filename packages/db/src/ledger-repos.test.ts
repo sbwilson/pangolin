@@ -8,6 +8,7 @@ import {
   createCategory,
   createCategoryGroup,
   createIdGenerator,
+  createPayee,
   createPerson,
   createTag,
   createTransaction,
@@ -22,12 +23,15 @@ import {
   personViewer,
   raiseReviewItem,
   resolveReviewItem,
+  searchTransactions,
   setSplitField,
   setSplits,
   setSplitTags,
   type UseCaseContext,
   unhideTransactionName,
   updateAccount,
+  updatePayee,
+  updateTag,
   updateTransaction,
   write,
 } from "@pangolin/app";
@@ -774,5 +778,97 @@ describe("the closed-account lock on SQLite", () => {
     expect(() => closeAccount(as(b), { id: privateA, closedOn: "2026-09-01" })).toThrow(
       expect.objectContaining({ code: "NotFound" }),
     );
+  });
+});
+
+describe("search on SQLite", () => {
+  const found = (ctx: UseCaseContext, q: string) =>
+    searchTransactions(ctx, { q }).transactions.map((row) => row.id);
+
+  it("follows a payee rename, a tag change, a split memo edit and a notes edit", () => {
+    const payee = createPayee(as(a), { name: "Bunnings", originAccountId: shared });
+    const tag = createTag(as(a), { name: "renovation", originAccountId: shared });
+    const id = createTransaction(as(a), { ...txn(shared, "Hardware run"), payeeId: payee.id });
+    const split = getTransaction(as(a), { id }).splits[0];
+    if (split === undefined) throw new Error("no split");
+    setSplitTags(as(a), { transactionId: id, splitId: split.id, tagIds: [tag.id] });
+    setSplits(as(a), {
+      transactionId: id,
+      splits: [{ id: split.id, amountCents: split.amountCents, memo: "screws" }],
+    });
+    updateTransaction(as(a), { id, notes: "for the shed" });
+    for (const q of ["bunnings", "renovation", "screws", "shed", "hardware"]) {
+      expect(found(as(b), q), q).toEqual([id]);
+    }
+
+    updatePayee(as(a), { id: payee.id, name: "Mitre 10" });
+    expect(found(as(b), "bunnings")).toEqual([]);
+    expect(found(as(b), "mitre")).toEqual([id]);
+
+    updateTag(as(a), { id: tag.id, name: "garden" });
+    expect(found(as(b), "renovation")).toEqual([]);
+    expect(found(as(b), "garden")).toEqual([id]);
+
+    setSplitTags(as(a), { transactionId: id, splitId: split.id, tagIds: [] });
+    expect(found(as(b), "garden")).toEqual([]);
+
+    setSplits(as(a), {
+      transactionId: id,
+      splits: [{ id: split.id, amountCents: split.amountCents, memo: "bolts" }],
+    });
+    expect(found(as(b), "screws")).toEqual([]);
+    expect(found(as(b), "bolts")).toEqual([id]);
+
+    updateTransaction(as(a), { id, notes: null, description: "Timber" });
+    expect(found(as(b), "shed")).toEqual([]);
+    expect(found(as(b), "hardware")).toEqual([]);
+    expect(found(as(b), "timber")).toEqual([id]);
+
+    const other = createPayee(as(a), { name: "Kmart", originAccountId: shared });
+    db.prepare('UPDATE "transaction" SET payee_id = ? WHERE id = ?').run(other.id, id);
+    expect(found(as(b), "mitre")).toEqual([]);
+    expect(found(as(b), "kmart")).toEqual([id]);
+
+    const tag2 = createTag(as(a), { name: "birthday", originAccountId: shared });
+    setSplitTags(as(a), { transactionId: id, splitId: split.id, tagIds: [tag.id] });
+    expect(found(as(b), "garden")).toEqual([id]);
+    db.prepare("UPDATE split_tag SET tag_id = ? WHERE split_id = ?").run(tag2.id, split.id);
+    expect(found(as(b), "garden")).toEqual([]);
+    expect(found(as(b), "birthday")).toEqual([id]);
+
+    const second = createTransaction(as(a), txn(shared, "Second"));
+    db.prepare("UPDATE split SET transaction_id = ? WHERE id = ?").run(second, split.id);
+    expect(found(as(b), "birthday")).toEqual([second]);
+    expect(found(as(b), "bolts")).toEqual([second]);
+
+    deleteTransaction(as(a), { id });
+    expect(found(as(b), "timber")).toEqual([]);
+  });
+
+  it("hides a hidden-name row from the partner by name, notes and amount, not from its owner", () => {
+    const id = createTransaction(as(a), {
+      accountId: shared,
+      postedOn: "2026-09-01",
+      amountCents: -14285,
+      description: "Surprise party",
+    });
+    updateTransaction(as(a), { id, notes: "balloons" });
+    hideTransactionName(as(a), { id });
+    for (const q of ["surprise", "balloons", "142.85", "142"]) {
+      expect(found(as(a), q), q).toEqual([id]);
+      expect(() => found(as(b), q), q).not.toThrow();
+      expect(found(as(b), q), q).toEqual([]);
+      expect(searchTransactions(as(b), { q }).summary.count).toBe(0);
+    }
+    unhideTransactionName(as(a), { id });
+    expect(found(as(b), "surprise")).toEqual([id]);
+  });
+
+  it("refuses a blank search and takes any other input without an FTS error", () => {
+    expect(() => searchTransactions(as(a), { q: "  " })).toThrow();
+    expect(() => searchTransactions(as(a), {})).toThrow();
+    for (const q of ['"', "*", "AND", "OR NOT", "a:b", "(", '"x', "NEAR(a b", "^x", "-", "%"]) {
+      expect(() => listTransactions(as(a), { q }), q).not.toThrow();
+    }
   });
 });

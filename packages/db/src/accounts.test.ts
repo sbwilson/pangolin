@@ -864,7 +864,9 @@ describe("leaving the household (story 26)", () => {
   const dump = (): string =>
     (
       db
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'txn\\_fts\\_%' ESCAPE '\\'",
+        )
         .pluck()
         .all() as string[]
     )
@@ -1158,6 +1160,26 @@ describe("leaving the household (story 26)", () => {
       code("Unauthenticated"),
     );
     expect(dump()).toBe(before);
+  });
+
+  it("leaves no erased text in the search index's shadow tables", () => {
+    household();
+    const shadowHolds = (term: string): boolean =>
+      (
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'txn\\_fts\\_%' ESCAPE '\\'",
+          )
+          .pluck()
+          .all() as string[]
+      ).some((name) =>
+        (db.prepare(`SELECT * FROM "${name}"`).raw().all() as unknown[][])
+          .flat()
+          .some((v) => Buffer.from(v instanceof Uint8Array ? v : String(v)).includes(term)),
+      );
+    expect(shadowHolds("secret")).toBe(true);
+    leaveHousehold(leaver(a), { confirm: true });
+    expect(shadowHolds("secret")).toBe(false);
   });
 
   it("is all or nothing: a failure at the end undoes the deletes", () => {

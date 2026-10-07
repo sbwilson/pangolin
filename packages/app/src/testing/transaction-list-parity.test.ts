@@ -57,6 +57,41 @@ const cursorOf = (row: { postedOn: string; id: string }): TransactionCursor => (
   id: row.id,
 });
 
+/** The `q` filters the scenario runs, by name. */
+const searchFilters: Record<string, TransactionFilter> = {
+  qPrefix: { q: "zeb" },
+  qCase: { q: "ZEBRA cafe" },
+  qBothTerms: { q: "zebra latte" },
+  qNoMatch: { q: "zebra wombat" },
+  qAccent: { q: "zurich" },
+  qMemo: { q: "kayak" },
+  q142: { q: "142" },
+  q142Dollars: { q: "$142" },
+  q142_8: { q: "142.8" },
+  q142_85: { q: "142.85" },
+  qSigned: { q: "-142.85" },
+  q143: { q: "143" },
+  qHiddenName: { q: "quokka" },
+  qHiddenNotes: { q: "wombat" },
+  qHiddenMemo: { q: "numbat" },
+  qHiddenAmount: { q: "7.77" },
+  qScopedPayee: { q: "secret shop" },
+  qScopedTag: { q: "gift" },
+  qSharedTag: { q: "trip" },
+  qMixedTags: { q: "trip gift" },
+  qQuote: { q: '"' },
+  qStar: { q: "*" },
+  qAnd: { q: "AND" },
+  qOr: { q: "zebra OR zork" },
+  qNear: { q: "NEAR(" },
+  qOpen: { q: '"zebra' },
+  qColon: { q: "description: zebra" },
+  qBlank: { q: "   " },
+  // Only the first eight terms count, so the ninth, which matches nothing, is ignored.
+  qManyTerms: { q: `${"zebra ".repeat(8)}nomatch` },
+  qWithFilter: { q: "142", type: "in" },
+};
+
 /** What the scenario builds and what it asks of each viewer. */
 function scenario(uow: UnitOfWork) {
   const newId = ids();
@@ -76,6 +111,8 @@ function scenario(uow: UnitOfWork) {
   const tagShared = newId<"Tag">();
   const tagA = newId<"Tag">();
   const transfer = newId<"TransferGroup">();
+  const found: Record<string, Id<"Transaction">> = {};
+  let hiddenId = "" as Id<"Transaction">;
 
   const account = (id: Id<"Account">, isPrivate: boolean): AccountRow => ({
     id,
@@ -248,11 +285,33 @@ function scenario(uow: UnitOfWork) {
     const hidden = txn(otherShared, 302, {
       postedOn: "2026-09-02",
       amountCents: -777,
+      descriptionRaw: "Hidden quokka",
+      notes: "wombat secret",
       payeeId: payeeA,
       nameHiddenBy: a,
       nameHiddenUntil: "2027-01-01T00:00:00.000Z",
     });
-    r.transactions.insert(hidden, [split(hidden.id, -777, cats[1])]);
+    hiddenId = hidden.id;
+    r.transactions.insert(hidden, [{ ...split(hidden.id, -777, cats[1]), memo: "numbat memo" }]);
+    // Search rows, all in the shared account and categorised so the other filters ignore them.
+    const searchRow = (key: string, n: number, over: Partial<TransactionRow>, memo?: string) => {
+      const row = txn(otherShared, n, { postedOn: "2026-09-03", ...over });
+      found[key] = row.id;
+      const s = { ...split(row.id, row.amountCents, cats[0]), memo: memo ?? null };
+      r.transactions.insert(row, [s]);
+      return s;
+    };
+    searchRow("low", 310, {
+      amountCents: -14200,
+      descriptionRaw: "Zebra Cafe",
+      notes: "latte run",
+    });
+    searchRow("highIn", 311, { amountCents: 14299, descriptionRaw: "Zed refund" });
+    searchRow("next", 312, { amountCents: -14300, descriptionRaw: "Zork" });
+    searchRow("exact", 313, { amountCents: -14285, descriptionRaw: "Zoom Zürich" }, "kayak hire");
+    searchRow("scopedPayee", 314, { amountCents: -321, payeeId: payeeA, descriptionRaw: "Plain" });
+    const mixed = searchRow("mixed", 315, { amountCents: -322, descriptionRaw: "Plain two" });
+    r.tags.replaceForSplit(system, mixed.id, [tagShared, tagA], T);
   });
 
   const out: Record<string, unknown> = {};
@@ -328,6 +387,7 @@ function scenario(uow: UnitOfWork) {
       transfers: { transfers: true },
       hidden: { hidden: true },
       combined: { type: "out", uncategorised: true, from: "2026-08-03", payeeId: payeeShared },
+      ...searchFilters,
     };
     for (const [name, f] of Object.entries(filters)) {
       const rows = page(v, f, { offset: 0 });
@@ -339,7 +399,7 @@ function scenario(uow: UnitOfWork) {
       };
     }
   }
-  return { out, sharedIds, privateRows, a, b };
+  return { out, sharedIds, privateRows, a, b, found, hiddenId };
 }
 
 describe("the transaction list repositories", () => {
@@ -364,17 +424,17 @@ describe("the transaction list repositories", () => {
     expect(out["B.offsets"]).toEqual(out["B.forward"]);
 
     // The partner sees the shared rows only: A's private rows are as if they did not exist.
-    expect(sum("A.filter.none").count).toBe(120 + 2 + 6);
-    expect(sum("B.filter.none").count).toBe(120 + 2 + 1);
-    expect(sum("system.filter.none").count).toBe(120 + 2 + 6 + 1);
+    expect(sum("A.filter.none").count).toBe(120 + 2 + 6 + 6);
+    expect(sum("B.filter.none").count).toBe(120 + 2 + 1 + 6);
+    expect(sum("system.filter.none").count).toBe(120 + 2 + 6 + 1 + 6);
     // A's scoped payee, scoped tag and hidden name cannot be probed.
     for (const name of ["scopedPayee", "scopedTag", "noSuchPayee"]) {
       expect(get(`B.filter.${name}`).ids).toEqual([]);
       expect(sum(`B.filter.${name}`)).toEqual({ count: 0, inCents: 0, outCents: 0 });
     }
     expect(get("B.filter.scopedPayee")).toEqual(get("B.filter.noSuchPayee"));
-    expect(sum("A.filter.scopedPayee").count).toBe(6 + 1);
-    expect(sum("A.filter.scopedTag").count).toBe(6);
+    expect(sum("A.filter.scopedPayee").count).toBe(6 + 1 + 1);
+    expect(sum("A.filter.scopedTag").count).toBe(6 + 1);
     // A hidden name is hidden from B (and from nobody else).
     expect(sum("B.filter.hidden").count).toBe(1);
     expect(sum("A.filter.hidden").count).toBe(0);
@@ -391,5 +451,66 @@ describe("the transaction list repositories", () => {
     // Day nets are for the whole day under the filter.
     const nets = get("A.filter.none").dayNets as Record<string, number>;
     expect(Object.keys(nets).length).toBeGreaterThan(0);
+  });
+
+  it("searches by text and amount magnitude alike on SQLite and in memory, never revealing a hidden name", () => {
+    const sqlite = scenario(createUnitOfWork(db));
+    const memory = scenario(memoryUnitOfWork());
+    expect(sqlite.out).toEqual(memory.out);
+    const { found, hiddenId } = sqlite;
+    const out = sqlite.out as Record<string, { ids: string[]; summary: { count: number } }>;
+    const hits = (who: string, name: string) =>
+      [...(out[`${who}.filter.${name}`]?.ids ?? [])].sort();
+    const only = (...keys: string[]) => keys.map((k) => found[k] as string).sort();
+    const count = (who: string, name: string) => out[`${who}.filter.${name}`]?.summary.count;
+
+    // Whole dollars match $142.00 to $142.99, money in or out, and not $143.00.
+    for (const who of ["A", "B", "system"]) {
+      expect(hits(who, "q142")).toEqual(only("low", "highIn", "exact"));
+      expect(hits(who, "q142Dollars")).toEqual(only("low", "highIn", "exact"));
+      expect(hits(who, "q143")).toEqual(only("next"));
+      expect(hits(who, "q142_85")).toEqual(only("exact"));
+      expect(hits(who, "qSigned")).toEqual(only("exact"));
+      expect(hits(who, "q142_8")).toEqual(only("exact"));
+      expect(hits(who, "qWithFilter")).toEqual(only("highIn"));
+      // Text: prefix, case, both terms, accents folded, split memo.
+      expect(hits(who, "qPrefix")).toEqual(only("low"));
+      expect(hits(who, "qCase")).toEqual(only("low"));
+      expect(hits(who, "qBothTerms")).toEqual(only("low"));
+      expect(hits(who, "qNoMatch")).toEqual([]);
+      expect(hits(who, "qManyTerms")).toEqual(only("low"));
+      expect(hits(who, "qAccent")).toEqual(only("exact"));
+      expect(hits(who, "qMemo")).toEqual(only("exact"));
+      // Operators are text: nothing breaks, and blank or empty-token input is no filter.
+      expect(hits(who, "qOpen")).toEqual(only("low"));
+      for (const name of ["qOr", "qNear", "qColon"]) expect(hits(who, name)).toEqual([]);
+      for (const name of ["qQuote", "qStar", "qBlank"]) {
+        expect(out[`${who}.filter.${name}`]).toEqual(out[`${who}.filter.none`]);
+      }
+    }
+    expect(hits("A", "qAnd")).toEqual([]);
+
+    // The owner finds the hidden row by name, notes, memo and amount; the partner by none, and it
+    // is not in the rows, total or summary.
+    for (const name of ["qHiddenName", "qHiddenNotes", "qHiddenMemo", "qHiddenAmount"]) {
+      expect(hits("A", name)).toEqual([hiddenId]);
+      expect(hits("system", name)).toEqual([hiddenId]);
+      expect(out[`B.filter.${name}`]).toEqual({
+        summary: { count: 0, inCents: 0, outCents: 0 },
+        ids: [],
+        dayNets: {},
+      });
+    }
+    expect(count("A", "qHiddenName")).toBe(1);
+
+    // A's scoped payee and tag name never match for B; they do for A.
+    expect(hits("A", "qScopedPayee")).toHaveLength(6 + 1 + 1);
+    expect(hits("A", "qScopedPayee")).toContain(found.scopedPayee);
+    expect(hits("B", "qScopedPayee")).toEqual([]);
+    expect(hits("B", "qScopedTag")).toEqual([]);
+    expect(hits("A", "qScopedTag")).toContain(found.mixed);
+    expect(hits("A", "qMixedTags")).toEqual(only("mixed"));
+    expect(hits("B", "qMixedTags")).toEqual([]);
+    expect(hits("B", "qSharedTag")).toContain(found.mixed);
   });
 });

@@ -356,6 +356,17 @@ export {
   sourceRank,
 } from "./ledger/provenance.ts";
 export {
+  type AmountMagnitude,
+  amountMagnitude,
+  type ParsedSearch,
+  parseSearch,
+  SEARCH_MAX_TERMS,
+  SEARCH_QUERY_MAX,
+  searchMatches,
+  searchTokens,
+} from "./ledger/search-query.ts";
+export { searchTransactions } from "./ledger/search-transactions.ts";
+export {
   registerSplitFieldListener,
   type SetSplitFieldInput,
   type SetSplitFieldResult,

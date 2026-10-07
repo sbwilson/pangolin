@@ -161,6 +161,9 @@ export const MANIFEST: readonly ManifestEntry[] = [
   identity("POST", "/api/auth/*", "better-auth's own routes: sessions and credentials only."),
 
   read("/api/ledger/transactions"),
+  // Search: the list filtered by `q` through the FTS5 index; the hidden-name and scoped-name
+  // exclusion is applied on the viewer's projection at query time, never stored in the index.
+  read("/api/ledger/search"),
   write("POST", "/api/ledger/transactions", {
     bodyEntities: ["account", "payee"],
     body: (id) => ({
@@ -339,12 +342,6 @@ export const MANIFEST: readonly ManifestEntry[] = [
   // Routes epic-ledger-workspace adds. Each must replace its pending entry with a person entry
   // that carries the byte-identical and NotFound checks, through `visibleAccounts`, `visibleTxn`
   // and `redact` (AD-3, AD-4).
-  {
-    kind: "pending",
-    method: "GET",
-    path: "/api/ledger/search",
-    reason: "Search (epic-ledger-workspace): FTS5 over visibleTxn, never over raw rows.",
-  },
   {
     kind: "pending",
     method: "GET",

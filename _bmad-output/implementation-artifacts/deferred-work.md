@@ -368,3 +368,22 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-account-screens-plan.md`
   summary: Make the e2e `accounts` Playwright project not skip when the chromium project fails.
   evidence: It depends on chromium so the seeded ledger exists first; a chromium failure hides its results.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-search-plan.md`
+  summary: Tell the user when a punctuation-only search box value filters nothing.
+  evidence: `q="` is accepted by the web validator and ignored by the list, so the box and URL show a filter over an unfiltered list.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-search-plan.md`
+  summary: Align the memory adapter's tokenizer with FTS5 `unicode61` for non-Latin text and letters such as "ø", or set `remove_diacritics` explicitly.
+  evidence: `searchTokens` strips every combining mark after NFD while unicode61 folds fewer; parity tests cover only "Zürich".
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-search-plan.md`
+  summary: Generate the txn_fts reindex SQL from one template instead of copying it into the backfill and every trigger.
+  evidence: The same six-subquery SELECT sits in about 15 places in migration 0012; a new indexed column must change each copy.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-search-plan.md`
+  summary: Decide whether a soft-deleted payee should stop matching in search (add `deleted_at` to the payee trigger's UPDATE OF list).
+  evidence: `txn_fts_payee_update` fires only on name and scope changes; unverified whether deleted payee names still show on rows.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-search-plan.md`
+  summary: Measure the write cost of the per-row search triggers on bulk imports.
+  evidence: Payee or tag renames reindex every linked transaction inside the writer's transaction; 12.8's 50,000-row budget does not cover writes.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-search-plan.md`
+  summary: Remove or use `GET /api/ledger/search` from the web, and share the 200-character query limit between server and web.
+  evidence: The web only calls `/transactions?q=`; `MAX_QUERY` duplicates `SEARCH_QUERY_MAX`.

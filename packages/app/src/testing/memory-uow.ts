@@ -4,6 +4,7 @@
 // claims, visibility); `packages/db` tests prove the adapter on real SQLite, and the parity tests
 // beside this file (`*-parity.test.ts`, which may import `@pangolin/db`) hold the two together.
 import type { Id } from "@pangolin/shared";
+import { parseSearch, searchMatches } from "../ledger/search-query.ts";
 import type {
   AccountOwnerRow,
   AccountRepo,
@@ -940,6 +941,61 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       (row) => visibleIds.has(row.accountId) && !working.deleted.has(row.id),
     );
   };
+  /**
+   * Mirror of the search condition in `filterConditions`: never a row whose name is hidden from
+   * the viewer; else the amount magnitude, or the terms over the public fields (description,
+   * notes, memos, shared payee and tags), or over every field when no payee or tag on the row
+   * is another person's.
+   */
+  const searchKeeps = (
+    viewer: Viewer,
+    row: TransactionRow,
+    today: string,
+    q: string,
+    splits: readonly SplitRow[],
+  ): boolean => {
+    const search = parseSearch(q);
+    if (search === undefined) return true;
+    if (nameHiddenFor(viewer, row, today)) return false;
+    const size = Math.abs(row.amountCents);
+    if (
+      search.magnitude !== undefined &&
+      size >= search.magnitude.minCents &&
+      size <= search.magnitude.maxCents
+    ) {
+      return true;
+    }
+    const mine = (scope: string | null) =>
+      viewer.kind === "system" || scope === null || scope === viewer.personId;
+    const payee = working.payees.find((p) => p.id === row.payeeId);
+    const splitIds = new Set(splits.map((s) => s.id));
+    const tags = working.splitTags
+      .filter((st) => splitIds.has(st.splitId))
+      .map((st) => working.tags.find((t) => t.id === st.tagId))
+      .filter((t): t is TagRow => t !== undefined && !working.deleted.has(t.id));
+    const shared = [
+      row.descriptionRaw,
+      row.notes ?? "",
+      splits.flatMap((s) => (s.memo === null ? [] : [s.memo])).join(" "),
+      payee !== undefined && payee.scopePersonId === null ? payee.name : "",
+      tags
+        .filter((t) => t.scopePersonId === null)
+        .map((t) => t.name)
+        .join(" "),
+    ];
+    if (searchMatches(search.terms, shared)) return true;
+    const scoped = [
+      payee !== undefined && payee.scopePersonId !== null ? payee.name : "",
+      tags
+        .filter((t) => t.scopePersonId !== null)
+        .map((t) => t.name)
+        .join(" "),
+    ];
+    const foreign =
+      (payee !== undefined && !mine(payee.scopePersonId)) ||
+      tags.some((t) => !mine(t.scopePersonId));
+    return !foreign && searchMatches(search.terms, [...shared, ...scoped]);
+  };
   /** Rows of `visibleRows` a filter keeps, in list order (mirror of `filterConditions`). */
   const filtered = (viewer: Viewer, today: string, f: TransactionFilter): TransactionRow[] => {
     const tagVisible =
@@ -974,6 +1030,7 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
         if (f.uncategorised === true && !splits.some((s) => s.categoryId === null)) return false;
         if (f.transfers === true && row.transferGroupId === null) return false;
         if (f.hidden === true && !nameHiddenFor(viewer, row, today)) return false;
+        if (f.q !== undefined && !searchKeeps(viewer, row, today, f.q, splits)) return false;
         return true;
       })
       .sort((a, b) => byText(`${b.postedOn}|${b.id}`, `${a.postedOn}|${a.id}`));

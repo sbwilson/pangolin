@@ -2,6 +2,7 @@ import { z } from "zod";
 import { dayInput, idInput } from "../accounts/inputs.ts";
 import { AppError } from "../errors.ts";
 import type { TransactionCursor, TransactionFilter } from "../ports/unit-of-work.ts";
+import { SEARCH_QUERY_MAX } from "./search-query.ts";
 
 /** Rows on a page of the transaction list. */
 export const TRANSACTION_PAGE_SIZE = 50;
@@ -43,6 +44,7 @@ export const listTransactionsInput = z
     uncategorised: z.literal(true).optional(),
     transfers: z.literal(true).optional(),
     hidden: z.literal(true).optional(),
+    q: z.string().max(SEARCH_QUERY_MAX).optional(),
     page: z.number().int().min(1).max(1_000_000).optional(),
     after: cursorInput.optional(),
     before: cursorInput.optional(),
@@ -81,6 +83,7 @@ const PARAMS = {
   uncategorised: "uncategorised",
   transfers: "transfers",
   hidden: "hidden",
+  q: "q",
   page: "page",
   after: "after",
   before: "before",
@@ -97,7 +100,7 @@ export type TransactionQuery =
 /**
  * Reads the transaction list filters and paging from a query string (`account`, `from`, `to`,
  * `category`, `tag`, `payee`, `minCents`, `maxCents`, `type`, `uncategorised`, `transfers`,
- * `hidden`, `page`, `after`, `before`) and checks their syntax only: a flag is `true` or `false`
+ * `hidden`, `q`, `page`, `after`, `before`) and checks their syntax only: a flag is `true` or `false`
  * (false is the same as absent), a number is digits, and an unknown or repeated name is a
  * `Validation` error. The values themselves (dates, ranges, cursors, the one paging position) are
  * validated by `listTransactions`.

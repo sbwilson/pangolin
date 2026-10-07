@@ -494,7 +494,6 @@ describe("the route manifest", () => {
     const pending = MANIFEST.filter((entry) => entry.kind === "pending");
     expect(pending.map(routeKey).sort()).toEqual([
       "GET /api/ledger/export",
-      "GET /api/ledger/search",
       "GET /api/system/audit",
     ]);
     for (const entry of pending) {

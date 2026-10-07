@@ -47,6 +47,8 @@ export interface TransactionsSearch {
   readonly uncategorised?: "true";
   readonly transfers?: "true";
   readonly hidden?: "true";
+  /** Free text: name, notes, memo, payee, tag, or an amount. */
+  readonly q?: string;
   readonly page?: string;
   readonly after?: string;
   readonly before?: string;
@@ -65,6 +67,8 @@ function isRealDay(value: string): boolean {
 const CURSOR = /^\d{4}-\d{2}-\d{2}~[0-9A-Za-z_-]{1,100}$/;
 const WORD = /^[0-9A-Za-z_-]{1,100}$/;
 const COUNT = /^\d{1,15}$/;
+/** The server's limit on `q`. */
+export const MAX_QUERY = 200;
 
 /**
  * What `/transactions` reads from the URL: a known name with a well-formed value is kept, anything
@@ -82,6 +86,11 @@ export function validateTransactionsSearch(search: object): TransactionsSearch {
   for (const name of ["minCents", "maxCents"]) keep(name, (v) => COUNT.test(v));
   keep("type", (v) => v === "in" || v === "out");
   for (const name of ["uncategorised", "transfers", "hidden"]) keep(name, (v) => v === "true");
+  // Free text is kept trimmed; blank or over the server's limit is dropped.
+  const text = (search as Record<string, unknown>).q;
+  if (typeof text === "string" && text.trim() !== "" && text.trim().length <= MAX_QUERY) {
+    out.q = text.trim();
+  }
   keep("page", (v) => /^[1-9]\d{0,6}$/.test(v) && Number(v) <= MAX_PAGE);
   for (const name of ["after", "before"]) keep(name, (v) => CURSOR.test(v));
   // What the server would refuse: a reversed pair is dropped whole, and only one paging position
