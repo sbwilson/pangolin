@@ -8,7 +8,93 @@ headless: false
 
 # Retrospective: Ledger core and privacy (epic 2)
 
-Three passes are recorded here. The **third pass** (2026-10-07) follows this line and is the current state; the second pass (2026-10-06) and the sections headed "First pass" (2026-10-05) are kept as the record.
+Four passes are recorded here. The **fourth pass** (2026-10-07) follows this line and is the current state; the third (2026-10-07), the second (2026-10-06) and the sections headed "First pass" (2026-10-05) are kept as the record.
+
+## Fourth pass (2026-10-07)
+
+A short pass after the third. Two commits landed since it: `2f8fc91` (this retrospective, `SPEC.md`, `decisions.md`, the epic file) and `bf74ccf` (the fix for finding Q1). It checks whether Q1 is closed, whether the third pass's action items landed, and whether the fix opened anything new. The user had no going-in concerns ("go"). Reviewer claims were re-checked where they bear on the verdict; unchecked ones are marked.
+
+**Run:** interactive. Evidence: `git_evidence.py` over `2f8fc91..bf74ccf` (`scratchpad/retro5/evidence-q1.json`), a behaviour check over a real server (`retro5/behave5/`), a follow-through and spec check, and the adversarial, edge-case and verification-gap lenses over the Q1 diff (38 KB). The team discussion was not run. The aggregate views were not re-derived: the diff is one commit; sizes were re-read (below).
+
+### Fourth pass: Epic summary
+
+All 26 tickets stay at `built`; `pending_tickets` is empty. The fix is not a ticket: it has a plan (`_bmad-output/implementation-artifacts/plan-q1-one-closed-state.md`, baseline `2f8fc91`, built, two build-time review passes) and one commit.
+
+| Item | Range | Commit | Files | +/− |
+|---|---|---|---|---|
+| Q1 fix | `2f8fc91..bf74ccf` | `bf74ccf` | 18 | +660 / −38 (136 of them the new job test) |
+
+CI is green on `bf74ccf` (run 37550054122, 7m14s) and on the three commits before it. The range ends at `HEAD`, which is `bf74ccf`.
+
+**Evidence missing or narrowed:** the behaviour check ran without WebAuthn and restic, read the review item from the scratch database (no HTTP review route), and could not move the clock (the server builds `systemClock(timezone)`, `server.ts:110`, with no override), so a closed date arriving was not seen over HTTP; the runner tests cover it. No session logs.
+
+### Fourth pass: Findings
+
+**Q1: closed.** `isClosed` (`closed-state.ts:19`) is used by `list-accounts.ts:22` and `closing-balance.ts:35,90`. Behaviour check, real server, household zone Australia/Sydney: an account closed for a date 30 days ahead stays in the default list with no `warning` and no `review_item` row; one closed today leaves the default list, `?includeClosed=true` and `GET /:id` carry `warning` (-1,234) and one open item exists; reopening resolves it ("the account was opened again"). The scratch `job` table holds one pending `closing-balance-sync` row, `run_at` 2026-10-07T13:05Z, which is the next 00:05 in Sydney. No non-test code treats `closedOn !== null` as closed for display, warning or item (the other uses are the lock `closed-lock.ts:70-71`, `closeAccount`'s refusal `close-account.ts:37`, reopen and date validation).
+
+| ID | View / lens | Finding | Source | Disposition |
+|---|---|---|---|---|
+| S1 | Verification gap | **The documented split is unpinned.** `closed-state.ts` says the lock applies from the moment `closedOn` is set, even for a future date, and that a second `closeAccount` is refused for any set `closedOn`. No test writes an entry after a future `closedOn`, and none asks for a second close of a future-closed account; a change to `isClosed(…, today)` in either place would pass every test. | verification-gap lens (pre-verified): `accounts.test.ts` ~L419, L810, L1352 to L1409; `closed-lock.test.ts` ~L228; `app.test.ts` ~L865 | fix now |
+| S2 | Verification gap; edge | **The job's day is tested only under UTC.** `server.ts:109-119` gives the clock and the schedule the same household zone, so no defect is shown, but a regression that took the day from UTC would pass; the Sydney zone is exercised only for `run_at` (`backup.test.ts`). | verification-gap and edge lenses; `closing-balance.test.ts:140` | fix now (one Sydney case) |
+| S3 | Pattern divergence (boundary 2.23 and 2.24) | **A future-closed account reads as open but is treated as closed elsewhere.** The lock's message says "This account was closed on …" and `closeAccount` says "The account is already closed" for an account the list shows as open (`closed-lock.ts:71-76`, `close-account.ts:37`). The split is deliberate and documented; the wording and the missing pointer to `updateAccount` are not. | adversarial finding 1, edge finding 1 | defer: wording belongs with the screens (epic-ledger-workspace) |
+| S4 | Spec reconciliation | **The leave is not recorded as an exception to "never deleted".** `SPEC.md` CAP-3 success, the epic's Done when 8 and its Notes say no route or use case deletes an account, and the same texts say the leave hard-deletes private data; `leave-household.ts:241-250` deletes accounts through `tx.accounts.deleteRows`. `data-model.md` and `EXPERIENCE.md` are still unreconciled (no archive, leave or last-owner text; unchanged since `e8a92b8`). | follow-through check; epic file lines 76, 80 to 82 | spec reconciliation (Simon) |
+| S5 | Process | **R5 a fourth time.** The Q1 plan's Verification holds commands only, its Implementation Notes and Plan Change Log are empty and its tasks are still `[ ]` at `built`; only the Review Triage Log is filled. | `plan-q1-one-closed-state.md` | process lesson |
+| S6 | Edge cases of the job | One bad account rolls back every account's sync; the job touches every account ever closed each night and logs no counts; the day is read from the clock several times inside one write (`closeAccount` reads it for the default date, in `syncClosingBalance` and for the warning), so a write at local midnight could disagree with itself; a change of the household zone applies to the server clock only at restart and does not move the pending schedule row (the same holds for the backup schedules); the item appears at 00:05, not 00:00; the first run resolves items the old rule raised for future closes. | adversarial findings 2 to 6; edge findings 2 to 4 | accept; the first two stay deferred (a dead job now raises `job.dead`, `needsPersonWhenDead: true`) |
+| S7 | Verification gap | The job runs as the system viewer over private accounts: no test checks that the partner cannot read the job's audit row for a private account or that `leaveHousehold` removes the job's rows for the leaver's account. `accountId` is set on both, so the existing filters and `deleteForAccount` should cover them (not run). | adversarial finding 10 | defer |
+| S8 | Documentation | `pool.ts:41` (the `warning` doc) and the `listAccounts` comment still describe the old rule or call a future-closed account "still open". | adversarial finding 14 | fix now with S1 and S2 |
+
+Rejected as not holding up: the job does not call from `leaveHousehold`, `setPrivacy` or `rejoinAccount` (none changes a closed account's balance; the leave deletes the items with the accounts); "nothing pending" no longer signals a healthy queue (a pending schedule row is by design); a catch-up sync at boot (an overdue pending job row runs when the runner starts, shown in the build's job test).
+
+**Sizes:** `memory-uow.ts` 2,366 and `ports/unit-of-work.ts` 1,227 (unchanged); `accounts.test.ts` 1,333 to 1,465; `privacy.test.ts` 1,731 (unchanged).
+
+### Fourth pass: Previous-retro follow-through
+
+Items of the third pass's action list, with evidence at HEAD:
+
+1. **Q1 (dev loop).** Landed: `bf74ccf`; CI green; behaviour confirmed above.
+2. **Q2, accepted (Simon).** Recorded: epic Notes line 81, `decisions.md`, `SPEC.md` CAP-3. No test exercises it.
+3. **Q3, accepted (Simon).** Recorded in the same places. No guard, no test.
+4. **Q7, spec and epic file (Simon).** Partly: `2f8fc91` added `SPEC.md` CAP-3 and CAP-16 text, four `decisions.md` rows, Done when 6 to 8 and Notes. Not done: the exception to "never deleted" (S4); `data-model.md` and `EXPERIENCE.md`.
+5. **Deferred items.** Open: Q4 caller-scan test, Q6, Q8, Q9. `deferred-work.md` holds 89 entries (87 before), two added by `bf74ccf`; 69 have no disposition.
+6. **Q5, record outcomes (Simon, build workflow).** Not landed (S5).
+7. **Q1 and Q3 slicing lesson (ticketing).** No evidence found.
+
+### Fourth pass: Action items
+
+Proposed, not applied.
+
+**Remediation (fix now; one small change)**
+1. **S1, S2, S8.** Pin the lock after a future `closedOn` (refuse an entry after it, accept one on or before it) and the refusal of a second close, in the use-case tests and the SQLite and memory parity test; add a Sydney case to the job test where the household date differs from the UTC date; correct the `warning` doc in `pool.ts` and the `listAccounts` comment. Owner: dev loop.
+
+**Spec reconciliation (Simon)**
+2. **S4.** Say that the household leave is the one exception to "no route or use case deletes an account" in `SPEC.md` CAP-3, the epic's Done when 8 and its Notes; reconcile `data-model.md` and `EXPERIENCE.md` with entries 20 to 26.
+
+**Deferred (tracked)**
+3. S3 (wording for a future-closed account, with the screens), S6 (per-account isolation, job logging, one read of the day per write, zone change), S7, Q4, Q6, Q8, Q9, and the two `deferred-work.md` entries from `bf74ccf`.
+
+**Process lessons**
+4. **S5.** Have the build workflow write the verification outcomes and tick the tasks before `built` (R5, fourth time; no lesson has become a mechanism). Owner: Simon and the build workflow.
+
+### Fourth pass: Acceptance verdict
+
+**Verdict: accepted-with-open-items (machine verdict; awaiting the human's confirmation).** Criteria **declared**: the epic file's Done when, now items 1 to 8 (6 to 8 were added in `2f8fc91`). No ticket is unfinished.
+
+1. to 5. **Met**, as in the third pass; nothing in `bf74ccf` touches them.
+6. **Sharing rule** (entry 20). **Met.** Behaviour check, third pass.
+7. **No whole-database figures readable** (entries 21, 22). **Met.**
+8. **Archive, lock, warning, leave.** **Met.** The Q1 fix removes the one place where the list, the warning and the item disagreed; its remaining caveats (S1, S2, S3, S6) do not break the criterion. The exception wording (S4) is a spec gap, not a behaviour gap.
+
+No open finding contradicts a Done when item, so none blocks acceptance. Q2 and Q3 stay accepted by Simon. The open items are the fix-now change, the spec text and the deferred and process items above.
+
+**Human decision:** none recorded for the verdict itself. Closing the epic is the ticketing skill's, confirmed by the user; this retrospective changed no status.
+
+### Fourth pass: Open questions
+
+1. **Accept epic 2 now?** The machine verdict holds on the evidence; the open items are small (action item 1) or spec text (item 2).
+2. **S3:** should a future-closed account's refusals say "closes on <date>" and point at the date change, or stay as they are until the screens land?
+3. **Not checked:** the arrival of a closed date over a running server (no clock override); the as-built schema against `data-model.md`; a deployed run of entries 20 to 26 and Q1 (no release since `v0.2.1`).
+
+---
 
 ## Third pass (2026-10-07)
 

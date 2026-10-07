@@ -97,6 +97,8 @@ The single home for privacy behaviour; other sections point here. The rules are 
 | Import for partner | Hand-off, never direct import into the partner's accounts (keeps AD-5). |
 | Planning together on one laptop | The signed-in person's view is shown; Home buying follows § Home Buying Planner › Data scope, so the result is the same whoever is signed in. |
 | Partner-assisted reset | Settings › Partner, behind re-auth; the affected person sees a review-item notice. Plain copy, no cheek. |
+| Removed from a shared account | The account stays listed, marked "You've been removed from this account. Undo?"; Undo adds the person back. Their hidings on it stay. The last owner cannot be removed (the control says to close the account instead). Plain copy. |
+| Leaving the household | Settings › Household, behind re-auth and a typed confirmation: "This deletes your private accounts and everything scoped to you. Shared accounts stay with <partner>." After it the person is signed out. Earlier backups keep the data (stated in the dialog). Screens belong to epic-app-shell-settings-theming. |
 
 ## Voice and Tone
 
@@ -286,6 +288,9 @@ Grouped by surface, app-wide states first. Focus, reduced motion and phone layou
 | Balance gap | Account detail, Needs review | Warning line with the gap amount and the batch; plain copy. |
 | Missing loan terms | Loan detail | "Add the loan's rate and term to see the schedule" inline form; actuals still charted. |
 | No interest entered | Loan detail | "Where your repayments went" shows "Add interest from a statement to see the split." |
+| **Closing balance** | Account detail, Settings, Needs review | Warning line (warning colour, never money-out red) on a closed cash account whose balance on its closed date is not zero: "This account closed with $123.45 still in it." One account-scoped review item. Never blocks. |
+| **Entry after the closed date** | Transaction sheet, import commit | The save is refused with a choice: move the closed date, or move the manual entries back; reopening is a third way. Shown for an account closed on or before today. For an account that closes on a later date the message reads "This account closes on <date>. Move the closed date (Accounts > <account>) to add this." |
+| **Archived accounts** | Accounts | Closed accounts are left out of the default list; "Show closed accounts" includes them with their closed date, read-only history intact. Closing is the way to end an account; there is no delete. Screens belong to epic-ledger-workspace. |
 
 ### Planning
 
@@ -637,6 +642,7 @@ Handed to correct course on 2026-10-05 (see the [sprint change proposal](../../s
 | 13 | **Property detail** surface: value, equity, ownership split, net cash this FY / last FY (rent − user-entered interest − running costs; principal shown separately), gearing, linked loan; Property section on Loan detail | CAP-11 |
 | 14 | Goal kinds (Flexible / Protected, one emergency fund per pool); Cover an expense for large purchases and shortfall; Large withdrawal item; buffer divert as a shortfall alternative (Undo) | CAP-6, CAP-7, AD-17, AD-24 |
 | 15 | Large withdrawal review item (threshold per pool, default $2,000 [ASSUMPTION]) | AD-17, AD-24, CAP-7 |
+| 16 | Account lifecycle (2026-10-07): removed-from-account marker with Undo, closed-date lock and its prompt, closing-balance warning, archived accounts, leaving the household with re-auth and confirmation | CAP-3 |
 
 ## Open Questions
 
