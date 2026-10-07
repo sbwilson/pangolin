@@ -165,7 +165,7 @@ async function expectSeededView(page: Page, person: Person): Promise<ApiTransact
   await expect(page).toHaveURL((url) => url.pathname === "/transactions");
   const table = page.getByRole("table", { name: "Transactions" });
   await expect(table).toBeVisible();
-  await expect(table.getByRole("checkbox")).toHaveCount(50);
+  await expect(table.locator("tbody").getByRole("checkbox")).toHaveCount(50);
   const first = await fetchPage(page);
   expect(first.transactions).toHaveLength(50);
   expect(first.page.total).toBe(visible);
@@ -560,3 +560,195 @@ test("at 375 px a row opens its sheet from the bottom, and a category chip edits
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+test("bulk select on desktop: header select-all, Shift-click range, Esc clearance", async ({
+  page,
+}) => {
+  await signInWithPassword(page, loadAccount());
+  await page.goto("/transactions");
+  const table = page.getByRole("table", { name: "Transactions" });
+  await expect(table).toBeVisible();
+
+  const selectAll = page.getByRole("checkbox", {
+    name: "Select all transactions on this page",
+  });
+  await expect(selectAll).toBeVisible();
+  await selectAll.click();
+
+  const toolbar = page.getByRole("toolbar", { name: "Bulk actions" });
+  await expect(toolbar).toBeVisible();
+  await expect(toolbar.getByText("50 selected")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(toolbar).toBeHidden();
+  await expect(page.getByText(/transactions · In/)).toBeVisible();
+
+  // Shift-click range
+  const cb0 = table.locator("tbody input[type=checkbox]").nth(0);
+  const cb3 = table.locator("tbody input[type=checkbox]").nth(3);
+  await cb0.click();
+  await expect(toolbar.getByText("1 selected")).toBeVisible();
+
+  await cb3.click({ modifiers: ["Shift"] });
+  await expect(toolbar.getByText("4 selected")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(toolbar).toBeHidden();
+});
+
+test("bulk categorise and undo on desktop", async ({ page }) => {
+  await signInWithPassword(page, loadAccount());
+  await page.goto("/transactions");
+  const table = page.getByRole("table", { name: "Transactions" });
+  await expect(table).toBeVisible();
+
+  const cb0 = table.locator("tbody input[type=checkbox]").nth(0);
+  const cb1 = table.locator("tbody input[type=checkbox]").nth(1);
+  await cb0.click();
+  await cb1.click();
+
+  const toolbar = page.getByRole("toolbar", { name: "Bulk actions" });
+  await expect(toolbar.getByText("2 selected")).toBeVisible();
+  await toolbar.getByRole("button", { name: "Categorise" }).click();
+
+  const combobox = page.getByRole("combobox", { name: "Choose category" });
+  await expect(combobox).toBeVisible();
+  await combobox.click();
+
+  // Choose a category (e.g. not Uncategorised)
+  const option = page
+    .getByRole("listbox")
+    .getByRole("option")
+    .filter({ hasNotText: "Uncategorised" })
+    .first();
+  const categoryName = (await option.textContent())?.trim() ?? "";
+  await option.click();
+
+  const toast = page.getByRole("status");
+  await expect(toast.getByText("Updated 2 transactions")).toBeVisible();
+
+  const row0 = table.locator("tbody tr").filter({ has: cb0 });
+  const row1 = table.locator("tbody tr").filter({ has: cb1 });
+  await expect(row0.getByRole("button", { name: categoryName, exact: true })).toBeVisible();
+  await expect(row1.getByRole("button", { name: categoryName, exact: true })).toBeVisible();
+
+  const undo = toast.getByRole("button", { name: "Undo" });
+  await undo.click();
+  await expect(toast.getByText("Restored previous values")).toBeVisible();
+});
+
+test("bulk tag and undo on desktop", async ({ page }) => {
+  await signInWithPassword(page, loadAccount());
+  await page.goto("/transactions");
+  const table = page.getByRole("table", { name: "Transactions" });
+  await expect(table).toBeVisible();
+
+  const cb0 = table.locator("tbody input[type=checkbox]").nth(0);
+  const cb1 = table.locator("tbody input[type=checkbox]").nth(1);
+  await cb0.click();
+  await cb1.click();
+
+  const toolbar = page.getByRole("toolbar", { name: "Bulk actions" });
+  await expect(toolbar.getByText("2 selected")).toBeVisible();
+  await toolbar.getByRole("button", { name: "Tag" }).click();
+
+  const tagCombobox = page.getByRole("combobox", { name: "Add a tag" });
+  await expect(tagCombobox).toBeVisible();
+  await tagCombobox.click();
+
+  const option = page.getByRole("listbox").getByRole("option").first();
+  await option.click();
+
+  await page.getByRole("button", { name: "Apply" }).click();
+
+  const toast = page.getByRole("status");
+  await expect(toast.getByText("Updated 2 transactions")).toBeVisible();
+
+  const undo = toast.getByRole("button", { name: "Undo" });
+  await undo.click();
+  await expect(toast.getByText("Restored previous values")).toBeVisible();
+});
+
+test("mark shared refuses private-account rows, names each refused row, and allows undo for shared rows", async ({
+  page,
+}) => {
+  await signInWithPassword(page, loadAccount());
+  const accRes = await page.request.get("/api/accounts");
+  const accBody = (await accRes.json()) as { accounts: { id: string; isPrivate: boolean }[] };
+  const privateAcc = accBody.accounts.find((a) => a.isPrivate);
+  expect(privateAcc).toBeDefined();
+
+  const privTxnRes = await page.request.get(`/api/ledger/transactions?account=${privateAcc?.id}`);
+  const privTxnBody = (await privTxnRes.json()) as { transactions: ApiTransaction[] };
+  expect(privTxnBody.transactions.length).toBeGreaterThan(0);
+  const privTxn = privTxnBody.transactions[0] as ApiTransaction;
+
+  await page.goto(`/transactions?from=${privTxn.postedOn}&to=${privTxn.postedOn}`);
+  const table = page.getByRole("table", { name: "Transactions" });
+  await expect(table).toBeVisible();
+
+  const selectAll = page.getByRole("checkbox", {
+    name: "Select all transactions on this page",
+  });
+  await selectAll.click();
+
+  const toolbar = page.getByRole("toolbar", { name: "Bulk actions" });
+  await expect(toolbar).toBeVisible();
+  await toolbar.getByRole("button", { name: "Mark shared" }).click();
+
+  const alert = page.getByRole("alert");
+  await expect(alert).toBeVisible();
+  await expect(alert).toContainText("A private account's splits belong to its owner");
+  await expect(alert).toContainText(privTxn.descriptionRaw);
+
+  const toast = page.getByRole("status");
+  await expect(toast.getByText(/Updated \d+ transaction/)).toBeVisible();
+  const undo = toast.getByRole("button", { name: "Undo" });
+  await undo.click();
+  await expect(toast.getByText("Restored previous values")).toBeVisible();
+});
+
+test("at 375 px viewport bulk selection checkboxes and toolbar are hidden", async ({
+  browser,
+  cspViolations,
+}) => {
+  const context = await browser.newContext({
+    storageState: partnerSessionFile,
+    viewport: { width: 375, height: 800 },
+  });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+    await page.goto("/transactions");
+    const table = page.getByRole("table", { name: "Transactions" });
+    await expect(table).toBeVisible();
+
+    await expect(page.getByRole("checkbox")).toHaveCount(0);
+    await expect(page.getByRole("toolbar", { name: "Bulk actions" })).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test("at 320 px viewport the transactions page has zero horizontal scroll (WCAG Reflow)", async ({
+  browser,
+  cspViolations,
+}) => {
+  const context = await browser.newContext({
+    storageState: partnerSessionFile,
+    viewport: { width: 320, height: 800 },
+  });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+    await page.goto("/transactions");
+    const table = page.getByRole("table", { name: "Transactions" });
+    await expect(table).toBeVisible();
+
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+  } finally {
+    await context.close();
+  }
+});

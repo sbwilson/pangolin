@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils.ts";
 import type { CategorySummary, LedgerTransaction } from "../api.ts";
 import { CategoryCombobox } from "../components/ui/category-combobox.tsx";
@@ -146,8 +146,11 @@ function Row({
   partnerName,
   rowIndex,
   virtual,
+  isSelected,
+  txnIndex,
   onOpen,
   onCategory,
+  onToggleSelect,
 }: {
   item: TableItem;
   dayNets: Readonly<Record<string, number>>;
@@ -157,8 +160,11 @@ function Row({
   partnerName: string | null;
   rowIndex: number | undefined;
   virtual: boolean;
+  isSelected?: boolean | undefined;
+  txnIndex?: number | undefined;
   onOpen: (txn: LedgerTransaction) => void;
   onCategory: (txn: LedgerTransaction, splitId: string, categoryId: string | null) => void;
+  onToggleSelect?: ((id: string, index: number, shiftKey: boolean) => void) | undefined;
 }) {
   const rowProps = {
     ...(rowIndex === undefined ? {} : { "aria-rowindex": rowIndex }),
@@ -183,7 +189,23 @@ function Row({
   return (
     <TableRow {...rowProps}>
       <TableCell className={cn(WIDE)}>
-        <input type="checkbox" aria-label={`Select ${txn.descriptionRaw}`} />
+        <input
+          type="checkbox"
+          aria-label={`Select ${txn.descriptionRaw}`}
+          checked={isSelected ?? false}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSelect?.(txn.id, txnIndex ?? 0, e.shiftKey);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.stopPropagation();
+              onToggleSelect?.(txn.id, txnIndex ?? 0, e.shiftKey);
+            }
+          }}
+          onChange={() => {}}
+        />
       </TableCell>
       <TableCell className="w-full max-w-0">
         {txn.nameHidden ? (
@@ -237,6 +259,8 @@ function Row({
   );
 }
 
+const EMPTY_SET = new Set<string>();
+
 /**
  * The transactions of one page, grouped by date with the day's net. Past `VIRTUAL_ROW_THRESHOLD`
  * rows only the rows in view are in the DOM (`aria-rowcount` carries the full count). Below `md`
@@ -250,8 +274,11 @@ export function TransactionsTable({
   categories,
   viewerId,
   partnerName,
+  selectedIds = EMPTY_SET,
   onOpen,
   onCategory,
+  onToggleSelect,
+  onToggleSelectAll,
 }: {
   transactions: readonly LedgerTransaction[];
   dayNets: Readonly<Record<string, number>>;
@@ -261,13 +288,38 @@ export function TransactionsTable({
   viewerId: string;
   /** The partner's name for that tag; null when there is no partner. */
   partnerName: string | null;
+  /** Set of transaction IDs currently selected. */
+  selectedIds?: ReadonlySet<string> | undefined;
   /** Opens the transaction sheet. */
   onOpen: (txn: LedgerTransaction) => void;
   /** An inline category edit of a single-split row. */
   onCategory: (txn: LedgerTransaction, splitId: string, categoryId: string | null) => void;
+  /** Toggles selection of a transaction row, with Shift-click support. */
+  onToggleSelect?: ((id: string, index: number, shiftKey: boolean) => void) | undefined;
+  /** Toggles select-all for the currently loaded page. */
+  onToggleSelectAll?: (() => void) | undefined;
 }) {
   const items = useMemo(() => groupByDate(transactions), [transactions]);
+  const txnIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    transactions.forEach((t, i) => {
+      map.set(t.id, i);
+    });
+    return map;
+  }, [transactions]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const headerCheckboxRef = useRef<HTMLInputElement>(null);
+  const totalCount = transactions.length;
+  const selectedCount = transactions.filter((t) => selectedIds.has(t.id)).length;
+  const isAllSelected = totalCount > 0 && selectedCount === totalCount;
+  const isIndeterminate = selectedCount > 0 && selectedCount < totalCount;
+
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = isIndeterminate;
+    }
+  }, [isIndeterminate]);
+
   const virtual = transactions.length > VIRTUAL_ROW_THRESHOLD;
   const virtualizer = useVirtualizer({
     count: virtual ? items.length : 0,
@@ -302,7 +354,20 @@ export function TransactionsTable({
         <TableHeader className={virtual ? "sticky top-0 bg-background" : undefined}>
           <TableRow {...(virtual ? { "aria-rowindex": 1 } : {})}>
             <TableHead scope="col" className={cn(WIDE)}>
-              <span className="sr-only">Select</span>
+              <input
+                ref={headerCheckboxRef}
+                type="checkbox"
+                aria-label="Select all transactions on this page"
+                aria-checked={isIndeterminate ? "mixed" : isAllSelected}
+                checked={isAllSelected}
+                onChange={onToggleSelectAll ?? (() => {})}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    onToggleSelectAll?.();
+                  }
+                }}
+              />
             </TableHead>
             <TableHead scope="col" className="w-full">
               Description
@@ -329,8 +394,11 @@ export function TransactionsTable({
               partnerName={partnerName}
               rowIndex={virtual ? index + 2 : undefined}
               virtual={virtual}
+              isSelected={item.kind === "txn" && selectedIds.has(item.txn.id)}
+              txnIndex={item.kind === "txn" ? txnIndexMap.get(item.txn.id) : undefined}
               onOpen={onOpen}
               onCategory={onCategory}
+              onToggleSelect={onToggleSelect}
             />
           ))}
           {padBottom > 0 ? <Spacer height={padBottom} /> : null}
