@@ -452,12 +452,25 @@ test("at 375 px a row opens its sheet from the bottom, and a category chip edits
     const categories = (await (await page.request.get("/api/classify/categories")).json()) as {
       categories: { id: string; name: string }[];
     };
-    const single = (await fetchPage(page)).transactions.find(
-      (t) => t.splits.length === 1 && !HIDDEN.test(t.descriptionRaw),
-    ) as ApiTransaction & { splits: { id: string; categoryId: string | null }[] };
+    // Category names repeat across groups, and the combobox options are picked by name: use names
+    // that are unique, so the option clicked is the category the API read-back expects.
+    const unique = (id: string | null) =>
+      id === null ||
+      categories.categories.filter(
+        (c) => c.name === categories.categories.find((x) => x.id === id)?.name,
+      ).length === 1;
+    type SingleTransaction = ApiTransaction & {
+      splits: { id: string; categoryId: string | null }[];
+    };
+    const single = ((await fetchPage(page)).transactions as unknown as SingleTransaction[]).find(
+      (t) =>
+        t.splits.length === 1 &&
+        !HIDDEN.test(t.descriptionRaw) &&
+        unique((t.splits[0] as { categoryId: string | null }).categoryId),
+    ) as SingleTransaction;
     const split = single.splits[0] as { id: string; categoryId: string | null };
     const current = categories.categories.find((c) => c.id === split.categoryId);
-    const other = categories.categories.find((c) => c.id !== split.categoryId) as {
+    const other = categories.categories.find((c) => c.id !== split.categoryId && unique(c.id)) as {
       id: string;
       name: string;
     };

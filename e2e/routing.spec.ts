@@ -103,7 +103,7 @@ test("/ledger replaces itself with /transactions, keeping its filters, in one hi
     );
     expect(await page.evaluate(() => window.history.length)).toBe(before + 1);
     await expect(page.getByRole("combobox", { name: "Type" })).toHaveValue("in");
-    await expect(page.getByRole("button", { name: "Uncategorised" })).toHaveAttribute(
+    await expect(page.getByRole("button", { name: "Uncategorised", exact: true })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
