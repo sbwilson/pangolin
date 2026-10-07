@@ -86,7 +86,7 @@ Proposed, not applied.
 
 No open finding contradicts a Done when item, so none blocks acceptance. Q2 and Q3 stay accepted by Simon. The open items are the fix-now change, the spec text and the deferred and process items above.
 
-**Human decision:** none recorded for the verdict itself. Closing the epic is the ticketing skill's, confirmed by the user; this retrospective changed no status.
+**Human decision:** Simon, interactive, 2026-10-07, accepted epic 2 as accepted-with-open-items. Closing the epic is the ticketing skill's; this retrospective changed no status.
 
 ### Fourth pass: Resolution (2026-10-07, later the same day)
 
@@ -94,11 +94,12 @@ Simon answered the open questions: do the tests, comments and spec gaps first, a
 
 - **S1, S2, S3, S8: done** in `1c640ad` (plan `plan-epic2-retro-fix-now.md`, one thorough review pass, CI not yet run on it). The lock after a future `closedOn` and the refusal of a second close are pinned on SQLite and the memory mirror; the job is tested in a Sydney household whose date differs from UTC; the lock's and `closeAccount`'s messages read "closes on <date>" until the date arrives and keep their wording after it; the `warning` and `listAccounts` comments are corrected. The rules did not change. The message text names `updateAccount`; rewording it for people is deferred to the account screens (`deferred-work.md`).
 - **S4: done** in `d139658`: `SPEC.md`, the epic's Done when 8 and Notes, `data-model.md` (new Account lifecycle section) and `EXPERIENCE.md` (new rows and Spec Catch-up item 16) name the household leave as the one exception to "never deleted".
-- **Still open:** S5 (record outcomes in the plan: the fix-now plan also ends with empty Implementation Notes and unticked tasks), S6 and S7, Q4, Q6, Q8, Q9. Open question 1 (accept epic 2) is unanswered; the verdict stays accepted-with-open-items, the machine verdict.
+- **Epic accepted (Simon, 2026-10-07).** He confirmed the verdict **accepted-with-open-items** after the fix-now and spec changes. No ticket status changed; closing the epic is the ticketing skill's.
+- **Still open:** S5 (record outcomes in the plan: the fix-now plan also ends with empty Implementation Notes and unticked tasks), S6 and S7, Q4, Q6, Q8, Q9. Open question 1 (accept epic 2) is answered above: accepted.
 
 ### Fourth pass: Open questions
 
-1. **Accept epic 2 now?** The machine verdict holds on the evidence; the open items are small (action item 1) or spec text (item 2).
+1. **Accept epic 2 now?** Answered 2026-10-07: yes (accepted-with-open-items).
 2. **S3: answered (2026-10-07).** Yes: say "closes on <date>" (done in `1c640ad`).
 3. **Not checked:** the arrival of a closed date over a running server (no clock override); the as-built schema against `data-model.md`; a deployed run of entries 20 to 26 and Q1 (no release since `v0.2.1`).
 
