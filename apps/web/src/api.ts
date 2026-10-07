@@ -77,23 +77,35 @@ export async function fetchRecoveryBundle(): Promise<RecoveryBundleStatus> {
 export class ApiError extends Error {
   readonly code: string;
   readonly status: number;
+  /** The error's own details (a refused split edit carries `remainingCents`), when it has any. */
+  readonly details: Readonly<Record<string, unknown>> | undefined;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    details?: Readonly<Record<string, unknown>>,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
 async function apiError(res: Response): Promise<ApiError> {
   const body = (await res.json().catch(() => ({}))) as {
-    error?: { code?: string; message?: string };
+    error?: { code?: string; message?: string; details?: unknown };
   };
+  const details = body.error?.details;
   return new ApiError(
     res.status,
     body.error?.code ?? "Internal",
     body.error?.message ?? `Request failed with ${res.status}`,
+    typeof details === "object" && details !== null
+      ? (details as Record<string, unknown>)
+      : undefined,
   );
 }
 
@@ -236,12 +248,26 @@ export async function dismissNotice(id: string): Promise<void> {
   if (!res.ok) throw await apiError(res);
 }
 
+/** A tag as a split carries it. */
+export interface LedgerTag {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** Who last set a classified split field; `user` outranks the rest. */
+export type SplitSource = "user" | "rule" | "payee" | "activity" | "llm";
+
 /** One split of a transaction. `beneficiary` is `shared` or a person ID. */
 export interface LedgerSplit {
   readonly id: string;
   readonly amountCents: number;
   readonly beneficiary: string;
   readonly memo: string | null;
+  readonly categoryId: string | null;
+  readonly tags: readonly LedgerTag[];
+  /** Where the category and the beneficiary came from; null while unset. */
+  readonly categorySource: SplitSource | null;
+  readonly beneficiarySource: SplitSource | null;
 }
 
 /** A transaction in an account the signed-in person can see, with its splits. */
@@ -252,8 +278,18 @@ export interface LedgerTransaction {
   readonly postedOn: string;
   /** Signed integer minor units. */
   readonly amountCents: number;
+  /** "Hidden until <date>" (short month) while the name is hidden from the viewer. */
   readonly descriptionRaw: string;
   readonly status: "pending" | "posted";
+  readonly notes: string | null;
+  /** True while the name is hidden from the signed-in person. */
+  readonly nameHidden: boolean;
+  /** Who hid the name; set on the hider's own view and the partner's alike. */
+  readonly nameHiddenBy: string | null;
+  /** UTC ISO timestamp, or null. */
+  readonly nameHiddenUntil: string | null;
+  /** The amount less its splits, worked out by the server (0 when they add up). */
+  readonly remainingCents: number;
   readonly splits: readonly LedgerSplit[];
 }
 
@@ -305,14 +341,131 @@ export async function fetchAccounts(): Promise<AccountSummary[]> {
   return (await res.json()).accounts.map(({ id, name }) => ({ id, name }));
 }
 
-/** A category, for the Category filter. */
+/** A category with its report group, for the Category filter and the category combobox. */
 export interface CategorySummary {
   readonly id: string;
   readonly name: string;
+  readonly groupId: string;
+  readonly groupName: string;
 }
 
 export async function fetchCategories(): Promise<CategorySummary[]> {
-  const res = await api.api.classify.categories.$get();
+  const [categories, groups] = await Promise.all([
+    api.api.classify.categories.$get(),
+    api.api.classify["category-groups"].$get(),
+  ]);
+  if (!categories.ok) throw await apiError(categories);
+  if (!groups.ok) throw await apiError(groups);
+  const names = new Map((await groups.json()).categoryGroups.map((g) => [g.id, g.name]));
+  return (await categories.json()).categories.map(({ id, name, groupId }) => ({
+    id,
+    name,
+    groupId,
+    groupName: names.get(groupId) ?? "",
+  }));
+}
+
+/** A tag the signed-in person may put on a split. */
+export async function fetchTags(): Promise<LedgerTag[]> {
+  const res = await api.api.classify.tags.$get();
   if (!res.ok) throw await apiError(res);
-  return (await res.json()).categories.map(({ id, name }) => ({ id, name }));
+  return (await res.json()).tags.map(({ id, name }) => ({ id, name }));
+}
+
+/** A JSON write (PATCH, PUT or DELETE) to one of our routes; throws `ApiError` on failure. */
+async function sendJson<T>(method: "PATCH" | "PUT" | "DELETE", path: string, body?: unknown) {
+  const res = await fetch(path, {
+    method,
+    ...(body === undefined
+      ? {}
+      : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  });
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()) as T;
+}
+
+const transactionPath = (id: string) => `/api/ledger/transactions/${encodeURIComponent(id)}`;
+
+/** What a write answers: the whole transaction with the server's `remainingCents`. */
+export async function updateNotes(id: string, notes: string | null): Promise<LedgerTransaction> {
+  const { transaction } = await sendJson<{ transaction: LedgerTransaction }>(
+    "PATCH",
+    transactionPath(id),
+    { notes },
+  );
+  return transaction;
+}
+
+/** One split as the editor sends it: an `id` updates that split, none adds a new one. */
+export interface SplitDraft {
+  readonly id?: string;
+  readonly amountCents: number;
+  readonly memo?: string | null;
+}
+
+/** Makes `splits` the whole split list; amounts are sent, never summed here. */
+export async function setSplits(
+  id: string,
+  splits: readonly SplitDraft[],
+): Promise<LedgerTransaction> {
+  const { transaction } = await sendJson<{ transaction: LedgerTransaction }>(
+    "PUT",
+    `${transactionPath(id)}/splits`,
+    { splits },
+  );
+  return transaction;
+}
+
+/** The outcome of one split-field write; `applied` is false when a higher-ranked source holds it. */
+export interface SplitFieldResult {
+  readonly applied: boolean;
+  readonly changed: boolean;
+  readonly reason?: string;
+  readonly transaction: LedgerTransaction;
+}
+
+/** Sets a split's category (a category ID or null) or beneficiary (`shared` or a person ID). */
+export async function setSplitField(
+  transactionId: string,
+  splitId: string,
+  field: "category" | "beneficiary",
+  value: string | null,
+): Promise<SplitFieldResult> {
+  return sendJson<SplitFieldResult>(
+    "PATCH",
+    `${transactionPath(transactionId)}/splits/${encodeURIComponent(splitId)}`,
+    { field, value },
+  );
+}
+
+/** Makes `tagIds` the whole tag set of a split. */
+export async function setSplitTags(
+  transactionId: string,
+  splitId: string,
+  tagIds: readonly string[],
+): Promise<LedgerTransaction> {
+  const { transaction } = await sendJson<{ transaction: LedgerTransaction }>(
+    "PUT",
+    `${transactionPath(transactionId)}/splits/${encodeURIComponent(splitId)}/tags`,
+    { tagIds },
+  );
+  return transaction;
+}
+
+/** Hides the name from the partner until `until` (`YYYY-MM-DD`; the server defaults to 12 months). */
+export async function hideName(id: string, until?: string): Promise<LedgerTransaction> {
+  const { transaction } = await sendJson<{ transaction: LedgerTransaction }>(
+    "PUT",
+    `${transactionPath(id)}/name-hidden`,
+    until === undefined ? {} : { until },
+  );
+  return transaction;
+}
+
+export async function unhideName(id: string): Promise<LedgerTransaction> {
+  const { transaction } = await sendJson<{ transaction: LedgerTransaction }>(
+    "DELETE",
+    `${transactionPath(id)}/name-hidden`,
+  );
+  return transaction;
 }

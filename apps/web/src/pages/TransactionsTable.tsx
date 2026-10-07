@@ -1,7 +1,8 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils.ts";
-import type { LedgerTransaction } from "../api.ts";
+import type { CategorySummary, LedgerTransaction } from "../api.ts";
+import { CategoryCombobox } from "../components/ui/category-combobox.tsx";
 import {
   Table,
   TableBody,
@@ -10,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table.tsx";
+import { hiddenUntilLabel, hidingActive, longDay, utcDay, WINK_LINE } from "../lib/hidden.ts";
 
 const MONEY = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" });
 const DAY = new Intl.DateTimeFormat("en-AU", {
@@ -57,8 +59,81 @@ function Spacer({ height }: { height: number }) {
   return (
     // biome-ignore lint/a11y/noAriaHiddenOnFocusable: a spacer row holds nothing focusable
     <tr aria-hidden="true">
-      <td colSpan={4} style={{ height, padding: 0 }} />
+      <td colSpan={5} style={{ height, padding: 0 }} />
     </tr>
+  );
+}
+
+/**
+ * The category cell: one split shows its category as a chip that edits in place through the
+ * category combobox; several splits show "Split (N)", which opens the sheet.
+ */
+function CategoryCell({
+  txn,
+  categories,
+  onOpen,
+  onCategory,
+}: {
+  txn: LedgerTransaction;
+  categories: readonly CategorySummary[];
+  onOpen: (txn: LedgerTransaction) => void;
+  onCategory: (txn: LedgerTransaction, splitId: string, categoryId: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [first, second] = txn.splits;
+  if (first === undefined) return <span className="text-muted-foreground">-</span>;
+  if (second !== undefined) {
+    return (
+      <button
+        type="button"
+        className="rounded-full border px-2 py-0.5 text-xs"
+        aria-label={`${txn.nameHidden ? hiddenUntilLabel(txn.nameHiddenUntil) : txn.descriptionRaw}: ${txn.splits.length} splits, open to edit`}
+        onClick={() => onOpen(txn)}
+      >
+        Split ({txn.splits.length})
+      </button>
+    );
+  }
+  const name = categories.find((c) => c.id === first.categoryId)?.name;
+  if (categories.length === 0) {
+    return (
+      <button
+        type="button"
+        disabled
+        className="block max-w-28 truncate rounded-full border px-2 py-0.5 text-xs text-muted-foreground"
+      >
+        …
+      </button>
+    );
+  }
+  if (editing) {
+    return (
+      <CategoryCombobox
+        label={`Category for ${txn.nameHidden ? hiddenUntilLabel(txn.nameHiddenUntil) : txn.descriptionRaw}`}
+        categories={categories}
+        value={first.categoryId}
+        autoFocus
+        className="w-40"
+        onChange={(categoryId) => {
+          setEditing(false);
+          onCategory(txn, first.id, categoryId);
+        }}
+        onDismiss={() => setEditing(false)}
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      className={cn(
+        "block max-w-28 truncate rounded-full border px-2 py-0.5 text-xs",
+        name === undefined && "text-muted-foreground",
+      )}
+      aria-label={`Category for ${txn.nameHidden ? hiddenUntilLabel(txn.nameHiddenUntil) : txn.descriptionRaw}: ${name ?? "Uncategorised"}. Edit`}
+      onClick={() => setEditing(true)}
+    >
+      {name ?? "Uncategorised"}
+    </button>
   );
 }
 
@@ -66,14 +141,24 @@ function Row({
   item,
   dayNets,
   accountNames,
+  categories,
+  viewerId,
+  partnerName,
   rowIndex,
   virtual,
+  onOpen,
+  onCategory,
 }: {
   item: TableItem;
   dayNets: Readonly<Record<string, number>>;
   accountNames: ReadonlyMap<string, string>;
+  categories: readonly CategorySummary[];
+  viewerId: string;
+  partnerName: string | null;
   rowIndex: number | undefined;
   virtual: boolean;
+  onOpen: (txn: LedgerTransaction) => void;
+  onCategory: (txn: LedgerTransaction, splitId: string, categoryId: string | null) => void;
 }) {
   const rowProps = {
     ...(rowIndex === undefined ? {} : { "aria-rowindex": rowIndex }),
@@ -83,7 +168,7 @@ function Row({
     const net = dayNets[item.date];
     return (
       <TableRow {...rowProps} className={cn("bg-muted/60 hover:bg-muted/60", rowProps.className)}>
-        <th scope="rowgroup" colSpan={4} className="px-2 text-left text-sm font-medium">
+        <th scope="rowgroup" colSpan={5} className="px-2 text-left text-sm font-medium">
           <span className="flex items-baseline justify-between gap-2">
             <time dateTime={item.date}>{DAY.format(new Date(`${item.date}T00:00:00Z`))}</time>
             {net === undefined ? null : (
@@ -101,9 +186,46 @@ function Row({
         <input type="checkbox" aria-label={`Select ${txn.descriptionRaw}`} />
       </TableCell>
       <TableCell className="w-full max-w-0">
-        <span className="block truncate" title={txn.descriptionRaw}>
-          {txn.descriptionRaw}
-        </span>
+        {txn.nameHidden ? (
+          <span className="flex min-w-0 items-baseline gap-2">
+            <button
+              type="button"
+              className="min-w-0 truncate text-left"
+              aria-label={hiddenUntilLabel(txn.nameHiddenUntil)}
+              aria-describedby={`wink-${txn.id}`}
+              onClick={() => onOpen(txn)}
+            >
+              {hiddenUntilLabel(txn.nameHiddenUntil)}
+            </button>
+            <span
+              id={`wink-${txn.id}`}
+              className="min-w-0 truncate text-xs italic text-muted-foreground"
+            >
+              {WINK_LINE}
+            </span>
+          </span>
+        ) : (
+          <span className="flex min-w-0 items-baseline gap-2">
+            <button
+              type="button"
+              className="min-w-0 truncate text-left"
+              title={txn.descriptionRaw}
+              onClick={() => onOpen(txn)}
+            >
+              {txn.descriptionRaw}
+            </button>
+            {partnerName !== null &&
+            txn.nameHiddenBy === viewerId &&
+            hidingActive(txn.nameHiddenUntil, utcDay(new Date())) ? (
+              <span className="shrink-0 truncate rounded-full border bg-muted px-2 text-xs">
+                Hidden from {partnerName} until {longDay(txn.nameHiddenUntil as string)}
+              </span>
+            ) : null}
+          </span>
+        )}
+      </TableCell>
+      <TableCell className="whitespace-nowrap">
+        <CategoryCell txn={txn} categories={categories} onOpen={onOpen} onCategory={onCategory} />
       </TableCell>
       <TableCell className={cn(WIDE, "max-w-40")}>
         <span className="block truncate">{accountNames.get(txn.accountId) ?? ""}</span>
@@ -125,10 +247,24 @@ export function TransactionsTable({
   transactions,
   dayNets,
   accountNames,
+  categories,
+  viewerId,
+  partnerName,
+  onOpen,
+  onCategory,
 }: {
   transactions: readonly LedgerTransaction[];
   dayNets: Readonly<Record<string, number>>;
   accountNames: ReadonlyMap<string, string>;
+  categories: readonly CategorySummary[];
+  /** The signed-in person, whose own hidden names carry a "Hidden from" tag. */
+  viewerId: string;
+  /** The partner's name for that tag; null when there is no partner. */
+  partnerName: string | null;
+  /** Opens the transaction sheet. */
+  onOpen: (txn: LedgerTransaction) => void;
+  /** An inline category edit of a single-split row. */
+  onCategory: (txn: LedgerTransaction, splitId: string, categoryId: string | null) => void;
 }) {
   const items = useMemo(() => groupByDate(transactions), [transactions]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -171,6 +307,7 @@ export function TransactionsTable({
             <TableHead scope="col" className="w-full">
               Description
             </TableHead>
+            <TableHead scope="col">Category</TableHead>
             <TableHead scope="col" className={cn(WIDE)}>
               Account
             </TableHead>
@@ -187,8 +324,13 @@ export function TransactionsTable({
               item={item}
               dayNets={dayNets}
               accountNames={accountNames}
+              categories={categories}
+              viewerId={viewerId}
+              partnerName={partnerName}
               rowIndex={virtual ? index + 2 : undefined}
               virtual={virtual}
+              onOpen={onOpen}
+              onCategory={onCategory}
             />
           ))}
           {padBottom > 0 ? <Spacer height={padBottom} /> : null}

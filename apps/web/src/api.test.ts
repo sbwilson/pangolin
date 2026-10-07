@@ -4,16 +4,24 @@ import {
   dismissNotice,
   fetchAccounts,
   fetchBackupStatus,
+  fetchCategories,
   fetchDeadJobs,
   fetchHealth,
   fetchMe,
   fetchNotices,
   fetchRecoveryBundle,
+  fetchTags,
   fetchTransactions,
+  hideName,
   invitePartner,
   recoverWithCode,
   reEnrol,
   regenerateRecoveryCodes,
+  setSplitField,
+  setSplits,
+  setSplitTags,
+  unhideName,
+  updateNotes,
 } from "./api.ts";
 
 function stubFetch(status: number, body: unknown): void {
@@ -226,5 +234,121 @@ describe("fetchAccounts", () => {
     );
     expect(url.pathname).toBe("/api/accounts");
     expect(url.searchParams.get("includeClosed")).toBe("true");
+  });
+});
+
+describe("ledger writes", () => {
+  const sent = () => {
+    const call = vi.mocked(fetch).mock.calls[0] as [string | Request, RequestInit?];
+    const request = call[0];
+    return {
+      url: typeof request === "string" ? request : request.url,
+      init: call[1] ?? {},
+    };
+  };
+
+  it("PUTs the splits and returns the transaction with the server's remainingCents", async () => {
+    stubFetch(200, { transaction: { id: "t 1", remainingCents: 0, splits: [] } });
+    const txn = await setSplits("t 1", [{ id: "s1", amountCents: -600 }, { amountCents: -400 }]);
+    expect(txn.remainingCents).toBe(0);
+    const { url, init } = sent();
+    expect(url).toBe("/api/ledger/transactions/t%201/splits");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body as string)).toEqual({
+      splits: [{ id: "s1", amountCents: -600 }, { amountCents: -400 }],
+    });
+  });
+
+  it("PATCHes a split field and passes applied through", async () => {
+    stubFetch(200, { applied: false, changed: false, transaction: { id: "t1" } });
+    const result = await setSplitField("t1", "s1", "category", "c1");
+    expect(result.applied).toBe(false);
+    const { url, init } = sent();
+    expect(url).toBe("/api/ledger/transactions/t1/splits/s1");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ field: "category", value: "c1" });
+  });
+
+  it("keeps an error's details, so a refused split edit shows the server's remainder", async () => {
+    stubFetch(400, {
+      error: {
+        code: "Validation",
+        message: "Splits must add up",
+        details: { remainingCents: -400 },
+      },
+    });
+    const error = await hideName("t1").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).details).toEqual({ remainingCents: -400 });
+  });
+
+  it("PATCHes notes, null clearing them", async () => {
+    stubFetch(200, { transaction: { id: "t1" } });
+    await updateNotes("t1", null);
+    const { url, init } = sent();
+    expect(url).toBe("/api/ledger/transactions/t1");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ notes: null });
+  });
+
+  it("PUTs a split's whole tag set", async () => {
+    stubFetch(200, { transaction: { id: "t1" } });
+    await setSplitTags("t1", "s1", ["a", "b"]);
+    const { url, init } = sent();
+    expect(url).toBe("/api/ledger/transactions/t1/splits/s1/tags");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body as string)).toEqual({ tagIds: ["a", "b"] });
+  });
+
+  it("PUTs name-hidden with or without an until day", async () => {
+    stubFetch(200, { transaction: { id: "t1" } });
+    await hideName("t1", "2027-03-12");
+    expect(sent().url).toBe("/api/ledger/transactions/t1/name-hidden");
+    expect(sent().init.method).toBe("PUT");
+    expect(JSON.parse(sent().init.body as string)).toEqual({ until: "2027-03-12" });
+    vi.mocked(fetch).mockClear();
+    await hideName("t1");
+    expect(JSON.parse(sent().init.body as string)).toEqual({});
+  });
+
+  it("DELETEs name-hidden with no body", async () => {
+    stubFetch(200, { transaction: { id: "t1" } });
+    await unhideName("t1");
+    const { url, init } = sent();
+    expect(url).toBe("/api/ledger/transactions/t1/name-hidden");
+    expect(init.method).toBe("DELETE");
+    expect(init.body).toBeUndefined();
+  });
+});
+
+describe("tags and categories", () => {
+  it("lists tags as id and name", async () => {
+    stubFetch(200, { tags: [{ id: "t1", name: "holiday", scopePersonId: null }] });
+    expect(await fetchTags()).toEqual([{ id: "t1", name: "holiday" }]);
+  });
+
+  it("joins each category to its group's name", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | Request) => {
+        const url = typeof input === "string" ? input : input.url;
+        const body = url.includes("category-groups")
+          ? { categoryGroups: [{ id: "g1", name: "Food" }] }
+          : {
+              categories: [
+                { id: "c1", name: "Groceries", groupId: "g1" },
+                { id: "c2", name: "Odd", groupId: "gone" },
+              ],
+            };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+    expect(await fetchCategories()).toEqual([
+      { id: "c1", name: "Groceries", groupId: "g1", groupName: "Food" },
+      { id: "c2", name: "Odd", groupId: "gone", groupName: "" },
+    ]);
   });
 });

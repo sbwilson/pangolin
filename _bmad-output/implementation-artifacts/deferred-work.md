@@ -351,3 +351,7 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-transaction-list-url-filters-keyset-paging-virtualised-plan.md`
   summary: The transactions page has no web unit tests (`groupByDate`, `withChanges`, `activeChip`, the page jump), no loading cue while a page loads, stale rows beside an error alert, a today fixed at mount, and chips that can disagree with a URL that sets both `uncategorised` and `transfers`.
   evidence: Review pass 1 of ticket 12.2; the web vitest runs in node with no DOM setup, so the page logic is covered only by e2e. None corrupts data. Add a component-test setup when the page next changes (entries 3, 4 or 12).
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-transaction-sheet-splits-tags-notes-beneficiary-and-hiding-plan.md`
+  summary: Add e2e coverage of the transaction sheet's split, tag, note, beneficiary and hide/unhide writes against the real server.
+  evidence: Review found these verified only by jsdom component tests with mocked writes; the e2e specs cannot run without docker, so real-route behaviour is unverified (medium, unverified until CI runs them).

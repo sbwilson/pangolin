@@ -1,8 +1,16 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { type FormEvent, useMemo, useState } from "react";
 import { cn } from "@/lib/utils.ts";
-import { fetchAccounts, fetchCategories, fetchTransactions } from "../api.ts";
+import {
+  fetchAccounts,
+  fetchCategories,
+  fetchTags,
+  fetchTransactions,
+  type LedgerTransaction,
+  setSplitField,
+  type TransactionList,
+} from "../api.ts";
 import { Button } from "../components/ui/button.tsx";
 import { DateInput } from "../components/ui/date-input.tsx";
 import { NativeSelect } from "../components/ui/select.tsx";
@@ -14,6 +22,8 @@ import {
   type TransactionsSearch,
   validateTransactionsSearch,
 } from "../routes/search.ts";
+import { useSignedIn } from "../session.tsx";
+import { KEPT_MESSAGE, TransactionSheet } from "./TransactionSheet.tsx";
 import { formatCents, TransactionsTable } from "./TransactionsTable.tsx";
 
 /** Which chip a search has on: All, or one of Uncategorised and Transfers. */
@@ -56,6 +66,10 @@ export function TransactionsPage() {
   const navigate = useNavigate({ from: "/transactions" });
   const today = useMemo(() => localDay(new Date()), []);
   const [customOpen, setCustomOpen] = useState(false);
+  const { me } = useSignedIn();
+  const queryClient = useQueryClient();
+  const [opened, setOpened] = useState<LedgerTransaction | null>(null);
+  const [notice, setNotice] = useState<{ kind: "error" | "kept"; text: string } | null>(null);
 
   const list = useQuery({
     queryKey: ["ledger", "transactions", search],
@@ -65,10 +79,44 @@ export function TransactionsPage() {
   });
   const accounts = useQuery({ queryKey: ["ledger", "accounts"], queryFn: fetchAccounts });
   const categories = useQuery({ queryKey: ["ledger", "categories"], queryFn: fetchCategories });
+  const tags = useQuery({ queryKey: ["ledger", "tags"], queryFn: fetchTags });
   const accountNames = useMemo(
     () => new Map((accounts.data ?? []).map((a) => [a.id, a.name])),
     [accounts.data],
   );
+
+  /** Puts a transaction a write returned into every cached list page that holds it. */
+  const replaceTransaction = (next: LedgerTransaction) => {
+    queryClient.setQueriesData<TransactionList>({ queryKey: ["ledger", "transactions"] }, (old) =>
+      old === undefined
+        ? old
+        : { ...old, transactions: old.transactions.map((t) => (t.id === next.id ? next : t)) },
+    );
+  };
+  const changeCategory = async (
+    txn: LedgerTransaction,
+    splitId: string,
+    categoryId: string | null,
+  ) => {
+    setNotice(null);
+    try {
+      const result = await setSplitField(txn.id, splitId, "category", categoryId);
+      replaceTransaction(result.transaction);
+      // The filter may no longer match the row, and the summary may have moved.
+      void queryClient.invalidateQueries({ queryKey: ["ledger", "transactions"] });
+      if (!result.applied) setNotice({ kind: "kept", text: KEPT_MESSAGE });
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        text: error instanceof Error ? error.message : "Something went wrong",
+      });
+    }
+  };
+  const closeSheet = () => {
+    setOpened(null);
+    // The filter may no longer match the edited row, and the summary may have moved.
+    void queryClient.invalidateQueries({ queryKey: ["ledger", "transactions"] });
+  };
 
   /** Changes some params and goes back to the first page; `undefined` removes a param. */
   const change = (changes: Partial<Record<keyof TransactionsSearch, string | undefined>>) => {
@@ -292,10 +340,23 @@ export function TransactionsPage() {
             {data.summary.count} {data.summary.count === 1 ? "transaction" : "transactions"} · In{" "}
             {formatCents(data.summary.inCents)} · Out {formatCents(data.summary.outCents)}
           </p>
+          {notice === null ? null : (
+            <p
+              role={notice.kind === "error" ? "alert" : "status"}
+              className={notice.kind === "error" ? "text-destructive" : "text-muted-foreground"}
+            >
+              {notice.text}
+            </p>
+          )}
           <TransactionsTable
             transactions={data.transactions}
             dayNets={data.dayNets}
             accountNames={accountNames}
+            categories={categories.data ?? []}
+            viewerId={me.personId}
+            partnerName={me.partner?.displayName ?? null}
+            onOpen={setOpened}
+            onCategory={(txn, splitId, categoryId) => void changeCategory(txn, splitId, categoryId)}
           />
           <nav
             aria-label="Pages"
@@ -347,6 +408,18 @@ export function TransactionsPage() {
             </div>
           </nav>
         </>
+      )}
+      {opened === null ? null : (
+        <TransactionSheet
+          key={opened.id}
+          transaction={opened}
+          me={me}
+          accountName={accountNames.get(opened.accountId) ?? ""}
+          categories={categories.data ?? []}
+          tags={tags.data ?? []}
+          onChange={replaceTransaction}
+          onClose={closeSheet}
+        />
       )}
     </section>
   );

@@ -360,3 +360,129 @@ test("loading the seed a second time is refused and changes nothing", async ({ p
     ] as number,
   );
 });
+
+/** The seeded transaction that `by` hid, as `by` and the other person see it in the API. */
+async function hiddenTransaction(page: Page, by: Person): Promise<ApiTransaction> {
+  const hidden = expectation<{ transaction: string; by: Person; description: string }[]>(
+    "transfers-and-privacy.hidden",
+  ).find((h) => h.by === by) as { transaction: string; description: string };
+  const t = transactionOf(hidden.transaction);
+  const rows = await fetchTransactions(page);
+  const row = rows.find(
+    (r) =>
+      r.postedOn === t.postedOn &&
+      r.amountCents === t.amountCents &&
+      (r.descriptionRaw === hidden.description || HIDDEN.test(r.descriptionRaw)),
+  );
+  expect(row, `${hidden.transaction} is in the account both partners share`).toBeDefined();
+  return row as ApiTransaction;
+}
+
+const HIDDEN_LONG = /^Hidden until \d{1,2} [A-Z][a-z]{3,8} \d{4}$/;
+
+test("the owner of a hidden name sees a Hidden from tag in its sheet", async ({ page }) => {
+  await signInWithPassword(page, loadAccount());
+  await expect(page.getByText(`Signed in as ${SIGNED_UP_AS["person-a"]}`)).toBeVisible();
+  const row = await hiddenTransaction(page, "person-a");
+  await page.goto(`/transactions?from=${row.postedOn}&to=${row.postedOn}`);
+  const table = page.getByRole("table", { name: "Transactions" });
+  await table.getByRole("button", { name: row.descriptionRaw, exact: true }).first().click();
+  const sheet = page.getByRole("dialog", { name: row.descriptionRaw });
+  await expect(sheet).toBeVisible();
+  await expect(
+    sheet.getByText(/^Hidden from \S+ until \d{1,2} [A-Z][a-z]{3,8} \d{4}$/),
+  ).toBeVisible();
+  await expect(sheet.getByText(`Notes stay visible to ${SIGNED_UP_AS["person-b"]}.`)).toBeVisible();
+});
+
+test("the partner sees the hidden row as Hidden until a long date, with the wink line", async ({
+  browser,
+  cspViolations,
+}) => {
+  const context = await browser.newContext({ storageState: partnerSessionFile });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+    await page.goto("/");
+    await expect(page.getByText(`Signed in as ${SIGNED_UP_AS["person-b"]}`)).toBeVisible();
+    const row = await hiddenTransaction(page, "person-a");
+    await page.goto(`/transactions?from=${row.postedOn}&to=${row.postedOn}`);
+    const table = page.getByRole("table", { name: "Transactions" });
+    const hidden = table.getByRole("button", { name: HIDDEN_LONG }).first();
+    await expect(hidden).toBeVisible();
+    await expect(hidden).toHaveAccessibleDescription("Shh, it's a surprise.");
+  } finally {
+    await context.close();
+  }
+});
+
+test("at 375 px a row opens its sheet from the bottom, and a category chip edits inline", async ({
+  browser,
+  cspViolations,
+}) => {
+  const viewport = { width: 375, height: 800 };
+  const context = await browser.newContext({ storageState: partnerSessionFile, viewport });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+    await page.goto("/transactions");
+    const table = page.getByRole("table", { name: "Transactions" });
+    await expect(table).toBeVisible();
+
+    // The first row that is not hidden: its sheet is a dialog pinned to the bottom edge.
+    const first = (await fetchPage(page)).transactions.find((t) => !HIDDEN.test(t.descriptionRaw));
+    expect(first).toBeDefined();
+    await table
+      .getByRole("button", { name: (first as ApiTransaction).descriptionRaw, exact: true })
+      .first()
+      .click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet).toBeVisible();
+    const box = await sheet.boundingBox();
+    expect(box).not.toBeNull();
+    const { x, y, width, height } = box as { x: number; y: number; width: number; height: number };
+    expect(Math.round(y + height)).toBe(viewport.height);
+    expect(Math.round(x)).toBe(0);
+    expect(Math.round(width)).toBe(viewport.width);
+    expect(y).toBeGreaterThan(0);
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+
+    // A single-split row's chip: choose another category, see the server keep it, then restore.
+    const categories = (await (await page.request.get("/api/classify/categories")).json()) as {
+      categories: { id: string; name: string }[];
+    };
+    const single = (await fetchPage(page)).transactions.find(
+      (t) => t.splits.length === 1 && !HIDDEN.test(t.descriptionRaw),
+    ) as ApiTransaction & { splits: { id: string; categoryId: string | null }[] };
+    const split = single.splits[0] as { id: string; categoryId: string | null };
+    const current = categories.categories.find((c) => c.id === split.categoryId);
+    const other = categories.categories.find((c) => c.id !== split.categoryId) as {
+      id: string;
+      name: string;
+    };
+    const chip = (name: string) =>
+      page
+        .getByRole("button", {
+          name: new RegExp(`^Category for ${escapeRegExp(single.descriptionRaw)}: ${name}`),
+        })
+        .first();
+    await chip(current?.name ?? "Uncategorised").click();
+    await page.getByRole("option", { name: other.name, exact: true }).click();
+    await expect(chip(other.name)).toBeVisible();
+    const after = await page.request.get(`/api/ledger/transactions/${single.id}`);
+    const body = (await after.json()) as {
+      transaction: { splits: { categoryId: string | null }[] };
+    };
+    expect(body.transaction.splits[0]?.categoryId).toBe(other.id);
+    await chip(other.name).click();
+    await page.getByRole("option", { name: current?.name ?? "Uncategorised", exact: true }).click();
+    await expect(chip(current?.name ?? "Uncategorised")).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
