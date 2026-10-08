@@ -342,18 +342,8 @@ export const MANIFEST: readonly ManifestEntry[] = [
   // Routes epic-ledger-workspace adds. Each must replace its pending entry with a person entry
   // that carries the byte-identical and NotFound checks, through `visibleAccounts`, `visibleTxn`
   // and `redact` (AD-3, AD-4).
-  {
-    kind: "pending",
-    method: "GET",
-    path: "/api/ledger/export",
-    reason: "Export (epic-ledger-workspace): a re-authenticated, viewer-scoped, redacted file.",
-  },
-  {
-    kind: "pending",
-    method: "GET",
-    path: "/api/system/audit",
-    reason: "Audit API (epic-ledger-workspace): listAudit with redact for the partner's entries.",
-  },
+  read("/api/ledger/export"),
+  read("/api/system/audit"),
 ];
 
 /** Entries that name a person's data, which the suite replays. */

@@ -327,6 +327,13 @@ export async function fetchTransactions(params: TransactionsSearch = {}): Promis
   return (await res.json()) as TransactionList;
 }
 
+/** Exports transactions matching `params` to RFC 4180 CSV; needs recent sign-in (5 minutes). */
+export async function exportTransactions(params: TransactionsSearch = {}): Promise<string> {
+  const res = await api.api.ledger.export.$get({ query: params } as never);
+  if (!res.ok) throw await apiError(res);
+  return await res.text();
+}
+
 /** An account the signed-in person can see, for the Account filter and the Account column. */
 export interface AccountSummary {
   readonly id: string;

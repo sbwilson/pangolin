@@ -2633,3 +2633,221 @@ describe("/api/ledger/transactions/:id/splits", () => {
     }
   });
 });
+
+describe("GET /api/system/audit", () => {
+  const alex = "01J0000000000000000000000A";
+  const sam = "01J0000000000000000000000B";
+
+  function setupAuditWorld(db: Db) {
+    addPerson(db);
+    db.prepare(
+      `INSERT INTO auth_user (id, name, email, email_verified, two_factor_enabled, created_at, updated_at)
+       VALUES ('user-b', 'Sam', 'sam@example.com', 0, 1, 'x', 'x')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO auth_passkey (id, user_id, public_key, credential_id, counter, device_type, backed_up)
+       VALUES ('pk-b', 'user-b', 'k', 'c-b', 0, 'singleDevice', 0)`,
+    ).run();
+    db.prepare(
+      `INSERT INTO person (id, user_id, display_name, colour, created_at, updated_at)
+       VALUES (?, 'user-b', 'Sam', '#10b981', 'x', 'x')`,
+    ).run(sam);
+
+    const gateway: AuthGateway = {
+      handler: async (request) => new Response(`auth:${new URL(request.url).pathname}`),
+      getSession: async (headers) => {
+        const cookie = headers.get("cookie");
+        if (cookie === "session=user-a")
+          return { session: { userId: "user-a", createdAt: new Date() }, setCookies: [] };
+        if (cookie === "session=user-b")
+          return { session: { userId: "user-b", createdAt: new Date() }, setCookies: [] };
+        return { session: null, setCookies: [] };
+      },
+      signUp: async () => {
+        throw new Error("not used");
+      },
+      recover: async () => {
+        throw new Error("not used");
+      },
+      reEnrol: async () => {
+        throw new Error("not used");
+      },
+    };
+
+    const d = deps(db, { kind: "live", gateway });
+    const app = createApp(d);
+    const ctxSys: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+
+    const privA = createAccount(ctxSys, {
+      name: "Alex private",
+      type: "savings",
+      currency: "AUD",
+      isPrivate: true,
+      owners: [{ personId: alex, shareBp: 10000 }],
+    });
+
+    const shared = createAccount(ctxSys, {
+      name: "Joint",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [
+        { personId: alex, shareBp: 5000 },
+        { personId: sam, shareBp: 5000 },
+      ],
+    });
+
+    return { app, d, ctxSys, privA, shared };
+  }
+
+  it("requires a session", async () => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp(deps(db)).request("/api/system/audit");
+    expect(res.status).toBe(401);
+  });
+
+  it("scopes audit rows by viewer: private account to owner, person-scoped to that person, shared to both", async () => {
+    const db = openDb();
+    const { app, privA } = setupAuditWorld(db);
+
+    // Insert audit entries of different scopes directly into audit_log
+    // 1. Household-wide (no account, no person)
+    db.prepare(
+      `INSERT INTO audit_log (id, at, actor, entity, entity_id, account_id, person_id, action, before, after)
+       VALUES ('aud-hh', '2026-09-20T00:00:00.000Z', 'sys', 'household_settings', 'hh', NULL, NULL, 'update', '{"before":1}', '{"after":1}')`,
+    ).run();
+
+    // 2. Person A scoped
+    db.prepare(
+      `INSERT INTO audit_log (id, at, actor, entity, entity_id, account_id, person_id, action, before, after)
+       VALUES ('aud-a-person', '2026-09-21T00:00:00.000Z', 'user-a', 'person', '${alex}', NULL, '${alex}', 'update', NULL, '{"displayName":"Alex"}')`,
+    ).run();
+
+    // 3. Person B scoped
+    db.prepare(
+      `INSERT INTO audit_log (id, at, actor, entity, entity_id, account_id, person_id, action, before, after)
+       VALUES ('aud-b-person', '2026-09-22T00:00:00.000Z', 'user-b', 'person', '${sam}', NULL, '${sam}', 'update', NULL, '{"displayName":"Sam"}')`,
+    ).run();
+
+    // 4. Private account A scoped
+    db.prepare(
+      `INSERT INTO audit_log (id, at, actor, entity, entity_id, account_id, person_id, action, before, after)
+       VALUES ('aud-priv-a', '2026-09-23T00:00:00.000Z', 'user-a', 'account', '${privA}', '${privA}', '${alex}', 'update', NULL, '{"name":"Alex private"}')`,
+    ).run();
+
+    // Request as A
+    const resA = await app.request("/api/system/audit", { headers: { Cookie: "session=user-a" } });
+    expect(resA.status).toBe(200);
+    const bodyA = (await resA.json()) as { audit: { id: string }[] };
+    const idsA = bodyA.audit.map((r) => r.id);
+    expect(idsA).toContain("aud-hh");
+    expect(idsA).toContain("aud-a-person");
+    expect(idsA).toContain("aud-priv-a");
+    expect(idsA).not.toContain("aud-b-person");
+
+    // Request as B
+    const resB = await app.request("/api/system/audit", { headers: { Cookie: "session=user-b" } });
+    expect(resB.status).toBe(200);
+    const bodyB = (await resB.json()) as { audit: { id: string }[] };
+    const idsB = bodyB.audit.map((r) => r.id);
+    expect(idsB).toContain("aud-hh");
+    expect(idsB).toContain("aud-b-person");
+    expect(idsB).not.toContain("aud-a-person");
+    expect(idsB).not.toContain("aud-priv-a");
+  });
+});
+
+describe("GET /api/ledger/export", () => {
+  const alex = "01J0000000000000000000000A";
+
+  function setupExportWorld(db: Db, createdAt = new Date("2026-09-27T00:00:00Z")) {
+    addPerson(db);
+    const gateway = fakeGateway(createdAt);
+    const d = deps(db, { kind: "live", gateway });
+    const app = createApp(d);
+    const ctxSys: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const joint = createAccount(ctxSys, {
+      name: "Joint",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [{ personId: alex, shareBp: 10000 }],
+    });
+    return { app, joint, ctxSys };
+  }
+
+  it("requires a session", async () => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp(deps(db)).request("/api/ledger/export");
+    expect(res.status).toBe(401);
+  });
+
+  it("exports CSV with 200 and attachment headers when auth is recent", async () => {
+    const db = openDb();
+    const { app, joint, ctxSys } = setupExportWorld(db);
+    createTransaction(ctxSys, {
+      accountId: joint,
+      postedOn: "2026-09-20",
+      amountCents: -5000,
+      description: "Supermarket",
+    });
+
+    const res = await app.request("/api/ledger/export", signedIn);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/csv");
+    expect(res.headers.get("content-disposition")).toBe('attachment; filename="transactions.csv"');
+    const csv = await res.text();
+    expect(csv).toContain("Date,Account,Payee,Description,Category,Memo,Tags,Amount\r\n");
+    expect(csv).toContain("2026-09-20,Joint,,Supermarket,,,,'-50.00\r\n");
+  });
+
+  it("returns 403 ReauthRequired when session is older than 5 minutes", async () => {
+    const db = openDb();
+    const { app, joint, ctxSys } = setupExportWorld(db, new Date("2026-09-26T00:00:00Z")); // 1 day ago
+    createTransaction(ctxSys, {
+      accountId: joint,
+      postedOn: "2026-09-20",
+      amountCents: -5000,
+      description: "Supermarket",
+    });
+
+    const res = await app.request("/api/ledger/export", signedIn);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: { code: "ReauthRequired" } });
+  });
+
+  it("filters exported transactions by query parameters", async () => {
+    const db = openDb();
+    const { app, joint, ctxSys } = setupExportWorld(db);
+    createTransaction(ctxSys, {
+      accountId: joint,
+      postedOn: "2026-07-01",
+      amountCents: -1000,
+      description: "July line",
+    });
+    createTransaction(ctxSys, {
+      accountId: joint,
+      postedOn: "2026-08-01",
+      amountCents: -2000,
+      description: "August line",
+    });
+
+    const res = await app.request("/api/ledger/export?from=2026-08-01", signedIn);
+    expect(res.status).toBe(200);
+    const csv = await res.text();
+    expect(csv).toContain("August line");
+    expect(csv).not.toContain("July line");
+  });
+});

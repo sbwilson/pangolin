@@ -2,6 +2,8 @@ import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-quer
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils.ts";
 import {
+  ApiError,
+  exportTransactions,
   fetchAccounts,
   fetchCategories,
   fetchTags,
@@ -168,10 +170,12 @@ export interface TransactionListProps {
 export function TransactionList({ search, onSearch, title, accountId }: TransactionListProps) {
   const today = useMemo(() => localDay(new Date()), []);
   const [customOpen, setCustomOpen] = useState(false);
-  const { me } = useSignedIn();
+  const { me, signOut } = useSignedIn();
   const queryClient = useQueryClient();
   const [opened, setOpened] = useState<LedgerTransaction | null>(null);
   const [notice, setNotice] = useState<{ kind: "error" | "kept"; text: string } | null>(null);
+  const [reauthRequired, setReauthRequired] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const listSearch = useMemo(
     () => (accountId === undefined ? search : { ...search, account: accountId }),
@@ -518,44 +522,95 @@ export function TransactionList({ search, onSearch, title, accountId }: Transact
     if (typeof value === "string" && /^[1-9]\d{0,6}$/.test(value)) go({ page: value });
   };
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    setReauthRequired(false);
+    try {
+      const csv = await exportTransactions(listSearch);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "transactions.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "ReauthRequired") {
+        setReauthRequired(true);
+      } else {
+        setNotice({
+          kind: "error",
+          text: err instanceof Error ? err.message : "Export failed",
+        });
+      }
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div>
       <header className="flex flex-wrap items-center justify-between gap-2">
         {title}
-        <fieldset className="flex flex-wrap items-center gap-1 border-0 p-0">
-          <legend className="sr-only">Date range</legend>
+        <div className="flex flex-wrap items-center gap-2">
+          <fieldset className="flex flex-wrap items-center gap-1 border-0 p-0">
+            <legend className="sr-only">Date range</legend>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-pressed={kind === "quarter"}
+              className={cn(kind === "quarter" && "bg-accent")}
+              onClick={() => setPreset("quarter")}
+            >
+              Quarter
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-pressed={kind === "fy"}
+              className={cn(kind === "fy" && "bg-accent")}
+              onClick={() => setPreset("fy")}
+            >
+              FY to date
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-pressed={showCustom}
+              className={cn(showCustom && "bg-accent")}
+              onClick={toggleCustom}
+            >
+              Custom
+            </Button>
+          </fieldset>
           <Button
             type="button"
             size="sm"
             variant="outline"
-            aria-pressed={kind === "quarter"}
-            className={cn(kind === "quarter" && "bg-accent")}
-            onClick={() => setPreset("quarter")}
+            disabled={isExporting}
+            aria-busy={isExporting}
+            onClick={() => void handleExport()}
           >
-            Quarter
+            {isExporting ? "Exporting…" : "Export CSV"}
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            aria-pressed={kind === "fy"}
-            className={cn(kind === "fy" && "bg-accent")}
-            onClick={() => setPreset("fy")}
-          >
-            FY to date
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            aria-pressed={showCustom}
-            className={cn(showCustom && "bg-accent")}
-            onClick={toggleCustom}
-          >
-            Custom
-          </Button>
-        </fieldset>
+        </div>
       </header>
+      {reauthRequired ? (
+        <div
+          role="alert"
+          className="mt-2 flex items-center justify-between gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+        >
+          <span>Sign in again to export transactions.</span>
+          <Button type="button" size="sm" variant="outline" onClick={() => void signOut()}>
+            Sign in again
+          </Button>
+        </div>
+      ) : null}
 
       {showCustom ? (
         <div className="mt-2 grid grid-cols-2 gap-2">

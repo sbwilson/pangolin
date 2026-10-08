@@ -18,6 +18,7 @@ vi.mock("../api.ts", async (importOriginal) => ({
   fetchTags: vi.fn(),
   setSplitField: vi.fn(),
   setSplitTags: vi.fn(),
+  exportTransactions: vi.fn(),
 }));
 
 afterEach(cleanup);
@@ -26,6 +27,9 @@ beforeEach(() => {
   vi.mocked(api.fetchAccounts).mockResolvedValue([{ id: "a1", name: "Joint" }]);
   vi.mocked(api.fetchCategories).mockResolvedValue([]);
   vi.mocked(api.fetchTags).mockResolvedValue([]);
+  vi.mocked(api.exportTransactions).mockResolvedValue(
+    "Date,Account,Payee,Description,Category,Memo,Tags,Amount\r\n",
+  );
 });
 
 const me: Me = {
@@ -73,7 +77,13 @@ const list = (transactions: LedgerTransaction[]): ListData => ({
 });
 
 /** Holds the search as the route would, in state instead of the URL. */
-function Harness({ initial = {} }: { initial?: TransactionsSearch }) {
+function Harness({
+  initial = {},
+  accountId,
+}: {
+  readonly initial?: TransactionsSearch;
+  readonly accountId?: string;
+}) {
   const [search, setSearch] = useState(initial);
   return (
     <>
@@ -88,17 +98,21 @@ function Harness({ initial = {} }: { initial?: TransactionsSearch }) {
         search={search}
         onSearch={(update) => setSearch((prev) => validateTransactionsSearch(update(prev)))}
         title={<h2>Transactions</h2>}
+        {...(accountId === undefined ? {} : { accountId })}
       />
     </>
   );
 }
 
-function renderList(initial?: TransactionsSearch) {
+function renderList(initial?: TransactionsSearch, accountId?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <SessionContext.Provider value={session}>
-        <Harness {...(initial === undefined ? {} : { initial })} />
+        <Harness
+          {...(initial === undefined ? {} : { initial })}
+          {...(accountId === undefined ? {} : { accountId })}
+        />
       </SessionContext.Provider>
     </QueryClientProvider>,
   );
@@ -728,5 +742,104 @@ describe("TransactionList bulk selection & actions", () => {
     });
     expect(revertedChip).toBeTruthy();
     expect(revertedChip.textContent).toBe("Uncategorised");
+  });
+});
+
+describe("TransactionList CSV export", () => {
+  it("exports CSV with current filter parameters and initiates browser download", async () => {
+    vi.mocked(api.fetchTransactions).mockResolvedValue(list([row]));
+    vi.mocked(api.exportTransactions).mockResolvedValue(
+      "Date,Account,Payee,Description,Category,Memo,Tags,Amount\r\n2026-09-01,Joint,,Plumber,,,,'-142.85\r\n",
+    );
+
+    const createObjectURL = vi.fn().mockReturnValue("blob:http://localhost/mock-blob");
+    const revokeObjectURL = vi.fn();
+    window.URL.createObjectURL = createObjectURL;
+    window.URL.revokeObjectURL = revokeObjectURL;
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const appendSpy = vi.spyOn(document.body, "appendChild");
+    const removeSpy = vi.spyOn(HTMLAnchorElement.prototype, "remove");
+
+    const user = userEvent.setup();
+    renderList({ from: "2026-08-01", to: "2026-09-30" });
+
+    expect(await screen.findByText("Plumber")).toBeTruthy();
+
+    const exportBtn = screen.getByRole("button", { name: "Export CSV" });
+    expect(exportBtn.getAttribute("aria-busy")).toBe("false");
+
+    await user.click(exportBtn);
+
+    await waitFor(() => {
+      expect(api.exportTransactions).toHaveBeenCalledWith({
+        from: "2026-08-01",
+        to: "2026-09-30",
+      });
+    });
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(appendSpy).toHaveBeenCalledWith(expect.any(HTMLAnchorElement));
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(removeSpy).toHaveBeenCalledTimes(1);
+
+    await waitFor(
+      () => {
+        expect(revokeObjectURL).toHaveBeenCalledWith("blob:http://localhost/mock-blob");
+      },
+      { timeout: 3000 },
+    );
+
+    clickSpy.mockRestore();
+    appendSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+
+  it("includes pinned accountId in export query when hosted on account page", async () => {
+    vi.mocked(api.fetchTransactions).mockResolvedValue(list([row]));
+    vi.mocked(api.exportTransactions).mockResolvedValue("header\r\n");
+
+    window.URL.createObjectURL = vi.fn().mockReturnValue("blob:test");
+    window.URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    const user = userEvent.setup();
+    renderList({ type: "out" }, "a1");
+
+    expect(await screen.findByText("Plumber")).toBeTruthy();
+
+    const exportBtn = screen.getByRole("button", { name: "Export CSV" });
+    await user.click(exportBtn);
+
+    await waitFor(() => {
+      expect(api.exportTransactions).toHaveBeenCalledWith({
+        account: "a1",
+        type: "out",
+      });
+    });
+
+    clickSpy.mockRestore();
+  });
+
+  it("displays inline alert with Sign in again button when ReauthRequired is returned, calling signOut", async () => {
+    vi.mocked(api.fetchTransactions).mockResolvedValue(list([row]));
+    vi.mocked(api.exportTransactions).mockRejectedValue(
+      new api.ApiError(403, "ReauthRequired", "Sign in again to do this"),
+    );
+
+    const user = userEvent.setup();
+    renderList();
+
+    expect(await screen.findByText("Plumber")).toBeTruthy();
+
+    const exportBtn = screen.getByRole("button", { name: "Export CSV" });
+    await user.click(exportBtn);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Sign in again to export transactions.");
+
+    const signInBtn = within(alert).getByRole("button", { name: "Sign in again" });
+    await user.click(signInBtn);
+
+    expect(session.signOut).toHaveBeenCalledTimes(1);
   });
 });

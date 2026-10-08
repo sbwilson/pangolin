@@ -33,6 +33,7 @@ import {
   ERROR_CODES,
   type ErrorCode,
   enrolmentNeeds,
+  exportTransactionsCsv,
   getAccount,
   getActivity,
   getPayee,
@@ -48,6 +49,7 @@ import {
   leaveHousehold,
   listAccounts,
   listActivities,
+  listAudit,
   listBalanceSnapshots,
   listCategories,
   listCategoryGroups,
@@ -297,6 +299,9 @@ export function createApi(deps: ApiDeps) {
       // secret: the bundle itself stays off the server).
       return c.json(recoveryBundleStatus(deps.uow, deps.bundleId), 200);
     })
+    .get("/api/system/audit", (c) => {
+      return c.json({ audit: listAudit(ctx(c)) }, 200);
+    })
     .get("/api/identity/me", (c) => {
       const needs = c.get("needs");
       return c.json(
@@ -319,6 +324,14 @@ export function createApi(deps: ApiDeps) {
       // The list with `q` required, so a hidden name stays out of every row, total and summary.
       const query = parseTransactionQuery(c.req.queries());
       return c.json(searchTransactions(ctx(c), query), 200);
+    })
+    .get("/api/ledger/export", (c) => {
+      const query = parseTransactionQuery(c.req.queries());
+      const csv = exportTransactionsCsv(ctx(c), query);
+      return c.body(csv, 200, {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="transactions.csv"',
+      });
     })
     .post("/api/ledger/transactions", async (c) => {
       writable();

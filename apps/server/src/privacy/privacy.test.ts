@@ -490,18 +490,22 @@ describe("the route manifest", () => {
     ]);
   });
 
-  it("fails when a route ships under a pending entry, so search, export and audit need real ones", () => {
+  it("fails when a route ships under a pending entry, and has no pending entries remaining", () => {
     const pending = MANIFEST.filter((entry) => entry.kind === "pending");
-    expect(pending.map(routeKey).sort()).toEqual([
-      "GET /api/ledger/export",
-      "GET /api/system/audit",
+    expect(pending).toEqual([]);
+
+    const dummy: ManifestEntry = {
+      kind: "pending",
+      method: "GET",
+      path: "/api/ledger/dummy",
+      reason: "Dummy pending entry",
+    };
+    const routes = [...w.app.routes, { method: dummy.method, path: dummy.path }];
+    expect(manifestProblems(routes, [...MANIFEST, dummy])).toEqual([
+      expect.stringContaining(
+        `${routeKey(dummy)} is registered but its manifest entry is still pending`,
+      ),
     ]);
-    for (const entry of pending) {
-      const routes = [...w.app.routes, { method: entry.method, path: entry.path }];
-      expect(manifestProblems(routes)).toEqual([
-        expect.stringContaining(`${routeKey(entry)} is registered`),
-      ]);
-    }
   });
 
   it("fails on an app.all or a data route that the manifest would drop", () => {

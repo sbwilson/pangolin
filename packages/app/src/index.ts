@@ -327,6 +327,7 @@ export {
   deleteTransaction,
   deleteTransactionInput,
 } from "./ledger/delete-transaction.ts";
+export { exportTransactionsCsv } from "./ledger/export-transactions.ts";
 export {
   type GetTransactionInput,
   getTransaction,

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   dismissNotice,
+  exportTransactions,
   fetchAccounts,
   fetchBackupStatus,
   fetchCategories,
@@ -218,6 +219,46 @@ describe("fetchTransactions", () => {
   it("throws an ApiError on an error response", async () => {
     stubFetch(401, { error: { code: "Unauthenticated", message: "Sign in" } });
     await expect(fetchTransactions()).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("exportTransactions", () => {
+  it("calls /api/ledger/export with query parameters and returns CSV text on 200", async () => {
+    const csvData =
+      "Date,Account,Payee,Description,Category,Memo,Tags,Amount\r\n2026-09-01,Joint,,Plumber,,,,'-142.85\r\n";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(csvData, {
+            status: 200,
+            headers: { "Content-Type": "text/csv; charset=utf-8" },
+          }),
+      ),
+    );
+
+    const result = await exportTransactions({ from: "2026-08-01", to: "2026-09-30", type: "out" });
+    expect(result).toBe(csvData);
+
+    const fetchMock = vi.mocked(fetch);
+    const request = fetchMock.mock.calls[0]?.[0] as Request | string | URL;
+    const url = new URL(
+      typeof request === "string" ? request : String((request as Request).url ?? request),
+      "http://localhost",
+    );
+    expect(url.pathname).toBe("/api/ledger/export");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      from: "2026-08-01",
+      to: "2026-09-30",
+      type: "out",
+    });
+  });
+
+  it("throws ApiError on non-ok status such as 403 ReauthRequired", async () => {
+    stubFetch(403, { error: { code: "ReauthRequired", message: "Sign in again to do this" } });
+    const err = await exportTransactions().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 403, code: "ReauthRequired" });
   });
 });
 
