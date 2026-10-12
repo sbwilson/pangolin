@@ -8,6 +8,7 @@ import { join } from "node:path";
 import {
   type AccountRepo,
   type ActivityRepo,
+  type AuditRepo,
   BACKUP_DRILL_JOB,
   type Clock,
   closeAccount,
@@ -415,7 +416,13 @@ export type LeakMode =
   | "redact-identity"
   | "classification"
   | "review-items"
-  | "leave-hidings";
+  | "leave-hidings"
+  | "search"
+  | "export"
+  | "audit"
+  | "summary"
+  | "day-nets"
+  | "badge";
 
 type Repos = {
   accounts: Pick<AccountRepo, "findVisible" | "list">;
@@ -428,6 +435,7 @@ type Repos = {
   payeeAliases: Pick<PayeeAliasRepo, "list">;
   activities: Pick<ActivityRepo, "list">;
   reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
+  audit: Pick<AuditRepo, "listVisible">;
 };
 
 /**
@@ -442,6 +450,12 @@ type Repos = {
  *   review-items    the review inbox
  *   redact-identity a hidden flag is never rendered (the placeholder is missing)
  *   leave-hidings   the household leave does not lift the leaver's hidings
+ *   search          search queries leak private/hidden rows
+ *   export          export queries leak private accounts
+ *   audit           audit log reads leak person-scoped/private audit rows
+ *   summary         summary line leaks private amounts
+ *   day-nets        day nets leak private amounts
+ *   badge           badge count leaks private uncategorised rows
  * Test support: it exists to prove the suite fails on each.
  */
 function tamperRepos<R extends Repos>(repos: R, mode: LeakMode, a: PersonViewer): R {
@@ -452,9 +466,20 @@ function tamperRepos<R extends Repos>(repos: R, mode: LeakMode, a: PersonViewer)
     ...row,
     nameHidden: false,
   });
+  const inExport = () => {
+    const orig = Error.stackTraceLimit;
+    Error.stackTraceLimit = 50;
+    const stack = new Error().stack;
+    Error.stackTraceLimit = orig;
+    return (
+      stack !== undefined &&
+      (stack.includes("exportTransactionsCsv") || stack.includes("export-transactions"))
+    );
+  };
   const accounts: Repos["accounts"] = {
     ...repos.accounts,
-    list: (viewer) => repos.accounts.list(when("list") ? lift(viewer) : viewer),
+    list: (viewer) =>
+      repos.accounts.list(when("list") || (when("export") && inExport()) ? lift(viewer) : viewer),
     findVisible: (viewer, id) =>
       repos.accounts.findVisible(when("by-id", "by-id-write") ? lift(viewer) : viewer, id),
   };
@@ -471,22 +496,61 @@ function tamperRepos<R extends Repos>(repos: R, mode: LeakMode, a: PersonViewer)
     ...repos.transactions,
     ...writes,
     listVisible: (viewer: Viewer, today: string) => {
-      if (when("list", "hidden-name")) return repos.transactions.listVisible(lift(viewer), today);
+      if (when("list", "hidden-name") || (when("export") && inExport())) {
+        return repos.transactions.listVisible(lift(viewer), today);
+      }
       const rows = repos.transactions.listVisible(viewer, today);
       return mode === "redact-identity" ? rows.map(unrendered) : rows;
     },
     // The paged list the API serves: a list leak or an unprojected name reaches it as well.
     listPage: (...[viewer, ...rest]: Parameters<TransactionRepo["listPage"]>) => {
-      if (when("list", "hidden-name")) return repos.transactions.listPage(lift(viewer), ...rest);
+      const filter = rest[1];
+      if (
+        when("list", "hidden-name") ||
+        (when("export") && inExport()) ||
+        (when("search") && filter?.q !== undefined) ||
+        (when("badge") && filter?.uncategorised === true)
+      ) {
+        return repos.transactions.listPage(lift(viewer), ...rest);
+      }
       const rows = repos.transactions.listPage(viewer, ...rest);
       return mode === "redact-identity" ? rows.map(unrendered) : rows;
     },
-    summarise: (...[viewer, ...rest]: Parameters<TransactionRepo["summarise"]>) =>
-      repos.transactions.summarise(when("list", "hidden-name") ? lift(viewer) : viewer, ...rest),
-    countBefore: (...[viewer, ...rest]: Parameters<TransactionRepo["countBefore"]>) =>
-      repos.transactions.countBefore(when("list", "hidden-name") ? lift(viewer) : viewer, ...rest),
-    dayNets: (...[viewer, ...rest]: Parameters<TransactionRepo["dayNets"]>) =>
-      repos.transactions.dayNets(when("list", "hidden-name") ? lift(viewer) : viewer, ...rest),
+    summarise: (...[viewer, ...rest]: Parameters<TransactionRepo["summarise"]>) => {
+      const filter = rest[1];
+      if (
+        when("list", "hidden-name", "summary") ||
+        (when("export") && inExport()) ||
+        (when("search") && filter?.q !== undefined) ||
+        (when("badge") && filter?.uncategorised === true)
+      ) {
+        return repos.transactions.summarise(lift(viewer), ...rest);
+      }
+      return repos.transactions.summarise(viewer, ...rest);
+    },
+    countBefore: (...[viewer, ...rest]: Parameters<TransactionRepo["countBefore"]>) => {
+      const filter = rest[1];
+      if (
+        when("list", "hidden-name") ||
+        (when("export") && inExport()) ||
+        (when("search") && filter?.q !== undefined) ||
+        (when("badge") && filter?.uncategorised === true)
+      ) {
+        return repos.transactions.countBefore(lift(viewer), ...rest);
+      }
+      return repos.transactions.countBefore(viewer, ...rest);
+    },
+    dayNets: (...[viewer, ...rest]: Parameters<TransactionRepo["dayNets"]>) => {
+      const filter = rest[1];
+      if (
+        when("list", "hidden-name", "day-nets") ||
+        (when("export") && inExport()) ||
+        (when("search") && filter?.q !== undefined)
+      ) {
+        return repos.transactions.dayNets(lift(viewer), ...rest);
+      }
+      return repos.transactions.dayNets(viewer, ...rest);
+    },
     findVisible: (viewer: Viewer, id: string, today: string) => {
       if (when("by-id", "by-id-write", "hidden-name")) {
         return repos.transactions.findVisible(lift(viewer), id, today);
@@ -510,6 +574,11 @@ function tamperRepos<R extends Repos>(repos: R, mode: LeakMode, a: PersonViewer)
     reviewItems: {
       ...repos.reviewItems,
       listOpenFor: (v: Viewer) => repos.reviewItems.listOpenFor(when("review-items") ? lift(v) : v),
+    },
+    audit: {
+      ...repos.audit,
+      listVisible: (v: Viewer, today: string) =>
+        repos.audit.listVisible(when("audit") ? lift(v) : v, today),
     },
   } as R;
 }

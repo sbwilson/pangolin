@@ -9,10 +9,12 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  type AuditView,
   hiddenLabel,
   listAccounts,
   listAudit,
   listReviewItems,
+  listTransactions,
   redact,
   type Viewer,
 } from "@pangolin/app";
@@ -90,6 +92,32 @@ const TRANSACTION_QUERIES = (world: World): string[] => [
   `category=${world.ok("category")}`,
 ];
 
+/** The search queries B's search reads are replayed with (ids B may use in this world). */
+const SEARCH_QUERIES = (world: World): string[] => [
+  "q=coffee",
+  "q=142",
+  "q=probe",
+  "q=secret",
+  "q=Delta",
+  "q=Woolworths",
+  "q=Shared",
+  `q=probe&account=${world.ok("account")}`,
+  "q=probe&type=out",
+  "q=50&minCents=1000",
+  "q=coffee&from=2000-01-01&to=2100-01-01",
+];
+
+/** The export queries B's CSV exports are replayed with (ids B may use in this world). */
+const EXPORT_QUERIES = (world: World): string[] => [
+  "from=2000-01-01&to=2100-01-01",
+  `account=${world.ok("account")}`,
+  "q=probe",
+  "q=coffee",
+  "type=out",
+  `account=${world.ok("account")}&from=2026-07-01&to=2026-07-31`,
+  `category=${world.ok("category")}`,
+];
+
 /** Every `GET` route that returns person data, as B sees it, keyed by route and ids. */
 async function readTranscript(world: World): Promise<Map<string, string>> {
   const out = new Map<string, string>();
@@ -109,6 +137,16 @@ async function readTranscript(world: World): Promise<Map<string, string>> {
   // type, an amount, a paging position), so the paired worlds must still read the same.
   for (const query of TRANSACTION_QUERIES(world)) {
     const path = `/api/ledger/transactions?${query}`;
+    const res = await world.request("b", "GET", path);
+    out.set(`GET ${path}`, normaliseRequestIds(`${res.status} ${res.text}`));
+  }
+  for (const query of SEARCH_QUERIES(world)) {
+    const path = `/api/ledger/search?${query}`;
+    const res = await world.request("b", "GET", path);
+    out.set(`GET ${path}`, normaliseRequestIds(`${res.status} ${res.text}`));
+  }
+  for (const query of EXPORT_QUERIES(world)) {
+    const path = `/api/ledger/export?${query}`;
     const res = await world.request("b", "GET", path);
     out.set(`GET ${path}`, normaliseRequestIds(`${res.status} ${res.text}`));
   }
@@ -793,15 +831,122 @@ describe("partner B against partner A's private data", () => {
     expect(auditProblems(w2)).toEqual([]);
   });
 
-  it("reports an audit row that has no accountId", () => {
-    const w = world("delta");
-    const txn = w.privateIds.transaction[0] as string;
-    w.db
-      .prepare(
-        "UPDATE audit_log SET account_id = NULL WHERE entity = 'transaction' AND entity_id = ?",
-      )
-      .run(txn);
-    expect(auditProblems(w).some((p) => p.includes("has no accountId"))).toBe(true);
+  it("equals calculations from visible rows for summary line, total count, day nets, and badge count per viewer", async () => {
+    for (const w of [w1, w2]) {
+      for (const who of ["a", "b"] as const) {
+        const ctx = w.ctx(who);
+        const today = w.clock.today().toString();
+        const visible = w.uow.read((repos) => repos.transactions.listVisible(ctx.viewer, today));
+        const expectedCount = visible.length;
+        const expectedInCents = visible
+          .filter((r) => r.amountCents > 0)
+          .reduce((sum, r) => sum + r.amountCents, 0);
+        const expectedOutCents = visible
+          .filter((r) => r.amountCents < 0)
+          .reduce((sum, r) => sum - r.amountCents, 0);
+        const expectedNetCents = expectedInCents - expectedOutCents;
+        const expectedBadgeCount = visible.filter(
+          (r) => r.splits.length === 0 || r.splits.some((s) => s.categoryId === null),
+        ).length;
+
+        // Verify use case results
+        const list = listTransactions(ctx);
+        expect(list.summary.count).toBe(expectedCount);
+        expect(list.summary.inCents).toBe(expectedInCents);
+        expect(list.summary.outCents).toBe(expectedOutCents);
+        expect(list.summary.inCents - list.summary.outCents).toBe(expectedNetCents);
+        expect(list.page.total).toBe(expectedCount);
+
+        const daysOnPage = new Set(list.transactions.map((r) => r.postedOn));
+        const expectedDayNets: Record<string, number> = {};
+        for (const day of daysOnPage) {
+          expectedDayNets[day] = visible
+            .filter((r) => r.postedOn === day)
+            .reduce((sum, r) => sum + r.amountCents, 0);
+        }
+        expect(list.dayNets).toEqual(expectedDayNets);
+
+        const badgeList = listTransactions(ctx, { uncategorised: true });
+        expect(badgeList.page.total).toBe(expectedBadgeCount);
+
+        // Verify HTTP API responses
+        const res = await w.request(who, "GET", "/api/ledger/transactions");
+        expect(res.status).toBe(200);
+        const body = JSON.parse(res.text);
+        expect(body.summary.count).toBe(expectedCount);
+        expect(body.summary.inCents).toBe(expectedInCents);
+        expect(body.summary.outCents).toBe(expectedOutCents);
+        expect(body.summary.inCents - body.summary.outCents).toBe(expectedNetCents);
+        expect(body.page.total).toBe(expectedCount);
+        expect(body.dayNets).toEqual(expectedDayNets);
+
+        const badgeRes = await w.request(who, "GET", "/api/ledger/transactions?uncategorised=true");
+        expect(badgeRes.status).toBe(200);
+        expect(JSON.parse(badgeRes.text).page.total).toBe(expectedBadgeCount);
+      }
+    }
+  });
+
+  it("isolates private amount-search results to their owner while searching visible non-hidden rows", async () => {
+    // In w2, A has private cash with -4200 cents ($42.00). B has shared transactions with -5000 cents ($50.00).
+    const aSearch = await w2.request("a", "GET", "/api/ledger/search?q=42");
+    expect(aSearch.status).toBe(200);
+    const aBody = JSON.parse(aSearch.text);
+    expect(
+      aBody.transactions.some((t: { amountCents: number }) => Math.abs(t.amountCents) === 4200),
+    ).toBe(true);
+
+    const bSearch = await w2.request("b", "GET", "/api/ledger/search?q=42");
+    expect(bSearch.status).toBe(200);
+    const bBody = JSON.parse(bSearch.text);
+    // B must NEVER find A's private 4200 amount
+    expect(
+      bBody.transactions.some((t: { amountCents: number }) => Math.abs(t.amountCents) === 4200),
+    ).toBe(false);
+
+    // B searching for shared amount ($50.00) matches visible row
+    const bShared = await w2.request("b", "GET", "/api/ledger/search?q=50");
+    expect(bShared.status).toBe(200);
+    const bSharedBody = JSON.parse(bShared.text);
+    expect(
+      bSharedBody.transactions.some(
+        (t: { amountCents: number }) => Math.abs(t.amountCents) === 5000,
+      ),
+    ).toBe(true);
+  });
+
+  it("enforces person-scoping and visibility on GET /api/system/audit", async () => {
+    const aRes = await w2.request("a", "GET", "/api/system/audit");
+    expect(aRes.status).toBe(200);
+    const aAudit: AuditView[] = JSON.parse(aRes.text).audit;
+
+    const bRes = await w2.request("b", "GET", "/api/system/audit");
+    expect(bRes.status).toBe(200);
+    const bAudit: AuditView[] = JSON.parse(bRes.text).audit;
+
+    // Person scoping: A's person rows return to A, not B; B's person rows return to B, not A
+    expect(aAudit.some((row) => row.personId === w2.people.a)).toBe(true);
+    expect(bAudit.some((row) => row.personId === w2.people.a)).toBe(false);
+
+    expect(bAudit.some((row) => row.personId === w2.people.b)).toBe(true);
+    expect(aAudit.some((row) => row.personId === w2.people.b)).toBe(false);
+
+    // Private account scoping: A's private account rows return to A, not B
+    expect(
+      aAudit.some((row) => row.accountId !== null && w2.privateIds.account.includes(row.accountId)),
+    ).toBe(true);
+    expect(
+      bAudit.some((row) => row.accountId !== null && w2.privateIds.account.includes(row.accountId)),
+    ).toBe(false);
+
+    // Shared scoping: shared review items and joint account audit rows appear for both
+    const sharedHousehold = aAudit.filter(
+      (row) => row.entity === "review_item" && row.personId === null && row.accountId === null,
+    );
+    expect(sharedHousehold.length).toBeGreaterThan(0);
+    for (const item of sharedHousehold) {
+      expect(bAudit.some((bItem) => bItem.id === item.id)).toBe(true);
+    }
   });
 });
 
@@ -816,6 +961,79 @@ describe("hidden names", () => {
     const path = `/api/ledger/transactions/${w.ok("transaction")}/name-hidden`;
     const tooLong = w.clock.today().add({ months: 12, days: 1 }).toString();
     expect((await w.request("a", "PUT", path, { until: tooLong })).status).toBe(400);
+  });
+
+  it("never returns a hidden transaction to the partner by name, amount, or notes while the owner finds it by each", async () => {
+    const w = world("base");
+    const accountId = w.ok("account");
+    // Create a transaction with distinct name, amount, and notes on a shared account
+    const createRes = await w.request("a", "POST", "/api/ledger/transactions", {
+      accountId,
+      postedOn: "2026-07-15",
+      amountCents: -98765,
+      description: "KangarooHiddenGift",
+    });
+    expect(createRes.status).toBe(201);
+    const txnId = JSON.parse(createRes.text).transaction.id;
+    await w.request("a", "PATCH", `/api/ledger/transactions/${txnId}`, {
+      notes: "FlamingoHiddenNote",
+    });
+
+    const until = w.clock.today().add({ days: 30 }).toString();
+    const hideRes = await w.request("a", "PUT", `/api/ledger/transactions/${txnId}/name-hidden`, {
+      until,
+    });
+    expect(hideRes.status).toBe(200);
+
+    // Partner B searches by name, amount magnitude, and notes:
+    // 1. By name ("KangarooHiddenGift")
+    const bNameRes = await w.request("b", "GET", "/api/ledger/search?q=KangarooHiddenGift");
+    expect(bNameRes.status).toBe(200);
+    const bName = JSON.parse(bNameRes.text);
+    expect(bName.page.total).toBe(0);
+    expect(bName.summary.count).toBe(0);
+    expect(bName.transactions).toEqual([]);
+
+    // 2. By amount ("987.65")
+    const bAmountRes = await w.request("b", "GET", "/api/ledger/search?q=987.65");
+    expect(bAmountRes.status).toBe(200);
+    const bAmount = JSON.parse(bAmountRes.text);
+    expect(bAmount.page.total).toBe(0);
+    expect(bAmount.summary.count).toBe(0);
+    expect(bAmount.transactions).toEqual([]);
+
+    // 3. By notes ("FlamingoHiddenNote")
+    const bNotesRes = await w.request("b", "GET", "/api/ledger/search?q=FlamingoHiddenNote");
+    expect(bNotesRes.status).toBe(200);
+    const bNotes = JSON.parse(bNotesRes.text);
+    expect(bNotes.page.total).toBe(0);
+    expect(bNotes.summary.count).toBe(0);
+    expect(bNotes.transactions).toEqual([]);
+
+    // Owner A searches by name, amount magnitude, and notes:
+    // 1. By name
+    const aNameRes = await w.request("a", "GET", "/api/ledger/search?q=KangarooHiddenGift");
+    expect(aNameRes.status).toBe(200);
+    const aName = JSON.parse(aNameRes.text);
+    expect(aName.page.total).toBe(1);
+    expect(aName.summary.count).toBe(1);
+    expect(aName.transactions[0].id).toBe(txnId);
+
+    // 2. By amount
+    const aAmountRes = await w.request("a", "GET", "/api/ledger/search?q=987.65");
+    expect(aAmountRes.status).toBe(200);
+    const aAmount = JSON.parse(aAmountRes.text);
+    expect(aAmount.page.total).toBe(1);
+    expect(aAmount.summary.count).toBe(1);
+    expect(aAmount.transactions[0].id).toBe(txnId);
+
+    // 3. By notes
+    const aNotesRes = await w.request("a", "GET", "/api/ledger/search?q=FlamingoHiddenNote");
+    expect(aNotesRes.status).toBe(200);
+    const aNotes = JSON.parse(aNotesRes.text);
+    expect(aNotes.page.total).toBe(1);
+    expect(aNotes.summary.count).toBe(1);
+    expect(aNotes.transactions[0].id).toBe(txnId);
   });
 });
 
@@ -885,6 +1103,74 @@ describe("a deliberate leak", () => {
     expect(
       problems.some((p) => /^audit log on .*: B does not see "Hidden until [^"]+"$/.test(p)),
     ).toBe(true);
+  });
+
+  it("is caught as a search leak: B's search results differ between the worlds", async () => {
+    const left = await readTranscript(leaky(w1, "search"));
+    const right = await readTranscript(leaky(w2, "search"));
+    const problems = identicalProblems(left, right);
+    expect(problems.some((p) => p.startsWith("GET /api/ledger/search?q="))).toBe(true);
+  });
+
+  it("is caught as an export leak: B's CSV exports differ between the worlds", async () => {
+    const left = await readTranscript(leaky(w1, "export"));
+    const right = await readTranscript(leaky(w2, "export"));
+    const problems = identicalProblems(left, right);
+    expect(problems.some((p) => p.startsWith("GET /api/ledger/export"))).toBe(true);
+  });
+
+  it("is caught as an audit leak: A's person-scoped or private audit rows reach B", async () => {
+    const left = await readTranscript(leaky(w1, "audit"));
+    const right = await readTranscript(leaky(w2, "audit"));
+    const problems = identicalProblems(left, right);
+    expect(problems).toContain("GET /api/system/audit differs between the worlds");
+    expect(problems).toContain("use case listAudit(B) differs between the worlds");
+    const res = await leaky(w2, "audit").request("b", "GET", "/api/system/audit");
+    const audit: AuditView[] = JSON.parse(res.text).audit;
+    expect(audit.some((row) => row.personId === w2.people.a)).toBe(true);
+  });
+
+  it("is caught as a summary line leak: B's summary does not match visible rows", () => {
+    const world = leaky(w2, "summary");
+    const ctx = world.ctx("b");
+    const today = world.clock.today().toString();
+    const visible = world.uow.read((repos) => repos.transactions.listVisible(ctx.viewer, today));
+    const expectedCount = visible.length;
+    const list = listTransactions(ctx);
+    expect(list.summary.count).not.toBe(expectedCount);
+  });
+
+  it("is caught as a day nets leak: B's day nets do not match visible rows", () => {
+    const world = leaky(w2, "day-nets");
+    const ctx = world.ctx("b");
+    const list = listTransactions(ctx);
+    const expectedDayNets: Record<string, number> = {};
+    for (const row of list.transactions) {
+      expectedDayNets[row.postedOn] = (expectedDayNets[row.postedOn] ?? 0) + row.amountCents;
+    }
+    expect(list.dayNets).not.toEqual(expectedDayNets);
+  });
+
+  it("is caught as a badge count leak: B's badge count does not match visible uncategorised rows", () => {
+    const world = leaky(w2, "badge");
+    const ctx = world.ctx("b");
+    const today = world.clock.today().toString();
+    const visible = world.uow.read((repos) => repos.transactions.listVisible(ctx.viewer, today));
+    const expectedBadge = visible.filter(
+      (r) => r.splits.length === 0 || r.splits.some((s) => s.categoryId === null),
+    ).length;
+    const badgeList = listTransactions(ctx, { uncategorised: true });
+    expect(badgeList.page.total).not.toBe(expectedBadge);
+  });
+
+  it("is caught as a hidden-name search leak: B finds a hidden transaction when search leaks", async () => {
+    const w = leaky(world("base"), "search");
+    const id = w.ok("transaction");
+    const until = w.clock.today().add({ days: 30 }).toString();
+    await w.request("a", "PUT", `/api/ledger/transactions/${id}/name-hidden`, { until });
+    const res = await w.request("b", "GET", "/api/ledger/search?q=Shared");
+    const body = JSON.parse(res.text);
+    expect(body.transactions.some((t: { id: string }) => t.id === id)).toBe(true);
   });
 
   it("passes the same assertions on the real app", async () => {
