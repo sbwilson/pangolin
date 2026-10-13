@@ -18,15 +18,32 @@ export const balanceSnapshots: SeedModule = {
     ];
     const events: BalanceRecordedEvent[] = [];
     const closing: Record<string, Json> = {};
+    const txnsByAccount = new Map<string, (typeof world.transactions)[number][]>();
+    for (const t of world.transactions) {
+      let list = txnsByAccount.get(t.account);
+      if (list === undefined) {
+        list = [];
+        txnsByAccount.set(t.account, list);
+      }
+      list.push(t);
+    }
+
     for (const account of world.accounts) {
       const opening = OPENING_CENTS[account.key];
       if (opening === undefined) throw new Error(`No opening balance for account "${account.key}"`);
-      const txns = world.transactions.filter((t) => t.account === account.key);
+      const txns = txnsByAccount.get(account.key) ?? [];
+      txns.sort((a, b) => a.postedOn.localeCompare(b.postedOn));
+      let txnIdx = 0;
+      let runningMovement = 0;
       for (const { day, source } of days) {
-        const movement = txns
-          .filter((t) => t.postedOn <= day)
-          .reduce((sum, t) => sum + t.amountCents, 0);
-        const balanceCents = day === iso(openingDay(w)) ? opening : opening + movement;
+        while (
+          txnIdx < txns.length &&
+          (txns[txnIdx] as (typeof world.transactions)[number]).postedOn <= day
+        ) {
+          runningMovement += (txns[txnIdx] as (typeof world.transactions)[number]).amountCents;
+          txnIdx += 1;
+        }
+        const balanceCents = day === iso(openingDay(w)) ? opening : opening + runningMovement;
         events.push({
           type: "balance.recorded",
           account: account.key,

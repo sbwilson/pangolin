@@ -43,7 +43,7 @@ describe("committed migrations", () => {
     expect(loadMigrations(packageMigrationsDir)[0]?.name).toBe("0000_baseline");
   });
 
-  it("migrates a fresh database to version 13, then re-applies nothing", () => {
+  it("migrates a fresh database to version 14, then re-applies nothing", () => {
     const migrations = loadMigrations(packageMigrationsDir);
     const names = [
       "0000_baseline",
@@ -59,10 +59,11 @@ describe("committed migrations", () => {
       "0010_split_provenance",
       "0011_backup_snapshot_drop_figures",
       "0012_search_index",
+      "0013_absent_argent",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 13 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 13 });
-    expect(schemaVersion(db)).toBe(13);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 14 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 14 });
+    expect(schemaVersion(db)).toBe(14);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });
@@ -272,7 +273,7 @@ describe("committed migrations", () => {
       const migrations = loadMigrations(packageMigrationsDir);
       migrate(db, migrations.slice(0, 12));
       db.exec(seed);
-      expect(migrate(db, migrations).applied).toEqual(["0012_search_index"]);
+      expect(migrate(db, migrations.slice(0, 13)).applied).toEqual(["0012_search_index"]);
       expect(
         db.prepare('SELECT count(*) FROM "transaction" WHERE search_id IS NULL').pluck().get(),
       ).toBe(0);

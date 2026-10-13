@@ -33,7 +33,8 @@ export function visibleAccountId(column: SQLiteColumn, viewer: Viewer | undefine
 
 /** Live transactions of visible accounts. Throws without a viewer. Not name-aware. */
 export function liveVisibleTxn(viewer: Viewer | undefined): SQL {
-  return sql`(${transaction.deletedAt} IS NULL AND ${visibleAccountId(transaction.accountId, viewer)})`;
+  const accounts = visibleAccounts(viewer);
+  return sql`(${transaction.deletedAt} IS NULL AND +${transaction.accountId} IN (SELECT ${account.id} FROM ${account} WHERE ${accounts}))`;
 }
 
 /** `column IN (the ids of the live transactions the viewer may see)`. Throws without a viewer. */

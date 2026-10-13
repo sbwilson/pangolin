@@ -304,7 +304,13 @@ export function createTagRepo(orm: Orm, check: () => void): TagRepo {
               inArray(splitTag.splitId, chunk),
               isNull(tag.deletedAt),
               scope,
-              inArray(splitTag.splitId, orm.select({ id: split.id }).from(split).where(visible)),
+              inArray(
+                splitTag.splitId,
+                orm
+                  .select({ id: split.id })
+                  .from(split)
+                  .where(and(inArray(split.id, chunk), visible)),
+              ),
             ),
           )
           .all();

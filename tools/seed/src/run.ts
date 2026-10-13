@@ -2,7 +2,13 @@
 import { formatDate, type PlainDate, parseDate } from "@pangolin/shared/temporal";
 import type { Json, SeedModule } from "./module.ts";
 import { rngFor } from "./rng.ts";
-import { applyEvent, type EmittedEvent, emptyWorld, type World } from "./world.ts";
+import {
+  applyEvents,
+  type EmittedEvent,
+  emptyWorld,
+  type SeedProfile,
+  type World,
+} from "./world.ts";
 
 export const DEFAULT_SEED = "pangolin-v1";
 export const DEFAULT_TODAY = "2026-07-15";
@@ -12,6 +18,7 @@ export interface RunOptions {
   /** `YYYY-MM-DD`. */
   readonly today?: string;
   readonly modules: readonly SeedModule[];
+  readonly profile?: SeedProfile;
 }
 
 /** What `seed.json` holds. */
@@ -87,6 +94,7 @@ function closure(name: string, byName: ReadonlyMap<string, SeedModule>): Set<str
  * unrelated module never changes its output.
  */
 export function runSeed(options: RunOptions): SeedOutput {
+  const profile: SeedProfile = options.profile ?? "default";
   const seed = options.seed ?? DEFAULT_SEED;
   if (seed.length === 0) throw new Error("The seed must not be empty");
   const today: PlainDate = parseDate(options.today ?? DEFAULT_TODAY);
@@ -99,16 +107,16 @@ export function runSeed(options: RunOptions): SeedOutput {
 
   for (const module of ordered) {
     const deps = closure(module.name, byName);
-    let world: World = emptyWorld(seed, today);
+    let world: World = emptyWorld(seed, today, profile);
     for (const done of ordered) {
       if (!deps.has(done.name)) continue;
-      for (const event of eventsBy.get(done.name) ?? []) world = applyEvent(world, event);
+      world = applyEvents(world, eventsBy.get(done.name) ?? []);
     }
 
     const output = module.generate(world, rngFor(seed, module.name));
     const stamped = output.events.map((event): EmittedEvent => ({ ...event, module: module.name }));
     // Applying the module's own events checks they are consistent with its world.
-    stamped.reduce(applyEvent, world);
+    applyEvents(world, stamped);
     eventsBy.set(module.name, stamped);
     events.push(...stamped);
     for (const [key, value] of Object.entries(output.expectations)) {

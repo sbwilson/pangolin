@@ -368,6 +368,12 @@ export {
 } from "./ledger/search-query.ts";
 export { searchTransactions } from "./ledger/search-transactions.ts";
 export {
+  type AccountSeedInfo,
+  type SeedSplitInput,
+  type SeedTransactionInput,
+  seedTransactions,
+} from "./ledger/seed-transactions.ts";
+export {
   registerSplitFieldListener,
   type SetSplitFieldInput,
   type SetSplitFieldResult,

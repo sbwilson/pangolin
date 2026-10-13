@@ -41,10 +41,11 @@ export const transaction = sqliteTable(
     deletedAt: text("deleted_at"),
   },
   (t) => [
-    index("transaction_account_posted_idx").on(t.accountId, t.postedOn),
+    index("transaction_posted_id_idx").on(t.postedOn, t.id),
+    index("transaction_account_posted_idx").on(t.accountId, t.postedOn, t.id),
     uniqueIndex("transaction_account_external_id_idx").on(t.accountId, t.externalId),
     uniqueIndex("transaction_account_fingerprint_idx").on(t.accountId, t.fingerprint),
-    index("transaction_payee_idx").on(t.payeeId),
+    index("transaction_payee_idx").on(t.payeeId, t.postedOn, t.id),
     index("transaction_transfer_group_idx").on(t.transferGroupId),
     uniqueIndex("transaction_search_id_idx").on(t.searchId),
     check("transaction_needs_review", sql`${t.needsReview} IN (0, 1)`),

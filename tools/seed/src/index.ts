@@ -22,6 +22,7 @@ export { serialize } from "./serialize.ts";
 export {
   type AccountCreatedEvent,
   applyEvent,
+  applyEvents,
   type BalanceRecordedEvent,
   type CategoryRef,
   type EmittedEvent,
@@ -32,6 +33,7 @@ export {
   type PayeeCreatedEvent,
   type PersonCreatedEvent,
   type SeedEvent,
+  type SeedProfile,
   type SeedSplit,
   type TagCreatedEvent,
   type TransactionCreatedEvent,

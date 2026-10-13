@@ -209,9 +209,12 @@ export const transfersAndPrivacy: SeedModule = {
     });
 
     // Card payments: each month pays what is owed, the opening balance and every charge since.
+    const cardTxns = [...world.transactions, ...surpriseEvents].filter(
+      (t) => t.account === ACCOUNT_KEYS.card,
+    );
     const chargesOn = (from: string, to: string): number =>
-      [...world.transactions, ...surpriseEvents]
-        .filter((t) => t.account === ACCOUNT_KEYS.card && t.postedOn > from && t.postedOn <= to)
+      cardTxns
+        .filter((t) => t.postedOn > from && t.postedOn <= to)
         .reduce((sum, t) => sum - t.amountCents, 0);
     let owed = -(OPENING_CENTS[ACCOUNT_KEYS.card] ?? 0);
     let previous = iso(w.start.subtract({ days: 1 }));
@@ -280,10 +283,18 @@ export const transfersAndPrivacy: SeedModule = {
 
     // What each person sees: every transaction so far in an account they can see.
     const all = [...world.transactions, ...created, ...surpriseEvents];
+    const txnsByAccount = new Map<string, number>();
+    for (const t of all) {
+      txnsByAccount.set(t.account, (txnsByAccount.get(t.account) ?? 0) + 1);
+    }
     const visibleCounts: Record<string, number> = {};
     for (const person of PERSON_KEYS) {
       const accounts = visibleTo(world, person);
-      visibleCounts[person] = all.filter((t) => accounts.has(t.account)).length;
+      let count = 0;
+      for (const acc of accounts) {
+        count += txnsByAccount.get(acc) ?? 0;
+      }
+      visibleCounts[person] = count;
     }
     return {
       events,

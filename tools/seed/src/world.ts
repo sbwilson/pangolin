@@ -105,7 +105,10 @@ export interface WorldBill {
   readonly key: string;
 }
 
+export type SeedProfile = "default" | "perf";
+
 export interface World {
+  readonly profile: SeedProfile;
   readonly seed: string;
   /** The fixed "today" of this run; nothing in the seed reads the real clock. */
   readonly today: PlainDate;
@@ -120,6 +123,8 @@ export interface World {
   readonly payAnchors: readonly WorldPayAnchor[];
   readonly merchants: readonly WorldMerchant[];
   readonly bills: readonly WorldBill[];
+  /** @internal */
+  readonly _known?: SeedKnown;
 }
 
 /** Adds a person. Applied through `identity.createPerson`. */
@@ -230,8 +235,13 @@ export type SeedEvent =
 /** An event as it appears in the seed output: stamped with the module that emitted it. */
 export type EmittedEvent = SeedEvent & { readonly module: string };
 
-export function emptyWorld(seed: string, today: PlainDate): World {
+export function emptyWorld(
+  seed: string,
+  today: PlainDate,
+  profile: SeedProfile = "default",
+): World {
   return {
+    profile,
     seed,
     today,
     people: [],
@@ -244,6 +254,7 @@ export function emptyWorld(seed: string, today: PlainDate): World {
     payAnchors: [],
     merchants: [],
     bills: [],
+    _known: emptySeedKnown(),
   };
 }
 
@@ -276,65 +287,111 @@ function knownOf(world: World): SeedKnown {
   return known;
 }
 
+function cloneKnown(k: SeedKnown): SeedKnown {
+  return {
+    people: new Set(k.people),
+    institutions: new Set(k.institutions),
+    accounts: new Map(k.accounts),
+    tags: new Map(k.tags),
+    payees: new Map(k.payees),
+    transactions: new Map(k.transactions),
+  };
+}
+
+/** The world after applying a sequence of events in linear time. */
+export function applyEvents(world: World, events: readonly SeedEvent[]): World {
+  if (events.length === 0) return world;
+  const known = cloneKnown(world._known ?? knownOf(world));
+  const people = [...world.people];
+  let household = world.household;
+  const institutions = [...world.institutions];
+  const accounts = [...world.accounts];
+  const tags = [...world.tags];
+  const payees = [...world.payees];
+  const transactions = [...world.transactions];
+  const payAnchors = [...world.payAnchors];
+  const merchants = [...world.merchants];
+  const bills = [...world.bills];
+
+  for (const event of events) {
+    const problems = checkSeedReferences(event, known);
+    if (problems.length > 0) {
+      throw new Error(`Seed event ${event.type} contradicts the world: ${problems.join("; ")}`);
+    }
+    switch (event.type) {
+      case "person.created":
+        people.push({ key: event.key, displayName: event.displayName, colour: event.colour });
+        break;
+      case "household.settings":
+        household = {
+          timezone: event.timezone,
+          baseCurrency: event.baseCurrency,
+          sharedAttribution: event.sharedAttribution,
+        };
+        break;
+      case "institution.created":
+        institutions.push({ key: event.key, name: event.name, kind: event.kind });
+        break;
+      case "account.created":
+        accounts.push({
+          key: event.key,
+          name: event.name,
+          accountType: event.accountType,
+          currency: event.currency,
+          isPrivate: event.isPrivate,
+          owners: event.owners,
+          institution: event.institution,
+          isSavings: event.isSavings,
+        });
+        break;
+      case "tag.created":
+        tags.push({ key: event.key, name: event.name, origin: event.origin });
+        break;
+      case "payee.created":
+        payees.push({
+          key: event.key,
+          name: event.name,
+          websiteUrl: event.websiteUrl,
+          defaultCategory: event.defaultCategory,
+          origin: event.origin,
+        });
+        break;
+      case "transaction.created":
+        transactions.push({
+          key: event.key,
+          account: event.account,
+          postedOn: event.postedOn,
+          amountCents: event.amountCents,
+          description: event.description,
+          payee: event.payee ?? null,
+        });
+        break;
+      case "balance.recorded":
+      case "transaction.name-hidden":
+      case "transfer.grouped":
+        break;
+    }
+  }
+
+  return {
+    profile: world.profile,
+    seed: world.seed,
+    today: world.today,
+    people,
+    household,
+    institutions,
+    accounts,
+    tags,
+    payees,
+    transactions,
+    payAnchors,
+    merchants,
+    bills,
+    _known: known,
+  };
+}
+
 /** The world after `event`. Throws when the event contradicts the world (e.g. a duplicate key). */
 export function applyEvent(world: World, event: SeedEvent): World {
-  const problems = checkSeedReferences(event, knownOf(world));
-  if (problems.length > 0) {
-    throw new Error(`Seed event ${event.type} contradicts the world: ${problems.join("; ")}`);
-  }
-  switch (event.type) {
-    case "person.created": {
-      const { key, displayName, colour } = event;
-      return { ...world, people: [...world.people, { key, displayName, colour }] };
-    }
-    case "household.settings": {
-      const { timezone, baseCurrency, sharedAttribution } = event;
-      return { ...world, household: { timezone, baseCurrency, sharedAttribution } };
-    }
-    case "institution.created": {
-      const { key, name, kind } = event;
-      return { ...world, institutions: [...world.institutions, { key, name, kind }] };
-    }
-    case "account.created": {
-      const { key, name, accountType, currency, isPrivate, owners, institution, isSavings } = event;
-      const account: WorldAccount = {
-        key,
-        name,
-        accountType,
-        currency,
-        isPrivate,
-        owners,
-        institution,
-        isSavings,
-      };
-      return { ...world, accounts: [...world.accounts, account] };
-    }
-    case "tag.created": {
-      const { key, name, origin } = event;
-      return { ...world, tags: [...world.tags, { key, name, origin }] };
-    }
-    case "payee.created": {
-      const { key, name, websiteUrl, defaultCategory, origin } = event;
-      return {
-        ...world,
-        payees: [...world.payees, { key, name, websiteUrl, defaultCategory, origin }],
-      };
-    }
-    case "transaction.created": {
-      const { key, account, postedOn, amountCents, description } = event;
-      const txn: WorldTransaction = {
-        key,
-        account,
-        postedOn,
-        amountCents,
-        description,
-        payee: event.payee ?? null,
-      };
-      return { ...world, transactions: [...world.transactions, txn] };
-    }
-    case "balance.recorded":
-    case "transaction.name-hidden":
-    case "transfer.grouped":
-      return world;
-  }
+  return applyEvents(world, [event]);
 }

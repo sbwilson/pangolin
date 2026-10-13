@@ -6,7 +6,7 @@ import { type PlainDate, Temporal } from "@pangolin/shared/temporal";
 import type { SeedModule } from "../module.ts";
 import type { Rng } from "../rng.ts";
 import type { CategoryRef, SeedSplit, TransactionCreatedEvent } from "../world.ts";
-import { ACCOUNT_KEYS, cat, payeeByKey } from "./catalogue.ts";
+import { ACCOUNT_KEYS, cat, PAYEES, type PayeeSpec, payeeByKey, TAGS } from "./catalogue.ts";
 import {
   everyDays,
   everyMonth,
@@ -432,6 +432,89 @@ export const ledgerTransactions: SeedModule = {
         category: cat("Lifestyle", "Hobbies"),
         tags: ["side-project"],
       });
+    }
+
+    if (world.profile === "perf") {
+      const TOTAL_TARGET = 50_000;
+      const TRANSFERS_AND_SURPRISES = 92;
+      const targetDrafts = TOTAL_TARGET - TRANSFERS_AND_SURPRISES;
+      const topUpCount = targetDrafts - drafts.length;
+
+      const allAccounts = [
+        ACCOUNT_KEYS.everyday,
+        ACCOUNT_KEYS.card,
+        ACCOUNT_KEYS.savings,
+        ACCOUNT_KEYS.offset,
+        ACCOUNT_KEYS.homeLoan,
+        ACCOUNT_KEYS.privateA,
+        ACCOUNT_KEYS.privateB,
+      ] as const;
+
+      const sharedPayees = PAYEES.filter((p) => p.owner === null);
+      const personAPayees = PAYEES.filter((p) => p.owner === "person-a" || p.owner === null);
+      const personBPayees = PAYEES.filter((p) => p.owner === "person-b" || p.owner === null);
+      const sharedTags = TAGS.filter((t) => t.owner === null).map((t) => t.key);
+      const daysInWindow = totalDays(w);
+
+      for (let i = 0; i < topUpCount; i++) {
+        const account = allAccounts[i % allAccounts.length] as string;
+        const dateOffset = rng.int(0, daysInWindow);
+        const postedOn = w.start.add({ days: dateOffset });
+
+        const payeePool =
+          account === ACCOUNT_KEYS.privateA
+            ? personAPayees
+            : account === ACCOUNT_KEYS.privateB
+              ? personBPayees
+              : sharedPayees;
+        const payeeSpec = payeePool[rng.int(0, payeePool.length - 1)] as PayeeSpec;
+
+        const isCredit = account === ACCOUNT_KEYS.savings || account === ACCOUNT_KEYS.offset;
+        const amountCents = isCredit
+          ? amountBetween(rng, 1_000, 20_000)
+          : -amountBetween(rng, 500, 30_000);
+
+        const hasTag = rng.next() < 0.2;
+        const tag = hasTag ? rng.pick(sharedTags) : undefined;
+        const hasNotes = rng.next() < 0.15;
+        const notes = hasNotes ? `Perf note ${i + 1}` : undefined;
+
+        const isMultiSplit = rng.next() < 0.05 && amountCents < -100;
+        let splits: SeedSplit[] | undefined;
+        if (isMultiSplit) {
+          const part1 = Math.round(amountCents / 2 / 5) * 5;
+          const part2 = amountCents - part1;
+          splits = [
+            {
+              amountCents: part1,
+              ...(payeeSpec.category ? { category: payeeSpec.category } : {}),
+              ...(tag ? { tags: [tag] } : {}),
+            },
+            {
+              amountCents: part2,
+              category: cat("Personal", "Gifts"),
+            },
+          ];
+        }
+
+        const keepCategory = rng.next() >= 0.1;
+        const category =
+          splits === undefined && keepCategory && payeeSpec.category !== null
+            ? payeeSpec.category
+            : undefined;
+
+        drafts.push({
+          account,
+          postedOn,
+          amountCents,
+          description: `${payeeSpec.name} #${i + 1}`,
+          payee: payeeSpec.key,
+          ...(category ? { category } : {}),
+          ...(tag && !splits ? { tags: [tag] } : {}),
+          ...(notes ? { notes } : {}),
+          ...(splits ? { splits } : {}),
+        });
+      }
     }
 
     // --- Order by date (a stable sort keeps same-day drafts in the order they were made).

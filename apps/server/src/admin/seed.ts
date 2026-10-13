@@ -2,6 +2,7 @@
 // `app` use cases, as `cli:seed`. The whole file is validated before the first write.
 import {
   ACCOUNT_TYPES,
+  type AccountSeedInfo,
   AppError,
   type Clock,
   checkSeedReferences,
@@ -11,11 +12,9 @@ import {
   createPerson,
   createPersonInput,
   createTag,
-  createTransaction,
   createTransferGroup,
   DEFAULT_CATEGORIES,
   emptySeedKnown,
-  getTransaction,
   hideTransactionName,
   type IdGenerator,
   INSTITUTION_KINDS,
@@ -27,15 +26,13 @@ import {
   personViewer,
   recordBalanceSnapshot,
   type SeedKnown,
+  type SeedTransactionInput,
   seedDefaults,
-  setSplitField,
-  setSplits,
-  setSplitTags,
+  seedTransactions,
   type UnitOfWork,
   type UseCaseContext,
   updateHouseholdSettings,
   updateHouseholdSettingsInput,
-  updateTransaction,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import { z } from "zod";
@@ -190,7 +187,6 @@ const EVENT_SCHEMAS = {
 
 type EventType = keyof typeof EVENT_SCHEMAS;
 type SeedEvent = z.output<(typeof EVENT_SCHEMAS)[EventType]>;
-type TransactionEvent = Extract<SeedEvent, { type: "transaction.created" }>;
 
 const seedFileSchema = z.strictObject({
   seed: z.string().min(1),
@@ -460,59 +456,23 @@ function applyEvents(
     return id;
   };
 
-  const classify = (event: TransactionEvent, id: string): void => {
-    const wanted = event.splits ?? [
-      {
-        amountCents: event.amountCents,
-        ...(event.category === undefined ? {} : { category: event.category }),
-        ...(event.tags === undefined ? {} : { tags: event.tags }),
-      },
-    ];
-    if (wanted.length === 1 && !wanted.some((s) => s.category || s.beneficiary || s.tags?.length)) {
-      return;
-    }
-    let view = getTransaction(ctx, { id });
-    if (wanted.length > 1) {
-      view = setSplits(ctx, {
-        transactionId: id,
-        splits: wanted.map((split) => ({ amountCents: split.amountCents })),
-      });
-    }
-    // Splits come back in the order they were minted, which is the order they were given.
-    wanted.forEach((split, i) => {
-      const row = view.splits[i];
-      if (row === undefined || row.amountCents !== split.amountCents) {
-        throw new Error(`Transaction "${event.key}" did not come back with its splits in order`);
-      }
-      if (split.category !== undefined) {
-        setSplitField(ctx, {
-          transactionId: id,
-          splitId: row.id,
-          field: "category",
-          value: categoryId(split.category),
-        });
-      }
-      if (split.beneficiary !== undefined) {
-        setSplitField(ctx, {
-          transactionId: id,
-          splitId: row.id,
-          field: "beneficiary",
-          value: split.beneficiary === "shared" ? "shared" : (people[split.beneficiary] as string),
-        });
-      }
-      if (split.tags !== undefined && split.tags.length > 0) {
-        setSplitTags(ctx, {
-          transactionId: id,
-          splitId: row.id,
-          tagIds: split.tags.map((tag) => tags[tag] as string),
-        });
-      }
-    });
+  const accountOwners = new Map<string, AccountSeedInfo>();
+  const pendingTransactions: SeedTransactionInput[] = [];
+
+  const flushTransactions = (): void => {
+    if (pendingTransactions.length === 0) return;
+    const minted = seedTransactions(ctx, pendingTransactions, accountOwners);
+    Object.assign(transactions, minted);
+    transactionCount += pendingTransactions.length;
+    pendingTransactions.length = 0;
   };
 
   let accountCount = 0;
   let transactionCount = 0;
   for (const event of parsed.events) {
+    if (event.type !== "transaction.created") {
+      flushTransactions();
+    }
     switch (event.type) {
       case "person.created": {
         const existing = linked?.[event.key];
@@ -538,8 +498,8 @@ function applyEvents(
           kind: event.kind,
         }).id;
         break;
-      case "account.created":
-        accounts[event.key] = createAccount(ctx, {
+      case "account.created": {
+        const id = createAccount(ctx, {
           name: event.name,
           type: event.accountType,
           currency: event.currency,
@@ -553,8 +513,17 @@ function applyEvents(
             : { institutionId: institutions[event.institution] as string }),
           isSavings: event.isSavings,
         });
+        accounts[event.key] = id;
+        accountOwners.set(id, {
+          isPrivate: event.isPrivate,
+          ownerPersonId:
+            event.isPrivate && event.owners[0]?.person !== undefined
+              ? (people[event.owners[0].person] as string)
+              : undefined,
+        });
         accountCount += 1;
         break;
+      }
       case "tag.created":
         tags[event.key] = createTag(ctx, {
           name: event.name,
@@ -580,17 +549,36 @@ function applyEvents(
         });
         break;
       case "transaction.created": {
-        const id = createTransaction(ctx, {
+        const splits = (
+          event.splits ?? [
+            {
+              amountCents: event.amountCents,
+              ...(event.category === undefined ? {} : { category: event.category }),
+              ...(event.tags === undefined ? {} : { tags: event.tags }),
+            },
+          ]
+        ).map((s) => ({
+          amountCents: s.amountCents,
+          categoryId: s.category !== undefined ? categoryId(s.category) : null,
+          beneficiary:
+            s.beneficiary === undefined
+              ? undefined
+              : s.beneficiary === "shared"
+                ? "shared"
+                : (people[s.beneficiary] as string),
+          tagIds: s.tags?.map((t) => tags[t] as string) ?? [],
+        }));
+
+        pendingTransactions.push({
+          key: event.key,
           accountId: accounts[event.account] as string,
           postedOn: event.postedOn,
           amountCents: event.amountCents,
           description: event.description,
-          ...(event.payee === undefined ? {} : { payeeId: payees[event.payee] as string }),
+          payeeId: event.payee !== undefined ? (payees[event.payee] as string) : null,
+          notes: event.notes ?? null,
+          splits,
         });
-        transactions[event.key] = id;
-        transactionCount += 1;
-        if (event.notes !== undefined) updateTransaction(ctx, { id, notes: event.notes });
-        classify(event, id);
         break;
       }
       case "transaction.name-hidden":
@@ -606,6 +594,7 @@ function applyEvents(
         break;
     }
   }
+  flushTransactions();
   return {
     seed: parsed.seed,
     today: parsed.today,

@@ -265,3 +265,26 @@ describe("determinism", () => {
     }
   });
 });
+
+describe("perf profile", () => {
+  const perfOut = runSeed({ modules: defaultModules, profile: "perf" });
+  const perfTxns = perfOut.events.filter((e) => e.type === "transaction.created");
+
+  it("produces exactly 50,000 transactions across the household's accounts", () => {
+    expect(perfTxns).toHaveLength(50_000);
+    const accountsInPerf = new Set(perfTxns.map((t) => (t as TransactionCreatedEvent).account));
+    expect(accountsInPerf).toEqual(new Set(Object.values(ACCOUNT_KEYS)));
+  });
+
+  it("serialises identically on every run", () => {
+    const second = runSeed({ modules: defaultModules, profile: "perf" });
+    expect(serialize(second)).toBe(serialize(perfOut));
+  });
+
+  it("leaves default profile byte-identical whether specified explicitly or defaulted", () => {
+    const defaulted = runSeed({ modules: defaultModules });
+    const explicit = runSeed({ modules: defaultModules, profile: "default" });
+    expect(serialize(defaulted)).toBe(serialize(out));
+    expect(serialize(explicit)).toBe(serialize(out));
+  });
+});

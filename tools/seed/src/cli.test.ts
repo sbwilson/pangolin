@@ -40,6 +40,16 @@ describe("seed CLI", () => {
     expect(() => main(["--out", dir, "--bogus"])).toThrow();
   });
 
+  it("takes --profile perf and rejects invalid profiles", () => {
+    const file = main(["--out", dir, "--profile", "perf"]);
+    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    const txns = parsed.events.filter((e: { type: string }) => e.type === "transaction.created");
+    expect(txns).toHaveLength(50_000);
+    expect(() => main(["--out", dir, "--profile", "unknown"])).toThrow(
+      'Invalid --profile "unknown"',
+    );
+  });
+
   it("runs as a script", () => {
     const cli = fileURLToPath(new URL("./cli.ts", import.meta.url));
     const run = spawnSync(process.execPath, [cli, "--out", dir], { encoding: "utf8" });

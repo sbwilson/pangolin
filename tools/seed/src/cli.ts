@@ -7,7 +7,8 @@ import { defaultModules } from "./modules/index.ts";
 import { DEFAULT_SEED, DEFAULT_TODAY, runSeed } from "./run.ts";
 import { serialize } from "./serialize.ts";
 
-const USAGE = "Usage: pnpm seed --out <dir> [--seed <seed>] [--today YYYY-MM-DD]";
+const USAGE =
+  "Usage: pnpm seed --out <dir> [--seed <seed>] [--today YYYY-MM-DD] [--profile default|perf]";
 
 /** Parses the arguments, generates the seed and writes `<out>/seed.json`. Returns its path. */
 export function main(argv: readonly string[]): string {
@@ -17,12 +18,22 @@ export function main(argv: readonly string[]): string {
       out: { type: "string" },
       seed: { type: "string", default: DEFAULT_SEED },
       today: { type: "string", default: DEFAULT_TODAY },
+      profile: { type: "string", default: "default" },
     },
     strict: true,
     allowPositionals: false,
   });
   if (values.out === undefined || values.out === "") throw new Error(`--out is required\n${USAGE}`);
-  const output = runSeed({ seed: values.seed, today: values.today, modules: defaultModules });
+  const profile = values.profile ?? "default";
+  if (profile !== "default" && profile !== "perf") {
+    throw new Error(`Invalid --profile "${profile}": expected "default" or "perf"\n${USAGE}`);
+  }
+  const output = runSeed({
+    seed: values.seed,
+    today: values.today,
+    modules: defaultModules,
+    profile,
+  });
   const dir = resolve(values.out);
   mkdirSync(dir, { recursive: true });
   const file = join(dir, "seed.json");

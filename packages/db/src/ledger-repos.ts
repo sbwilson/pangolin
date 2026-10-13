@@ -391,7 +391,9 @@ function filterConditions(
       : hasSplit(
           sql`EXISTS (SELECT 1 FROM ${splitTag} INNER JOIN ${tag} ON ${tag.id} = ${splitTag.tagId} WHERE ${splitTag.splitId} = ${split.id} AND ${tag.id} = ${f.tagId} AND ${tag.deletedAt} IS NULL${tagScope === undefined ? sql`` : sql` AND ${tagScope}`})`,
         ),
-    f.payeeId === undefined ? undefined : sql`${projection.payeeId} = ${f.payeeId}`,
+    f.payeeId === undefined
+      ? undefined
+      : and(eq(transaction.payeeId, f.payeeId), sql`${projection.payeeId} = ${f.payeeId}`),
     f.minCents === undefined ? undefined : sql`abs(${transaction.amountCents}) >= ${f.minCents}`,
     f.maxCents === undefined ? undefined : sql`abs(${transaction.amountCents}) <= ${f.maxCents}`,
     f.type === "in" ? sql`${transaction.amountCents} > 0` : undefined,
@@ -406,7 +408,7 @@ function filterConditions(
 /** Rows strictly after (`older`) or before (newer than) a cursor in list order. */
 function pastCursor(cursor: TransactionCursor, direction: "after" | "before"): SQL {
   const op = direction === "after" ? sql`<` : sql`>`;
-  return sql`(${transaction.postedOn} ${op} ${cursor.postedOn} OR (${transaction.postedOn} = ${cursor.postedOn} AND ${transaction.id} ${op} ${cursor.id}))`;
+  return sql`(${transaction.postedOn}, ${transaction.id}) ${op} (${cursor.postedOn}, ${cursor.id})`;
 }
 
 /** The `transaction` and `split` repository. */

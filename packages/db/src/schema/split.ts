@@ -34,7 +34,7 @@ export const split = sqliteTable(
     updatedAt: text("updated_at").notNull(),
   },
   (t) => [
-    index("split_transaction_idx").on(t.transactionId),
+    index("split_transaction_idx").on(t.transactionId, t.categoryId),
     index("split_category_idx").on(t.categoryId),
     index("split_activity_idx").on(t.activityId),
     check(

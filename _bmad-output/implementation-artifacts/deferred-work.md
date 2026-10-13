@@ -387,3 +387,7 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-search-plan.md`
   summary: Remove or use `GET /api/ledger/search` from the web, and share the 200-character query limit between server and web.
   evidence: The web only calls `/transactions?q=`; `MAX_QUERY` duplicates `SEARCH_QUERY_MAX`.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-50-000-row-performance-plan.md`
+  summary: In `packages/db/src/classify-repos.ts:345`, `listForSplit` subquery evaluates all visible splits without `eq(split.id, splitId)`.
+  evidence: Pre-existing query in `listForSplit` does not filter the inner `split` subquery by the targeted `splitId`, unlike `listForSplits`.
