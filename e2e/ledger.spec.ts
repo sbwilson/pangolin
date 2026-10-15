@@ -38,6 +38,7 @@ interface Seed {
 
 interface ApiTransaction {
   id: string;
+  accountId?: string;
   postedOn: string;
   amountCents: number;
   descriptionRaw: string;
@@ -751,4 +752,159 @@ test("at 320 px viewport the transactions page has zero horizontal scroll (WCAG 
   } finally {
     await context.close();
   }
+});
+
+test("end-to-end ledger journey: filter through URL, split transaction, tag split, and set beneficiary (Done-when 2)", async ({
+  page,
+}) => {
+  await signInWithPassword(page, loadAccount());
+
+  const meRes = await page.request.get("/api/identity/me");
+  expect(meRes.status()).toBe(200);
+  const me = (await meRes.json()) as {
+    personId: string;
+    displayName: string;
+    partner: { personId: string; displayName: string } | null;
+  };
+
+  const accRes = await page.request.get("/api/accounts");
+  const accounts = (
+    (await accRes.json()) as { accounts: { id: string; name: string; isPrivate: boolean }[] }
+  ).accounts;
+  const sharedAccount = accounts.find((a) => !a.isPrivate);
+  expect(sharedAccount).toBeDefined();
+
+  const txnRes = await page.request.get(
+    `/api/ledger/transactions?account=${sharedAccount?.id}&type=out`,
+  );
+  const txns = ((await txnRes.json()) as ApiPage).transactions;
+  const target = txns.find((t) => t.splits.length === 1 && !HIDDEN.test(t.descriptionRaw));
+  expect(target).toBeDefined();
+  const txn = target as ApiTransaction;
+
+  // Filter through the URL parameters
+  await page.goto(
+    `/transactions?account=${sharedAccount?.id}&from=${txn.postedOn}&to=${txn.postedOn}&type=out`,
+  );
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname === "/transactions" &&
+      url.searchParams.get("account") === sharedAccount?.id &&
+      url.searchParams.get("from") === txn.postedOn &&
+      url.searchParams.get("to") === txn.postedOn &&
+      url.searchParams.get("type") === "out",
+  );
+
+  const table = page.getByRole("table", { name: "Transactions" });
+  await expect(table).toBeVisible();
+
+  // Open the transaction in the transaction sheet
+  await table.getByRole("button", { name: txn.descriptionRaw, exact: true }).first().click();
+  const sheet = page.getByRole("dialog", { name: txn.descriptionRaw });
+  await expect(sheet).toBeVisible();
+
+  // Split it into two splits summing to the parent
+  const parentAmount = txn.amountCents;
+  const split1Amount = Math.round(parentAmount / 2);
+  const split2Amount = parentAmount - split1Amount;
+
+  const toAmountText = (cents: number): string => {
+    const abs = Math.abs(cents);
+    const text = `${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+    return cents < 0 ? `-${text}` : text;
+  };
+
+  const split1Input = sheet.getByLabel("Split 1 amount");
+  await split1Input.fill(toAmountText(split1Amount));
+
+  await sheet.getByRole("button", { name: "Add split" }).click();
+  const split2Input = sheet.getByLabel("Split 2 amount");
+  await split2Input.fill(toAmountText(split2Amount));
+
+  const saveSplitsPut = page.waitForResponse(
+    (res) =>
+      res.url().endsWith(`/api/ledger/transactions/${txn.id}/splits`) &&
+      res.request().method() === "PUT" &&
+      res.status() === 200,
+  );
+  await sheet.getByRole("button", { name: "Save splits" }).click();
+  await saveSplitsPut;
+  await expect(sheet.getByText(/Remaining\s+\$0\.00/)).toBeVisible();
+
+  // Tag the split dynamically from available options without hardcoding seed contents
+  const split2Group = sheet.getByRole("group", { name: "Split 2" });
+  await expect(split2Group).toBeVisible();
+
+  const tagCombobox = split2Group.getByRole("combobox", { name: "Add a tag" });
+  await tagCombobox.click();
+  const tagListbox = split2Group.getByRole("listbox", { name: "Add a tag" });
+  const tagOption = tagListbox.getByRole("option").first();
+  const tagName = (await tagOption.textContent())?.trim() ?? "";
+  expect(tagName).not.toBe("");
+
+  const tagPut = page.waitForResponse(
+    (res) =>
+      res.url().includes(`/api/ledger/transactions/${txn.id}/splits/`) &&
+      res.url().endsWith("/tags") &&
+      res.request().method() === "PUT" &&
+      res.status() === 200,
+  );
+  await tagOption.click();
+  await tagPut;
+  await expect(split2Group.getByRole("button", { name: `Remove tag ${tagName}` })).toBeVisible();
+
+  // Set the split's beneficiary to Alex and await the PATCH response
+  const beneficiarySelect = split2Group.getByLabel("Split 2 beneficiary");
+  const beneficiaryPatch = page.waitForResponse(
+    (res) =>
+      res.url().includes(`/api/ledger/transactions/${txn.id}/splits/`) &&
+      res.request().method() === "PATCH" &&
+      res.status() === 200,
+  );
+  await beneficiarySelect.selectOption({ label: SIGNED_UP_AS["person-a"] });
+  await beneficiaryPatch;
+  await expect(beneficiarySelect).toHaveValue(me.personId);
+
+  // Verify through API
+  const afterRes = await page.request.get(`/api/ledger/transactions/${txn.id}`);
+  expect(afterRes.status()).toBe(200);
+  const afterBody = (await afterRes.json()) as {
+    transaction: {
+      amountCents: number;
+      remainingCents: number;
+      splits: { amountCents: number; beneficiary: string; tags: { name: string }[] }[];
+    };
+  };
+  expect(afterBody.transaction.splits).toHaveLength(2);
+  expect(afterBody.transaction.remainingCents).toBe(0);
+  const [firstSplit, secondSplit] = afterBody.transaction.splits;
+  expect(firstSplit).toBeDefined();
+  expect(secondSplit).toBeDefined();
+  if (firstSplit === undefined || secondSplit === undefined) throw new Error("Expected 2 splits");
+  expect(firstSplit.amountCents + secondSplit.amountCents).toBe(txn.amountCents);
+  expect(secondSplit.beneficiary).toBe(me.personId);
+  expect(secondSplit.tags.map((t) => t.name)).toContain(tagName);
+
+  // Restore the transaction to keep the seed intact for subsequent specs
+  await split2Group.getByRole("button", { name: "Remove split 2" }).click();
+  await split1Input.fill(toAmountText(parentAmount));
+  const restorePut = page.waitForResponse(
+    (res) =>
+      res.url().endsWith(`/api/ledger/transactions/${txn.id}/splits`) &&
+      res.request().method() === "PUT" &&
+      res.status() === 200,
+  );
+  await sheet.getByRole("button", { name: "Save splits" }).click();
+  await restorePut;
+  await expect(split2Group).toHaveCount(0);
+
+  const restoredRes = await page.request.get(`/api/ledger/transactions/${txn.id}`);
+  const restoredBody = (await restoredRes.json()) as {
+    transaction: { splits: { amountCents: number }[] };
+  };
+  expect(restoredBody.transaction.splits).toHaveLength(1);
+  expect(restoredBody.transaction.splits[0]?.amountCents).toBe(parentAmount);
+
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
 });
