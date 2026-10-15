@@ -1,9 +1,9 @@
 import type { Id } from "@pangolin/shared";
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
-import { idInput } from "../accounts/inputs.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { idInput } from "../inputs.ts";
 import {
   ALIAS_MATCH_KINDS,
   type AliasMatchKind,

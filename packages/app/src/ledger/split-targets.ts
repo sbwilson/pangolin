@@ -48,6 +48,6 @@ export function privateOwner(tx: TxRepos, viewer: Viewer, accountId: string): st
   const account = tx.accounts.findVisible(viewer, accountId);
   if (account === undefined || !account.isPrivate) return null;
   const [owner] = tx.accounts.owners(accountId);
-  if (owner === undefined) throw new Error(`Private account ${accountId} has no owner`);
+  if (owner === undefined) throw new AppError("Conflict", "This account has no owner");
   return owner.personId;
 }

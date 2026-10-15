@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { dayInput } from "../accounts/inputs.ts";
+import { dayInput } from "../inputs.ts";
 
 /** The transaction field rules `createTransaction` and `updateTransaction` share, one message each. */
 

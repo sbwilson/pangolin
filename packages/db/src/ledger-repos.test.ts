@@ -22,6 +22,7 @@ import {
   listTransactions,
   personViewer,
   raiseReviewItem,
+  registerTransactionNeedsReviewSync,
   resolveReviewItem,
   searchTransactions,
   setSplitField,
@@ -57,6 +58,7 @@ let privateA: Id<"Account">;
 let privateB: Id<"Account">;
 
 beforeEach(() => {
+  registerTransactionNeedsReviewSync();
   dir = mkdtempSync(join(tmpdir(), "pangolin-ledger-"));
   db = openDatabase(join(dir, "test.sqlite"));
   migrate(db, loadMigrations(packageMigrationsDir));

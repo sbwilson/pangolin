@@ -1,3 +1,5 @@
+import { SEARCH_QUERY_MAX } from "@pangolin/shared";
+
 /** `?token=` of a one-time link: a non-empty string, else absent (a bad value falls back). */
 export function validateTokenSearch(search: Record<string, unknown>): { token?: string } {
   const { token } = search;
@@ -7,6 +9,11 @@ export function validateTokenSearch(search: Record<string, unknown>): { token?: 
 /** Paths that carry a one-time link's token. */
 const LINK_PATHS = ["/setup", "/recover"];
 
+/** Normalize path by removing trailing slashes; single slash root remains "/". */
+export function normalizePath(pathname: string): string {
+  return pathname.replace(/\/+$/, "") || "/";
+}
+
 /**
  * What the root layout does with a location's search: the token is read only on `/setup` and
  * `/recover`, and any search at all on those paths is stripped (valid or not).
@@ -15,7 +22,8 @@ export function oneTimeLink(
   pathname: string,
   search: Record<string, unknown>,
 ): { token: string; strip: boolean } {
-  if (!LINK_PATHS.includes(pathname)) return { token: "", strip: false };
+  const path = normalizePath(pathname);
+  if (!LINK_PATHS.includes(path)) return { token: "", strip: false };
   return { token: validateTokenSearch(search).token ?? "", strip: Object.keys(search).length > 0 };
 }
 
@@ -67,8 +75,9 @@ function isRealDay(value: string): boolean {
 const CURSOR = /^\d{4}-\d{2}-\d{2}~[0-9A-Za-z_-]{1,100}$/;
 const WORD = /^[0-9A-Za-z_-]{1,100}$/;
 const COUNT = /^\d{1,15}$/;
+
 /** The server's limit on `q`. */
-export const MAX_QUERY = 200;
+export const MAX_QUERY = SEARCH_QUERY_MAX;
 
 /**
  * What `/transactions` reads from the URL: a known name with a well-formed value is kept, anything

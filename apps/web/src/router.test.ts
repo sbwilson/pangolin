@@ -90,6 +90,8 @@ describe("one-time link search", () => {
   it("reads the token only on /setup and /recover", () => {
     expect(oneTimeLink("/setup", { token: "x" })).toEqual({ token: "x", strip: true });
     expect(oneTimeLink("/recover", { token: "x" })).toEqual({ token: "x", strip: true });
+    expect(oneTimeLink("/setup/", { token: "t1" })).toEqual({ token: "t1", strip: true });
+    expect(oneTimeLink("/recover/", { token: "t2" })).toEqual({ token: "t2", strip: true });
     expect(oneTimeLink("/transactions", { token: "x" })).toEqual({ token: "", strip: false });
     expect(oneTimeLink("/", { token: "x" })).toEqual({ token: "", strip: false });
   });

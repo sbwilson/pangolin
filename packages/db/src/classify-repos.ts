@@ -344,7 +344,10 @@ export function createTagRepo(orm: Orm, check: () => void): TagRepo {
                     eq(splitTag.splitId, splitId),
                     inArray(
                       splitTag.splitId,
-                      orm.select({ id: split.id }).from(split).where(visible),
+                      orm
+                        .select({ id: split.id })
+                        .from(split)
+                        .where(and(eq(split.id, splitId), visible)),
                     ),
                   ),
                 ),

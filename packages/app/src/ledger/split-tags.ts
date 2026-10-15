@@ -2,10 +2,9 @@ import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { idInput } from "../inputs.ts";
 import { write } from "../write.ts";
 import { requireEntryOpen } from "./closed-lock.ts";
-import type { LedgerTransaction } from "./list-transactions.ts";
-import "./needs-review.ts";
 import { privateOwner } from "./split-targets.ts";
 import {
   auditSnapshot,
@@ -13,12 +12,13 @@ import {
   tagsOf,
   toLedgerTransaction,
 } from "./transaction-view.ts";
+import type { LedgerTransaction } from "./types.ts";
 
 export const setSplitTagsInput = z
   .object({
-    transactionId: z.string().min(1).max(100),
-    splitId: z.string().min(1).max(100),
-    tagIds: z.array(z.string().min(1).max(100)).max(100),
+    transactionId: idInput,
+    splitId: idInput,
+    tagIds: z.array(idInput).max(100),
   })
   .strict();
 export type SetSplitTagsInput = z.input<typeof setSplitTagsInput>;
@@ -41,12 +41,16 @@ export function setSplitTags(ctx: UseCaseContext, input: SetSplitTagsInput): Led
     const target = before.splits.find((s) => s.id === parsed.splitId);
     if (target === undefined) throw new AppError("NotFound", "Split not found");
     const wanted = [...new Set(parsed.tagIds)];
-    const isPublic = privateOwner(tx, ctx.viewer, before.accountId) === null;
+    const owner = privateOwner(tx, ctx.viewer, before.accountId);
+    const isPublic = owner === null;
     for (const id of wanted) {
       const tag = tx.tags.find(ctx.viewer, id);
       if (tag === undefined) throw new AppError("NotFound", "Tag not found");
       if (isPublic && tag.scopePersonId !== null) {
         throw new AppError("Conflict", "This tag cannot be used on a shared account yet");
+      }
+      if (!isPublic && tag.scopePersonId !== null && tag.scopePersonId !== owner) {
+        throw new AppError("Conflict", "This tag cannot be used on this private account");
       }
     }
     const tagsBefore = tagsOf(tx, ctx.viewer, before);

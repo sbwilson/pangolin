@@ -9,7 +9,7 @@ import type {
 } from "../ports/unit-of-work.ts";
 import { redact } from "../redact.ts";
 import type { Viewer } from "../viewer.ts";
-import type { LedgerSplit, LedgerTransaction } from "./list-transactions.ts";
+import type { LedgerSplit, LedgerTransaction } from "./types.ts";
 
 /**
  * The stored columns of a transaction and its splits, for an audit row's before and after: the

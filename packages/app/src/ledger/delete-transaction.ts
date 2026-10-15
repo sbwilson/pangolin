@@ -4,13 +4,14 @@ import { syncClosingBalance } from "../accounts/closing-balance.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { requireRecentAuth } from "../identity/reauth.ts";
+import { idInput } from "../inputs.ts";
 import { resolveReviewItemsForEntity } from "../system/review-items.ts";
 import { write } from "../write.ts";
 import { requireEntryOpen } from "./closed-lock.ts";
 import { transactionEntityRef } from "./needs-review.ts";
 import { auditSnapshot, storedTransaction } from "./transaction-view.ts";
 
-export const deleteTransactionInput = z.object({ id: z.string().min(1).max(100) }).strict();
+export const deleteTransactionInput = z.object({ id: idInput }).strict();
 export type DeleteTransactionInput = z.input<typeof deleteTransactionInput>;
 
 /**

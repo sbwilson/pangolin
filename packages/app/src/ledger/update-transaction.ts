@@ -3,21 +3,21 @@ import { z } from "zod";
 import { syncClosingBalance } from "../accounts/closing-balance.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { idInput } from "../inputs.ts";
 import { write } from "../write.ts";
 import { requireEntryOpen } from "./closed-lock.ts";
 import { descriptionField, notesField, postedOnField } from "./fields.ts";
-import type { LedgerTransaction } from "./list-transactions.ts";
-import "./needs-review.ts";
 import {
   auditSnapshot,
   storedTransaction,
   tagsOf,
   toLedgerTransaction,
 } from "./transaction-view.ts";
+import type { LedgerTransaction } from "./types.ts";
 
 export const updateTransactionInput = z
   .object({
-    id: z.string().min(1).max(100),
+    id: idInput,
     /** `YYYY-MM-DD`. Manual rows only. */
     postedOn: postedOnField.optional(),
     /** Signed integer minor units. Manual rows only. */

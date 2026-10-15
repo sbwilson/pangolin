@@ -353,6 +353,11 @@ export {
   listTransactionsInput,
 } from "./ledger/list-transactions.ts";
 export {
+  registerTransactionNeedsReviewSync,
+  TRANSACTION_ENTITY_PREFIX,
+  transactionEntityRef,
+} from "./ledger/needs-review.ts";
+export {
   mayOverwrite,
   sourceRank,
 } from "./ledger/provenance.ts";

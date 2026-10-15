@@ -4,23 +4,24 @@ import { z } from "zod";
 import { syncClosingBalance } from "../accounts/closing-balance.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { idInput } from "../inputs.ts";
 import type { SplitRow, TransactionRow } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
 import { requireOpenOn } from "./closed-lock.ts";
 import { descriptionField, postedOnField } from "./fields.ts";
 import { fingerprintManual, MANUAL_FINGERPRINT_VERSION } from "./fingerprint.ts";
-import "./needs-review.ts";
+import { privateOwner } from "./split-targets.ts";
 
 export const createTransactionInput = z
   .object({
-    accountId: z.string().min(1).max(100),
+    accountId: idInput,
     /** `YYYY-MM-DD`. */
     postedOn: postedOnField,
     /** Signed integer minor units. */
     amountCents: z.int(),
     description: descriptionField,
     /** A payee the viewer can see; omitted or null leaves the transaction without one. */
-    payeeId: z.string().min(1).max(100).nullish(),
+    payeeId: idInput.nullish(),
   })
   .strict();
 export type CreateTransactionInput = z.input<typeof createTransactionInput>;
@@ -46,18 +47,21 @@ export function createTransaction(
     const account = tx.accounts.findVisible(ctx.viewer, parsed.accountId);
     if (account === undefined) throw new AppError("NotFound", "Account not found");
     requireOpenOn(ctx, tx, account, parsed.postedOn);
+    const owner = privateOwner(tx, ctx.viewer, account.id);
+    const isPublic = owner === null;
     let beneficiary = "shared";
-    if (account.isPrivate) {
-      const [owner] = tx.accounts.owners(account.id);
-      if (owner === undefined) throw new Error(`Private account ${account.id} has no owner`);
-      beneficiary = owner.personId;
+    if (owner !== null) {
+      beneficiary = owner;
     }
     let payeeId: Id<"Payee"> | null = null;
     if (parsed.payeeId !== undefined && parsed.payeeId !== null) {
       const payee = tx.payees.find(ctx.viewer, parsed.payeeId);
       if (payee === undefined) throw new AppError("NotFound", "Payee not found");
-      if (!account.isPrivate && payee.scopePersonId !== null) {
+      if (isPublic && payee.scopePersonId !== null) {
         throw new AppError("Conflict", "This payee cannot be used on a shared account yet");
+      }
+      if (!isPublic && payee.scopePersonId !== null && payee.scopePersonId !== owner) {
+        throw new AppError("Conflict", "This payee cannot be used on this private account");
       }
       payeeId = payee.id as Id<"Payee">;
     }

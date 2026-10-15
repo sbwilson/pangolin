@@ -2,6 +2,7 @@ import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { idInput } from "../inputs.ts";
 import {
   SPLIT_SOURCES,
   type SplitRow,
@@ -10,8 +11,6 @@ import {
 } from "../ports/unit-of-work.ts";
 import { type Audit, write } from "../write.ts";
 import { requireEntryOpen } from "./closed-lock.ts";
-import type { LedgerTransaction } from "./list-transactions.ts";
-import "./needs-review.ts";
 import { mayOverwrite } from "./provenance.ts";
 import {
   privateOwner,
@@ -26,6 +25,7 @@ import {
   tagsOf,
   toLedgerTransaction,
 } from "./transaction-view.ts";
+import type { LedgerTransaction } from "./types.ts";
 
 /** The classified fields of a split that carry provenance. `payee_id` lives on the transaction. */
 export const SPLIT_FIELDS = [
@@ -39,11 +39,11 @@ export type SplitField = (typeof SPLIT_FIELDS)[number];
 
 export const setSplitFieldInput = z
   .object({
-    transactionId: z.string().min(1).max(100),
-    splitId: z.string().min(1).max(100),
+    transactionId: idInput,
+    splitId: idInput,
     field: z.enum(SPLIT_FIELDS),
     /** An ID (category, activity, tax category), `shared` or a person ID (beneficiary), basis points, or null to clear. */
-    value: z.union([z.string().min(1).max(100), z.int(), z.null()]),
+    value: z.union([idInput, z.int(), z.null()]),
     /** Internal callers only; HTTP always passes `user`. */
     source: z.enum(SPLIT_SOURCES).default("user"),
   })

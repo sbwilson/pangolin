@@ -10,8 +10,9 @@
  * is $142.00 to $142.99, `142.8` is $142.80 to $142.89, `142.85` exactly $142.85.
  */
 
-/** The longest query a search takes. */
-export const SEARCH_QUERY_MAX = 200;
+import { SEARCH_QUERY_MAX } from "@pangolin/shared";
+
+export { SEARCH_QUERY_MAX };
 
 /** The most terms a search uses; further terms are ignored, so a query stays cheap to run. */
 export const SEARCH_MAX_TERMS = 8;

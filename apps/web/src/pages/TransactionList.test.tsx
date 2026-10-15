@@ -204,6 +204,17 @@ describe("TransactionList search box", () => {
   });
 });
 
+describe("TransactionList account detail pinning", () => {
+  it("ignores stray account query parameter when accountId prop is provided", async () => {
+    vi.mocked(api.fetchTransactions).mockResolvedValue(list([row]));
+    renderList({ account: "stray-acc" }, "pinned-acc");
+    await waitFor(() =>
+      expect(api.fetchTransactions).toHaveBeenCalledWith({ account: "pinned-acc" }),
+    );
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+  });
+});
+
 const makeTxn = (
   id: string,
   description: string,

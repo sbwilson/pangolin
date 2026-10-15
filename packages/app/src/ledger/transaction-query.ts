@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { dayInput, idInput } from "../accounts/inputs.ts";
 import { AppError } from "../errors.ts";
+import { dayInput, idInput } from "../inputs.ts";
 import type { TransactionCursor, TransactionFilter } from "../ports/unit-of-work.ts";
 import { SEARCH_QUERY_MAX } from "./search-query.ts";
 

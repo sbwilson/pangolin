@@ -177,9 +177,14 @@ export function TransactionList({ search, onSearch, title, accountId }: Transact
   const [reauthRequired, setReauthRequired] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  const effectiveSearch = useMemo(() => {
+    if (accountId === undefined) return search;
+    const { account: _stray, ...rest } = search;
+    return rest;
+  }, [search, accountId]);
   const listSearch = useMemo(
-    () => (accountId === undefined ? search : { ...search, account: accountId }),
-    [search, accountId],
+    () => (accountId === undefined ? search : { ...effectiveSearch, account: accountId }),
+    [effectiveSearch, search, accountId],
   );
   const list = useQuery({
     queryKey: ["ledger", "transactions", listSearch],
@@ -245,7 +250,7 @@ export function TransactionList({ search, onSearch, title, accountId }: Transact
   const [resetKey, setResetKey] = useState(0);
   const clear = () => {
     setResetKey((k) => k + 1);
-    onSearch(() => clearedFilters(search));
+    onSearch(() => clearedFilters(effectiveSearch));
   };
 
   interface SplitSnapshot {
@@ -492,12 +497,12 @@ export function TransactionList({ search, onSearch, title, accountId }: Transact
     }
   };
 
-  const chip = activeChip(search);
-  const kind = rangeKind(search.from, search.to, today);
+  const chip = activeChip(effectiveSearch);
+  const kind = rangeKind(effectiveSearch.from, effectiveSearch.to, today);
   const showCustom = customOpen || kind === "custom";
   const data = list.data;
-  const filtered = hasFilters(search);
-  const clearable = hasClearableFilters(search);
+  const filtered = hasFilters(effectiveSearch);
+  const clearable = hasClearableFilters(effectiveSearch);
 
   const setPreset = (preset: "quarter" | "fy") => {
     setCustomOpen(false);

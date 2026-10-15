@@ -1,39 +1,28 @@
-import { formatDate, formatInstant, parseDate } from "@pangolin/shared/temporal";
+import { formatDate, formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { dayInput, idInput } from "../inputs.ts";
 import type { TransactionWithSplits, VisibleTransaction } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
 import { requireEntryOpen, requireOpenOn } from "./closed-lock.ts";
-import type { LedgerTransaction } from "./list-transactions.ts";
 import {
   auditSnapshot,
   storedTransaction,
   tagsOf,
   toLedgerTransaction,
 } from "./transaction-view.ts";
+import type { LedgerTransaction } from "./types.ts";
 
 /** A hiding lasts at most this many calendar months from today. */
 export const MAX_HIDE_MONTHS = 12;
 
-const dayInput = z.string().refine(
-  (value) => {
-    try {
-      parseDate(value);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  { message: "Expected a real YYYY-MM-DD date" },
-);
-
 export const hideTransactionNameInput = z
-  .object({ id: z.string().min(1).max(100), until: dayInput.optional() })
+  .object({ id: idInput, until: dayInput.optional() })
   .strict();
 export type HideTransactionNameInput = z.input<typeof hideTransactionNameInput>;
 
-export const unhideTransactionNameInput = z.object({ id: z.string().min(1).max(100) }).strict();
+export const unhideTransactionNameInput = z.object({ id: idInput }).strict();
 export type UnhideTransactionNameInput = z.input<typeof unhideTransactionNameInput>;
 
 function personOf(ctx: UseCaseContext): string {

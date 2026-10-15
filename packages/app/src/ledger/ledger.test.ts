@@ -29,13 +29,14 @@ import { fingerprintManual, MANUAL_FINGERPRINT_VERSION } from "./fingerprint.ts"
 import { getTransaction } from "./get-transaction.ts";
 import { hideTransactionName, unhideTransactionName } from "./hide-name.ts";
 import { listAllTransactions, listTransactions } from "./list-transactions.ts";
-import { transactionEntityRef } from "./needs-review.ts";
+import { registerTransactionNeedsReviewSync, transactionEntityRef } from "./needs-review.ts";
 import { setSplits } from "./set-splits.ts";
 import { updateTransaction } from "./update-transaction.ts";
 
 const clock = manualClock("2026-09-27T00:00:00Z");
 
 function setup() {
+  registerTransactionNeedsReviewSync();
   const uow = memoryUnitOfWork();
   const newId = sequentialIds();
   const as = (viewer: Viewer): UseCaseContext => ({ viewer, clock, newId, uow });
@@ -146,6 +147,50 @@ describe("ledger.createTransaction with a payee", () => {
     expect(createTransaction(as(a), { ...txn(privateA), payeeId: mine.id })).toBeTruthy();
     expect(() => createTransaction(as(a), { ...txn(shared), payeeId: mine.id })).toThrow(
       expect.objectContaining({ code: "Conflict" }),
+    );
+  });
+
+  it("prevents system viewer from attaching person A's scoped payee to person B's private account", () => {
+    const { sys, as, a, b, privateA } = setup();
+    const privateB = createAccount(sys, {
+      name: "B private",
+      type: "savings",
+      currency: "AUD",
+      isPrivate: true,
+      owners: [{ personId: b, shareBp: 10000 }],
+    });
+    const payeeA = createPayee(as(a), { name: "A's Bookshop", originAccountId: privateA });
+    expect(() => createTransaction(sys, { ...txn(privateB), payeeId: payeeA.id })).toThrow(
+      expect.objectContaining({
+        code: "Conflict",
+        message: "This payee cannot be used on this private account",
+      }),
+    );
+  });
+
+  it("throws Conflict when private account has no owner", () => {
+    const { uow, sys } = setup();
+    const brokenAccId = "broken-private";
+    uow.transaction((tx) => {
+      tx.accounts.insert(
+        {
+          id: brokenAccId as never,
+          name: "Broken",
+          type: "savings",
+          currency: "AUD",
+          institutionId: null,
+          isPrivate: true,
+          closedOn: null,
+          openedOn: null,
+          isSavings: false,
+          createdAt: clock.now().toString(),
+          updatedAt: clock.now().toString(),
+        },
+        [],
+      );
+    });
+    expect(() => createTransaction(sys, txn(brokenAccId))).toThrow(
+      expect.objectContaining({ code: "Conflict", message: "This account has no owner" }),
     );
   });
 });

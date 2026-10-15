@@ -1,9 +1,9 @@
 import type { Id } from "@pangolin/shared";
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
-import { dayInput, idInput } from "../accounts/inputs.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { dayInput, idInput } from "../inputs.ts";
 import type { ActivityRow, TxRepos } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
 import { auditScope, nameInput, originInput, scopeFor } from "./scope.ts";

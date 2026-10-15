@@ -2,11 +2,10 @@ import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { idInput } from "../inputs.ts";
 import type { SplitRow, SplitSource } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
 import { requireEntryOpen } from "./closed-lock.ts";
-import type { LedgerTransaction } from "./list-transactions.ts";
-import "./needs-review.ts";
 import {
   privateOwner,
   requireActivity,
@@ -20,27 +19,28 @@ import {
   tagsOf,
   toLedgerTransaction,
 } from "./transaction-view.ts";
+import type { LedgerTransaction } from "./types.ts";
 
 export const MAX_SPLITS = 50;
 
 const splitInput = z
   .object({
     /** An existing split of this transaction (updated in place); omit to add a new one. */
-    id: z.string().min(1).max(100).optional(),
+    id: idInput.optional(),
     amountCents: z.int(),
-    categoryId: z.string().min(1).max(100).nullable().optional(),
-    activityId: z.string().min(1).max(100).nullable().optional(),
-    beneficiary: z.string().min(1).max(100).optional(),
-    taxCategoryId: z.string().min(1).max(100).nullable().optional(),
+    categoryId: idInput.nullable().optional(),
+    activityId: idInput.nullable().optional(),
+    beneficiary: idInput.optional(),
+    taxCategoryId: idInput.nullable().optional(),
     deductibleBp: z.int().min(0).max(10_000).nullable().optional(),
     memo: z.string().trim().max(1000).nullable().optional(),
-    propertyId: z.string().min(1).max(100).nullable().optional(),
+    propertyId: idInput.nullable().optional(),
   })
   .strict();
 
 export const setSplitsInput = z
   .object({
-    transactionId: z.string().min(1).max(100),
+    transactionId: idInput,
     splits: z.array(splitInput).min(1).max(MAX_SPLITS),
   })
   .strict();

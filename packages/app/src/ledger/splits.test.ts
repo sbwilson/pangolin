@@ -701,6 +701,30 @@ describe("ledger.setSplitTags", () => {
       ),
     ).toBe("NotFound");
   });
+
+  it("prevents system viewer from attaching person A's scoped tag to person B's private account", () => {
+    const { sys, b, of, a, privateA } = setup();
+    const privateB = createAccount(sys, {
+      name: "B private",
+      type: "savings",
+      currency: "AUD",
+      isPrivate: true,
+      owners: [{ personId: b, shareBp: 10000 }],
+    });
+    const privB = createTransaction(of(b), {
+      accountId: privateB,
+      postedOn: "2026-09-01",
+      amountCents: -500,
+      description: "B item",
+    });
+    const privBSplit = getTransaction(of(b), { id: privB }).splits[0]?.id as string;
+    const scopedA = createTag(of(a), { name: "A tag", originAccountId: privateA });
+    expect(
+      codeOf(() =>
+        setSplitTags(sys, { transactionId: privB, splitId: privBSplit, tagIds: [scopedA.id] }),
+      ),
+    ).toBe("Conflict");
+  });
 });
 
 describe("registerSplitFieldListener", () => {

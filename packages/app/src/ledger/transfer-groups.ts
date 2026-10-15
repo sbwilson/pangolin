@@ -2,17 +2,16 @@ import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { idInput } from "../inputs.ts";
 import { write } from "../write.ts";
 import { requireEntryOpen } from "./closed-lock.ts";
-import type { LedgerTransaction } from "./list-transactions.ts";
 import {
   auditSnapshot,
   storedTransaction,
   tagsOf,
   toLedgerTransaction,
 } from "./transaction-view.ts";
-
-const idInput = z.string().min(1).max(100);
+import type { LedgerTransaction } from "./types.ts";
 
 export const createTransferGroupInput = z
   .object({ transactionIds: z.tuple([idInput, idInput]) })

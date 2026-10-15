@@ -71,6 +71,7 @@ import {
   recoveryBundleStatus,
   reEnrolmentUrl,
   regenerateRecoveryCodes,
+  registerTransactionNeedsReviewSync,
   rejoinAccount,
   revokeMyReEnrolmentLinks,
   type SetSplitFieldInput,
@@ -776,6 +777,7 @@ function bundleUnconfirmed(deps: AppDeps): boolean {
  * served with a per-request CSP nonce.
  */
 export function createApp(deps: AppDeps): Hono<SessionEnv> {
+  registerTransactionNeedsReviewSync();
   const app = new Hono<SessionEnv>();
   app.onError(createErrorHandler(deps.logInternalError));
   app.use("*", cspOnHtml);

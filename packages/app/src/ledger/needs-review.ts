@@ -12,8 +12,11 @@ export function transactionEntityRef(id: string): string {
   return `${TRANSACTION_ENTITY_PREFIX}${id}`;
 }
 
-registerEntitySync(TRANSACTION_ENTITY_PREFIX, (tx, ctx, entityRef) => {
-  const id = entityRef.slice(TRANSACTION_ENTITY_PREFIX.length);
-  const open = tx.reviewItems.countOpenForEntity(entityRef) > 0;
-  tx.transactions.setNeedsReview(id, open, formatInstant(ctx.clock.now()));
-});
+/** Registers the sync listener that derives `transaction.needs_review` from open review items. */
+export function registerTransactionNeedsReviewSync(): void {
+  registerEntitySync(TRANSACTION_ENTITY_PREFIX, (tx, ctx, entityRef) => {
+    const id = entityRef.slice(TRANSACTION_ENTITY_PREFIX.length);
+    const open = tx.reviewItems.countOpenForEntity(entityRef) > 0;
+    tx.transactions.setNeedsReview(id, open, formatInstant(ctx.clock.now()));
+  });
+}

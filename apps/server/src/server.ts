@@ -7,6 +7,7 @@ import {
   type Clock,
   type JobRegistration,
   newId,
+  registerTransactionNeedsReviewSync,
   type Schedule,
   systemClock,
   type UnitOfWork,
@@ -142,6 +143,7 @@ function openDemo(options: StartOptions): Opened {
  * admin socket. Throws (after closing the database) when a migration or the seed fails.
  */
 export async function startServer(options: StartOptions): Promise<RunningServer> {
+  registerTransactionNeedsReviewSync();
   const { config } = options;
   const demo = config.demo;
   const { db, uow, clock, schemaVersion, expectedSchemaVersion, timezone, lock } = demo

@@ -2,8 +2,8 @@
 // origin account and never a client-supplied scope.
 import type { Id } from "@pangolin/shared";
 import { z } from "zod";
-import { idInput } from "../accounts/inputs.ts";
 import { AppError } from "../errors.ts";
+import { idInput } from "../inputs.ts";
 import type { TxRepos } from "../ports/unit-of-work.ts";
 import type { Viewer } from "../viewer.ts";
 

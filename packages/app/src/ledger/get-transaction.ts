@@ -1,10 +1,11 @@
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { idInput } from "../inputs.ts";
 import type { LedgerTransaction } from "./list-transactions.ts";
 import { toLedgerTransaction } from "./transaction-view.ts";
 
-export const getTransactionInput = z.object({ id: z.string().min(1).max(100) }).strict();
+export const getTransactionInput = z.object({ id: idInput }).strict();
 export type GetTransactionInput = z.input<typeof getTransactionInput>;
 
 /**

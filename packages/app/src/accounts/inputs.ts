@@ -1,32 +1,19 @@
 import type { Id } from "@pangolin/shared";
-import { parseDate } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import { AppError } from "../errors.ts";
+import { dayInput, idInput } from "../inputs.ts";
 import type { AccountOwnerRow, TxRepos } from "../ports/unit-of-work.ts";
 import type { Viewer } from "../viewer.ts";
 
+export { dayInput, idInput };
+
 export const FULL_SHARE_BP = 10_000;
-
-/** A real `YYYY-MM-DD` calendar date. */
-export const dayInput = z.string().refine(
-  (value) => {
-    try {
-      parseDate(value);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  { message: "Expected a real YYYY-MM-DD date" },
-);
-
-export const idInput = z.string().min(1).max(100);
 
 export const ownersInput = z
   .array(
     z
       .object({
-        personId: z.string().min(1).max(100),
+        personId: idInput,
         /** Basis points: 5000 = 50%. */
         shareBp: z.int().min(1).max(FULL_SHARE_BP),
       })
