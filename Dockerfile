@@ -59,6 +59,7 @@ RUN --mount=type=secret,id=ca,required=false \
 
 # ---- runtime: one Node process serving the PWA and /api/* ----
 FROM node:26-trixie-slim AS runtime
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
 # The release workflow passes the tag (e.g. v1.2.3); local builds report "dev".
 ARG PANGOLIN_VERSION=dev
 ARG PANGOLIN_TEST_FORCE_UNHEALTHY
