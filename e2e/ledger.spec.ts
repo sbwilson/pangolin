@@ -630,8 +630,12 @@ test("bulk categorise and undo on desktop", async ({ page }) => {
 
   const row0 = table.locator("tbody tr").filter({ has: cb0 });
   const row1 = table.locator("tbody tr").filter({ has: cb1 });
-  await expect(row0.getByRole("button", { name: categoryName, exact: true })).toBeVisible();
-  await expect(row1.getByRole("button", { name: categoryName, exact: true })).toBeVisible();
+  await expect(
+    row0.getByRole("button", { name: new RegExp(escapeRegExp(categoryName)) }),
+  ).toBeVisible();
+  await expect(
+    row1.getByRole("button", { name: new RegExp(escapeRegExp(categoryName)) }),
+  ).toBeVisible();
 
   const undo = toast.getByRole("button", { name: "Undo" });
   await undo.click();
