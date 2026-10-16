@@ -67,7 +67,7 @@ export function AccountPage() {
           search={search}
           onSearch={(update) => void navigate({ search: (prev) => update(prev) })}
           title={
-            <h3 id="account-transactions" className="m-0">
+            <h3 id="transactions" className="m-0">
               Transactions
             </h3>
           }

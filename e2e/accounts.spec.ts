@@ -137,7 +137,9 @@ test("an account's page shows its balance, freshness and only its transactions i
   const noun = expected.summary.count === 1 ? "transaction" : "transactions";
   await expect(page.getByText(new RegExp(`^${expected.summary.count} ${noun} ·`))).toBeVisible();
   const table = page.getByRole("table", { name: "Transactions" });
-  await expect(table.getByRole("checkbox")).toHaveCount(Math.min(50, expected.page.total));
+  await expect(table.locator("tbody").getByRole("checkbox")).toHaveCount(
+    Math.min(50, expected.page.total),
+  );
   // The page is already about one account: no Account filter, and the URL keeps the range only.
   await expect(page.getByRole("combobox", { name: "Account" })).toHaveCount(0);
   await page.getByRole("combobox", { name: "Type" }).selectOption("out");
