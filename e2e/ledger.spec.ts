@@ -677,6 +677,7 @@ test("mark shared refuses private-account rows, names each refused row, and allo
   page,
 }) => {
   await signInWithPassword(page, loadAccount());
+  await expect(page.getByText(`Signed in as ${SIGNED_UP_AS["person-a"]}`)).toBeVisible();
   const accRes = await page.request.get("/api/accounts");
   const accBody = (await accRes.json()) as { accounts: { id: string; isPrivate: boolean }[] };
   const privateAcc = accBody.accounts.find((a) => a.isPrivate);
@@ -761,6 +762,7 @@ test("end-to-end ledger journey: filter through URL, split transaction, tag spli
   page,
 }) => {
   await signInWithPassword(page, loadAccount());
+  await expect(page.getByText(`Signed in as ${SIGNED_UP_AS["person-a"]}`)).toBeVisible();
 
   const meRes = await page.request.get("/api/identity/me");
   expect(meRes.status()).toBe(200);
