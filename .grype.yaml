@@ -1,0 +1,22 @@
+# Vulnerability scan exceptions for Pangolin container
+#
+# Grype scans the container image for known vulnerabilities.
+# The following vulnerabilities are in the upstream restic binary (/usr/local/bin/restic),
+# which was compiled with Go 1.26.4. Restic is invoked solely as a client subprocess for
+# local backups and restores against an append-only rest-server on a private docker network.
+# None of these vulnerabilities are exploitable in Pangolin:
+#
+# 1. GO-2026-6612 / CVE-2026-78663: HTTP/2 server flow control DoS in net/http & golang.org/x/net/http2.
+#    Restic does not run an HTTP/2 server.
+# 2. GO-2026-6604 / CVE-2026-56857: Windows-only os.Root directory junction escape. Pangolin
+#    runs on Linux (Debian Trixie), so Windows junction bugs are inapplicable.
+
+ignore:
+  - vulnerability: GO-2026-6612
+    reason: "Restic is a backup client and does not run an HTTP/2 server"
+  - vulnerability: CVE-2026-78663
+    reason: "Restic is a backup client and does not run an HTTP/2 server"
+  - vulnerability: GO-2026-6604
+    reason: "Windows-only os.Root junction escape; container runs on Linux"
+  - vulnerability: CVE-2026-56857
+    reason: "Windows-only os.Root junction escape; container runs on Linux"
