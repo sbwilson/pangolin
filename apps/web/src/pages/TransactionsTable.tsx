@@ -207,7 +207,7 @@ function Row({
           onChange={() => {}}
         />
       </TableCell>
-      <TableCell className="w-full max-w-0">
+      <TableCell className="w-full max-w-0 overflow-hidden">
         {txn.nameHidden ? (
           <span className="flex min-w-0 items-baseline gap-2">
             <button
@@ -344,12 +344,11 @@ export function TransactionsTable({
   return (
     <div
       ref={scrollRef}
-      className={virtual ? "max-h-[70vh] overflow-auto" : undefined}
+      className={cn("w-full overflow-x-auto", virtual && "max-h-[70vh] overflow-y-auto")}
       {...(virtual ? { tabIndex: 0, "aria-label": "Transactions list, scrollable" } : {})}
     >
       <Table
         aria-labelledby="transactions"
-        className="table-fixed"
         {...(virtual ? { "aria-rowcount": items.length + 1 } : {})}
       >
         <TableHeader className={virtual ? "sticky top-0 bg-background" : undefined}>
