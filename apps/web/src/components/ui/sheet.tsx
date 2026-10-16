@@ -31,7 +31,15 @@ export function Sheet({
   useEffect(() => {
     const previous = document.activeElement;
     panel.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        close.current();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
     return () => {
+      window.removeEventListener("keydown", onKeyDown);
       if (previous instanceof HTMLElement) previous.focus();
     };
   }, []);
