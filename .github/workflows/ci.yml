@@ -80,6 +80,7 @@ jobs:
           fail-build: true
           severity-cutoff: critical
           only-fixed: true
+          output-format: table
       - name: Backup settings (an append-only rest-server in the stack, a restic password file)
         run: |
           secrets="$RUNNER_TEMP/secrets"
