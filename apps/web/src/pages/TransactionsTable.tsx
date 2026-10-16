@@ -349,6 +349,7 @@ export function TransactionsTable({
     >
       <Table
         aria-labelledby="transactions"
+        className="table-fixed"
         {...(virtual ? { "aria-rowcount": items.length + 1 } : {})}
       >
         <TableHeader className={virtual ? "sticky top-0 bg-background" : undefined}>
