@@ -178,7 +178,7 @@ export function RootLayout() {
       <div className="min-h-screen md:flex">
         {shell ? (
           <aside className="border-b bg-sidebar p-3 md:w-52 md:shrink-0 md:border-r md:border-b-0">
-            <nav aria-label="Main" className="flex gap-1 md:flex-col">
+            <nav aria-label="Main" className="flex flex-wrap gap-1 md:flex-col">
               {NAV.map((item) => (
                 <Button key={item.to} asChild variant="ghost" className="justify-start">
                   <Link
