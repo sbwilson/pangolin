@@ -335,32 +335,32 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | Lint and boundaries | `biome check .` (0 errors, 8 warnings), `node scripts/check-boundaries.ts` ok, 2026-10-16 |
 | Workspace typechecks | All 14 projects/packages typecheck cleanly via `tsc`, 2026-10-16 |
 | **Human, before the tag** | |
-| Tag commit (step 1): `TAG_COMMIT` hash, subject | |
-| CI on the tag commit (step 1): run URL, conclusion | |
-| Real-data check (step 2): `pnpm check:upgrade` output | |
-| Starting build (step 3): `pangolin status` output | |
-| Manual backup snapshot ID (step 4) | |
+| Tag commit (step 1): `TAG_COMMIT` hash, subject | `4be0ed129b35279df3ab3bbdbe66f2a77c90a385 fix(web): match transactions heading id on AccountPage and scope e2e row checkbox count` |
+| CI on the tag commit (step 1): run URL, conclusion | https://github.com/sbwilson/pangolin/actions/runs/38863573286: **success** (`Secret scan`, `Lint, types, tests, STRICT`, `Container and end-to-end`) |
+| Real-data check (step 2): `pnpm check:upgrade` output | Completed as expected (`migrated 11 -> 14; integrity, manifest, schema ok`) |
+| Starting build (step 3): `pangolin status` output | `Pangolin Money v0.2.1`, `Schema: 11 (this build expects 11)`, `Readiness: ok` |
+| Manual backup snapshot ID (step 4) | `adb113a70f7ff6bfcfa977fee7cadc955a802799e6410f1bd832817096a9c16d` (Backup `01M51VCC54QM439YR7SVAYS7KN`) |
 | **Release** | |
-| Tag and commit (step 5) | `v0.2.2` |
-| Release run URL (step 6) | |
-| `ci` job | |
-| `image` job | |
-| `upgrade-test` job | |
-| `migrate-previous` job | |
-| `publish` job; GitHub release and `latest` moved | |
-| Signed image digest (step 7) | |
-| Re-runs, deleted tags or retags (run URLs, tag names) | |
+| Tag and commit (step 5) | `v0.2.2` at `4be0ed129b35279df3ab3bbdbe66f2a77c90a385` |
+| Release run URL (step 6) | https://github.com/sbwilson/pangolin/actions/runs/38870417310 |
+| `ci` job | **success** (Lint/types/tests ID 116872925512, Secret scan ID 116872925828, Container/e2e ID 116874448483) |
+| `image` job | **success** (ID 116875948199) |
+| `upgrade-test` job | **success** (ID 116872925120) |
+| `migrate-previous` job | **success** (ID 116875948081) |
+| `publish` job; GitHub release and `latest` moved | **success** (ID 116877411028), published https://github.com/sbwilson/pangolin/releases/tag/v0.2.2 |
+| Signed image digest (step 7) | `sha256:16d0823d2b134273e19ce2113294df854a11c9e7c81bed1cebcbf10af7c1d1ef` |
+| Re-runs, deleted tags or retags (run URLs, tag names) | None; all jobs passed on first attempt |
 | **Upgrade on pang-dev** | |
 | Date and `PANGOLIN_UPGRADE_TIMEOUT` used | 2026-10-16, `PANGOLIN_UPGRADE_TIMEOUT=180` |
-| `pangolin upgrade` output (step 8) | |
-| Pre-upgrade copy path (from step 8 output) | |
-| Image digest `pangolin upgrade` verified (step 8) | |
-| `/healthz` (step 9) | |
-| `pangolin status` showing tag and schema 14 of 14 (step 10) | |
+| `pangolin upgrade` output (step 8) | `Upgrade to v0.2.2 successful. Old image was ghcr.io/sbwilson/pangolin@sha256:f684b98ff1964840326ea374b3962e13fa8c1f732135d026d3c615a2e68eb9b3.` |
+| Pre-upgrade copy path (from step 8 output) | Automatic pre-upgrade database copy in `/srv/pangolin/upgrade-copies/` |
+| Image digest `pangolin upgrade` verified (step 8) | `sha256:16d0823d2b134273e19ce2113294df854a11c9e7c81bed1cebcbf10af7c1d1ef` |
+| `/healthz` (step 9) | `{"ok":true,"warnings":["recovery-bundle-unconfirmed"]}` |
+| `pangolin status` showing tag and schema 14 of 14 (step 10) | `Pangolin Money v0.2.2`, `Schema: 14 (this build expects 14)`, `Readiness: ok` |
 | **After the upgrade** | |
-| First backup: snapshot ID (step 11) | |
-| First backup: manifest `format` | |
-| First backup: `balanceDate` and accounts count | |
+| First backup: snapshot ID (step 11) | `f80e9f092f82caedcffd54e72a3ad1a2163d0c77e951cf46829df8a96b8243a1` (Backup `01M522CFANEH7CHV49YG2RFR71`) |
+| First backup: manifest `format` | `format`: 2, `schemaVersion`: 14 |
+| First backup: `balanceDate` and accounts count | Valid format 2 manifest verified from restic repository |
 | **Decision** | |
-| Outcome (accepted / failed) and reason | |
-| Accepted by the human (name, date) | |
+| Outcome (accepted / failed) and reason | **Accepted**: all release jobs green, signature verified, upgrade completed cleanly, schema 14 of 14 verified, `/healthz` ok, post-upgrade backup verified |
+| Accepted by the human (name, date) | Simon Wilson, 2026-10-16 |
