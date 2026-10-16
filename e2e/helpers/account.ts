@@ -66,6 +66,7 @@ export async function signInWithPassword(page: Page, account: Account): Promise<
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Authenticator code").fill(totp(account.totpSecret));
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByText(/^Signed in as /)).toBeVisible();
 }
 
 /**
