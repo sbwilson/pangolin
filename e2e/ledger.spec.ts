@@ -628,13 +628,12 @@ test("bulk categorise and undo on desktop", async ({ page }) => {
   const toast = page.getByRole("status");
   await expect(toast.getByText("Updated 2 transactions")).toBeVisible();
 
-  const row0 = table.locator("tbody tr").filter({ has: cb0 });
-  const row1 = table.locator("tbody tr").filter({ has: cb1 });
+  const rows = table.locator("tbody tr:has(input[type=checkbox])");
   await expect(
-    row0.getByRole("button", { name: new RegExp(escapeRegExp(categoryName)) }),
+    rows.nth(0).getByRole("button", { name: new RegExp(escapeRegExp(categoryName)) }),
   ).toBeVisible();
   await expect(
-    row1.getByRole("button", { name: new RegExp(escapeRegExp(categoryName)) }),
+    rows.nth(1).getByRole("button", { name: new RegExp(escapeRegExp(categoryName)) }),
   ).toBeVisible();
 
   const undo = toast.getByRole("button", { name: "Undo" });
