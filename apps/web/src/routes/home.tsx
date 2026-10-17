@@ -1,9 +1,11 @@
-import { createRoute } from "@tanstack/react-router";
-import { HomePage } from "../pages/HomePage.tsx";
+import { createRoute, Navigate, redirect } from "@tanstack/react-router";
 import { rootRoute } from "./root.tsx";
 
 export const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: HomePage,
+  beforeLoad: () => {
+    throw redirect({ to: "/transactions", replace: true });
+  },
+  component: () => <Navigate to="/transactions" replace />,
 });

@@ -76,9 +76,11 @@ test("a deep link to /transactions opens the list inside the shell, and /ledger 
       "aria-current",
       "page",
     );
-    await nav.getByRole("link", { name: "Home" }).click();
-    await expect(page).toHaveURL((url) => url.pathname === "/");
+    await nav.getByRole("link", { name: "Accounts" }).click();
+    await expect(page).toHaveURL((url) => url.pathname === "/accounts");
     await expect(page.getByText("Signed in as Alex")).toBeVisible();
+    await page.goto("/");
+    await expect(page).toHaveURL((url) => url.pathname === "/transactions");
   } finally {
     await context.close();
   }
@@ -279,6 +281,153 @@ test("Clear filters keeps the date range, and a no-match list says so", async ({
     );
     await page.goto("/transactions");
     await expect(page.getByText("No transactions yet")).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test("desktop sidebar is visible >= 768px and mobile tab bar is hidden; mobile tab bar is visible < 768px and sidebar is hidden", async ({
+  browser,
+  cspViolations,
+}) => {
+  const context = await browser.newContext({
+    storageState: await alexSession(browser),
+    viewport: { width: 1024, height: 768 },
+  });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+    await page.goto("/transactions");
+    const desktopNav = page.getByRole("navigation", { name: "Main" });
+    await expect(desktopNav).toBeVisible();
+    await expect(desktopNav.getByRole("link", { name: "Transactions" })).toBeVisible();
+    await expect(desktopNav.getByRole("link", { name: "Accounts" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeHidden();
+
+    // Resize to phone viewport
+    await page.setViewportSize({ width: 375, height: 667 });
+    await expect(desktopNav).toBeHidden();
+    const mobileNav = page.getByRole("navigation", { name: "Mobile navigation" });
+    await expect(mobileNav).toBeVisible();
+    await expect(mobileNav.getByRole("link", { name: "Cash flow" })).toBeVisible();
+    await expect(mobileNav.getByRole("link", { name: "Transactions" })).toBeVisible();
+    await expect(mobileNav.getByRole("button", { name: "Needs review" })).toBeVisible();
+    await expect(mobileNav.getByRole("button", { name: "Planning" })).toBeVisible();
+    await expect(mobileNav.getByRole("button", { name: "More" })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test("mobile More tab opens sheet with Accounts, Settings, and Sign out, and tapping Accounts navigates to /accounts", async ({
+  browser,
+  cspViolations,
+}) => {
+  const context = await browser.newContext({
+    storageState: await alexSession(browser),
+    viewport: { width: 375, height: 667 },
+  });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+    await page.goto("/transactions");
+    const mobileNav = page.getByRole("navigation", { name: "Mobile navigation" });
+    await mobileNav.getByRole("button", { name: "More" }).click();
+    const sheet = page.getByRole("dialog", { name: "More" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "Accounts" })).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await sheet.getByRole("button", { name: "Accounts" }).click();
+    await expect(page).toHaveURL((url) => url.pathname === "/accounts");
+    await expect(sheet).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test("unauthenticated visitor visiting /transactions or /accounts redirects to /sign-in, and signed-in visitor redirects to /transactions", async ({
+  browser,
+  cspViolations,
+}) => {
+  const anonContext = await browser.newContext();
+  try {
+    await watchCsp(anonContext, cspViolations);
+    const anonPage = await anonContext.newPage();
+    await anonPage.goto("/transactions");
+    await expect(anonPage).toHaveURL((url) => url.pathname === "/sign-in");
+    await expect(anonPage.getByRole("heading", { name: "Sign in" })).toBeVisible();
+
+    await anonPage.goto("/accounts");
+    await expect(anonPage).toHaveURL((url) => url.pathname === "/sign-in");
+  } finally {
+    await anonContext.close();
+  }
+
+  const authContext = await browser.newContext({ storageState: await alexSession(browser) });
+  try {
+    await watchCsp(authContext, cspViolations);
+    const authPage = await authContext.newPage();
+    await authPage.goto("/sign-in");
+    await expect(authPage).toHaveURL((url) => url.pathname === "/transactions");
+  } finally {
+    await authContext.close();
+  }
+});
+
+test("mobile Planning tab opens sheet with Planning items and is dismissible via Escape or Done", async ({
+  browser,
+  cspViolations,
+}) => {
+  const context = await browser.newContext({
+    storageState: await alexSession(browser),
+    viewport: { width: 375, height: 667 },
+  });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+    await page.goto("/transactions");
+    const mobileNav = page.getByRole("navigation", { name: "Mobile navigation" });
+    await mobileNav.getByRole("button", { name: "Planning" }).click();
+    const sheet = page.getByRole("dialog", { name: "Planning" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByText("Budgets")).toBeVisible();
+    await expect(sheet.getByText("Goals")).toBeVisible();
+    await expect(sheet.getByText("Home buying")).toBeVisible();
+    await expect(sheet.getByText("Forecast")).toBeVisible();
+
+    // Dismiss with Escape
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+
+    // Reopen and dismiss with Done button
+    await mobileNav.getByRole("button", { name: "Planning" }).click();
+    await expect(page.getByRole("dialog", { name: "Planning" })).toBeVisible();
+    await page.getByRole("button", { name: "Done" }).click();
+    await expect(page.getByRole("dialog", { name: "Planning" })).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test("mobile More tab allows signing out which terminates session and lands on /sign-in", async ({
+  browser,
+  cspViolations,
+}) => {
+  const context = await browser.newContext({
+    storageState: await alexSession(browser),
+    viewport: { width: 375, height: 667 },
+  });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+    await page.goto("/transactions");
+    const mobileNav = page.getByRole("navigation", { name: "Mobile navigation" });
+    await mobileNav.getByRole("button", { name: "More" }).click();
+    const sheet = page.getByRole("dialog", { name: "More" });
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL((url) => url.pathname === "/sign-in");
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   } finally {
     await context.close();
   }

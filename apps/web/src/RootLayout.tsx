@@ -1,21 +1,17 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, Navigate, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
+import { Navigate, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { cn } from "@/lib/utils.ts";
 import { fetchMe, type Me } from "./api.ts";
 import { authClient, authMessage } from "./auth-client.ts";
+import { AppSidebar } from "./components/AppSidebar.tsx";
 import { HealthStatus } from "./components/HealthStatus.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { MascotIcon } from "./components/MascotLogo.tsx";
+import { MobileNav } from "./components/MobileNav.tsx";
 import { EnrolView } from "./EnrolView.tsx";
-import { LoginView } from "./LoginView.tsx";
 import { InitialRecoveryCodes } from "./RecoveryViews.tsx";
 import { normalizePath, oneTimeLink } from "./routes/search.ts";
 import { ME_KEY, SessionContext } from "./session.tsx";
-
-const NAV = [
-  { to: "/", label: "Home" },
-  { to: "/transactions", label: "Transactions" },
-  { to: "/accounts", label: "Accounts" },
-] as const;
 
 export type Gate =
   | "pending"
@@ -27,6 +23,8 @@ export type Gate =
   | "login"
   | "recovery-codes"
   | "setup-signed-in"
+  | "sign-in"
+  | "sign-in-signed-in"
   | "app";
 
 export interface GateState {
@@ -45,17 +43,17 @@ export function selectGate(me: GateState, pathname: string): Gate {
   if (path === "/recover") return "recover";
   if (person !== null && person.enrolment === "incomplete") return "enrol";
   if (person === null && path === "/setup") return "setup";
+  if (person === null && path === "/sign-in") return "sign-in";
   if (person === null) return "login";
   if (!person.demo && !person.recoveryCodes.issued) return "recovery-codes";
   if (path === "/setup") return "setup-signed-in";
+  if (path === "/sign-in") return "sign-in-signed-in";
   return "app";
 }
 
 /**
- * The root layout: the `me` state machine. The gates (loading, error, enrolment incomplete,
- * first recovery codes, a signed-out person) are guards here and never enter the URL. The outlet
- * renders only for a signed-in person with enrolment complete, except the signed-out pages
- * (`/setup`, `/recover`), which are the outlet for nobody signed in.
+ * The root layout: the `me` state machine. Responsive shell layout with desktop sidebar
+ * and mobile bottom tab bar reaching shipped routes.
  */
 export function RootLayout() {
   const queryClient = useQueryClient();
@@ -84,15 +82,16 @@ export function RootLayout() {
     await queryClient.invalidateQueries();
   }, [queryClient]);
   const signedIn = useCallback(async () => {
-    await navigate({ to: "/", replace: true });
     await refresh();
+    await navigate({ to: "/transactions", replace: true });
   }, [navigate, refresh]);
   const signOut = useCallback(async () => {
     const { error } = await authClient.signOut();
     setSignOutError(error ? authMessage(error) : null);
     // Drop everything cached for the signed-in person, and refetch who is signed in (nobody).
     await queryClient.resetQueries();
-  }, [queryClient]);
+    await navigate({ to: "/sign-in", replace: true });
+  }, [navigate, queryClient]);
   const signedUp = useCallback(
     async (password: string) => {
       setNewPassword(password);
@@ -131,7 +130,10 @@ export function RootLayout() {
           <button type="button" onClick={signOut}>
             Sign out and use this link
           </button>
-          <button type="button" onClick={() => navigate({ to: "/", replace: true })}>
+          <button
+            type="button"
+            onClick={() => void navigate({ to: "/transactions", replace: true })}
+          >
             Keep me signed in
           </button>
         </section>
@@ -153,19 +155,20 @@ export function RootLayout() {
     case "setup":
       body = <Outlet />;
       break;
+    case "sign-in":
+      body = <Outlet />;
+      break;
     case "login":
-      body = (
-        <>
-          <LoginView onSignedIn={signedIn} />
-          <HealthStatus />
-        </>
-      );
+      body = <Navigate to="/sign-in" replace />;
       break;
     case "recovery-codes":
       body = <InitialRecoveryCodes onDone={refresh} />;
       break;
     case "setup-signed-in":
-      body = <Navigate to="/" replace />;
+      body = <Navigate to="/transactions" replace />;
+      break;
+    case "sign-in-signed-in":
+      body = <Navigate to="/transactions" replace />;
       break;
     case "app":
       shell = true;
@@ -176,29 +179,47 @@ export function RootLayout() {
   return (
     <SessionContext.Provider value={session}>
       <div className="min-h-screen md:flex">
-        {shell ? (
-          <aside className="border-b bg-sidebar p-3 md:w-52 md:shrink-0 md:border-r md:border-b-0">
-            <nav aria-label="Main" className="flex flex-wrap gap-1 md:flex-col">
-              {NAV.map((item) => (
-                <Button key={item.to} asChild variant="ghost" className="justify-start">
-                  <Link
-                    to={item.to}
-                    replace
-                    activeOptions={{ exact: item.to === "/" }}
-                    activeProps={{ className: "bg-accent" }}
+        {shell && person ? <AppSidebar me={person} signOut={signOut} /> : null}
+        <div className={cn("flex min-w-0 flex-1 flex-col", shell && "pb-16 md:pb-0")}>
+          {shell && person ? (
+            <header className="border-b bg-card px-4 py-3 md:hidden">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <MascotIcon size="sm" />
+                <svg width="8" height="8" viewBox="0 0 8 8" className="shrink-0" aria-hidden="true">
+                  <circle cx="4" cy="4" r="4" fill={person.colour || "currentColor"} />
+                </svg>
+                <span>G&apos;day, {person.displayName}</span>
+              </div>
+            </header>
+          ) : null}
+          <main className={cn("mx-auto w-full", shell ? "max-w-5xl p-4" : "p-4")}>
+            {shell && person ? (
+              <header className="mb-4">
+                <div className="hidden items-center gap-2 text-sm text-muted-foreground md:flex">
+                  <MascotIcon size="sm" />
+                  <svg
+                    width="8"
+                    height="8"
+                    viewBox="0 0 8 8"
+                    className="shrink-0"
+                    aria-hidden="true"
                   >
-                    {item.label}
-                  </Link>
-                </Button>
-              ))}
-            </nav>
-          </aside>
-        ) : null}
-        <main className="mx-auto w-full max-w-3xl p-4">
-          <h1>Pangolin Money</h1>
-          {signOutError === null ? null : <p role="alert">{signOutError}</p>}
-          {body}
-        </main>
+                    <circle cx="4" cy="4" r="4" fill={person.colour || "currentColor"} />
+                  </svg>
+                  <span>G&apos;day, {person.displayName}</span>
+                </div>
+                <h1 className="mt-1 text-xl font-bold">Pangolin Money</h1>
+              </header>
+            ) : null}
+            {signOutError === null ? null : (
+              <p role="alert" className="mb-4 text-sm text-destructive">
+                {signOutError}
+              </p>
+            )}
+            {body}
+          </main>
+        </div>
+        {shell && person ? <MobileNav me={person} signOut={signOut} /> : null}
       </div>
     </SessionContext.Provider>
   );

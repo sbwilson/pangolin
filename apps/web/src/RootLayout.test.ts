@@ -84,11 +84,21 @@ describe("selectGate", () => {
     expect(selectGate({ isPending: false, isError: false, data: null }, "/setup/")).toBe("setup");
   });
 
+  it("selects sign-in when signed-out person visits /sign-in or /sign-in/", () => {
+    expect(selectGate({ isPending: false, isError: false, data: null }, "/sign-in")).toBe(
+      "sign-in",
+    );
+    expect(selectGate({ isPending: false, isError: false, data: null }, "/sign-in/")).toBe(
+      "sign-in",
+    );
+  });
+
   it("selects login when signed-out person visits other routes", () => {
     expect(selectGate({ isPending: false, isError: false, data: null }, "/")).toBe("login");
     expect(selectGate({ isPending: false, isError: false, data: null }, "/transactions")).toBe(
       "login",
     );
+    expect(selectGate({ isPending: false, isError: false, data: null }, "/accounts")).toBe("login");
   });
 
   it("selects recovery-codes when person is not demo and recovery codes are not issued", () => {
@@ -108,6 +118,16 @@ describe("selectGate", () => {
     );
     expect(selectGate({ isPending: false, isError: false, data: person }, "/setup/")).toBe(
       "setup-signed-in",
+    );
+  });
+
+  it("selects sign-in-signed-in when fully onboarded person visits /sign-in or /sign-in/", () => {
+    const person = mockPerson();
+    expect(selectGate({ isPending: false, isError: false, data: person }, "/sign-in")).toBe(
+      "sign-in-signed-in",
+    );
+    expect(selectGate({ isPending: false, isError: false, data: person }, "/sign-in/")).toBe(
+      "sign-in-signed-in",
     );
   });
 
