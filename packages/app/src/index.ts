@@ -216,6 +216,13 @@ export {
   sessionViewer,
 } from "./identity/me.ts";
 export {
+  type DismissNoticeInput,
+  dismissNotice,
+  type ListNoticesInput,
+  listNotices,
+  type Notice,
+} from "./identity/notices.ts";
+export {
   type GetPreferencesInput,
   getPreferences,
   getPreferencesInput,
@@ -224,13 +231,6 @@ export {
   updatePreferences,
   updatePreferencesInput,
 } from "./identity/preferences.ts";
-export {
-  type DismissNoticeInput,
-  dismissNotice,
-  type ListNoticesInput,
-  listNotices,
-  type Notice,
-} from "./identity/notices.ts";
 export {
   type CheckReEnrolmentLinkInput,
   type ClearedCredentials,
@@ -458,10 +458,6 @@ export type {
   PersonPreferenceRow,
   PersonRepo,
   PersonRow,
-  THEME_MODES,
-  THEME_NAMES,
-  ThemeMode,
-  ThemeName,
   ReadRepos,
   RecoveryBundleRepo,
   RecoveryBundleRow,
@@ -475,6 +471,10 @@ export type {
   RunningJobRow,
   SetupLinkRepo,
   SetupLinkRow,
+  THEME_MODES,
+  THEME_NAMES,
+  ThemeMode,
+  ThemeName,
   TxRepos,
   UnitOfWork,
   UserEnrolment,

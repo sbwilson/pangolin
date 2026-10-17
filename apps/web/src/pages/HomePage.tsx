@@ -3,113 +3,17 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   ApiError,
-  type BackupVerification,
   dismissNotice,
-  fetchBackupStatus,
-  fetchDeadJobs,
   fetchNotices,
-  fetchRecoveryBundle,
   invitePartner,
   type Me,
   type Notice,
   resetPartner,
   revokeMyRecoveryLinks,
 } from "../api.ts";
-import { HealthStatus } from "../components/HealthStatus.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { RegenerateRecoveryCodes } from "../RecoveryViews.tsx";
 import { useSignedIn } from "../session.tsx";
-
-function DeadJobs() {
-  const jobs = useQuery({ queryKey: ["system", "jobs"], queryFn: fetchDeadJobs, retry: false });
-  if (jobs.isPending) return null;
-  if (jobs.isError) return <p>Job status unavailable</p>;
-  if (jobs.data.length === 0) return <p>No jobs need attention</p>;
-  return (
-    <section aria-labelledby="dead-jobs">
-      <h2 id="dead-jobs">Jobs that failed</h2>
-      <ul>
-        {jobs.data.map((job, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: a read-only list with no item state; two jobs of one kind can fail in the same millisecond, so kind and time alone collide.
-          <li key={`${index}:${job.kind}@${job.failedAt}`}>
-            {job.kind} — <time dateTime={job.failedAt}>{job.failedAt}</time>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/** The last backup: its time and restic snapshot ID, or why there is none. */
-function LastBackup() {
-  const backup = useQuery({
-    queryKey: ["system", "backup"],
-    queryFn: fetchBackupStatus,
-    retry: false,
-  });
-  if (backup.isPending) return null;
-  if (backup.isError) return <p>Backup status unavailable</p>;
-  const { configured, last, stale, check, drill } = backup.data;
-  if (!configured) return <p>Backups not configured</p>;
-  return (
-    <>
-      {last === null ? (
-        <p>No backup yet</p>
-      ) : (
-        <p>
-          Last backup <time dateTime={last.pushedAt}>{last.pushedAt}</time> (snapshot{" "}
-          <code title={last.snapshotId}>{last.snapshotId.slice(0, 8)}</code>)
-        </p>
-      )}
-      {stale ? <p role="alert">Warning: no good backup in the last 48 hours</p> : null}
-      <Verification label="Repository check" none="No repository check yet" result={check} />
-      <Verification label="Restore drill" none="No restore drill yet" result={drill} />
-    </>
-  );
-}
-
-/** The recovery bundle's warning, shown until its safe storage is confirmed. */
-function RecoveryBundle() {
-  const bundle = useQuery({
-    queryKey: ["system", "recovery-bundle"],
-    queryFn: fetchRecoveryBundle,
-    retry: false,
-  });
-  if (bundle.isPending || bundle.isError || bundle.data.confirmed) return null;
-  const { bundleId } = bundle.data;
-  return (
-    <p role="alert">
-      Warning: the recovery bundle
-      {bundleId === undefined ? null : (
-        <>
-          {" "}
-          <code>{bundleId}</code>
-        </>
-      )}{" "}
-      is not confirmed stored safely. Store it offline, then run{" "}
-      <code>sudo pangolin confirm-bundle</code> on the server.
-    </p>
-  );
-}
-
-/** One check or drill result: when it ran, and whether it passed or what failed. */
-function Verification({
-  label,
-  none,
-  result,
-}: {
-  label: string;
-  none: string;
-  result: BackupVerification | null;
-}) {
-  if (result === null) return <p>{none}</p>;
-  return (
-    <p role={result.ok ? undefined : "alert"}>
-      {label} {result.ok ? "passed" : "failed"} <time dateTime={result.at}>{result.at}</time>:{" "}
-      {result.summary}
-    </p>
-  );
-}
 
 function InvitePartner({ onSignOut }: { onSignOut: () => void }) {
   const [link, setLink] = useState<string | null>(null);
@@ -292,10 +196,6 @@ export function HomePage() {
       >
         Transactions
       </Button>
-      <HealthStatus />
-      <LastBackup />
-      <RecoveryBundle />
-      <DeadJobs />
       {me.canInvite && !me.demo ? <InvitePartner onSignOut={signOut} /> : null}
       {me.demo ? null : (
         <RegenerateRecoveryCodes

@@ -7,12 +7,42 @@ export const THEME_OPTIONS: readonly {
   readonly description: string;
   readonly primaryColor: string;
 }[] = [
-  { id: "clay-linen", name: "Clay & Linen", description: "Warm terracotta & linen", primaryColor: "#A3441D" },
-  { id: "harbour-morning", name: "Harbour Morning", description: "Crisp blue & white", primaryColor: "#0A5CBD" },
-  { id: "fern-gully", name: "Fern Gully", description: "Earthy green & eucalyptus", primaryColor: "#2B7446" },
-  { id: "galah-party", name: "Galah Party", description: "Vibrant berry pink", primaryColor: "#C11574" },
-  { id: "gelato-bar", name: "Gelato Bar", description: "Playful violet & pastels", primaryColor: "#6A4FCF" },
-  { id: "black-opal", name: "Black Opal", description: "Deep teal & Australian stone", primaryColor: "#0D6669" },
+  {
+    id: "clay-linen",
+    name: "Clay & Linen",
+    description: "Warm terracotta & linen",
+    primaryColor: "#A3441D",
+  },
+  {
+    id: "harbour-morning",
+    name: "Harbour Morning",
+    description: "Crisp blue & white",
+    primaryColor: "#0A5CBD",
+  },
+  {
+    id: "fern-gully",
+    name: "Fern Gully",
+    description: "Earthy green & eucalyptus",
+    primaryColor: "#2B7446",
+  },
+  {
+    id: "galah-party",
+    name: "Galah Party",
+    description: "Vibrant berry pink",
+    primaryColor: "#C11574",
+  },
+  {
+    id: "gelato-bar",
+    name: "Gelato Bar",
+    description: "Playful violet & pastels",
+    primaryColor: "#6A4FCF",
+  },
+  {
+    id: "black-opal",
+    name: "Black Opal",
+    description: "Deep teal & Australian stone",
+    primaryColor: "#0D6669",
+  },
 ];
 
 export const MODE_OPTIONS: readonly { readonly id: ThemeMode; readonly label: string }[] = [
@@ -36,7 +66,10 @@ export function ThemeSwitcher() {
       </div>
 
       <div className="space-y-2">
-        <div id="mode-label" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <div
+          id="mode-label"
+          className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+        >
           Mode
         </div>
         <div
@@ -47,6 +80,7 @@ export function ThemeSwitcher() {
           {MODE_OPTIONS.map((opt) => {
             const isSelected = mode === opt.id;
             return (
+              // biome-ignore lint/a11y/useSemanticElements: custom styled radio button in ARIA radiogroup
               <button
                 key={opt.id}
                 type="button"
@@ -68,7 +102,10 @@ export function ThemeSwitcher() {
       </div>
 
       <div className="space-y-3">
-        <div id="theme-label" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <div
+          id="theme-label"
+          className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+        >
           Theme
         </div>
         <div
@@ -79,6 +116,7 @@ export function ThemeSwitcher() {
           {THEME_OPTIONS.map((opt) => {
             const isSelected = theme === opt.id;
             return (
+              // biome-ignore lint/a11y/useSemanticElements: custom styled radio button in ARIA radiogroup
               <button
                 key={opt.id}
                 type="button"

@@ -179,7 +179,9 @@ describe("ThemeSwitcher", () => {
       expect(radio.getAttribute("tabindex")).toBe(isChecked ? "0" : "-1");
     }
 
-    const themeRadios = screen.getAllByRole("radio", { name: /(Clay|Harbour|Fern|Galah|Gelato|Black)/i });
+    const themeRadios = screen.getAllByRole("radio", {
+      name: /(Clay|Harbour|Fern|Galah|Gelato|Black)/i,
+    });
     for (const radio of themeRadios) {
       expect(radio.getAttribute("aria-pressed")).toBeNull();
       const isChecked = radio.getAttribute("aria-checked") === "true";

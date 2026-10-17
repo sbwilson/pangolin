@@ -2,12 +2,7 @@ import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
-import {
-  THEME_MODES,
-  THEME_NAMES,
-  type ThemeMode,
-  type ThemeName,
-} from "../ports/unit-of-work.ts";
+import { THEME_MODES, THEME_NAMES, type ThemeMode, type ThemeName } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
 
 export interface Preferences {
@@ -27,10 +22,7 @@ export const updatePreferencesInput = z
 export type UpdatePreferencesInput = z.input<typeof updatePreferencesInput>;
 
 /** `identity.getPreferences`: gets the signed-in person's preferences, defaulting to clay-linen / system. */
-export function getPreferences(
-  ctx: UseCaseContext,
-  input: GetPreferencesInput = {},
-): Preferences {
+export function getPreferences(ctx: UseCaseContext, input: GetPreferencesInput = {}): Preferences {
   parseInput(getPreferencesInput, input);
   const viewer = ctx.viewer;
   if (viewer.kind !== "person") throw new AppError("Unauthenticated", "Sign in first");
@@ -45,10 +37,7 @@ export function getPreferences(
 }
 
 /** `identity.updatePreferences`: updates theme/mode preferences for the signed-in person, audited. */
-export function updatePreferences(
-  ctx: UseCaseContext,
-  input: UpdatePreferencesInput,
-): Preferences {
+export function updatePreferences(ctx: UseCaseContext, input: UpdatePreferencesInput): Preferences {
   const parsed = parseInput(updatePreferencesInput, input);
   const viewer = ctx.viewer;
   if (viewer.kind !== "person") throw new AppError("Unauthenticated", "Sign in first");

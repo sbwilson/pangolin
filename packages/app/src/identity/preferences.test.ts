@@ -10,7 +10,11 @@ function setup() {
   const clock = manualClock("2026-10-17T10:00:00Z");
   const { ctx, uow } = memoryContext(systemViewer("cli:test"), clock);
   const alex = createPerson(ctx, { displayName: "Alex", colour: "#2563eb", userId: "user-a" });
-  const carissa = createPerson(ctx, { displayName: "Carissa", colour: "#9c4277", userId: "user-c" });
+  const carissa = createPerson(ctx, {
+    displayName: "Carissa",
+    colour: "#9c4277",
+    userId: "user-c",
+  });
   const alexViewer = personViewer(alex, clock.now());
   const carissaViewer = personViewer(carissa, clock.now());
   return { ctx, uow, clock, alex, carissa, alexViewer, carissaViewer };
@@ -73,14 +77,8 @@ describe("identity.preferences", () => {
 
     it("supports partial update and retains existing mode", () => {
       const { ctx, alexViewer, uow, alex } = setup();
-      updatePreferences(
-        { ...ctx, viewer: alexViewer },
-        { theme: "fern-gully", mode: "dark" },
-      );
-      const partial = updatePreferences(
-        { ...ctx, viewer: alexViewer },
-        { theme: "black-opal" },
-      );
+      updatePreferences({ ...ctx, viewer: alexViewer }, { theme: "fern-gully", mode: "dark" });
+      const partial = updatePreferences({ ...ctx, viewer: alexViewer }, { theme: "black-opal" });
 
       expect(partial).toEqual({ theme: "black-opal", mode: "dark" });
       const row = uow.state.preferences.find((p) => p.personId === alex);
@@ -97,10 +95,7 @@ describe("identity.preferences", () => {
 
     it("does not leak preferences across different persons", () => {
       const { ctx, alexViewer, carissaViewer } = setup();
-      updatePreferences(
-        { ...ctx, viewer: alexViewer },
-        { theme: "galah-party", mode: "light" },
-      );
+      updatePreferences({ ...ctx, viewer: alexViewer }, { theme: "galah-party", mode: "light" });
       const carissaPrefs = getPreferences({ ...ctx, viewer: carissaViewer }, {});
       expect(carissaPrefs).toEqual({ theme: "clay-linen", mode: "system" });
     });

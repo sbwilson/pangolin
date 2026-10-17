@@ -21,6 +21,7 @@ test("the status page warns of an unconfirmed recovery bundle; /healthz stays ok
   });
 
   await signInWithPassword(page, loadAccount());
+  await page.goto("/settings#status");
   const alert = page.getByRole("alert").filter({ hasText: "recovery bundle" });
   await expect(alert).toContainText(`${bundleId} is not confirmed stored safely`);
   await expect(alert).toContainText("sudo pangolin confirm-bundle");

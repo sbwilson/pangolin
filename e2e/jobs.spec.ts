@@ -11,6 +11,7 @@ test("the job status needs a session", async ({ request }) => {
 
 test("once signed in, the PWA shows that no jobs need attention", async ({ page }) => {
   await signInWithPassword(page, loadAccount());
+  await page.goto("/settings#status");
   await expect(page.getByText("No jobs need attention", { exact: true })).toBeVisible();
   const jobs = await page.evaluate(async () => {
     const res = await fetch("/api/system/jobs");
@@ -23,6 +24,7 @@ test("once signed in, the PWA shows that no jobs need attention", async ({ page 
 test("the status page shows the backup line from /api/system/backup", async ({ page }) => {
   test.skip(!process.env.E2E_BACKUPS, "backups are configured only in CI (E2E_BACKUPS)");
   await signInWithPassword(page, loadAccount());
+  await page.goto("/settings#status");
   await expect(page.getByText("No backup yet", { exact: true })).toBeVisible();
   const backup = await page.evaluate(async () => (await fetch("/api/system/backup")).json());
   expect(backup).toEqual({ configured: true, last: null, stale: false, check: null, drill: null });

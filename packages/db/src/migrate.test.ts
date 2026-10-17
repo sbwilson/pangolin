@@ -83,9 +83,9 @@ describe("committed migrations", () => {
       INSERT INTO person_preference (person_id, theme, mode, created_at, updated_at)
       VALUES ('P1', 'clay-linen', 'system', 't', 't');
     `);
-    expect(
-      db.prepare("SELECT person_id, theme, mode FROM person_preference").all(),
-    ).toEqual([{ person_id: "P1", theme: "clay-linen", mode: "system" }]);
+    expect(db.prepare("SELECT person_id, theme, mode FROM person_preference").all()).toEqual([
+      { person_id: "P1", theme: "clay-linen", mode: "system" },
+    ]);
   });
 
   it("keeps tagged splits and their split_tag rows when 0009 upgrades to 0010", () => {

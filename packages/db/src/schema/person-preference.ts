@@ -19,9 +19,6 @@ export const personPreference = sqliteTable(
       "person_preference_theme",
       sql`${t.theme} IN ('clay-linen', 'harbour-morning', 'fern-gully', 'galah-party', 'gelato-bar', 'black-opal')`,
     ),
-    check(
-      "person_preference_mode",
-      sql`${t.mode} IN ('light', 'dark', 'system')`,
-    ),
+    check("person_preference_mode", sql`${t.mode} IN ('light', 'dark', 'system')`),
   ],
 );

@@ -31,7 +31,6 @@ import {
   createSetupLinkRepo,
   createUserRepo,
 } from "./identity-repos.ts";
-import { createPersonPreferenceRepo } from "./repositories/person-preference.ts";
 import { createJobRepo } from "./job-repo.ts";
 import {
   createAccountRepo,
@@ -43,6 +42,7 @@ import {
 import type { Db } from "./open.ts";
 import { auditHiddenUntil, auditPayeeHidden, visibleAudit } from "./privacy.ts";
 import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
+import { createPersonPreferenceRepo } from "./repositories/person-preference.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
 import { auditLog } from "./schema/audit-log.ts";
 import { householdSettings } from "./schema/household-settings.ts";
