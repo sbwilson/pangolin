@@ -18,6 +18,17 @@ The frame every surface sits in: a desktop sidebar and a phone tab bar, a `/sign
 
 Both of us move around Pangolin through one shell and one Settings page, in a theme we each chose, on any device; CAP-21's success (a theme that follows its person, axe clean on every route) is the signal.
 
+## Requirements
+
+Source: SPEC.md CAP-21, Constraints (WCAG 2.2 AA), and UX design (References). Each line maps to CAP-21.
+
+- SH-1: Responsive app shell with desktop sidebar and phone bottom tab bar reaching every shipped route; `/` redirects to `/transactions` for now; dedicated `/sign-in` route.
+- SH-2: Settings page framework (`/settings#…`) with section rail navigation; System status cards (health, backup, drill, dead jobs, bundle warning); Signed-in devices (list and revoke sessions).
+- SH-3: Security and Partner cards: Passkey management, password change, recovery codes, partner invite, partner reset link; empty placeholder Household section.
+- SH-4: Re-auth modal dialog (retrying guarded action on success) and Account lifecycle settings: archived closed accounts list + reopen (handoff 2.25), closing balance warnings (handoff 2.24), and leave household flow with re-auth (handoff 2.26).
+- SH-5: Appearance: 6 theme sets (`clay-linen`, `harbour-morning`, `fern-gully`, `galah-party`, `gelato-bar`, `black-opal`) in light, dark, and system modes; persisted per person in `person_preference` table; CSP-clean `data-theme` switching.
+- SH-6: WCAG 2.2 AA accessibility floor: Automated axe e2e check in CI across all shipped routes (`/transactions`, `/accounts`, `/accounts/:id`, `/settings`, `/sign-in`).
+
 ## Done when
 
 1. On desktop the sidebar, and on a phone the tab bar with its Planning and More lists, reach every shipped route. `/sign-in` signs in, `/` redirects to `/transactions` for now, and an unknown path lands on `/`.
@@ -54,3 +65,7 @@ The `apps/web` shell (sidebar, tab bar, header with the Import button slot; the 
 - Waits on epic-ledger-workspace because: entry 1 delivered the router, shell and shadcn this epic builds on, and entry 2 the `/transactions` route.
 - Waits on epic-platform-foundations because: identity (person, sessions, passkey sign-in, recovery, partner reset) and the system status routes are what Settings shows.
 - Handoff (2026-10-06, from epic-ledger-accounts-privacy entries 24 to 26): the server side of the account lifecycle lands in epic 2 and needs screens here: a settings view of closed (archived) accounts with reopen (entry 25; there is no delete), the settings view of an account's closing-balance warning (entry 24), and leaving the household (re-authentication and a confirmation that names what is deleted; entry 26). Simon's decisions: closed accounts are archived, never deleted; leaving deletes the leaver's own private data, keeps every shared account with the partner, and revokes the leaver's sessions and credentials.
+- Decision (2026-10-17, inception): the tracer bullet is entry 1 (13.1), establishing the desktop sidebar, mobile tab bar, `/sign-in` route, and root redirect; entry 2 (theming) and entry 3 (settings framework) branch from it.
+- Decision (2026-10-17, inception): entry 5 builds the Re-auth dialog as a modal that retries the guarded action on success, immediately replacing the temporary inline ReauthRequired on CSV export and guarding account lifecycle actions (leaving household).
+- Decision (2026-10-17, inception): entry 7 is the refactor sweep, decomposing `TransactionList.tsx` into modular hooks, moving `formatCents` to `lib/money.ts`, and retiring `HomePage.tsx`.
+- Decision (2026-10-17, inception): entry 9 is the release and deploy of v0.2.3 to the home server (`pang-dev`), advancing schema from 14 to 15 for `person_preference`.

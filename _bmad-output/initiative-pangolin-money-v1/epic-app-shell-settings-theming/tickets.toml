@@ -1,0 +1,101 @@
+# tickets.toml — epic-app-shell-settings-theming
+# Table order is build order; id is permanent.
+
+[[entry]]
+id = 1
+type = "story"
+title = "App shell: responsive desktop sidebar, mobile tab bar, and /sign-in route"
+description = "Replaces interim RootLayout navigation with responsive desktop sidebar and phone bottom tab bar per UX spec; adds dedicated /sign-in route with passkey/password tabs; redirects / to /transactions."
+verify = "Playwright e2e tests confirm desktop sidebar and mobile tab bar reach all shipped routes, and /sign-in signs in."
+covers = ["SH-1"]
+after = ["12.2", "1.7"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Theme engine and preferences persistence"
+description = "Adds person_preference schema and migration (theme, mode), API routes GET/PUT /api/identity/preferences, 6 theme CSS token palettes in styles.css, and client theme/mode switcher with data-theme."
+verify = "API tests verify preference persistence; client unit/e2e tests verify data-theme switching and token contrast without CSP violations."
+covers = ["SH-5"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Settings page framework: System status and Signed-in devices"
+description = "Builds /settings page with sticky section rail (desktop) / chips (mobile); moves System status cards (health, backup, drill, dead jobs, bundle warning) from HomePage; adds Signed-in devices card listing sessions with revoke action."
+verify = "Component and e2e tests verify /settings#status and /settings#devices render live server data and session revocation works."
+covers = ["SH-2"]
+after = [1]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Settings: Sign-in & security, Partner, and Household cards"
+description = "Moves Sign-in & security cards (passkeys, password, recovery codes) and Partner cards (invite link, reset link) from HomePage to /settings#security and /settings#partner; adds empty placeholder Household section."
+verify = "E2e tests verify passkey creation, recovery codes regeneration, and partner reset links work on /settings."
+covers = ["SH-3"]
+after = [3]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Re-auth dialog and account lifecycle settings"
+description = "Implements reusable modal Re-auth dialog retrying guarded actions on success (retiring inline ReauthRequired in CSV export); builds /settings#accounts section showing archived closed accounts with reopen, closing-balance warnings, and leave-household flow with re-auth."
+verify = "Unit and e2e tests verify re-auth modal retry, account reopen, and leave-household behind re-auth."
+covers = ["SH-4"]
+after = [4]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 6
+type = "story"
+title = "WCAG 2.2 AA automated axe audit harness"
+description = "Integrates @axe-core/playwright into e2e test suite; audits all shipped routes (/transactions, /accounts, /accounts/:id, /settings, /sign-in) in light and dark modes; fixes contrast, focus ring, or ARIA label violations."
+verify = "pnpm --filter @pangolin/e2e test:axe passes with zero WCAG 2.2 AA violations on all shipped routes."
+covers = ["SH-6"]
+after = [2, 5]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Refactor sweep"
+description = "Decomposes TransactionList.tsx into modular hooks, moves formatCents to lib/money.ts, removes deprecated HomePage.tsx, and verifies architectural package boundaries."
+verify = "node scripts/check-boundaries.ts, biome check ., and full vitest suite pass with no regressions."
+covers = []
+after = [1, 2, 3, 4, 5, 6]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 8
+type = "story"
+title = "End-to-end shell, settings, and theming journey"
+description = "Comprehensive Playwright test exercising desktop and phone navigation, theme switching across sessions, settings navigation, session revocation, and re-auth dialog."
+verify = "e2e/shell.spec.ts passes green against running container."
+covers = ["SH-1", "SH-2", "SH-5"]
+after = [7]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Release v0.2.3 and deploy"
+description = "Prepares release v0.2.3 and deployment checklist for home server (pang-dev), verifies migration 0014 dry run, runs release workflow, verifies post-upgrade status, /healthz, and backup manifest."
+verify = "v0.2.3 release workflow passes all jobs; pangolin upgrade v0.2.3 succeeds on pang-dev with schema 15 of 15."
+covers = ["CAP-16"]
+after = [8]
+hitl = true
+risk = "medium"
