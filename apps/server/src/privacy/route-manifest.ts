@@ -147,6 +147,10 @@ export const MANIFEST: readonly ManifestEntry[] = [
   system("/api/system/recovery-bundle", "Whether the recovery bundle is confirmed; no secrets."),
 
   read("/api/identity/me"),
+  read("/api/identity/preferences"),
+  write("PUT", "/api/identity/preferences", {
+    body: () => ({ theme: "clay-linen", mode: "system" }),
+  }),
   read("/api/identity/notices"),
   write("POST", "/api/identity/notices/:id/dismiss", { params: { id: "notice" } }),
   identity("POST", "/api/identity/setup-links", "Household setup link; carries no ledger data."),

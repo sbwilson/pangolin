@@ -43,7 +43,7 @@ describe("committed migrations", () => {
     expect(loadMigrations(packageMigrationsDir)[0]?.name).toBe("0000_baseline");
   });
 
-  it("migrates a fresh database to version 14, then re-applies nothing", () => {
+  it("migrates a fresh database to version 15, then re-applies nothing", () => {
     const migrations = loadMigrations(packageMigrationsDir);
     const names = [
       "0000_baseline",
@@ -60,12 +60,32 @@ describe("committed migrations", () => {
       "0011_backup_snapshot_drop_figures",
       "0012_search_index",
       "0013_absent_argent",
+      "0014_person_preference",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 14 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 14 });
-    expect(schemaVersion(db)).toBe(14);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 15 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 15 });
+    expect(schemaVersion(db)).toBe(15);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
+  });
+
+  it("creates person_preference table when 0013 upgrades to 0014", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 14));
+    expect(schemaVersion(db)).toBe(14);
+    db.exec(`
+      INSERT INTO person (id, display_name, colour, created_at, updated_at) VALUES ('P1','Partner 1','#fff','t','t');
+    `);
+    expect(migrate(db, migrations.slice(0, 15)).applied).toEqual(["0014_person_preference"]);
+    expect(schemaVersion(db)).toBe(15);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+    db.exec(`
+      INSERT INTO person_preference (person_id, theme, mode, created_at, updated_at)
+      VALUES ('P1', 'clay-linen', 'system', 't', 't');
+    `);
+    expect(
+      db.prepare("SELECT person_id, theme, mode FROM person_preference").all(),
+    ).toEqual([{ person_id: "P1", theme: "clay-linen", mode: "system" }]);
   });
 
   it("keeps tagged splits and their split_tag rows when 0009 upgrades to 0010", () => {

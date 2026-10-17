@@ -38,6 +38,8 @@ import type {
   PayeeAliasRow,
   PayeeRepo,
   PayeeRow,
+  PersonPreferenceRepo,
+  PersonPreferenceRow,
   PersonRepo,
   PersonRow,
   RecoveryBundleRow,
@@ -82,6 +84,7 @@ import type { Viewer } from "../viewer.ts";
 export interface MemoryState {
   settings: HouseholdSettingsRow;
   people: PersonRow[];
+  preferences: PersonPreferenceRow[];
   audit: AuditRow[];
   jobs: JobRow[];
   reviewItems: ReviewItemRow[];
@@ -386,6 +389,25 @@ function personRepo(working: MemoryState, check: () => void): PersonRepo {
               ]
             : [],
         );
+    },
+  };
+}
+
+function personPreferenceRepo(working: MemoryState, check: () => void): PersonPreferenceRepo {
+  return {
+    get: (personId) => {
+      check();
+      return working.preferences.find((p) => p.personId === personId);
+    },
+    upsert: (row) => {
+      check();
+      const index = working.preferences.findIndex((p) => p.personId === row.personId);
+      if (index >= 0) {
+        working.preferences[index] = row;
+      } else {
+        working.preferences.push(row);
+      }
+      return row;
     },
   };
 }
@@ -2258,6 +2280,7 @@ export function memoryUnitOfWork(
     state: {
       settings,
       people: [],
+      preferences: [],
       audit: [],
       jobs: [],
       reviewItems: [],
@@ -2296,6 +2319,7 @@ export function memoryUnitOfWork(
       const working: MemoryState = {
         settings: uow.state.settings,
         people: [...uow.state.people],
+        preferences: [...uow.state.preferences],
         audit: [...uow.state.audit],
         jobs: [...uow.state.jobs],
         reviewItems: [...uow.state.reviewItems],
@@ -2345,6 +2369,7 @@ export function memoryUnitOfWork(
           },
         },
         person: personRepo(working, check),
+        personPreferences: personPreferenceRepo(working, check),
         users: userRepo(working, check),
         setupLinks: setupLinkRepo(working, check),
         loginAttempts: loginAttemptRepo(working, check),
@@ -2383,6 +2408,7 @@ export function memoryUnitOfWork(
         const result = fn(tx);
         uow.state.settings = working.settings;
         uow.state.people = working.people;
+        uow.state.preferences = working.preferences;
         uow.state.audit = working.audit;
         uow.state.jobs = working.jobs;
         uow.state.reviewItems = working.reviewItems;
@@ -2430,6 +2456,7 @@ export function memoryUnitOfWork(
           listActive: person.listActive,
           listLogins: person.listLogins,
         },
+        personPreferences: { get: personPreferenceRepo(uow.state, check).get },
         users: userRepo(uow.state, check),
         setupLinks: { findByTokenHash: links.findByTokenHash, hasLive: links.hasLive },
         loginAttempts: { listSince: loginAttemptRepo(uow.state, check).listSince },

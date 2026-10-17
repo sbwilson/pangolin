@@ -31,6 +31,32 @@ export interface PersonRow {
   readonly deletedAt: string | null;
 }
 
+export const THEME_NAMES = [
+  "clay-linen",
+  "harbour-morning",
+  "fern-gully",
+  "galah-party",
+  "gelato-bar",
+  "black-opal",
+] as const;
+
+export type ThemeName = (typeof THEME_NAMES)[number];
+
+export const THEME_MODES = ["light", "dark", "system"] as const;
+
+export type ThemeMode = (typeof THEME_MODES)[number];
+
+/** `person_preference`: appearance preference per person. */
+export interface PersonPreferenceRow {
+  readonly personId: Id<"Person">;
+  readonly theme: ThemeName;
+  readonly mode: ThemeMode;
+  /** UTC ISO-8601 timestamp. */
+  readonly createdAt: string;
+  /** UTC ISO-8601 timestamp. */
+  readonly updatedAt: string;
+}
+
 /** One `audit_log` row, fully stamped. Only the `write` helper builds these. */
 export interface AuditRow {
   readonly id: Id<"AuditLog">;
@@ -1034,6 +1060,17 @@ export interface PersonRepo {
   markLeft(id: Id<"Person">, at: string): boolean;
 }
 
+export interface PersonPreferenceRepo {
+  get(personId: string): PersonPreferenceRow | undefined;
+  upsert(row: {
+    readonly personId: Id<"Person">;
+    readonly theme: ThemeName;
+    readonly mode: ThemeMode;
+    readonly createdAt: string;
+    readonly updatedAt: string;
+  }): PersonPreferenceRow;
+}
+
 /** An active person with a login, as the server console lists them. */
 export interface LoginRow {
   readonly personId: Id<"Person">;
@@ -1247,6 +1284,7 @@ export interface AuditRepo {
 export interface TxRepos {
   readonly householdSettings: HouseholdSettingsRepo;
   readonly person: PersonRepo;
+  readonly personPreferences: PersonPreferenceRepo;
   readonly users: UserRepo;
   readonly setupLinks: SetupLinkRepo;
   readonly loginAttempts: LoginAttemptRepo;
@@ -1277,6 +1315,7 @@ export interface TxRepos {
 export interface ReadRepos {
   readonly householdSettings: Pick<HouseholdSettingsRepo, "get">;
   readonly person: Pick<PersonRepo, "findByUserId" | "listActive" | "listLogins">;
+  readonly personPreferences: Pick<PersonPreferenceRepo, "get">;
   readonly users: UserRepo;
   readonly setupLinks: Pick<SetupLinkRepo, "findByTokenHash" | "hasLive">;
   readonly loginAttempts: Pick<LoginAttemptRepo, "listSince">;

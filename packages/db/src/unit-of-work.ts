@@ -31,6 +31,7 @@ import {
   createSetupLinkRepo,
   createUserRepo,
 } from "./identity-repos.ts";
+import { createPersonPreferenceRepo } from "./repositories/person-preference.ts";
 import { createJobRepo } from "./job-repo.ts";
 import {
   createAccountRepo,
@@ -119,6 +120,7 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
       },
     },
     person: createPersonRepo(orm, () => guard(scope)),
+    personPreferences: createPersonPreferenceRepo(orm, () => guard(scope)),
     users: createUserRepo(orm, () => guard(scope)),
     setupLinks: createSetupLinkRepo(orm, () => guard(scope)),
     loginAttempts: createLoginAttemptRepo(orm, () => guard(scope)),
@@ -290,6 +292,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               listActive: repos.person.listActive,
               listLogins: repos.person.listLogins,
             },
+            personPreferences: { get: repos.personPreferences.get },
             users: repos.users,
             setupLinks: {
               findByTokenHash: repos.setupLinks.findByTokenHash,

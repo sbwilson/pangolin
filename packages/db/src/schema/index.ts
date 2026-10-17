@@ -24,6 +24,7 @@ export { loginAttempt } from "./login-attempt.ts";
 export { payee } from "./payee.ts";
 export { payeeAlias } from "./payee-alias.ts";
 export { person } from "./person.ts";
+export { personPreference } from "./person-preference.ts";
 export { reEnrolmentLink } from "./re-enrolment-link.ts";
 export { recoveryBundle } from "./recovery-bundle.ts";
 export { recoveryCode } from "./recovery-code.ts";

@@ -42,6 +42,8 @@ const UNSCOPED_REPOS: Readonly<Record<string, string>> = {
   backupVerifications:
     "one row per check or drill: its kind, whether it passed and fixed words naming the check; no figure of the household's data",
   recoveryBundle: "whether the recovery bundle is confirmed",
+  personPreferences:
+    "a person's UI preferences (theme, mode), read and written by their own id; no ledger data",
 };
 
 /** `Repo.method` for each method that may take no viewer first, with the reason. */

@@ -216,6 +216,15 @@ export {
   sessionViewer,
 } from "./identity/me.ts";
 export {
+  type GetPreferencesInput,
+  getPreferences,
+  getPreferencesInput,
+  type Preferences,
+  type UpdatePreferencesInput,
+  updatePreferences,
+  updatePreferencesInput,
+} from "./identity/preferences.ts";
+export {
   type DismissNoticeInput,
   dismissNotice,
   type ListNoticesInput,
@@ -445,8 +454,14 @@ export type {
   LoginRow,
   OwnerChange,
   PendingJobRow,
+  PersonPreferenceRepo,
+  PersonPreferenceRow,
   PersonRepo,
   PersonRow,
+  THEME_MODES,
+  THEME_NAMES,
+  ThemeMode,
+  ThemeName,
   ReadRepos,
   RecoveryBundleRepo,
   RecoveryBundleRow,

@@ -38,6 +38,7 @@ import {
   getActivity,
   getPayee,
   getPayeeAlias,
+  getPreferences,
   getTag,
   getTransaction,
   health,
@@ -92,6 +93,7 @@ import {
   updateInstitution,
   updatePayee,
   updatePayeeAlias,
+  updatePreferences,
   updateTag,
   updateTaxCategory,
   updateTransaction,
@@ -314,6 +316,13 @@ export function createApi(deps: ApiDeps) {
         },
         200,
       );
+    })
+    .get("/api/identity/preferences", (c) => {
+      return c.json(getPreferences(ctx(c), {}), 200);
+    })
+    .put("/api/identity/preferences", async (c) => {
+      writable();
+      return c.json(updatePreferences(ctx(c), await objectBody(c)), 200);
     })
     .get("/api/ledger/transactions", (c) => {
       // Per viewer (AD-3): shared accounts plus the viewer's own private ones. Never cached.

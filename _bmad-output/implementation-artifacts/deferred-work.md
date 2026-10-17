@@ -391,3 +391,7 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/story-50-000-row-performance-plan.md`
   summary: In `packages/db/src/classify-repos.ts:345`, `listForSplit` subquery evaluates all visible splits without `eq(split.id, splitId)`.
   evidence: Pre-existing query in `listForSplit` does not filter the inner `split` subquery by the targeted `splitId`, unlike `listForSplits`.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-theme-engine-and-preferences-persistence-plan.md`
+  summary: Clean up `person_preference` records in `leaveHousehold` when a person leaves the household.
+  evidence: `packages/app/src/accounts/leave-household.ts` hard-deletes person-scoped rows on household leave; `person_preference` cleanup belongs in Story 13.5 (account lifecycle settings behind re-auth).

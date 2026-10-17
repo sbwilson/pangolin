@@ -589,3 +589,36 @@ export async function fetchAccountBalance(id: string): Promise<number> {
   if (!res.ok) throw await apiError(res);
   return ((await res.json()) as { balanceCents: number }).balanceCents;
 }
+
+export const THEMES = [
+  "clay-linen",
+  "harbour-morning",
+  "fern-gully",
+  "galah-party",
+  "gelato-bar",
+  "black-opal",
+] as const;
+
+export type ThemeName = (typeof THEMES)[number];
+
+export const MODES = ["light", "dark", "system"] as const;
+
+export type ThemeMode = (typeof MODES)[number];
+
+export interface Preferences {
+  readonly theme: ThemeName;
+  readonly mode: ThemeMode;
+}
+
+export async function fetchPreferences(): Promise<Preferences> {
+  const res = await fetch("/api/identity/preferences");
+  if (res.status === 401) {
+    return { theme: "clay-linen", mode: "system" };
+  }
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()) as Preferences;
+}
+
+export async function updatePreferences(patch: Partial<Preferences>): Promise<Preferences> {
+  return await sendJson<Preferences>("PUT", "/api/identity/preferences", patch);
+}

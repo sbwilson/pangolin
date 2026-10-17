@@ -141,7 +141,7 @@ describe("GET /api/system/health", () => {
     const app = createApp(deps(openDb()));
     const res = await app.request("/api/system/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", schemaVersion: 14, writable: true });
+    expect(await res.json()).toEqual({ status: "ok", schemaVersion: MIGRATIONS, writable: true });
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 

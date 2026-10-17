@@ -25,7 +25,7 @@ import {
   write,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
-import { openDatabase, packageMigrationsDir, schemaVersion } from "@pangolin/db";
+import { loadMigrations, openDatabase, packageMigrationsDir, schemaVersion } from "@pangolin/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { generateSeedFile } from "../scripts/demo-seed.ts";
@@ -39,6 +39,8 @@ import {
   loadConfig,
 } from "./config.ts";
 import { type RunningServer, type StartOptions, startServer } from "./server.ts";
+
+const MIGRATIONS = loadMigrations(packageMigrationsDir).length;
 
 let dir: string;
 
@@ -90,7 +92,7 @@ describe("startServer", () => {
     try {
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 14, writable: true },
+        body: { status: "ok", schemaVersion: MIGRATIONS, writable: true },
       });
     } finally {
       await server.close();
@@ -136,7 +138,7 @@ describe("startServer", () => {
     try {
       expect((await getHealth(server.port)).body).toEqual({
         status: "ok",
-        schemaVersion: 14,
+        schemaVersion: MIGRATIONS,
         writable: true,
       });
     } finally {
@@ -157,7 +159,7 @@ describe("startServer", () => {
       try {
         expect(await getHealth(server.port)).toEqual({
           status: 503,
-          body: { status: "unhealthy", schemaVersion: 14, writable: false },
+          body: { status: "unhealthy", schemaVersion: MIGRATIONS, writable: false },
         });
       } finally {
         await server.close();
@@ -179,7 +181,7 @@ describe("startServer", () => {
 
     await expect(boot(migrationsDir)).rejects.toThrow(/Migration 0099_broken failed/);
     const db = openDatabase(join(dataDir(), "pangolin.sqlite"));
-    expect(schemaVersion(db)).toBe(14);
+    expect(schemaVersion(db)).toBe(MIGRATIONS);
     db.close();
   });
 });
@@ -510,7 +512,7 @@ describe("startServer in demo mode", () => {
       );
       expect(await getHealth(server.port)).toEqual({
         status: 200,
-        body: { status: "ok", schemaVersion: 14, writable: true },
+        body: { status: "ok", schemaVersion: MIGRATIONS, writable: true },
       });
       // Demo mode runs no jobs, so /healthz skips the runner check.
       expect(await getHealthz(server.port)).toEqual({ status: 200, body: { ok: true } });

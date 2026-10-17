@@ -5,52 +5,584 @@
 
 :root {
   color-scheme: light dark;
-  --background: oklch(0.99 0.004 95);
-  --foreground: oklch(0.22 0.02 150);
-  --card: oklch(0.99 0.004 95);
-  --card-foreground: oklch(0.22 0.02 150);
-  --popover: oklch(0.99 0.004 95);
-  --popover-foreground: oklch(0.22 0.02 150);
-  --secondary: oklch(0.96 0.008 95);
-  --secondary-foreground: oklch(0.22 0.02 150);
-  --muted: oklch(0.96 0.008 95);
-  --muted-foreground: oklch(0.5 0.02 150);
-  --border: oklch(0.9 0.01 95);
-  --input: oklch(0.9 0.01 95);
-  --ring: oklch(0.45 0.07 155);
-  --primary: oklch(0.38 0.06 155);
-  --primary-foreground: oklch(0.98 0.005 95);
-  --destructive: oklch(0.57 0.22 27);
-  --destructive-foreground: oklch(0.98 0.005 95);
-  --accent: oklch(0.94 0.015 150);
-  --accent-foreground: oklch(0.22 0.02 150);
-  --sidebar: oklch(0.97 0.008 95);
-  --warning: #8a5600;
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --secondary: var(--background);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--background);
+  --input: var(--border);
+  --accent-foreground: var(--primary);
+  --destructive: var(--money-out);
+  --destructive-foreground: var(--primary-foreground);
+  --sidebar: var(--background);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--primary);
+  --sidebar-border: var(--border);
+  --card-foreground: var(--foreground);
+}
+
+/* ==========================================================================
+   1. Clay & Linen (default theme)
+   ========================================================================== */
+:root,
+:root[data-theme="clay-linen"] {
+  --background: #F6EFE6;
+  --card: #FFFAF3;
+  --foreground: #2A1F17;
+  --muted-foreground: #6A594B;
+  --border: #E3D6C5;
+  --primary: #A3441D;
+  --primary-foreground: #FFFFFF;
+  --ring: #B85A1E;
+  --accent: #F6E8DE;
+  --money-in: #3D6B2D;
+  --money-out: #A3283A;
+  --warning: #8A5600;
+  --warning-bg: #F0E5D3;
+  --person-simon: #2C6681;
+  --person-carissa: #9C4277;
+  --mascot-scale-1: #BD785C;
+  --mascot-scale-2: #D1A28E;
+  --chart-1: #6F8A3D;
+  --chart-2: #B5562B;
+  --chart-3: #D9A13B;
+  --chart-4: #2E8C88;
+  --chart-5: #C97B63;
+  --chart-6: #8A5A7A;
+  --chart-7: #7E6A4F;
+  --chart-8: #4F5D85;
+  --chart-9: #A3B18A;
+}
+
+:root:not([data-theme])[data-mode="dark"],
+:root:not([data-theme])[data-resolved-mode="dark"],
+:root[data-theme="clay-linen"][data-mode="dark"],
+:root[data-theme="clay-linen"][data-resolved-mode="dark"] {
+  --background: #1C1713;
+  --card: #26201A;
+  --foreground: #F3E9DD;
+  --muted-foreground: #B5A391;
+  --border: #3E342A;
+  --primary: #E58457;
+  --primary-foreground: #1C1713;
+  --ring: #F0A070;
+  --accent: #453024;
+  --money-in: #94C47E;
+  --money-out: #F28E8E;
+  --warning: #E6B455;
+  --warning-bg: #493B25;
+  --person-simon: #7DB7D3;
+  --person-carissa: #E39BC6;
+  --mascot-scale-1: #ECA686;
+  --mascot-scale-2: #F2C2AB;
+  --chart-1: #9DBA62;
+  --chart-2: #E07F52;
+  --chart-3: #EBC066;
+  --chart-4: #6FB3B5;
+  --chart-5: #E3A38E;
+  --chart-6: #C08AB0;
+  --chart-7: #B19C7E;
+  --chart-8: #B3B8D8;
+  --chart-9: #B7C9A8;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: oklch(0.2 0.01 150);
-    --foreground: oklch(0.96 0.005 95);
-    --card: oklch(0.2 0.01 150);
-    --card-foreground: oklch(0.96 0.005 95);
-    --popover: oklch(0.2 0.01 150);
-    --popover-foreground: oklch(0.96 0.005 95);
-    --secondary: oklch(0.26 0.012 150);
-    --secondary-foreground: oklch(0.96 0.005 95);
-    --muted: oklch(0.26 0.012 150);
-    --muted-foreground: oklch(0.72 0.02 150);
-    --border: oklch(0.32 0.012 150);
-    --input: oklch(0.32 0.012 150);
-    --ring: oklch(0.7 0.08 155);
-    --primary: oklch(0.78 0.08 155);
-    --primary-foreground: oklch(0.2 0.01 150);
-    --destructive: oklch(0.57 0.22 27);
-    --destructive-foreground: oklch(0.96 0.005 95);
-    --accent: oklch(0.3 0.02 150);
-    --accent-foreground: oklch(0.96 0.005 95);
-    --sidebar: oklch(0.23 0.012 150);
-    --warning: #e6b455;
+  :root:not([data-theme]):not([data-mode="light"]):not([data-resolved-mode="light"]),
+  :root[data-theme="clay-linen"]:not([data-mode="light"]):not([data-resolved-mode="light"]) {
+    --background: #1C1713;
+    --card: #26201A;
+    --foreground: #F3E9DD;
+    --muted-foreground: #B5A391;
+    --border: #3E342A;
+    --primary: #E58457;
+    --primary-foreground: #1C1713;
+    --ring: #F0A070;
+    --accent: #453024;
+    --money-in: #94C47E;
+    --money-out: #F28E8E;
+    --warning: #E6B455;
+    --warning-bg: #493B25;
+    --person-simon: #7DB7D3;
+    --person-carissa: #E39BC6;
+    --mascot-scale-1: #ECA686;
+    --mascot-scale-2: #F2C2AB;
+    --chart-1: #9DBA62;
+    --chart-2: #E07F52;
+    --chart-3: #EBC066;
+    --chart-4: #6FB3B5;
+    --chart-5: #E3A38E;
+    --chart-6: #C08AB0;
+    --chart-7: #B19C7E;
+    --chart-8: #B3B8D8;
+    --chart-9: #B7C9A8;
+  }
+}
+
+/* ==========================================================================
+   2. Harbour Morning
+   ========================================================================== */
+:root[data-theme="harbour-morning"] {
+  --background: #F3F6F9;
+  --card: #FFFFFF;
+  --foreground: #0E1A26;
+  --muted-foreground: #526070;
+  --border: #D8E0E8;
+  --primary: #0A5CBD;
+  --primary-foreground: #FFFFFF;
+  --ring: #2F7FE6;
+  --accent: #E6EFF8;
+  --money-in: #0A7457;
+  --money-out: #BE2F48;
+  --warning: #935600;
+  --warning-bg: #F1E9DE;
+  --person-simon: #0D7482;
+  --person-carissa: #BC4279;
+  --mascot-scale-1: #4F8ACF;
+  --mascot-scale-2: #84AEDE;
+  --chart-1: #0A5FC2;
+  --chart-2: #1E3A6E;
+  --chart-3: #14A3B8;
+  --chart-4: #E2735A;
+  --chart-5: #6B5CD6;
+  --chart-6: #2E9E7A;
+  --chart-7: #8394AB;
+  --chart-8: #D6A73A;
+  --chart-9: #E58FB0;
+}
+
+:root[data-theme="harbour-morning"][data-mode="dark"],
+:root[data-theme="harbour-morning"][data-resolved-mode="dark"] {
+  --background: #0B121B;
+  --card: #121C28;
+  --foreground: #E5EDF5;
+  --muted-foreground: #95A5B6;
+  --border: #233244;
+  --primary: #5EA6FF;
+  --primary-foreground: #0B121B;
+  --ring: #8CC0FF;
+  --accent: #1E324A;
+  --money-in: #4FD1A5;
+  --money-out: #FF7A8E;
+  --warning: #F2B84B;
+  --warning-bg: #3A382E;
+  --person-simon: #4CC9D6;
+  --person-carissa: #F08DBA;
+  --mascot-scale-1: #8BBFFF;
+  --mascot-scale-2: #AED2FF;
+  --chart-1: #5EA6FF;
+  --chart-2: #8196C8;
+  --chart-3: #3CC7DB;
+  --chart-4: #FF9478;
+  --chart-5: #9C8FFF;
+  --chart-6: #4FC79E;
+  --chart-7: #A6B3C4;
+  --chart-8: #F2C55C;
+  --chart-9: #F5A9C6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="harbour-morning"]:not([data-mode="light"]):not([data-resolved-mode="light"]) {
+    --background: #0B121B;
+    --card: #121C28;
+    --foreground: #E5EDF5;
+    --muted-foreground: #95A5B6;
+    --border: #233244;
+    --primary: #5EA6FF;
+    --primary-foreground: #0B121B;
+    --ring: #8CC0FF;
+    --accent: #1E324A;
+    --money-in: #4FD1A5;
+    --money-out: #FF7A8E;
+    --warning: #F2B84B;
+    --warning-bg: #3A382E;
+    --person-simon: #4CC9D6;
+    --person-carissa: #F08DBA;
+    --mascot-scale-1: #8BBFFF;
+    --mascot-scale-2: #AED2FF;
+    --chart-1: #5EA6FF;
+    --chart-2: #8196C8;
+    --chart-3: #3CC7DB;
+    --chart-4: #FF9478;
+    --chart-5: #9C8FFF;
+    --chart-6: #4FC79E;
+    --chart-7: #A6B3C4;
+    --chart-8: #F2C55C;
+    --chart-9: #F5A9C6;
+  }
+}
+
+/* ==========================================================================
+   3. Fern Gully
+   ========================================================================== */
+:root[data-theme="fern-gully"] {
+  --background: #F2F5EE;
+  --card: #FCFDF9;
+  --foreground: #18261B;
+  --muted-foreground: #526454;
+  --border: #D7E0D2;
+  --primary: #2B7446;
+  --primary-foreground: #FFFFFF;
+  --ring: #3F9A5A;
+  --accent: #E7EFE7;
+  --money-in: #186A63;
+  --money-out: #AE3644;
+  --warning: #875E00;
+  --warning-bg: #EDE8D9;
+  --person-simon: #2F6690;
+  --person-carissa: #A3457A;
+  --mascot-scale-1: #669B7A;
+  --mascot-scale-2: #95BAA2;
+  --chart-1: #2E7A4B;
+  --chart-2: #8B6B4A;
+  --chart-3: #7FA650;
+  --chart-4: #8E5BB5;
+  --chart-5: #D06A4E;
+  --chart-6: #E28FA6;
+  --chart-7: #4E8F8A;
+  --chart-8: #C9A227;
+  --chart-9: #5E7FB0;
+}
+
+:root[data-theme="fern-gully"][data-mode="dark"],
+:root[data-theme="fern-gully"][data-resolved-mode="dark"] {
+  --background: #111A14;
+  --card: #18241C;
+  --foreground: #E4EEE3;
+  --muted-foreground: #9DB09E;
+  --border: #2A3A2E;
+  --primary: #6CC48A;
+  --primary-foreground: #0F1A12;
+  --ring: #8EE0A8;
+  --accent: #253E2E;
+  --money-in: #5CC7B8;
+  --money-out: #FF8A8F;
+  --warning: #E8C060;
+  --warning-bg: #3D4028;
+  --person-simon: #7FB2E0;
+  --person-carissa: #E79AC6;
+  --mascot-scale-1: #95D5AB;
+  --mascot-scale-2: #B6E2C4;
+  --chart-1: #6CC48A;
+  --chart-2: #BE9B78;
+  --chart-3: #A8CF72;
+  --chart-4: #B98EE0;
+  --chart-5: #F09378;
+  --chart-6: #F4AFC0;
+  --chart-7: #4FA89E;
+  --chart-8: #E6C553;
+  --chart-9: #8FAEE0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="fern-gully"]:not([data-mode="light"]):not([data-resolved-mode="light"]) {
+    --background: #111A14;
+    --card: #18241C;
+    --foreground: #E4EEE3;
+    --muted-foreground: #9DB09E;
+    --border: #2A3A2E;
+    --primary: #6CC48A;
+    --primary-foreground: #0F1A12;
+    --ring: #8EE0A8;
+    --accent: #253E2E;
+    --money-in: #5CC7B8;
+    --money-out: #FF8A8F;
+    --warning: #E8C060;
+    --warning-bg: #3D4028;
+    --person-simon: #7FB2E0;
+    --person-carissa: #E79AC6;
+    --mascot-scale-1: #95D5AB;
+    --mascot-scale-2: #B6E2C4;
+    --chart-1: #6CC48A;
+    --chart-2: #BE9B78;
+    --chart-3: #A8CF72;
+    --chart-4: #B98EE0;
+    --chart-5: #F09378;
+    --chart-6: #F4AFC0;
+    --chart-7: #4FA89E;
+    --chart-8: #E6C553;
+    --chart-9: #8FAEE0;
+  }
+}
+
+/* ==========================================================================
+   4. Galah Party
+   ========================================================================== */
+:root[data-theme="galah-party"] {
+  --background: #FAF7F8;
+  --card: #FFFFFF;
+  --foreground: #1A1020;
+  --muted-foreground: #5E5367;
+  --border: #E8DEE6;
+  --primary: #C11574;
+  --primary-foreground: #FFFFFF;
+  --ring: #E0337A;
+  --accent: #F9E8F1;
+  --money-in: #00784F;
+  --money-out: #C8291D;
+  --warning: #8A5B00;
+  --warning-bg: #F0EADE;
+  --person-simon: #155EEF;
+  --person-carissa: #7A2ECC;
+  --mascot-scale-1: #D2579B;
+  --mascot-scale-2: #E08ABA;
+  --chart-1: #C11574;
+  --chart-2: #155EEF;
+  --chart-3: #00A389;
+  --chart-4: #F79009;
+  --chart-5: #7A5AF8;
+  --chart-6: #12B76A;
+  --chart-7: #854D0E;
+  --chart-8: #0BA5EC;
+  --chart-9: #F04438;
+}
+
+:root[data-theme="galah-party"][data-mode="dark"],
+:root[data-theme="galah-party"][data-resolved-mode="dark"] {
+  --background: #120B16;
+  --card: #1D1322;
+  --foreground: #F8EEF6;
+  --muted-foreground: #B8A7BF;
+  --border: #3A2A40;
+  --primary: #FF4FA3;
+  --primary-foreground: #120B16;
+  --ring: #FF8CC4;
+  --accent: #411D37;
+  --money-in: #3CE0A0;
+  --money-out: #FF7062;
+  --warning: #FFC53D;
+  --warning-bg: #463327;
+  --person-simon: #5B9BFF;
+  --person-carissa: #B98CFF;
+  --mascot-scale-1: #FF80BD;
+  --mascot-scale-2: #FFA7D1;
+  --chart-1: #FF4FA3;
+  --chart-2: #5B9BFF;
+  --chart-3: #2EE6C4;
+  --chart-4: #FFA43A;
+  --chart-5: #A48BFF;
+  --chart-6: #8BE04B;
+  --chart-7: #FFD84D;
+  --chart-8: #4CC7FF;
+  --chart-9: #FF6B5E;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="galah-party"]:not([data-mode="light"]):not([data-resolved-mode="light"]) {
+    --background: #120B16;
+    --card: #1D1322;
+    --foreground: #F8EEF6;
+    --muted-foreground: #B8A7BF;
+    --border: #3A2A40;
+    --primary: #FF4FA3;
+    --primary-foreground: #120B16;
+    --ring: #FF8CC4;
+    --accent: #411D37;
+    --money-in: #3CE0A0;
+    --money-out: #FF7062;
+    --warning: #FFC53D;
+    --warning-bg: #463327;
+    --person-simon: #5B9BFF;
+    --person-carissa: #B98CFF;
+    --mascot-scale-1: #FF80BD;
+    --mascot-scale-2: #FFA7D1;
+    --chart-1: #FF4FA3;
+    --chart-2: #5B9BFF;
+    --chart-3: #2EE6C4;
+    --chart-4: #FFA43A;
+    --chart-5: #A48BFF;
+    --chart-6: #8BE04B;
+    --chart-7: #FFD84D;
+    --chart-8: #4CC7FF;
+    --chart-9: #FF6B5E;
+  }
+}
+
+/* ==========================================================================
+   5. Gelato Bar
+   ========================================================================== */
+:root[data-theme="gelato-bar"] {
+  --background: #F8F5FC;
+  --card: #FFFFFF;
+  --foreground: #231C33;
+  --muted-foreground: #625975;
+  --border: #E6E0F0;
+  --primary: #6A4FCF;
+  --primary-foreground: #FFFFFF;
+  --ring: #8B70F0;
+  --accent: #F0EDFA;
+  --money-in: #1F7556;
+  --money-out: #B3385B;
+  --warning: #855A00;
+  --warning-bg: #EFEADE;
+  --person-simon: #2F70B4;
+  --person-carissa: #AF4577;
+  --mascot-scale-1: #9480DC;
+  --mascot-scale-2: #B4A7E7;
+  --chart-1: #A08CF0;
+  --chart-2: #F59E86;
+  --chart-3: #6CC6A6;
+  --chart-4: #EBC352;
+  --chart-5: #7FB8EE;
+  --chart-6: #F28DB8;
+  --chart-7: #A8CC6A;
+  --chart-8: #8E9AAF;
+  --chart-9: #E3B5F2;
+}
+
+:root[data-theme="gelato-bar"][data-mode="dark"],
+:root[data-theme="gelato-bar"][data-resolved-mode="dark"] {
+  --background: #19152A;
+  --card: #221D36;
+  --foreground: #EEEAF8;
+  --muted-foreground: #ABA3C2;
+  --border: #362F4E;
+  --primary: #B6A2FF;
+  --primary-foreground: #19152A;
+  --ring: #CDBEFF;
+  --accent: #3A3256;
+  --money-in: #7FE0BC;
+  --money-out: #FF9AB5;
+  --warning: #F5CE6B;
+  --warning-bg: #483D40;
+  --person-simon: #8EC3F5;
+  --person-carissa: #F5A3CA;
+  --mascot-scale-1: #CABCFF;
+  --mascot-scale-2: #DAD0FF;
+  --chart-1: #A08CF0;
+  --chart-2: #F59E86;
+  --chart-3: #6CC6A6;
+  --chart-4: #EBC352;
+  --chart-5: #7FB8EE;
+  --chart-6: #F28DB8;
+  --chart-7: #A8CC6A;
+  --chart-8: #8E9AAF;
+  --chart-9: #E3B5F2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="gelato-bar"]:not([data-mode="light"]):not([data-resolved-mode="light"]) {
+    --background: #19152A;
+    --card: #221D36;
+    --foreground: #EEEAF8;
+    --muted-foreground: #ABA3C2;
+    --border: #362F4E;
+    --primary: #B6A2FF;
+    --primary-foreground: #19152A;
+    --ring: #CDBEFF;
+    --accent: #3A3256;
+    --money-in: #7FE0BC;
+    --money-out: #FF9AB5;
+    --warning: #F5CE6B;
+    --warning-bg: #483D40;
+    --person-simon: #8EC3F5;
+    --person-carissa: #F5A3CA;
+    --mascot-scale-1: #CABCFF;
+    --mascot-scale-2: #DAD0FF;
+    --chart-1: #A08CF0;
+    --chart-2: #F59E86;
+    --chart-3: #6CC6A6;
+    --chart-4: #EBC352;
+    --chart-5: #7FB8EE;
+    --chart-6: #F28DB8;
+    --chart-7: #A8CC6A;
+    --chart-8: #8E9AAF;
+    --chart-9: #E3B5F2;
+  }
+}
+
+/* ==========================================================================
+   6. Black Opal
+   ========================================================================== */
+:root[data-theme="black-opal"] {
+  --background: #F4F1EC;
+  --card: #FFFDF9;
+  --foreground: #1A1722;
+  --muted-foreground: #5D5765;
+  --border: #E2DCD3;
+  --primary: #0D6669;
+  --primary-foreground: #FFFFFF;
+  --ring: #138A8E;
+  --accent: #E7EEEB;
+  --money-in: #187244;
+  --money-out: #A3213F;
+  --warning: #855600;
+  --warning-bg: #EFE7D9;
+  --person-simon: #2B4FA8;
+  --person-carissa: #8A2E8F;
+  --mascot-scale-1: #519193;
+  --mascot-scale-2: #86B2B4;
+  --chart-1: #0E6B6E;
+  --chart-2: #2B4FA8;
+  --chart-3: #1B8A55;
+  --chart-4: #8A2E8F;
+  --chart-5: #B8325A;
+  --chart-6: #E0A526;
+  --chart-7: #D46A3C;
+  --chart-8: #3E9DB8;
+  --chart-9: #D4869C;
+}
+
+:root[data-theme="black-opal"][data-mode="dark"],
+:root[data-theme="black-opal"][data-resolved-mode="dark"] {
+  --background: #0D0E14;
+  --card: #161722;
+  --foreground: #ECE8F2;
+  --muted-foreground: #A49FB3;
+  --border: #2A2B3A;
+  --primary: #35C2C0;
+  --primary-foreground: #0D0E14;
+  --ring: #6FE0DC;
+  --accent: #1B323B;
+  --money-in: #4FD08A;
+  --money-out: #FF6F8F;
+  --warning: #F2B640;
+  --warning-bg: #3E3427;
+  --person-simon: #7C9BFF;
+  --person-carissa: #D58AF0;
+  --mascot-scale-1: #6ED3D2;
+  --mascot-scale-2: #9AE0E0;
+  --chart-1: #35C2C0;
+  --chart-2: #6F8FFF;
+  --chart-3: #3FCB7F;
+  --chart-4: #C77BE0;
+  --chart-5: #F2617F;
+  --chart-6: #F2B640;
+  --chart-7: #FF8A54;
+  --chart-8: #9FB4FF;
+  --chart-9: #F0A6BA;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="black-opal"]:not([data-mode="light"]):not([data-resolved-mode="light"]) {
+    --background: #0D0E14;
+    --card: #161722;
+    --foreground: #ECE8F2;
+    --muted-foreground: #A49FB3;
+    --border: #2A2B3A;
+    --primary: #35C2C0;
+    --primary-foreground: #0D0E14;
+    --ring: #6FE0DC;
+    --accent: #1B323B;
+    --money-in: #4FD08A;
+    --money-out: #FF6F8F;
+    --warning: #F2B640;
+    --warning-bg: #3E3427;
+    --person-simon: #7C9BFF;
+    --person-carissa: #D58AF0;
+    --mascot-scale-1: #6ED3D2;
+    --mascot-scale-2: #9AE0E0;
+    --chart-1: #35C2C0;
+    --chart-2: #6F8FFF;
+    --chart-3: #3FCB7F;
+    --chart-4: #C77BE0;
+    --chart-5: #F2617F;
+    --chart-6: #F2B640;
+    --chart-7: #FF8A54;
+    --chart-8: #9FB4FF;
+    --chart-9: #F0A6BA;
   }
 }
 
@@ -75,7 +607,29 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
   --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-money-in: var(--money-in);
+  --color-money-out: var(--money-out);
+  --color-person-simon: var(--person-simon);
+  --color-person-carissa: var(--person-carissa);
+  --color-mascot-scale-1: var(--mascot-scale-1);
+  --color-mascot-scale-2: var(--mascot-scale-2);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-7: var(--chart-7);
+  --color-chart-8: var(--chart-8);
+  --color-chart-9: var(--chart-9);
 }
 
 @layer base {
