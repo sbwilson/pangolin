@@ -13,9 +13,9 @@ import { Button } from "../components/ui/button.tsx";
 import { ACCOUNT_GROUPS, hasBalance, ownerLabel, showsLock, TYPE_LABEL } from "../lib/accounts.ts";
 import { localDay } from "../lib/date-range.ts";
 import { freshnessLabel, isStale } from "../lib/freshness.ts";
+import { formatCents } from "../lib/money.ts";
 import { useSignedIn } from "../session.tsx";
 import { AccountSheet } from "./AccountSheet.tsx";
-import { formatCents } from "./TransactionsTable.tsx";
 
 /** A small padlock for a private account (drawn inline: the CSP allows no image assets). */
 export function LockIcon() {

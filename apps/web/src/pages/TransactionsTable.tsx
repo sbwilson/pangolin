@@ -12,8 +12,10 @@ import {
   TableRow,
 } from "../components/ui/table.tsx";
 import { hiddenUntilLabel, hidingActive, longDay, utcDay, WINK_LINE } from "../lib/hidden.ts";
+import { formatCents } from "../lib/money.ts";
 
-const MONEY = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" });
+export { formatCents } from "../lib/money.ts";
+
 const DAY = new Intl.DateTimeFormat("en-AU", {
   weekday: "short",
   day: "numeric",
@@ -21,9 +23,6 @@ const DAY = new Intl.DateTimeFormat("en-AU", {
   year: "numeric",
   timeZone: "UTC",
 });
-
-/** Formats cents the server worked out; the web never adds money up. */
-export const formatCents = (cents: number) => MONEY.format(cents / 100);
 
 /** A net with its sign spelled out: "+$5.00" or "-$5.00". */
 const formatNet = (cents: number) => `${cents > 0 ? "+" : ""}${formatCents(cents)}`;

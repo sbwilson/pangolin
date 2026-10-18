@@ -395,3 +395,15 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-theme-engine-and-preferences-persistence-plan.md`
   summary: Clean up `person_preference` records in `leaveHousehold` when a person leaves the household.
   evidence: `packages/app/src/accounts/leave-household.ts` hard-deletes person-scoped rows on household leave; `person_preference` cleanup belongs in Story 13.5 (account lifecycle settings behind re-auth).
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-refactor-sweep-plan.md`
+  summary: Add dedicated unit test suites for extracted hooks (useBulkSelection, useTransactionFilters, useTransactionExport, SearchBox).
+  evidence: Extracted hooks are currently validated through TransactionList.test.tsx integration tests; isolated hook test suites can be added during a test coverage sweep.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-refactor-sweep-plan.md`
+  summary: Handle partial batch failure rollbacks in runBulkAction.
+  evidence: Pre-existing bulk mutation logic applies splits sequentially and records successful transactions; full atomic rollback on partial batch failure can be addressed in future ledger refinement.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-refactor-sweep-plan.md`
+  summary: Refine Escape key event coordination between bulk row selection and modal sheets.
+  evidence: Verbatim pre-existing global Escape handler was retained during hook extraction; scoped event trapping can be refined with sheet focus-management improvements.

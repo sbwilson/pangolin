@@ -21,8 +21,7 @@ import { Sheet } from "../components/ui/sheet.tsx";
 import { TagPicker } from "../components/ui/tag-picker.tsx";
 import { localDay } from "../lib/date-range.ts";
 import { hiddenUntilLabel, hidingActive, longDay, utcDay, WINK_LINE } from "../lib/hidden.ts";
-import { centsToText, parseCents } from "../lib/money.ts";
-import { formatCents } from "./TransactionsTable.tsx";
+import { centsToText, formatCents, parseCents } from "../lib/money.ts";
 
 /** The message a refused `setSplitField` shows. */
 export const KEPT_MESSAGE = "Kept: a higher-ranked source set this";

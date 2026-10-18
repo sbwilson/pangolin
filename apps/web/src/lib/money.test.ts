@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centsToText, parseCents } from "./money.ts";
+import { centsToText, formatCents, parseCents } from "./money.ts";
 
 describe("parseCents", () => {
   it("reads dollars and cents without floating point", () => {
@@ -23,5 +23,19 @@ describe("centsToText", () => {
       expect(parseCents(centsToText(cents))).toBe(cents);
     }
     expect(centsToText(-450)).toBe("-4.50");
+  });
+});
+
+describe("formatCents", () => {
+  it("formats positive, negative, and zero AUD amounts", () => {
+    expect(formatCents(14285)).toBe("$142.85");
+    expect(formatCents(-450)).toBe("-$4.50");
+    expect(formatCents(0)).toBe("$0.00");
+    expect(formatCents(-0)).toBe("$0.00");
+  });
+
+  it("formats amounts in custom currency", () => {
+    expect(formatCents(1200, "USD")).toMatch(/USD\s12\.00/);
+    expect(formatCents(1200, "usd")).toMatch(/USD\s12\.00/);
   });
 });

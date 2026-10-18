@@ -10,13 +10,10 @@ import {
 } from "../api.ts";
 import { TYPE_LABEL } from "../lib/accounts.ts";
 import { localDay } from "../lib/date-range.ts";
+import { formatCents } from "../lib/money.ts";
 import { useSignedIn } from "../session.tsx";
 import { ReauthDialog } from "./ReauthDialog.tsx";
 import { Button } from "./ui/button.tsx";
-
-const formatCents = (cents: number, currency = "AUD") => {
-  return new Intl.NumberFormat("en-AU", { style: "currency", currency }).format(cents / 100);
-};
 
 export function AccountSettings() {
   const queryClient = useQueryClient();
