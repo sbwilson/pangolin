@@ -19,7 +19,8 @@
     "seed": "node tools/seed/src/cli.ts",
     "mock:llm": "node tools/mock-llm/src/cli.ts",
     "mock:prices": "node tools/mock-prices/src/cli.ts",
-    "e2e": "pnpm --filter @pangolin/e2e e2e"
+    "e2e": "pnpm --filter @pangolin/e2e e2e",
+    "test:axe": "pnpm --filter @pangolin/e2e test:axe"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

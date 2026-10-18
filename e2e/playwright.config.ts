@@ -32,7 +32,7 @@ export default defineConfig({
         {
           name: "chromium",
           testMatch: "**/*.spec.ts",
-          testIgnore: ["auth.spec.ts", "restored.spec.ts", "accounts.spec.ts"],
+          testIgnore: ["auth.spec.ts", "restored.spec.ts", "accounts.spec.ts", "axe.spec.ts"],
           dependencies: ["auth"],
           use: chrome,
         },
@@ -42,6 +42,12 @@ export default defineConfig({
           name: "accounts",
           testMatch: "accounts.spec.ts",
           dependencies: ["chromium"],
+          use: chrome,
+        },
+        {
+          name: "axe",
+          testMatch: "axe.spec.ts",
+          dependencies: ["accounts"],
           use: chrome,
         },
       ],

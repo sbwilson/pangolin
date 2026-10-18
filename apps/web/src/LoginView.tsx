@@ -59,7 +59,7 @@ export function LoginView({ onSignedIn }: { onSignedIn: () => void }) {
   const errorBanner =
     error === null ? null : (
       <div
-        role="status"
+        role="alert"
         className="mb-4 flex items-center gap-2.5 rounded-lg bg-[var(--warning-bg,#fef3c7)] px-3 py-2 text-sm text-[var(--warning,#8a5600)]"
       >
         <b
@@ -157,9 +157,10 @@ export function LoginView({ onSignedIn }: { onSignedIn: () => void }) {
           </p>
           {errorBanner}
           <form onSubmit={withPassword} className="space-y-3">
-            <label className="block text-sm font-semibold">
+            <label htmlFor="login-email" className="block text-sm font-semibold">
               Email
               <input
+                id="login-email"
                 type="email"
                 autoComplete="username"
                 required
@@ -168,9 +169,10 @@ export function LoginView({ onSignedIn }: { onSignedIn: () => void }) {
                 className="mt-1 block w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
               />
             </label>
-            <label className="block text-sm font-semibold">
+            <label htmlFor="login-password" className="block text-sm font-semibold">
               Password
               <input
+                id="login-password"
                 type="password"
                 autoComplete="current-password"
                 required
@@ -209,9 +211,10 @@ export function LoginView({ onSignedIn }: { onSignedIn: () => void }) {
           </p>
           {errorBanner}
           <form onSubmit={withCode} className="space-y-3">
-            <label className="block text-sm font-semibold">
+            <label htmlFor="login-totp" className="block text-sm font-semibold">
               Authenticator code
               <input
+                id="login-totp"
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 pattern="[0-9]{6}"

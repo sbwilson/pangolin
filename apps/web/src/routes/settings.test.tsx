@@ -1022,6 +1022,9 @@ describe("SettingsPage", () => {
       renderSettings();
 
       expect(await screen.findByText("Old Everyday")).toBeTruthy();
+      const list = screen.getByRole("list", { name: "Archived closed accounts" });
+      expect(list).toBeTruthy();
+      expect(screen.getAllByRole("listitem")).toHaveLength(1);
       expect(screen.getByText("(CommBank)")).toBeTruthy();
       expect(screen.getByText("Transaction account · Closed on 2026-09-10")).toBeTruthy();
       expect(screen.getByRole("button", { name: "Reopen account" })).toBeTruthy();

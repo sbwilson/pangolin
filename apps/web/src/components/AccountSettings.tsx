@@ -175,13 +175,16 @@ export function AccountSettings() {
             No closed accounts
           </div>
         ) : (
-          <div className="divide-y divide-border rounded-lg border border-border">
+          <ul
+            aria-label="Archived closed accounts"
+            className="divide-y divide-border rounded-lg border border-border p-0 list-none"
+          >
             {closedAccounts.map((account) => {
               const institution = account.institutionId
                 ? institutionsMap.get(account.institutionId)
                 : null;
               return (
-                <div
+                <li
                   key={account.id}
                   className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5"
                 >
@@ -225,10 +228,10 @@ export function AccountSettings() {
                       {reopeningId === account.id ? "Reopening…" : "Reopen account"}
                     </Button>
                   </div>
-                </div>
+                </li>
               );
             })}
-          </div>
+          </ul>
         )}
       </div>
 
@@ -263,7 +266,6 @@ export function AccountSettings() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button
             type="button"
-            tabIndex={-1}
             aria-label="Close modal backdrop"
             className="fixed inset-0 h-full w-full cursor-default bg-black/40 backdrop-blur-xs"
             onClick={() => {

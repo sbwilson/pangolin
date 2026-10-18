@@ -87,7 +87,7 @@ function CategoryCell({
       <button
         type="button"
         className="rounded-full border px-2 py-0.5 text-xs"
-        aria-label={`${txn.nameHidden ? hiddenUntilLabel(txn.nameHiddenUntil) : txn.descriptionRaw}: ${txn.splits.length} splits, open to edit`}
+        aria-label={`Split (${txn.splits.length}): ${txn.splits.length} splits for ${txn.nameHidden ? hiddenUntilLabel(txn.nameHiddenUntil) : txn.descriptionRaw}, open to edit`}
         onClick={() => onOpen(txn)}
       >
         Split ({txn.splits.length})

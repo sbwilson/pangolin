@@ -22,7 +22,6 @@ export function MascotIcon({
 
   return (
     <svg
-      role="img"
       aria-hidden="true"
       width={dimensions.width}
       height={dimensions.height}

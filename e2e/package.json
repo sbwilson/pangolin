@@ -6,9 +6,11 @@
   "description": "Playwright tests against a running container",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "test:axe": "playwright test axe.spec.ts --no-deps"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@playwright/test": "1.63.0"
   }
 }
