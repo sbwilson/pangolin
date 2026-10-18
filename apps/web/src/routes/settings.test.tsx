@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../api.ts";
 import { authClient } from "../auth-client.ts";
+import { Notices } from "../components/Notices.tsx";
 import { type Session, SessionContext } from "../session.tsx";
 import { ThemeProvider } from "../theme.tsx";
 import { SettingsPage } from "./settings.tsx";
@@ -17,6 +18,12 @@ vi.mock("../api.ts", async (importOriginal) => ({
   fetchDeadJobs: vi.fn(),
   fetchPreferences: vi.fn().mockResolvedValue({ theme: "clay-linen", mode: "system" }),
   updatePreferences: vi.fn().mockResolvedValue({ theme: "clay-linen", mode: "system" }),
+  invitePartner: vi.fn(),
+  resetPartner: vi.fn(),
+  regenerateRecoveryCodes: vi.fn(),
+  fetchNotices: vi.fn().mockResolvedValue([]),
+  revokeMyRecoveryLinks: vi.fn().mockResolvedValue({ revoked: 0 }),
+  dismissNotice: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../auth-client.ts", () => ({
@@ -25,6 +32,10 @@ vi.mock("../auth-client.ts", () => ({
     listSessions: vi.fn(),
     revokeSession: vi.fn(),
     signOut: vi.fn(),
+    $fetch: vi.fn(),
+    passkey: {
+      addPasskey: vi.fn(),
+    },
   },
   authMessage: (err: { message?: string } | null | undefined) =>
     err?.message ?? "Something went wrong. Try again.",
@@ -44,7 +55,7 @@ describe("SettingsPage", () => {
     enrolment: "complete" as const,
     needs: [],
     recoveryCodes: { issued: true, remaining: 10 },
-    partner: null,
+    partner: null as { personId: string; displayName: string } | null,
   };
 
   beforeEach(() => {
@@ -141,6 +152,51 @@ describe("SettingsPage", () => {
       ],
       error: null,
     } as unknown as never);
+
+    vi.mocked(authClient.$fetch).mockResolvedValue({
+      data: [
+        {
+          id: "pk-1",
+          name: "MacBook Air",
+          createdAt: new Date("2026-10-02T10:00:00Z"),
+        },
+      ],
+      error: null,
+    } as unknown as never);
+
+    vi.mocked(authClient.passkey.addPasskey).mockResolvedValue({
+      data: {
+        id: "pk-2",
+        name: "iPhone",
+        createdAt: new Date(),
+      },
+      error: null,
+    } as unknown as never);
+
+    vi.mocked(api.invitePartner).mockResolvedValue({
+      url: "https://pangolin.local/setup?token=partner-setup-token-12345678901234567890",
+      expiresAt: "2026-10-19T00:00:00Z",
+    });
+
+    vi.mocked(api.resetPartner).mockResolvedValue({
+      url: "https://pangolin.local/recover?token=partner-reset-token-12345678901234567890",
+      expiresAt: "2026-10-19T00:00:00Z",
+    });
+
+    vi.mocked(api.regenerateRecoveryCodes).mockResolvedValue({
+      codes: [
+        "AAAAA-11111",
+        "BBBBB-22222",
+        "CCCCC-33333",
+        "DDDDD-44444",
+        "EEEEE-55555",
+        "FFFFF-66666",
+        "GGGGG-77777",
+        "HHHHH-88888",
+        "JJJJJ-99999",
+        "KKKKK-00000",
+      ],
+    });
   });
 
   afterEach(() => {
@@ -148,11 +204,14 @@ describe("SettingsPage", () => {
     window.location.hash = "";
   });
 
-  function renderSettings() {
+  function renderSettings(
+    meOverrides?: Partial<typeof defaultMe>,
+    refreshSpy?: ReturnType<typeof vi.fn>,
+  ) {
     const sessionValue: Session = {
-      me: defaultMe,
+      me: { ...defaultMe, ...meOverrides },
       signOut: mockSignOut as () => Promise<void>,
-      refresh: vi.fn(),
+      refresh: (refreshSpy ?? vi.fn()) as () => Promise<void>,
       signedIn: vi.fn(),
       signedUp: vi.fn(),
       token: "",
@@ -180,9 +239,26 @@ describe("SettingsPage", () => {
     expect(mobileNav).toBeTruthy();
     expect(mobileNav.className).toContain("md:hidden");
 
+    // All 6 sections in desktop nav
+    const expectedSections = [
+      "Appearance",
+      "Sign-in & security",
+      "Signed-in devices",
+      "Partner",
+      "Household",
+      "System status",
+    ];
+    for (const name of expectedSections) {
+      expect(within(desktopNav).getByRole("link", { name })).toBeTruthy();
+      expect(within(mobileNav).getByRole("link", { name })).toBeTruthy();
+    }
+
     // Section cards
     expect(document.getElementById("appearance")).toBeTruthy();
+    expect(document.getElementById("security")).toBeTruthy();
     expect(document.getElementById("devices")).toBeTruthy();
+    expect(document.getElementById("partner")).toBeTruthy();
+    expect(document.getElementById("household")).toBeTruthy();
     expect(document.getElementById("status")).toBeTruthy();
 
     // Appearance is active by default
@@ -490,5 +566,451 @@ describe("SettingsPage", () => {
         "Restores run from the server CLI, with Pangolin stopped. There's no restore button here on purpose.",
       ),
     ).toBeTruthy();
+  });
+
+  // --- Sign-in & security tests ---
+  it("renders enrolled passkeys and password status row", async () => {
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText("MacBook Air")).toBeTruthy();
+      expect(screen.getByText(/Added 2 Oct 2026/)).toBeTruthy();
+      expect(screen.getByText("Password configured · authenticator app linked")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Add a passkey" })).toBeTruthy();
+      expect(screen.getByText("10 unused recovery codes left.")).toBeTruthy();
+    });
+  });
+
+  it("removes an enrolled passkey via authClient.$fetch, invalidating queries and refreshing", async () => {
+    const user = userEvent.setup();
+    const mockRefresh = vi.fn().mockResolvedValue(undefined);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    renderSettings(undefined, mockRefresh);
+
+    await waitFor(() => {
+      expect(screen.getByText("MacBook Air")).toBeTruthy();
+    });
+
+    const removeBtn = screen.getByRole("button", { name: "Remove passkey MacBook Air" });
+    await user.click(removeBtn);
+
+    expect(authClient.$fetch).toHaveBeenCalledWith("/passkey/delete-passkey", {
+      method: "POST",
+      body: { id: "pk-1" },
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["auth", "passkeys"] });
+    expect(mockRefresh).toHaveBeenCalled();
+  });
+
+  it("adds a passkey via authClient.passkey.addPasskey, invalidating queries and refreshing", async () => {
+    const user = userEvent.setup();
+    const mockRefresh = vi.fn().mockResolvedValue(undefined);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    renderSettings(undefined, mockRefresh);
+
+    const addBtn = screen.getByRole("button", { name: "Add a passkey" });
+    await user.click(addBtn);
+
+    expect(authClient.passkey.addPasskey).toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["auth", "passkeys"] });
+    expect(mockRefresh).toHaveBeenCalled();
+  });
+
+  it("disables add and remove buttons while a passkey is being added", async () => {
+    let resolveAdd: () => void = () => {};
+    vi.mocked(authClient.passkey.addPasskey).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveAdd = () =>
+            resolve({
+              data: { id: "pk-2", name: "iPhone" },
+              error: null,
+            } as unknown as never);
+        }),
+    );
+
+    const user = userEvent.setup();
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText("MacBook Air")).toBeTruthy();
+    });
+
+    const addBtn = screen.getByRole("button", { name: "Add a passkey" });
+    const removeBtn = screen.getByRole("button", { name: "Remove passkey MacBook Air" });
+
+    expect(addBtn.hasAttribute("disabled")).toBe(false);
+    expect(removeBtn.hasAttribute("disabled")).toBe(false);
+
+    await user.click(addBtn);
+
+    expect(addBtn.hasAttribute("disabled")).toBe(true);
+    expect(removeBtn.hasAttribute("disabled")).toBe(true);
+
+    resolveAdd();
+    await waitFor(() => {
+      expect(addBtn.hasAttribute("disabled")).toBe(false);
+    });
+  });
+
+  it("displays passkey error if passkey addition fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(authClient.passkey.addPasskey).mockResolvedValue({
+      data: null,
+      error: { message: "Passkey operation canceled" },
+    } as unknown as never);
+
+    renderSettings();
+
+    const addBtn = screen.getByRole("button", { name: "Add a passkey" });
+    await user.click(addBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("Passkey operation canceled")).toBeTruthy();
+    });
+  });
+
+  it("displays passkey error if passkey removal fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(authClient.$fetch)
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "pk-1",
+            name: "MacBook Air",
+            createdAt: new Date("2026-10-02T10:00:00Z"),
+          },
+        ],
+        error: null,
+      } as unknown as never)
+      .mockResolvedValueOnce({
+        error: { message: "Passkey removal refused" },
+      } as unknown as never);
+
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText("MacBook Air")).toBeTruthy();
+    });
+
+    const removeBtn = screen.getByRole("button", { name: "Remove passkey MacBook Air" });
+    await user.click(removeBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("Passkey removal refused")).toBeTruthy();
+    });
+  });
+
+  it("displays ReauthRequired alert when passkey addition requires reauth", async () => {
+    const user = userEvent.setup();
+    vi.mocked(authClient.passkey.addPasskey).mockResolvedValue({
+      data: null,
+      error: { code: "ReauthRequired", message: "Reauthentication required" },
+    } as unknown as never);
+
+    renderSettings();
+
+    const addBtn = screen.getByRole("button", { name: "Add a passkey" });
+    await user.click(addBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("For your security, sign in again to manage your passkeys."),
+      ).toBeTruthy();
+    });
+
+    const signInAgainBtn = screen.getByRole("button", { name: "Sign in again" });
+    await user.click(signInAgainBtn);
+    expect(mockSignOut).toHaveBeenCalled();
+  });
+
+  it("displays ReauthRequired alert when passkey removal requires reauth", async () => {
+    const user = userEvent.setup();
+    vi.mocked(authClient.$fetch)
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "pk-1",
+            name: "MacBook Air",
+            createdAt: new Date("2026-10-02T10:00:00Z"),
+          },
+        ],
+        error: null,
+      } as unknown as never)
+      .mockResolvedValueOnce({
+        error: { code: "ReauthRequired", message: "Reauthentication required" },
+      } as unknown as never);
+
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText("MacBook Air")).toBeTruthy();
+    });
+
+    const removeBtn = screen.getByRole("button", { name: "Remove passkey MacBook Air" });
+    await user.click(removeBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("For your security, sign in again to manage your passkeys."),
+      ).toBeTruthy();
+    });
+
+    const signInAgainBtn = screen.getByRole("button", { name: "Sign in again" });
+    await user.click(signInAgainBtn);
+    expect(mockSignOut).toHaveBeenCalled();
+  });
+
+  it("renders error alert banner when loading passkeys fails", async () => {
+    vi.mocked(authClient.$fetch).mockRejectedValue(
+      new Error("Unable to load passkeys from server"),
+    );
+
+    renderSettings();
+
+    await waitFor(() => {
+      const alert = screen.getByRole("alert");
+      expect(alert.textContent).toContain("Unable to load passkeys from server");
+    });
+  });
+
+  it("shows fallback message when passkey list is empty", async () => {
+    vi.mocked(authClient.$fetch).mockResolvedValue({
+      data: [],
+      error: null,
+    } as unknown as never);
+
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText("No passkeys enrolled")).toBeTruthy();
+    });
+  });
+
+  it("warns when recovery codes are running low", () => {
+    renderSettings({ recoveryCodes: { issued: true, remaining: 2 } });
+
+    expect(screen.getByText("2 unused recovery codes left.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "You are running out of recovery codes. Regenerate them to get a new set of 10.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("regenerates recovery codes and displays code list with confirmation checkbox", async () => {
+    const user = userEvent.setup();
+    const mockRefresh = vi.fn().mockResolvedValue(undefined);
+    renderSettings(undefined, mockRefresh);
+
+    const regenBtn = screen.getByRole("button", { name: "Regenerate recovery codes" });
+    await user.click(regenBtn);
+
+    expect(api.regenerateRecoveryCodes).toHaveBeenCalled();
+
+    const list = await screen.findByRole("list", { name: "Recovery codes" });
+    const items = within(list).getAllByRole("listitem");
+    expect(items).toHaveLength(10);
+    expect(items[0]?.textContent).toBe("AAAAA-11111");
+
+    const continueBtn = screen.getByRole("button", { name: "Continue" });
+    expect(continueBtn.hasAttribute("disabled")).toBe(true);
+
+    const checkbox = screen.getByLabelText("I have saved these codes");
+    await user.click(checkbox);
+    expect(continueBtn.hasAttribute("disabled")).toBe(false);
+
+    await user.click(continueBtn);
+    expect(mockRefresh).toHaveBeenCalled();
+  });
+
+  it("displays alert when recovery codes regeneration fails with ReauthRequired", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.regenerateRecoveryCodes).mockRejectedValue(
+      new api.ApiError(401, "ReauthRequired", "Re-authentication required"),
+    );
+
+    renderSettings();
+
+    const regenBtn = screen.getByRole("button", { name: "Regenerate recovery codes" });
+    await user.click(regenBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("For your security, sign in again to regenerate your codes."),
+      ).toBeTruthy();
+    });
+
+    const signInAgain = screen.getByRole("button", { name: "Sign in again" });
+    await user.click(signInAgain);
+    expect(mockSignOut).toHaveBeenCalled();
+  });
+
+  // --- Partner settings tests ---
+  it("renders partner invite flow for single user with canInvite", async () => {
+    const user = userEvent.setup();
+    renderSettings({ canInvite: true, partner: null });
+
+    const inviteBtn = screen.getByRole("button", { name: "Invite partner" });
+    await user.click(inviteBtn);
+
+    expect(api.invitePartner).toHaveBeenCalled();
+
+    const input = (await screen.findByLabelText("Partner setup link")) as HTMLInputElement;
+    expect(input.value).toBe(
+      "https://pangolin.local/setup?token=partner-setup-token-12345678901234567890",
+    );
+  });
+
+  it("renders invites closed message for single user when canInvite is false", () => {
+    renderSettings({ canInvite: false, partner: null });
+
+    expect(screen.getByText("Invites are currently closed.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Invite partner" })).toBeNull();
+  });
+
+  it("renders partner recovery reset flow for dual-user household", async () => {
+    const user = userEvent.setup();
+    renderSettings({
+      partner: { personId: "p2", displayName: "Carissa" },
+    });
+
+    expect(screen.getByText("Carissa")).toBeTruthy();
+    expect(screen.getByText("Signs in with a passkey")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Help Carissa back in" })).toBeTruthy();
+
+    const resetBtn = screen.getByRole("button", { name: "Reset partner's access" });
+    await user.click(resetBtn);
+
+    expect(api.resetPartner).toHaveBeenCalledWith("p2");
+
+    const input = (await screen.findByLabelText("Partner recovery link")) as HTMLInputElement;
+    expect(input.value).toBe(
+      "https://pangolin.local/recover?token=partner-reset-token-12345678901234567890",
+    );
+  });
+
+  it("handles ReauthRequired error during partner reset", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.resetPartner).mockRejectedValue(
+      new api.ApiError(401, "ReauthRequired", "Sign in required"),
+    );
+
+    renderSettings({
+      partner: { personId: "p2", displayName: "Carissa" },
+    });
+
+    const resetBtn = screen.getByRole("button", { name: "Reset partner's access" });
+    await user.click(resetBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("For your security, sign in again to reset your partner's access."),
+      ).toBeTruthy();
+    });
+  });
+
+  // --- Household placeholder tests ---
+  it("renders household placeholder section with upcoming configuration copy", () => {
+    renderSettings();
+
+    const householdCard = document.getElementById("household");
+    expect(householdCard).toBeTruthy();
+    if (!householdCard) throw new Error("Missing household card");
+    expect(
+      within(householdCard).getByText(
+        "Pay cycles, the household pay anchor, and split attribution will be configured here.",
+      ),
+    ).toBeTruthy();
+  });
+});
+
+describe("Notices", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("calls revokeMyRecoveryLinks when revoking a partner-reset notice", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.fetchNotices).mockResolvedValue([
+      {
+        id: "notice-1",
+        kind: "identity.partner-reset",
+        createdAt: "2026-10-18T10:00:00Z",
+        issuedBy: "Carissa",
+      },
+    ]);
+    vi.mocked(api.revokeMyRecoveryLinks).mockResolvedValue({ revoked: 1 });
+
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Notices />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          /A one-time recovery link for your account was issued on 2026-10-18 by Carissa./,
+        ),
+      ).toBeTruthy();
+    });
+
+    const revokeBtn = screen.getByRole("button", { name: "Revoke the recovery link" });
+    await user.click(revokeBtn);
+
+    expect(api.revokeMyRecoveryLinks).toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["identity", "notices"] });
+  });
+
+  it("calls dismissNotice when dismissing a notice", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.fetchNotices).mockResolvedValue([
+      {
+        id: "notice-2",
+        kind: "identity.recovery-code-used",
+        createdAt: "2026-10-18T11:00:00Z",
+        issuedBy: null,
+      },
+    ]);
+    vi.mocked(api.dismissNotice).mockResolvedValue(undefined);
+
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Notices />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          /One of your recovery codes was used to sign in on 2026-10-18, and your passkeys were removed./,
+        ),
+      ).toBeTruthy();
+    });
+
+    const dismissBtn = screen.getByRole("button", { name: "Dismiss" });
+    await user.click(dismissBtn);
+
+    expect(api.dismissNotice).toHaveBeenCalledWith("notice-2");
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["identity", "notices"] });
   });
 });

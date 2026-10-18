@@ -8,7 +8,10 @@ export interface SettingsSection {
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "appearance", label: "Appearance" },
+  { id: "security", label: "Sign-in & security" },
   { id: "devices", label: "Signed-in devices" },
+  { id: "partner", label: "Partner" },
+  { id: "household", label: "Household" },
   { id: "status", label: "System status" },
 ];
 

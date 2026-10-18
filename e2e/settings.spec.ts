@@ -51,16 +51,40 @@ test("desktop navigation rail displays links and anchors to settings cards", asy
     await expect(desktopNav).toBeVisible();
 
     const appearanceLink = desktopNav.getByRole("link", { name: "Appearance" });
+    const securityLink = desktopNav.getByRole("link", { name: "Sign-in & security" });
     const devicesLink = desktopNav.getByRole("link", { name: "Signed-in devices" });
+    const partnerLink = desktopNav.getByRole("link", { name: "Partner" });
+    const householdLink = desktopNav.getByRole("link", { name: "Household" });
     const statusLink = desktopNav.getByRole("link", { name: "System status" });
 
     await expect(appearanceLink).toBeVisible();
+    await expect(securityLink).toBeVisible();
     await expect(devicesLink).toBeVisible();
+    await expect(partnerLink).toBeVisible();
+    await expect(householdLink).toBeVisible();
     await expect(statusLink).toBeVisible();
 
     await expect(page.locator("#appearance")).toBeVisible();
+    await expect(page.locator("#security")).toBeVisible();
     await expect(page.locator("#devices")).toBeVisible();
+    await expect(page.locator("#partner")).toBeVisible();
+    await expect(page.locator("#household")).toBeVisible();
     await expect(page.locator("#status")).toBeVisible();
+
+    // Click security link
+    await securityLink.click();
+    await expect(page).toHaveURL((url) => url.hash === "#security");
+    await expect(securityLink).toHaveAttribute("aria-current", "location");
+
+    // Click partner link
+    await partnerLink.click();
+    await expect(page).toHaveURL((url) => url.hash === "#partner");
+    await expect(partnerLink).toHaveAttribute("aria-current", "location");
+
+    // Click household link
+    await householdLink.click();
+    await expect(page).toHaveURL((url) => url.hash === "#household");
+    await expect(householdLink).toHaveAttribute("aria-current", "location");
 
     // Click devices link
     await devicesLink.click();
@@ -96,10 +120,20 @@ test("mobile viewport displays scrollable chips and hides desktop rail", async (
     await expect(desktopNav).toBeHidden();
 
     const chips = mobileNav.getByRole("link");
-    await expect(chips).toHaveCount(3);
+    await expect(chips).toHaveCount(6);
     await expect(mobileNav.getByRole("link", { name: "Appearance" })).toBeVisible();
+    await expect(mobileNav.getByRole("link", { name: "Sign-in & security" })).toBeVisible();
     await expect(mobileNav.getByRole("link", { name: "Signed-in devices" })).toBeVisible();
+    await expect(mobileNav.getByRole("link", { name: "Partner" })).toBeVisible();
+    await expect(mobileNav.getByRole("link", { name: "Household" })).toBeVisible();
     await expect(mobileNav.getByRole("link", { name: "System status" })).toBeVisible();
+
+    await mobileNav.getByRole("link", { name: "Sign-in & security" }).click();
+    await expect(page).toHaveURL((url) => url.hash === "#security");
+    await expect(mobileNav.getByRole("link", { name: "Sign-in & security" })).toHaveAttribute(
+      "aria-current",
+      "location",
+    );
 
     await mobileNav.getByRole("link", { name: "System status" }).click();
     await expect(page).toHaveURL((url) => url.hash === "#status");
@@ -107,6 +141,40 @@ test("mobile viewport displays scrollable chips and hides desktop rail", async (
       "aria-current",
       "location",
     );
+  } finally {
+    await context.close();
+  }
+});
+
+test("renders sign-in & security, partner, and household cards at /settings", async ({
+  browser,
+  cspViolations,
+}) => {
+  const context = await browser.newContext({ storageState: await alexSession(browser) });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+    await page.goto("/settings");
+
+    const securityCard = page.locator("#security");
+    await expect(securityCard).toBeVisible();
+    await expect(securityCard.getByRole("heading", { name: "Sign-in & security" })).toBeVisible();
+    await expect(securityCard.getByRole("button", { name: "Add a passkey" })).toBeVisible();
+    await expect(securityCard.getByText("Password and authenticator")).toBeVisible();
+    await expect(securityCard.getByText("Recovery codes")).toBeVisible();
+
+    const partnerCard = page.locator("#partner");
+    await expect(partnerCard).toBeVisible();
+    await expect(partnerCard.getByRole("heading", { name: "Partner" })).toBeVisible();
+
+    const householdCard = page.locator("#household");
+    await expect(householdCard).toBeVisible();
+    await expect(householdCard.getByRole("heading", { name: "Household" })).toBeVisible();
+    await expect(
+      householdCard.getByText(
+        "Pay cycles, the household pay anchor, and split attribution will be configured here.",
+      ),
+    ).toBeVisible();
   } finally {
     await context.close();
   }

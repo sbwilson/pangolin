@@ -108,6 +108,7 @@ test("invites the partner, who registers; then any further sign-up is refused", 
   cspViolations,
 }) => {
   await signInWithPassword(page, alexAccount);
+  await page.goto("/settings#partner");
   await page.getByRole("button", { name: "Invite partner" }).click();
   partnerLink = await page.getByLabel("Partner setup link").inputValue();
   expect(partnerLink).toMatch(/\/setup\?token=[\w-]{43}$/);
@@ -152,7 +153,7 @@ test("invites the partner, who registers; then any further sign-up is refused", 
   });
   expect(third.status()).toBe(401);
 
-  await page.reload();
+  await page.goto("/settings#partner");
   await expect(page.getByText("Signed in as Alex")).toBeVisible();
   await expect(page.getByRole("button", { name: "Invite partner" })).toHaveCount(0);
 });

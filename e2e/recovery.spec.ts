@@ -43,6 +43,7 @@ test("a recovery code and the password sign in to a forced new passkey; the code
   });
   await page.getByRole("button", { name: "Add a passkey" }).click();
   await expect(page.getByText(`Signed in as Alex`)).toBeVisible();
+  await page.goto("/settings#security");
   await expect(page.getByText("9 unused recovery codes left.")).toBeVisible();
 
   // The same code again is refused.
@@ -62,7 +63,7 @@ test("a recovery code and the password sign in to a forced new passkey; the code
   await expect(page.getByText(/One of your recovery codes was used/)).toBeVisible();
 });
 
-test("regenerating recovery codes from home gives 10 new ones and ends the old ones", async ({
+test("regenerating recovery codes from settings gives 10 new ones and ends the old ones", async ({
   page,
   request,
 }) => {
@@ -70,6 +71,7 @@ test("regenerating recovery codes from home gives 10 new ones and ends the old o
   const [oldCode] = account.recoveryCodes;
   if (oldCode === undefined) throw new Error("no saved recovery codes left");
   await signInWithPassword(page, account);
+  await page.goto("/settings#security");
   await expect(page.getByText("9 unused recovery codes left.")).toBeVisible();
   await page.getByRole("button", { name: "Regenerate recovery codes" }).click();
   const list = page.getByRole("list", { name: "Recovery codes" });
@@ -96,6 +98,7 @@ test("Alex resets Sam's access: Sam sets a new password, re-enrols and alone see
 }) => {
   await signInWithPassword(page, loadAccount());
   await expect(page.getByText("Signed in as Alex")).toBeVisible();
+  await page.goto("/settings#partner");
   await page.getByRole("button", { name: "Reset partner's access" }).click();
   const link = await page.getByLabel("Partner recovery link").inputValue();
   expect(link).toMatch(/\/recover\?token=[\w-]{43}$/);
