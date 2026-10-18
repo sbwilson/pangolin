@@ -494,6 +494,11 @@ export type AccountType =
   | "vehicle"
   | "other";
 
+export interface AccountWarning {
+  readonly kind: "closing-balance";
+  readonly balanceCents: number;
+}
+
 /** An account as the accounts API returns it: the row, its owners and shares, and its pool. */
 export interface AccountView {
   readonly id: string;
@@ -511,6 +516,8 @@ export interface AccountView {
   readonly pool: string;
   /** The newest `postedOn` among the account's live transactions; null when it has none. */
   readonly newestPostedOn: string | null;
+  /** Present when a closed cash account closed with a non-zero balance. */
+  readonly warning?: AccountWarning;
 }
 
 /** A bank, broker or super fund. */
@@ -519,11 +526,41 @@ export interface InstitutionSummary {
   readonly name: string;
 }
 
-/** The open accounts the signed-in person may see (their own private ones and every public one). */
-export async function listAccounts(): Promise<AccountView[]> {
-  const res = await api.api.accounts.$get({ query: {} } as never);
+/** The accounts the signed-in person may see (their own private ones and every public one). */
+export function listAccounts(): Promise<AccountView[]>;
+export function listAccounts(options: { includeClosed?: boolean }): Promise<AccountView[]>;
+export function listAccounts(context: unknown): Promise<AccountView[]>;
+export async function listAccounts(options?: unknown): Promise<AccountView[]> {
+  const includeClosed =
+    typeof options === "object" && options !== null && "includeClosed" in options
+      ? Boolean((options as { includeClosed?: boolean }).includeClosed)
+      : false;
+  const query = includeClosed ? { includeClosed: "true" } : {};
+  const res = await api.api.accounts.$get({ query } as never);
   if (!res.ok) throw await apiError(res);
   return (await res.json()).accounts as unknown as AccountView[];
+}
+
+/** Reopens an archived closed account by clearing `closedOn`. */
+export async function reopenAccount(id: string): Promise<AccountView> {
+  const { account } = await sendJson<{ account: AccountView }>(
+    "PATCH",
+    `/api/accounts/${encodeURIComponent(id)}`,
+    { closedOn: null },
+  );
+  return account;
+}
+
+/**
+ * Leaves the household, permanently deleting personal private data and revoking credentials.
+ * Guarded by re-authentication within 5 minutes and explicit confirmation.
+ */
+export async function leaveHousehold(
+  optionsOrConfirm?: { confirm?: boolean } | boolean,
+): Promise<{ left: boolean }> {
+  const confirm =
+    typeof optionsOrConfirm === "boolean" ? optionsOrConfirm : (optionsOrConfirm?.confirm ?? true);
+  return await sendJson<{ left: boolean }>("POST", "/api/accounts/leave-household", { confirm });
 }
 
 /** One account by ID; another person's private account is a 404 `NotFound`. */

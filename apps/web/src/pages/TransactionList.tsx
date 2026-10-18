@@ -15,6 +15,7 @@ import {
   setSplitTags,
   type TransactionList as TransactionListData,
 } from "../api.ts";
+import { ReauthDialog } from "../components/ReauthDialog.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { CategoryCombobox } from "../components/ui/category-combobox.tsx";
 import { DateInput } from "../components/ui/date-input.tsx";
@@ -170,7 +171,7 @@ export interface TransactionListProps {
 export function TransactionList({ search, onSearch, title, accountId }: TransactionListProps) {
   const today = useMemo(() => localDay(new Date()), []);
   const [customOpen, setCustomOpen] = useState(false);
-  const { me, signOut } = useSignedIn();
+  const { me } = useSignedIn();
   const queryClient = useQueryClient();
   const [opened, setOpened] = useState<LedgerTransaction | null>(null);
   const [notice, setNotice] = useState<{ kind: "error" | "kept"; text: string } | null>(null);
@@ -527,9 +528,11 @@ export function TransactionList({ search, onSearch, title, accountId }: Transact
     if (typeof value === "string" && /^[1-9]\d{0,6}$/.test(value)) go({ page: value });
   };
 
-  const handleExport = async () => {
+  const handleExport = async (isRetry = false) => {
     setIsExporting(true);
-    setReauthRequired(false);
+    if (!isRetry) {
+      setNotice(null);
+    }
     try {
       const csv = await exportTransactions(listSearch);
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -541,7 +544,11 @@ export function TransactionList({ search, onSearch, title, accountId }: Transact
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setReauthRequired(false);
     } catch (err) {
+      if (isRetry) {
+        throw err;
+      }
       if (err instanceof ApiError && err.code === "ReauthRequired") {
         setReauthRequired(true);
       } else {
@@ -605,17 +612,12 @@ export function TransactionList({ search, onSearch, title, accountId }: Transact
           </Button>
         </div>
       </header>
-      {reauthRequired ? (
-        <div
-          role="alert"
-          className="mt-2 flex items-center justify-between gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
-        >
-          <span>Sign in again to export transactions.</span>
-          <Button type="button" size="sm" variant="outline" onClick={() => void signOut()}>
-            Sign in again
-          </Button>
-        </div>
-      ) : null}
+      <ReauthDialog
+        open={reauthRequired}
+        action="export transactions"
+        onSuccess={() => handleExport(true)}
+        onCancel={() => setReauthRequired(false)}
+      />
 
       {showCustom ? (
         <div className="mt-2 grid grid-cols-2 gap-2">

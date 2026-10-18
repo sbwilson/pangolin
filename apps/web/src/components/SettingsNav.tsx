@@ -12,6 +12,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "devices", label: "Signed-in devices" },
   { id: "partner", label: "Partner" },
   { id: "household", label: "Household" },
+  { id: "accounts", label: "Accounts" },
   { id: "status", label: "System status" },
 ];
 

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LedgerTransaction, TransactionList as ListData, Me } from "../api.ts";
 import * as api from "../api.ts";
+import { authClient } from "../auth-client.ts";
 import { type TransactionsSearch, validateTransactionsSearch } from "../routes/search.ts";
 import { type Session, SessionContext } from "../session.tsx";
 import { TransactionList } from "./TransactionList.tsx";
@@ -19,6 +20,20 @@ vi.mock("../api.ts", async (importOriginal) => ({
   setSplitField: vi.fn(),
   setSplitTags: vi.fn(),
   exportTransactions: vi.fn(),
+}));
+
+vi.mock("../auth-client.ts", () => ({
+  authClient: {
+    signIn: {
+      passkey: vi.fn(),
+      email: vi.fn(),
+    },
+    twoFactor: {
+      verifyTotp: vi.fn(),
+    },
+  },
+  authMessage: (err: { message?: string } | null | undefined) =>
+    err?.message ?? "Something went wrong. Try again.",
 }));
 
 afterEach(cleanup);
@@ -831,7 +846,7 @@ describe("TransactionList CSV export", () => {
     clickSpy.mockRestore();
   });
 
-  it("displays inline alert with Sign in again button when ReauthRequired is returned, calling signOut", async () => {
+  it("opens ReauthDialog when ReauthRequired is returned, retiring the inline alert", async () => {
     vi.mocked(api.fetchTransactions).mockResolvedValue(list([row]));
     vi.mocked(api.exportTransactions).mockRejectedValue(
       new api.ApiError(403, "ReauthRequired", "Sign in again to do this"),
@@ -845,12 +860,148 @@ describe("TransactionList CSV export", () => {
     const exportBtn = screen.getByRole("button", { name: "Export CSV" });
     await user.click(exportBtn);
 
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("Sign in again to export transactions.");
+    // Inline alert is retired and no longer rendered
+    expect(screen.queryByText("Sign in again to export transactions.")).toBeNull();
 
-    const signInBtn = within(alert).getByRole("button", { name: "Sign in again" });
-    await user.click(signInBtn);
+    // ReauthDialog is opened
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("For your security, sign in again")).toBeTruthy();
+    expect(
+      within(dialog).getByText(
+        "Confirm it's you to export transactions. Once you're in, the change goes through.",
+      ),
+    ).toBeTruthy();
 
-    expect(session.signOut).toHaveBeenCalledTimes(1);
+    // User can cancel
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("retries CSV export automatically upon successful passkey re-authentication in ReauthDialog", async () => {
+    vi.mocked(api.fetchTransactions).mockResolvedValue(list([row]));
+    vi.mocked(api.exportTransactions)
+      .mockRejectedValueOnce(new api.ApiError(403, "ReauthRequired", "Sign in again to do this"))
+      .mockResolvedValueOnce("Date,Account,Payee\r\n");
+
+    vi.mocked(authClient.signIn.passkey).mockResolvedValueOnce({
+      data: { session: {} },
+      error: null,
+    } as unknown as never);
+
+    window.URL.createObjectURL = vi.fn().mockReturnValue("blob:test");
+    window.URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    const user = userEvent.setup();
+    renderList();
+
+    expect(await screen.findByText("Plumber")).toBeTruthy();
+
+    const exportBtn = screen.getByRole("button", { name: "Export CSV" });
+    await user.click(exportBtn);
+
+    const dialog = await screen.findByRole("dialog");
+    const passkeyBtn = within(dialog).getByRole("button", { name: /Sign in with passkey/ });
+    await user.click(passkeyBtn);
+
+    await waitFor(() => {
+      expect(authClient.signIn.passkey).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(api.exportTransactions).toHaveBeenCalledTimes(2);
+    });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    clickSpy.mockRestore();
+  });
+
+  it("retries CSV export automatically upon password/TOTP fallback in ReauthDialog", async () => {
+    vi.mocked(api.fetchTransactions).mockResolvedValue(list([row]));
+    vi.mocked(api.exportTransactions)
+      .mockRejectedValueOnce(new api.ApiError(403, "ReauthRequired", "Sign in again to do this"))
+      .mockResolvedValueOnce("Date,Account,Payee\r\n");
+
+    vi.mocked(authClient.signIn.email).mockResolvedValueOnce({
+      data: { twoFactorRedirect: true },
+      error: null,
+    } as unknown as never);
+    vi.mocked(authClient.twoFactor.verifyTotp).mockResolvedValueOnce({
+      data: { session: {} },
+      error: null,
+    } as unknown as never);
+
+    window.URL.createObjectURL = vi.fn().mockReturnValue("blob:test");
+    window.URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    const user = userEvent.setup();
+    renderList();
+
+    expect(await screen.findByText("Plumber")).toBeTruthy();
+
+    const exportBtn = screen.getByRole("button", { name: "Export CSV" });
+    await user.click(exportBtn);
+
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Use password instead" }));
+
+    await user.type(within(dialog).getByLabelText("Email"), "simon@example.com");
+    await user.type(within(dialog).getByLabelText("Password"), "secret123");
+    await user.click(within(dialog).getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(authClient.signIn.email).toHaveBeenCalledWith({
+        email: "simon@example.com",
+        password: "secret123",
+      });
+    });
+
+    const codeInput = await within(dialog).findByLabelText("Authenticator code");
+    await user.type(codeInput, "123456");
+    await user.click(within(dialog).getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => {
+      expect(authClient.twoFactor.verifyTotp).toHaveBeenCalledWith({ code: "123456" });
+    });
+
+    await waitFor(() => {
+      expect(api.exportTransactions).toHaveBeenCalledTimes(2);
+    });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    clickSpy.mockRestore();
+  });
+
+  it("displays error in ReauthDialog if retry fails after successful authentication", async () => {
+    vi.mocked(api.fetchTransactions).mockResolvedValue(list([row]));
+    vi.mocked(api.exportTransactions)
+      .mockRejectedValueOnce(new api.ApiError(403, "ReauthRequired", "Sign in again to do this"))
+      .mockRejectedValueOnce(new Error("Export service unavailable"));
+
+    vi.mocked(authClient.signIn.passkey).mockResolvedValueOnce({
+      data: { session: {} },
+      error: null,
+    } as unknown as never);
+
+    const user = userEvent.setup();
+    renderList();
+
+    expect(await screen.findByText("Plumber")).toBeTruthy();
+
+    const exportBtn = screen.getByRole("button", { name: "Export CSV" });
+    await user.click(exportBtn);
+
+    const dialog = await screen.findByRole("dialog");
+    const passkeyBtn = within(dialog).getByRole("button", { name: /Sign in with passkey/ });
+    await user.click(passkeyBtn);
+
+    await waitFor(() => {
+      expect(api.exportTransactions).toHaveBeenCalledTimes(2);
+    });
+
+    // Dialog stays open and shows the error
+    expect(await within(dialog).findByText("Export service unavailable")).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });

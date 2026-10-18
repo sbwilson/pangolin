@@ -15,9 +15,11 @@ import {
   fetchTransactions,
   hideName,
   invitePartner,
+  leaveHousehold,
   recoverWithCode,
   reEnrol,
   regenerateRecoveryCodes,
+  reopenAccount,
   setSplitField,
   setSplits,
   setSplitTags,
@@ -391,5 +393,37 @@ describe("tags and categories", () => {
       { id: "c1", name: "Groceries", groupId: "g1", groupName: "Food" },
       { id: "c2", name: "Odd", groupId: "gone", groupName: "" },
     ]);
+  });
+});
+
+describe("account lifecycle", () => {
+  const sent = () => {
+    const call = vi.mocked(fetch).mock.calls[0] as [string | Request, RequestInit?];
+    const request = call[0];
+    return {
+      url: typeof request === "string" ? request : request.url,
+      init: call[1] ?? {},
+    };
+  };
+
+  it("PATCHes /api/accounts/:id with { closedOn: null } to reopen an account", async () => {
+    const account = { id: "a1", name: "Savings", closedOn: null, type: "savings" };
+    stubFetch(200, { account });
+    const result = await reopenAccount("a1");
+    expect(result).toEqual(account);
+    const { url, init } = sent();
+    expect(url).toBe("/api/accounts/a1");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ closedOn: null });
+  });
+
+  it("POSTs /api/accounts/leave-household with { confirm: true }", async () => {
+    stubFetch(200, { left: true });
+    const result = await leaveHousehold({ confirm: true });
+    expect(result).toEqual({ left: true });
+    const { url, init } = sent();
+    expect(url).toBe("/api/accounts/leave-household");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ confirm: true });
   });
 });

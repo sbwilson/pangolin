@@ -1,4 +1,5 @@
 import { createRoute } from "@tanstack/react-router";
+import { AccountSettings } from "../components/AccountSettings.tsx";
 import { HouseholdSettings } from "../components/HouseholdSettings.tsx";
 import { PartnerSettings } from "../components/PartnerSettings.tsx";
 import { SettingsNav } from "../components/SettingsNav.tsx";
@@ -47,6 +48,12 @@ export function SettingsPage() {
             className="scroll-mt-4 rounded-xl border border-border bg-card p-6 shadow-sm"
           >
             <HouseholdSettings />
+          </section>
+          <section
+            id="accounts"
+            className="scroll-mt-4 rounded-xl border border-border bg-card p-6 shadow-sm"
+          >
+            <AccountSettings />
           </section>
           <section
             id="status"

@@ -24,6 +24,10 @@ vi.mock("../api.ts", async (importOriginal) => ({
   fetchNotices: vi.fn().mockResolvedValue([]),
   revokeMyRecoveryLinks: vi.fn().mockResolvedValue({ revoked: 0 }),
   dismissNotice: vi.fn().mockResolvedValue(undefined),
+  listAccounts: vi.fn().mockResolvedValue([]),
+  fetchInstitutions: vi.fn().mockResolvedValue([]),
+  reopenAccount: vi.fn(),
+  leaveHousehold: vi.fn(),
 }));
 
 vi.mock("../auth-client.ts", () => ({
@@ -35,6 +39,13 @@ vi.mock("../auth-client.ts", () => ({
     $fetch: vi.fn(),
     passkey: {
       addPasskey: vi.fn(),
+    },
+    signIn: {
+      passkey: vi.fn(),
+      email: vi.fn(),
+    },
+    twoFactor: {
+      verifyTotp: vi.fn(),
     },
   },
   authMessage: (err: { message?: string } | null | undefined) =>
@@ -197,6 +208,9 @@ describe("SettingsPage", () => {
         "KKKKK-00000",
       ],
     });
+
+    vi.mocked(api.listAccounts).mockResolvedValue([]);
+    vi.mocked(api.fetchInstitutions).mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -924,6 +938,296 @@ describe("SettingsPage", () => {
         "Pay cycles, the household pay anchor, and split attribution will be configured here.",
       ),
     ).toBeTruthy();
+  });
+
+  describe("AccountSettings and SettingsNav", () => {
+    it("navigation rail and mobile chips display all 7 sections in order", async () => {
+      renderSettings();
+
+      const desktopNav = screen.getByRole("navigation", { name: "Settings sections" });
+      const links = within(desktopNav).getAllByRole("link");
+      expect(links.map((l) => l.textContent)).toEqual([
+        "Appearance",
+        "Sign-in & security",
+        "Signed-in devices",
+        "Partner",
+        "Household",
+        "Accounts",
+        "System status",
+      ]);
+
+      const mobileNav = screen.getByRole("navigation", { name: "Settings sections mobile" });
+      const mobileLinks = within(mobileNav).getAllByRole("link");
+      expect(mobileLinks.map((l) => l.textContent)).toEqual([
+        "Appearance",
+        "Sign-in & security",
+        "Signed-in devices",
+        "Partner",
+        "Household",
+        "Accounts",
+        "System status",
+      ]);
+    });
+
+    it("filters out open accounts (closedOn: null) and displays empty state when no accounts are closed", async () => {
+      vi.mocked(api.listAccounts).mockResolvedValue([
+        {
+          id: "open-1",
+          name: "Active Everyday",
+          type: "transaction",
+          currency: "AUD",
+          isPrivate: false,
+          institutionId: null,
+          openedOn: "2025-01-01",
+          closedOn: null,
+          isSavings: false,
+          owners: [{ personId: "p1", shareBp: 10000 }],
+          pool: "p1",
+          newestPostedOn: null,
+        },
+      ]);
+      renderSettings();
+
+      expect(await screen.findByText("No closed accounts")).toBeTruthy();
+      expect(screen.queryByText("Active Everyday")).toBeNull();
+    });
+
+    it("displays error message when loading closed accounts fails", async () => {
+      vi.mocked(api.listAccounts).mockRejectedValue(new Error("Network error"));
+      renderSettings();
+
+      expect(await screen.findByRole("alert")).toBeTruthy();
+      expect(screen.getByText("Failed to load closed accounts.")).toBeTruthy();
+    });
+
+    it("lists closed accounts with closedOn date, type label, and institution", async () => {
+      vi.mocked(api.fetchInstitutions).mockResolvedValue([{ id: "inst-1", name: "CommBank" }]);
+      vi.mocked(api.listAccounts).mockResolvedValue([
+        {
+          id: "acc-1",
+          name: "Old Everyday",
+          type: "transaction",
+          currency: "AUD",
+          isPrivate: false,
+          institutionId: "inst-1",
+          openedOn: "2025-01-01",
+          closedOn: "2026-09-10",
+          isSavings: false,
+          owners: [{ personId: "p1", shareBp: 10000 }],
+          pool: "p1",
+          newestPostedOn: null,
+        },
+      ]);
+
+      renderSettings();
+
+      expect(await screen.findByText("Old Everyday")).toBeTruthy();
+      expect(screen.getByText("(CommBank)")).toBeTruthy();
+      expect(screen.getByText("Transaction account · Closed on 2026-09-10")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Reopen account" })).toBeTruthy();
+    });
+
+    it("displays closing balance warning with formatted currency when closed cash account has remaining balance", async () => {
+      vi.mocked(api.listAccounts).mockResolvedValue([
+        {
+          id: "acc-2",
+          name: "Old Savings",
+          type: "savings",
+          currency: "USD",
+          isPrivate: false,
+          institutionId: null,
+          openedOn: "2025-01-01",
+          closedOn: "2026-09-15",
+          isSavings: true,
+          owners: [{ personId: "p1", shareBp: 10000 }],
+          pool: "p1",
+          newestPostedOn: null,
+          warning: { kind: "closing-balance", balanceCents: 1500 },
+        },
+      ]);
+
+      renderSettings();
+
+      expect(await screen.findByText("Old Savings")).toBeTruthy();
+      expect(screen.getByText("Closed with a remaining balance of USD 15.00")).toBeTruthy();
+    });
+
+    it("calls reopenAccount and invalidates notices when clicking Reopen account", async () => {
+      const user = userEvent.setup();
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      vi.mocked(api.listAccounts).mockResolvedValue([
+        {
+          id: "acc-1",
+          name: "Old Everyday",
+          type: "transaction",
+          currency: "AUD",
+          isPrivate: false,
+          institutionId: null,
+          openedOn: "2025-01-01",
+          closedOn: "2026-09-10",
+          isSavings: false,
+          owners: [{ personId: "p1", shareBp: 10000 }],
+          pool: "p1",
+          newestPostedOn: null,
+        },
+      ]);
+      vi.mocked(api.reopenAccount).mockResolvedValue({
+        id: "acc-1",
+        name: "Old Everyday",
+        type: "transaction",
+        currency: "AUD",
+        isPrivate: false,
+        institutionId: null,
+        openedOn: "2025-01-01",
+        closedOn: null,
+        isSavings: false,
+        owners: [{ personId: "p1", shareBp: 10000 }],
+        pool: "p1",
+        newestPostedOn: null,
+      });
+
+      renderSettings();
+
+      const reopenBtn = await screen.findByRole("button", { name: "Reopen account" });
+      await user.click(reopenBtn);
+
+      await waitFor(() => {
+        expect(api.reopenAccount).toHaveBeenCalledWith("acc-1");
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["notices"] });
+      });
+    });
+
+    it("displays error notice when reopening an account fails", async () => {
+      const user = userEvent.setup();
+      vi.mocked(api.listAccounts).mockResolvedValue([
+        {
+          id: "acc-1",
+          name: "Old Everyday",
+          type: "transaction",
+          currency: "AUD",
+          isPrivate: false,
+          institutionId: null,
+          openedOn: "2025-01-01",
+          closedOn: "2026-09-10",
+          isSavings: false,
+          owners: [{ personId: "p1", shareBp: 10000 }],
+          pool: "p1",
+          newestPostedOn: null,
+        },
+      ]);
+      vi.mocked(api.reopenAccount).mockRejectedValue(new Error("Cannot reopen account"));
+
+      renderSettings();
+
+      const reopenBtn = await screen.findByRole("button", { name: "Reopen account" });
+      await user.click(reopenBtn);
+
+      expect(await screen.findByRole("alert")).toBeTruthy();
+      expect(screen.getByText("Cannot reopen account")).toBeTruthy();
+    });
+
+    it("disables Leave household button with notice when person is sole member of household", async () => {
+      renderSettings({ partner: null });
+
+      expect(
+        screen.getByText(
+          "You are the sole member of this household. A sole member cannot leave the household.",
+        ),
+      ).toBeTruthy();
+      const leaveBtn = screen.getByRole("button", { name: "Leave household" });
+      expect((leaveBtn as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("opens leave household confirmation modal with details, and user can cancel", async () => {
+      const user = userEvent.setup();
+      renderSettings({ partner: { personId: "p2", displayName: "Alex" } });
+
+      const leaveBtn = screen.getByRole("button", { name: "Leave household" });
+      expect((leaveBtn as HTMLButtonElement).disabled).toBe(false);
+      await user.click(leaveBtn);
+
+      const dialog = screen.getByRole("dialog", { name: "Leave household" });
+      expect(dialog).toBeTruthy();
+      expect(
+        within(dialog).getByText(
+          /Your private accounts and all personal transactions scoped to you will be permanently deleted\./,
+        ),
+      ).toBeTruthy();
+      expect(
+        within(dialog).getByText(
+          /Shared accounts will remain with your partner as the sole owner\./,
+        ),
+      ).toBeTruthy();
+
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("dialog", { name: "Leave household" })).toBeNull();
+    });
+
+    it("closes leave household confirmation modal on Escape key", async () => {
+      const user = userEvent.setup();
+      renderSettings({ partner: { personId: "p2", displayName: "Alex" } });
+
+      const leaveBtn = screen.getByRole("button", { name: "Leave household" });
+      await user.click(leaveBtn);
+
+      expect(screen.getByRole("dialog", { name: "Leave household" })).toBeTruthy();
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("dialog", { name: "Leave household" })).toBeNull();
+    });
+
+    it("executes leaveHousehold when confirmed, and handles re-auth guard with automatic retry", async () => {
+      const user = userEvent.setup();
+      vi.mocked(api.leaveHousehold)
+        .mockRejectedValueOnce(new api.ApiError(403, "ReauthRequired", "Recent auth required"))
+        .mockResolvedValueOnce({ left: true });
+
+      vi.mocked(authClient.signIn.passkey).mockResolvedValueOnce({
+        data: { session: {} },
+        error: null,
+      } as unknown as never);
+
+      renderSettings({ partner: { personId: "p2", displayName: "Alex" } });
+
+      const leaveBtn = screen.getByRole("button", { name: "Leave household" });
+      await user.click(leaveBtn);
+
+      const confirmDialog = screen.getByRole("dialog", { name: "Leave household" });
+      await user.click(within(confirmDialog).getByRole("button", { name: "Confirm and leave" }));
+
+      await waitFor(() => {
+        expect(api.leaveHousehold).toHaveBeenCalledWith({ confirm: true });
+      });
+
+      // Confirmation modal is closed when re-auth triggers, preventing modal collision
+      expect(screen.queryByRole("dialog", { name: "Leave household" })).toBeNull();
+
+      // Reauth dialog opens
+      const reauthDialog = await screen.findByRole("dialog", {
+        name: "For your security, sign in again",
+      });
+      expect(within(reauthDialog).getByText("For your security, sign in again")).toBeTruthy();
+      expect(
+        within(reauthDialog).getByText(
+          "Confirm it's you to leave the household. Once you're in, the change goes through.",
+        ),
+      ).toBeTruthy();
+
+      // Sign in with passkey in ReauthDialog
+      const passkeyBtn = within(reauthDialog).getByRole("button", { name: /Sign in with passkey/ });
+      await user.click(passkeyBtn);
+
+      await waitFor(() => {
+        expect(authClient.signIn.passkey).toHaveBeenCalledTimes(1);
+      });
+
+      await waitFor(() => {
+        expect(api.leaveHousehold).toHaveBeenCalledTimes(2);
+      });
+
+      await waitFor(() => {
+        expect(mockSignOut).toHaveBeenCalled();
+      });
+    });
   });
 });
 
