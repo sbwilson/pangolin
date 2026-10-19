@@ -3,7 +3,7 @@ title: 'Refactor sweep'
 type: 'refactor'
 ticket: '7'
 created: '2026-10-19'
-status: 'completed'
+status: 'done'
 baseline_revision: 'd4d5611a69a16c4c23db5a077aa1ea32be77b944'
 route: 'full'
 route_source: 'auto'
@@ -80,7 +80,7 @@ context: []
 - [x] `apps/web/src/components/SearchBox.tsx` -- Extract SearchBox component -- Clean modular debounced search input component.
 - [x] `apps/web/src/pages/TransactionList.tsx` -- Refactor to use extracted hooks -- Reduce component complexity while maintaining identical behavior.
 - [x] `scripts/check-boundaries.ts` & test suites -- Verify boundaries and tests -- Run boundary checks, biome check, and vitest suite.
-- [ ] CI Verification -- Verify CI is green -- Run full local verification checks, push changes, and verify GitHub Actions CI run completes with success status.
+- [x] CI Verification -- Verify CI is green -- Run full local verification checks, push changes, and verify GitHub Actions CI run completes with success status.
 
 **Acceptance Criteria:**
 - Given `pnpm --filter @pangolin/db db:generate`, it reports "No schema changes, nothing to migrate" with zero git diff in `packages/db/migrations`.
