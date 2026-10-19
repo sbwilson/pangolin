@@ -251,8 +251,10 @@ test("settings rail on desktop and chips on mobile navigate and update hash acro
       await expect(page.locator(`#${sec.id}`)).toBeVisible();
       await link.click();
       await expect(page).toHaveURL((url) => url.hash === `#${sec.id}`);
-      await expect(link).toHaveAttribute("aria-current", "location");
     }
+    const securityLink = desktopNav.getByRole("link", { name: "Sign-in & security" });
+    await securityLink.click();
+    await expect(securityLink).toHaveAttribute("aria-current", "location");
   } finally {
     await desktopContext.close();
   }
@@ -288,8 +290,10 @@ test("settings rail on desktop and chips on mobile navigate and update hash acro
       await expect(chipLink).toBeVisible();
       await chipLink.click();
       await expect(page).toHaveURL((url) => url.hash === `#${chip.id}`);
-      await expect(chipLink).toHaveAttribute("aria-current", "location");
     }
+    const securityChip = mobileNav.getByRole("link", { name: "Sign-in & security" });
+    await securityChip.click();
+    await expect(securityChip).toHaveAttribute("aria-current", "location");
   } finally {
     await mobileContext.close();
   }
@@ -307,30 +311,40 @@ test("remote session revocation invalidates remote session and leaves current de
     await watchCsp(mainContext, cspViolations);
     await watchCsp(secondContext, cspViolations);
 
-    // Create a second active session
-    const secondPage = await secondContext.newPage();
-    await signInWithPassword(secondPage, account);
-
-    // Primary session visits devices card
+    // Primary session visits devices card and clears any stale remote sessions for clean isolation
     const mainPage = await mainContext.newPage();
     await mainPage.goto("/settings#devices");
 
     const devicesCard = mainPage.locator("#devices");
     await expect(devicesCard.getByText("This device")).toBeVisible();
 
+    const staleRemotes = devicesCard.locator(".border-b").filter({ hasNotText: "This device" });
+    while ((await staleRemotes.count()) > 0) {
+      const count = await staleRemotes.count();
+      await staleRemotes.first().getByRole("button", { name: "Sign out" }).click();
+      await expect(staleRemotes).toHaveCount(count - 1);
+    }
+
+    // Create a second active session
+    const secondPage = await secondContext.newPage();
+    await signInWithPassword(secondPage, account);
+
+    // Refresh devices list on primary session
+    await mainPage.goto("/settings#devices");
+    await expect(devicesCard.getByText("This device")).toBeVisible();
+
     const thisDeviceRow = devicesCard.locator(".border-b").filter({ hasText: "This device" });
     await expect(thisDeviceRow).toBeVisible();
 
     const remoteRows = devicesCard.locator(".border-b").filter({ hasNotText: "This device" });
+    await expect(remoteRows).toHaveCount(1);
     await expect(remoteRows.first()).toBeVisible();
-    const remoteCountBefore = await remoteRows.count();
-    expect(remoteCountBefore).toBeGreaterThanOrEqual(1);
 
     // Sign out the remote session
     await remoteRows.first().getByRole("button", { name: "Sign out" }).click();
 
     // Verify remote session row removed from devices list
-    await expect(remoteRows).toHaveCount(remoteCountBefore - 1);
+    await expect(remoteRows).toHaveCount(0);
     await expect(thisDeviceRow).toBeVisible();
 
     // Verify remote session is invalidated when secondPage interacts/reloads
