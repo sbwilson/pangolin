@@ -56,7 +56,7 @@ test("a recovery code and the password sign in to a forced new passkey; the code
   saveAccount({ ...account, recoveryCodes: rest });
 
   // The new passkey signs in.
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.getByRole("complementary").getByRole("button", { name: "Sign out" }).click();
   await page.getByRole("button", { name: "Sign in with a passkey" }).click();
   await expect(page.getByText("Signed in as Alex")).toBeVisible();
   // Alex is told a code was used.

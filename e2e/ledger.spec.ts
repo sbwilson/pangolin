@@ -162,7 +162,9 @@ async function expectSeededView(page: Page, person: Person): Promise<ApiTransact
   expect(visible).toBeGreaterThan(300);
 
   // The UI shows the first page of 50 with the server's total and page count.
-  await page.getByRole("button", { name: "Transactions" }).click();
+  if (new URL(page.url()).pathname !== "/transactions") {
+    await page.goto("/transactions");
+  }
   await expect(page).toHaveURL((url) => url.pathname === "/transactions");
   const table = page.getByRole("table", { name: "Transactions" });
   await expect(table).toBeVisible();

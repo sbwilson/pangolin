@@ -226,12 +226,13 @@ for (const width of [375, 320]) {
       height: 800,
     });
     try {
-      await expect(page.getByRole("button", { name: "All", exact: true })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Needs review" })).toBeDisabled();
-      await expect(page.getByRole("combobox", { name: "Type" })).toBeVisible();
-      await expect(page.getByRole("combobox", { name: "Account" })).toBeVisible();
-      await expect(page.getByRole("combobox", { name: "Category" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Quarter" })).toBeVisible();
+      const main = page.getByRole("main");
+      await expect(main.getByRole("button", { name: "All", exact: true })).toBeVisible();
+      await expect(main.getByRole("button", { name: "Needs review" })).toBeDisabled();
+      await expect(main.getByRole("combobox", { name: "Type" })).toBeVisible();
+      await expect(main.getByRole("combobox", { name: "Account" })).toBeVisible();
+      await expect(main.getByRole("combobox", { name: "Category" })).toBeVisible();
+      await expect(main.getByRole("button", { name: "Quarter" })).toBeVisible();
       await expect(
         page.getByText("30 transactions \u00b7 In $0.00 \u00b7 Out $4.65"),
       ).toBeVisible();
@@ -414,12 +415,12 @@ test("mobile More tab allows signing out which terminates session and lands on /
   cspViolations,
 }) => {
   const context = await browser.newContext({
-    storageState: await alexSession(browser),
     viewport: { width: 375, height: 667 },
   });
   try {
     await watchCsp(context, cspViolations);
     const page = await context.newPage();
+    await signInWithPassword(page, loadAccount());
     await page.goto("/transactions");
     const mobileNav = page.getByRole("navigation", { name: "Mobile navigation" });
     await mobileNav.getByRole("button", { name: "More" }).click();
