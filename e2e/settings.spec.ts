@@ -199,7 +199,9 @@ test("renders sign-in & security, partner, household, and accounts cards at /set
 
     const accountsCard = page.locator("#accounts");
     await expect(accountsCard).toBeVisible();
-    await expect(accountsCard.getByRole("heading", { name: "Accounts" })).toBeVisible();
+    await expect(
+      accountsCard.getByRole("heading", { name: "Accounts", exact: true }),
+    ).toBeVisible();
     await expect(
       accountsCard.getByRole("heading", { name: "Archived closed accounts" }),
     ).toBeVisible();
@@ -341,7 +343,7 @@ test("signing out This device from the devices card lands on /sign-in", async ({
 
     await thisDeviceRow.getByRole("button", { name: "Sign out" }).click();
     await expect(page).toHaveURL((url) => url.pathname === "/sign-in");
-    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
   } finally {
     await context.close();
   }
