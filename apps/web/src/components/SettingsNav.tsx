@@ -55,6 +55,15 @@ export function SettingsNav({
 
     const observer = new IntersectionObserver(
       (entries) => {
+        if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 50) {
+          const lastSection = SETTINGS_SECTIONS[SETTINGS_SECTIONS.length - 1];
+          if (lastSection !== undefined) {
+            setInternalActive(lastSection.id);
+            onSectionChange?.(lastSection.id);
+            return;
+          }
+        }
+
         for (const entry of entries) {
           if (entry.isIntersecting) {
             const id = entry.target.id;

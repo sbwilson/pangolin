@@ -124,7 +124,10 @@ test("mobile viewport displays scrollable chips and hides desktop rail", async (
     const mobileNav = page.getByRole("navigation", { name: "Settings sections mobile" });
     await expect(mobileNav).toBeVisible();
 
-    const desktopNav = page.getByRole("navigation", { name: "Settings sections" });
+    const desktopNav = page.getByRole("navigation", {
+      name: "Settings sections",
+      exact: true,
+    });
     await expect(desktopNav).toBeHidden();
 
     const chips = mobileNav.getByRole("link");
@@ -176,7 +179,9 @@ test("renders sign-in & security, partner, household, and accounts cards at /set
     await expect(securityCard).toBeVisible();
     await expect(securityCard.getByRole("heading", { name: "Sign-in & security" })).toBeVisible();
     await expect(securityCard.getByRole("button", { name: "Add a passkey" })).toBeVisible();
-    await expect(securityCard.getByText("Password and authenticator")).toBeVisible();
+    await expect(
+      securityCard.getByRole("heading", { name: "Password and authenticator" }),
+    ).toBeVisible();
     await expect(securityCard.getByText("Recovery codes")).toBeVisible();
 
     const partnerCard = page.locator("#partner");

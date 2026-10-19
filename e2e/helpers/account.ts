@@ -59,24 +59,13 @@ export function loadAccount(who: Who = "first"): Account {
 
 /** Signs in through the page with email, password and a computed TOTP code. */
 export async function signInWithPassword(page: Page, account: Account): Promise<void> {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    await page.goto("/");
-    await page.getByRole("button", { name: "Use password instead" }).click();
-    await page.getByLabel("Email").fill(account.email);
-    await page.getByLabel("Password", { exact: true }).fill(account.password);
-    await page.getByRole("button", { name: "Continue" }).click();
-    await page.getByLabel("Authenticator code").fill(totp(account.totpSecret));
-    await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    const landed = await page
-      .getByText(/^Signed in as /)
-      .waitFor({ timeout: 5_000 })
-      .then(
-        () => true,
-        () => false,
-      );
-    if (landed) return;
-    await new Promise((resolve) => setTimeout(resolve, 30_000 - (Date.now() % 30_000) + 500));
-  }
+  await page.goto("/");
+  await page.getByRole("button", { name: "Use password instead" }).click();
+  await page.getByLabel("Email").fill(account.email);
+  await page.getByLabel("Password", { exact: true }).fill(account.password);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByLabel("Authenticator code").fill(totp(account.totpSecret));
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByText(/^Signed in as /)).toBeVisible();
 }
 

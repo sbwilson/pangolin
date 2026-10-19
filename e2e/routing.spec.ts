@@ -1,6 +1,7 @@
 // Story 12.1: the router. A setup link's `token` is typed in the route's search params, read
 // once, then dropped from the URL (and history) with a replace; a deep link opens its page
 // inside the shell.
+import { rmSync } from "node:fs";
 import type { Browser } from "@playwright/test";
 import { firstSessionFile, loadAccount, signInWithPassword } from "./helpers/account.ts";
 import { expect, test, watchCsp } from "./helpers/csp.ts";
@@ -415,18 +416,19 @@ test("mobile More tab allows signing out which terminates session and lands on /
   cspViolations,
 }) => {
   const context = await browser.newContext({
+    storageState: await alexSession(browser),
     viewport: { width: 375, height: 667 },
   });
   try {
     await watchCsp(context, cspViolations);
     const page = await context.newPage();
-    await signInWithPassword(page, loadAccount());
     await page.goto("/transactions");
     const mobileNav = page.getByRole("navigation", { name: "Mobile navigation" });
     await mobileNav.getByRole("button", { name: "More" }).click();
     const sheet = page.getByRole("dialog", { name: "More" });
     await expect(sheet).toBeVisible();
     await sheet.getByRole("button", { name: "Sign out" }).click();
+    rmSync(firstSessionFile, { force: true });
     await expect(page).toHaveURL((url) => url.pathname === "/sign-in");
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   } finally {
