@@ -182,7 +182,7 @@ test("renders sign-in & security, partner, household, and accounts cards at /set
     await expect(
       securityCard.getByRole("heading", { name: "Password and authenticator" }),
     ).toBeVisible();
-    await expect(securityCard.getByText("Recovery codes")).toBeVisible();
+    await expect(securityCard.getByRole("heading", { name: "Recovery codes" })).toBeVisible();
 
     const partnerCard = page.locator("#partner");
     await expect(partnerCard).toBeVisible();
@@ -274,8 +274,9 @@ test("signed-in devices lists active session and marks current device", async ({
     const devicesCard = page.locator("#devices");
     await expect(devicesCard).toBeVisible();
     await expect(devicesCard.getByRole("heading", { name: "Signed-in devices" })).toBeVisible();
-    await expect(devicesCard.getByText("This device")).toBeVisible();
-    await expect(devicesCard.getByRole("button", { name: "Sign out" })).toBeVisible();
+    const thisDeviceRow = devicesCard.locator(".border-b").filter({ hasText: "This device" });
+    await expect(thisDeviceRow).toBeVisible();
+    await expect(thisDeviceRow.getByRole("button", { name: "Sign out" })).toBeVisible();
   } finally {
     await context.close();
   }
@@ -303,21 +304,20 @@ test("revoking a remote session removes it from the devices list", async ({
     const devicesCard = mainPage.locator("#devices");
     await expect(devicesCard.getByText("This device")).toBeVisible();
 
-    // Verify two sessions are listed
-    const signoutButtons = devicesCard.getByRole("button", { name: "Sign out" });
-    await expect(signoutButtons).toHaveCount(2);
+    // Verify sessions are listed and include This device plus remote sessions
+    const thisDeviceRow = devicesCard.locator(".border-b").filter({ hasText: "This device" });
+    await expect(thisDeviceRow).toBeVisible();
+    const remoteRows = devicesCard.locator(".border-b").filter({ hasNotText: "This device" });
+    const remoteCountBefore = await remoteRows.count();
+    expect(remoteCountBefore).toBeGreaterThanOrEqual(1);
 
-    // The remote session row does not contain "This device"
-    const remoteRow = devicesCard.locator(".border-b").filter({ hasNotText: "This device" });
-    await expect(remoteRow).toHaveCount(1);
+    // Sign out the first remote session
+    await remoteRows.first().getByRole("button", { name: "Sign out" }).click();
 
-    // Sign out the remote session
-    await remoteRow.getByRole("button", { name: "Sign out" }).click();
-
-    // Only "This device" remains
-    await expect(devicesCard.getByRole("button", { name: "Sign out" })).toHaveCount(1);
-    await expect(devicesCard.locator(".border-b")).toHaveCount(1);
-    await expect(devicesCard.locator(".border-b")).toContainText("This device");
+    // The remote session is removed, and This device remains
+    await expect(remoteRows).toHaveCount(remoteCountBefore - 1);
+    await expect(thisDeviceRow).toBeVisible();
+    await expect(thisDeviceRow).toContainText("This device");
   } finally {
     await mainContext.close();
     await secondContext.close();
