@@ -407,3 +407,9 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-refactor-sweep-plan.md`
   summary: Refine Escape key event coordination between bulk row selection and modal sheets.
   evidence: Verbatim pre-existing global Escape handler was retained during hook extraction; scoped event trapping can be refined with sheet focus-management improvements.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-end-to-end-shell-settings-and-theming-journey-plan.md`
+  summary: Handle exceptions inside alexSession sign-in loop to guarantee retries and TOTP time step roll-over across all test specs.
+  evidence: Review of story 13.8: alexSession helper lacks catch block around signInWithPassword, so unexpected transient errors abort before retry loop.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-end-to-end-shell-settings-and-theming-journey-plan.md`
+  summary: Add comprehensive unit and integration coverage for ReauthDialog keyboard dismissal (Escape), backdrop click, and two-factor TOTP verification step.
+  evidence: Review of story 13.8: e2e test verifies passkey/password tabs and cancel button dismissal; deeper TOTP and key handler edge cases deferred to dedicated component test suite.
