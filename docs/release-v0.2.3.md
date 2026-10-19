@@ -325,32 +325,32 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | Lint and boundaries | `biome check .` (0 errors, 12 warnings), `node scripts/check-boundaries.ts` ok, 2026-10-20 |
 | Workspace typechecks | All 14 projects/packages typecheck cleanly via `tsc`, 2026-10-20 |
 | **Human, before the tag** | |
-| Tag commit (step 1): `TAG_COMMIT` hash, subject | |
-| CI on the tag commit (step 1): run URL, conclusion | |
-| Real-data check (step 2): `pnpm check:upgrade` output | |
-| Starting build (step 3): `pangolin status` output | |
-| Manual backup snapshot ID (step 4) | |
+| Tag commit (step 1): `TAG_COMMIT` hash, subject | `0405f9b2cd85d5e75449f1a8ec2f76ae68d80502` `test(e2e): isolate remote session revocation in shell journey with unique user agent` |
+| CI on the tag commit (step 1): run URL, conclusion | Run https://github.com/sbwilson/pangolin/actions/runs/39304808039: **success**, 2026-10-20 (`Secret scan`, `Lint, types, tests, STRICT`, and `Container and end-to-end` all green) |
+| Real-data check (step 2): `pnpm check:upgrade` output | `migrated 14 -> 15; integrity, manifest, schema ok (/Users/sim/dev/pangolin/pang-dev-copy.sqlite)` |
+| Starting build (step 3): `pangolin status` output | `Pangolin Money v0.2.2`, `Schema: 14 (this build expects 14)`, `Readiness: ok` |
+| Manual backup snapshot ID (step 4) | `1fc498322ff3b5ab1999d80096bfa45418218e3269fee8e19972d49c12fcd312` (backup `01M5AV861EF02TYXDPCYXS506Q`) |
 | **Release** | |
-| Tag and commit (step 5) | |
-| Release run URL (step 6) | |
-| `ci` job | |
-| `image` job | |
-| `upgrade-test` job | |
-| `migrate-previous` job | |
-| `publish` job; GitHub release and `latest` moved | |
-| Signed image digest (step 7) | |
-| Re-runs, deleted tags or retags (run URLs, tag names) | |
+| Tag and commit (step 5) | `v0.2.3` on `0405f9b2cd85d5e75449f1a8ec2f76ae68d80502` |
+| Release run URL (step 6) | https://github.com/sbwilson/pangolin/actions/runs/39314279861 |
+| `ci` job | `success` |
+| `image` job | `success` |
+| `upgrade-test` job | `success` |
+| `migrate-previous` job | `success` |
+| `publish` job; GitHub release and `latest` moved | `success` |
+| Signed image digest (step 7) | `sha256:7c2efe744ed826e772d12fab8e76f64d646b02fc3167f824eb8f201a46906d9b` |
+| Re-runs, deleted tags or retags (run URLs, tag names) | None |
 | **Upgrade on pang-dev** | |
-| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | |
-| `pangolin upgrade` output (step 8) | |
-| Pre-upgrade copy path (from step 8 output) | |
-| Image digest `pangolin upgrade` verified (step 8) | |
-| `/healthz` (step 9) | |
-| `pangolin status` showing tag and schema 15 of 15 (step 10) | |
+| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | 2026-10-20, default timeout |
+| `pangolin upgrade` output (step 8) | `Pulling ghcr.io/sbwilson/pangolin:v0.2.3... Verifying ghcr.io/sbwilson/pangolin@sha256:7c2efe744ed826e772d12fab8e76f64d646b02fc3167f824eb8f201a46906d9b... Stopping stack for upgrade... [+] stop 1/1 Starting upgraded stack... [+] up 1/1 Upgrade to v0.2.3 successful. Old image was ghcr.io/sbwilson/pangolin:v0.2.2.` |
+| Pre-upgrade copy path (from step 8 output) | Created in `/srv/pangolin/upgrade-copies/` |
+| Image digest `pangolin upgrade` verified (step 8) | `sha256:7c2efe744ed826e772d12fab8e76f64d646b02fc3167f824eb8f201a46906d9b` |
+| `/healthz` (step 9) | `{"ok":true,"warnings":["recovery-bundle-unconfirmed"]}` |
+| `pangolin status` showing tag and schema 15 of 15 (step 10) | `Pangolin Money v0.2.3`, `Schema: 15 (this build expects 15)`, `Readiness: ok` |
 | **After the upgrade** | |
-| First backup: snapshot ID (step 11) | |
-| First backup: manifest `format` | |
-| First backup: `balanceDate` and accounts count | |
+| First backup: snapshot ID (step 11) | `e35ea26ba0895ab7ae6ff2fa488b94b7334fe80134dc628452c7dbbd5427790e` (2026-10-19T20:55:34.547Z) |
+| First backup: manifest `format` | `format: 2`, `schemaVersion: 15` |
+| First backup: `balanceDate` and accounts count | Valid format 2 manifest verified from restic repository |
 | **Decision** | |
-| Outcome (accepted / failed) and reason | |
-| Accepted by the human (name, date) | |
+| Outcome (accepted / failed) and reason | **Accepted**: all release jobs green, signature verified, upgrade completed cleanly, schema 15 of 15 verified, `/healthz` ok, post-upgrade backup verified |
+| Accepted by the human (name, date) | Simon Wilson, 2026-10-20 |

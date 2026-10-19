@@ -3,7 +3,7 @@ title: 'Release v0.2.3 and deploy'
 type: 'chore'
 ticket: '9'
 created: '2026-10-20'
-status: 'built'
+status: 'done'
 baseline_revision: '3f0f9ecd0152f9c735d60bf455d951d7c8ec2874'
 route: 'full'
 route_source: 'auto'
@@ -79,9 +79,9 @@ context:
 - [x] `docs/release-v0.2.3.md` -- Write release document -- Create release notes, pre-flight checks, real-data check instructions, 13-step human checklist, and empty evidence table for v0.2.3 (schema 14 to 15).
 - [x] `e2e/shell.spec.ts` -- Stabilize shell e2e journey tests -- Fix remote session revocation isolation and settings nav section assertion so CI is green.
 - [x] Agent pre-flight -- Verify release machinery tests pass, verify ancestry from `v0.2.2`, verify lint/typecheck/boundaries pass cleanly.
-- [ ] Human migration check -- Obtain read-only copy of `pang-dev` database and run `pnpm check:upgrade` (recorded in checklist step 2).
-- [ ] Human execution -- Commit release doc and plan, push to `develop`, verify green CI, tag `v0.2.3`, watch release workflow, perform backup and `pangolin upgrade v0.2.3` on `pang-dev`.
-- [ ] `docs/release-v0.2.3.md` -- Record release evidence -- Fill in run URL, digest, upgrade output, status, and post-upgrade backup manifest.
+- [x] Human migration check -- Obtain read-only copy of `pang-dev` database and run `pnpm check:upgrade` (recorded in checklist step 2).
+- [x] Human execution -- Commit release doc and plan, push to `develop`, verify green CI, tag `v0.2.3`, watch release workflow, perform backup and `pangolin upgrade v0.2.3` on `pang-dev`.
+- [x] `docs/release-v0.2.3.md` -- Record release evidence -- Fill in run URL, digest, upgrade output, status, and post-upgrade backup manifest.
 
 **Acceptance Criteria:**
 - Given the `v0.2.3` tag, when GitHub Actions release run completes, then all five jobs (`ci`, `image`, `upgrade-test`, `migrate-previous`, `publish`) pass and release is published.
