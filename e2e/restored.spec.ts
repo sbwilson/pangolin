@@ -10,6 +10,7 @@ test("the restored household signs in with the saved password and TOTP code", as
   const account = loadAccount();
   await signInWithPassword(page, account);
   await expect(page.getByText("Signed in as Alex")).toBeVisible();
+  await page.goto("/settings#status");
   await expect(page.getByText("Healthy", { exact: true })).toBeVisible();
   const me = await page.evaluate(async () => (await fetch("/api/identity/me")).json());
   expect(me).toMatchObject({ displayName: "Alex", enrolment: "complete" });
@@ -20,6 +21,7 @@ test("the status page shows the restored snapshot as the last backup", async ({ 
   const snapshot = process.env.E2E_RESTORED_SNAPSHOT ?? "";
   expect(snapshot).toMatch(/^[0-9a-f]{64}$/);
   await signInWithPassword(page, loadAccount());
+  await page.goto("/settings#status");
   await expect(page.getByText(/^Last backup .+ \(snapshot [0-9a-f]{8}\)$/)).toContainText(
     snapshot.slice(0, 8),
   );
