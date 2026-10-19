@@ -53,7 +53,7 @@ async function register(
     // Only TOTP is missing now: no second passkey.
     await expect(page.getByRole("button", { name: "Set up authenticator" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Add a passkey" })).toHaveCount(0);
-    await page.getByLabel("Password").fill(who.password);
+    await page.getByLabel("Password", { exact: true }).fill(who.password);
     await page.getByRole("button", { name: "Set up authenticator" }).click();
   }
   const secret = await page.getByLabel("Secret key").inputValue();

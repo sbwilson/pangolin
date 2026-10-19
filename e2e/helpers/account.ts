@@ -62,7 +62,7 @@ export async function signInWithPassword(page: Page, account: Account): Promise<
   await page.goto("/");
   await page.getByRole("button", { name: "Use password instead" }).click();
   await page.getByLabel("Email").fill(account.email);
-  await page.getByLabel("Password").fill(account.password);
+  await page.getByLabel("Password", { exact: true }).fill(account.password);
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Authenticator code").fill(totp(account.totpSecret));
   await page.getByRole("button", { name: "Sign in", exact: true }).click();

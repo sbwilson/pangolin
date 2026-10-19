@@ -27,7 +27,7 @@ test("a recovery code and the password sign in to a forced new passkey; the code
   await page.goto("/");
   await page.getByRole("button", { name: "Use a recovery code" }).click();
   await page.getByLabel("Email").fill(account.email);
-  await page.getByLabel("Password").fill(account.password);
+  await page.getByLabel("Password", { exact: true }).fill(account.password);
   await page.getByLabel("Recovery code").fill(code.toLowerCase());
   await page.getByRole("button", { name: "Recover" }).click();
 
