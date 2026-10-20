@@ -9,9 +9,15 @@ import { toCents } from "@pangolin/shared";
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import { syncClosingBalance } from "../accounts/closing-balance.ts";
+import {
+  classifyTransaction,
+  loadClassificationContext,
+} from "../classify/classify-transaction.ts";
+import { CLASSIFY_UNCLASSIFIED_REVIEW } from "../classify/rules.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { idInput } from "../inputs.ts";
+import { transactionEntityRef } from "../ledger/needs-review.ts";
 import { privateOwner } from "../ledger/split-targets.ts";
 import type {
   CsvColumnMapping,
@@ -1040,6 +1046,7 @@ export function importStatement(
     let newCount = 0;
     let dupCount = 0;
     const transactionIds: Id<"Transaction">[] = [];
+    const classificationContext = loadClassificationContext(tx, ctx.viewer, account.id);
 
     for (let i = 0; i < parsedRows.length; i++) {
       const row = parsedRows[i];
@@ -1094,13 +1101,22 @@ export function importStatement(
       const txnId = ctx.newId<"Transaction">();
       transactionIds.push(txnId);
 
+      const { payeeId, categoryId, categorySource, unclassified } = classifyTransaction(
+        {
+          accountId: account.id,
+          rawDescription: row.rawDescription,
+          amountCents: row.amountCents,
+        },
+        classificationContext,
+      );
+
       const txnRow: TransactionRow = {
         id: txnId,
         accountId: account.id,
         postedOn: row.postedOn,
         amountCents: row.amountCents,
         descriptionRaw: row.rawDescription,
-        payeeId: null,
+        payeeId,
         status: "posted",
         externalId: row.externalId,
         fingerprint,
@@ -1108,7 +1124,7 @@ export function importStatement(
         importId: batchId,
         performedBy: null,
         transferGroupId: null,
-        needsReview: false,
+        needsReview: unclassified,
         isHidden: false,
         nameHiddenBy: null,
         nameHiddenUntil: null,
@@ -1121,14 +1137,14 @@ export function importStatement(
         id: ctx.newId<"Split">(),
         transactionId: txnId,
         amountCents: row.amountCents,
-        categoryId: null,
+        categoryId,
         activityId: null,
         beneficiary,
         propertyId: null,
         taxCategoryId: null,
         deductibleBp: null,
         memo: null,
-        categorySource: null,
+        categorySource,
         activitySource: null,
         taxCategorySource: null,
         beneficiarySource: null,
@@ -1138,6 +1154,14 @@ export function importStatement(
       };
 
       tx.transactions.insert(txnRow, [splitRow]);
+      if (unclassified) {
+        raiseReviewItem(tx, audit, ctx, {
+          kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+          entityRef: transactionEntityRef(txnId),
+          dedupeKey: `classify.unclassified:${txnId}`,
+          accountId: account.id,
+        });
+      }
       tx.importRows.updateStatus(stagedRow.id, "committed", at);
 
       audit({

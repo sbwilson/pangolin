@@ -163,14 +163,15 @@ function liftHidings(
 }
 
 /**
- * Hard-deletes what is scoped to the leaver (AD-18): aliases, payees, tags and activities, with
- * the references that remain on other rows cleared first (foreign keys). A shared transaction or
- * split that used one keeps everything else.
+ * Hard-deletes what is scoped to the leaver (AD-18): aliases, payees, rules, tags and activities,
+ * with the references that remain on other rows cleared first (foreign keys). A shared transaction
+ * or split that used one keeps everything else.
  */
 function deleteScopedRows(tx: TxRepos, leaver: Id<"Person">): void {
   tx.transactions.clearScopedPayees(leaver);
   tx.payeeAliases.deleteScopedTo(leaver);
   tx.payees.deleteScopedTo(leaver);
+  tx.rules.deleteScopedTo(leaver);
   tx.tags.deleteScopedTo(leaver);
   tx.activities.deleteScopedTo(leaver);
   tx.personPreferences.deleteForPerson(leaver);

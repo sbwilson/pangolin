@@ -316,6 +316,16 @@ describe("set-aside rows management", () => {
       const splits = uow.state.splits.filter((s) => s.transactionId === res.transactionId);
       expect(splits).toHaveLength(1);
       expect(splits[0]?.beneficiary).toBe("shared");
+      expect(splits[0]?.categoryId).toBeNull();
+      expect(splits[0]?.categorySource).toBeNull();
+      expect(txn?.needsReview).toBe(true);
+
+      // Unclassified review item raised
+      const unclassifiedItem = uow.state.reviewItems.find(
+        (r) => r.dedupeKey === `classify.unclassified:${res.transactionId}`,
+      );
+      expect(unclassifiedItem).toBeDefined();
+      expect(unclassifiedItem?.kind).toBe("classify.unclassified");
 
       // import_row status updated to committed and reason cleared
       const updatedRow = uow.state.importRows.find((r) => r.id === rowId);
@@ -367,6 +377,94 @@ describe("set-aside rows management", () => {
       const splits = uow.state.splits.filter((s) => s.transactionId === res.transactionId);
       expect(splits).toHaveLength(1);
       expect(splits[0]?.beneficiary).toBe(alexPersonId);
+    });
+
+    it("applies classification cascade to fixed transaction and skips unclassified review item when rule matches", () => {
+      const { alexCtx, sharedAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+      const rowId = newId<"ImportRow">();
+      const catGroupId = newId<"CategoryGroup">();
+      const catId = newId<"Category">();
+      const ruleId = newId<"Rule">();
+
+      uow.state.categoryGroups.push({
+        id: catGroupId,
+        name: "Transport",
+        kind: "expense",
+        sort: 1,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+      uow.state.categories.push({
+        id: catId,
+        groupId: catGroupId,
+        name: "Fuel",
+        isFixedCost: false,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+        deletedAt: null,
+      });
+
+      uow.state.rules.push({
+        id: ruleId,
+        name: "Fuel Rule",
+        priority: 10,
+        conditions: JSON.stringify({
+          descriptionPattern: "BP CONNECT",
+          descriptionMatchKind: "contains",
+        }),
+        actions: JSON.stringify({ categoryId: catId }),
+        origin: "user",
+        scopePersonId: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: sharedAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 1,
+        newCount: 0,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importRows.push({
+        id: rowId,
+        batchId,
+        rowNumber: 1,
+        rawLine: "bad-row-line",
+        status: "set_aside",
+        reason: "Invalid date",
+        pdfPage: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      const res = fixSetAsideRow(alexCtx, {
+        rowId,
+        postedOn: "2024-09-05",
+        amountCents: -7500,
+        description: "BP CONNECT ROZELLE",
+      });
+
+      const txn = uow.state.transactions.find((t) => t.id === res.transactionId);
+      expect(txn?.needsReview).toBe(false);
+
+      const splits = uow.state.splits.filter((s) => s.transactionId === res.transactionId);
+      expect(splits).toHaveLength(1);
+      expect(splits[0]?.categoryId).toBe(catId);
+      expect(splits[0]?.categorySource).toBe("rule");
+
+      // No unclassified review item raised
+      const unclassifiedItem = uow.state.reviewItems.find(
+        (r) => r.dedupeKey === `classify.unclassified:${res.transactionId}`,
+      );
+      expect(unclassifiedItem).toBeUndefined();
     });
 
     it("throws Conflict if externalId already exists on a transaction in the account", () => {

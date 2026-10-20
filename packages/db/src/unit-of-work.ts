@@ -19,6 +19,7 @@ import {
   createCategoryRepo,
   createPayeeAliasRepo,
   createPayeeRepo,
+  createRuleRepo,
   createTagRepo,
   createTaxCategoryRepo,
 } from "./classify-repos.ts";
@@ -251,6 +252,7 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     activities: createActivityRepo(orm, () => guard(scope)),
     payees: createPayeeRepo(orm, () => guard(scope)),
     payeeAliases: createPayeeAliasRepo(orm, () => guard(scope)),
+    rules: createRuleRepo(orm, () => guard(scope)),
     backups: createBackupSnapshotRepo(orm, () => guard(scope)),
     backupVerifications: createBackupVerificationRepo(orm, () => guard(scope)),
     recoveryBundle: createRecoveryBundleRepo(orm, () => guard(scope)),
@@ -356,6 +358,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
             activities: { find: repos.activities.find, list: repos.activities.list },
             payees: { find: repos.payees.find, list: repos.payees.list },
             payeeAliases: { find: repos.payeeAliases.find, list: repos.payeeAliases.list },
+            rules: { find: repos.rules.find, list: repos.rules.list },
             backups: { find: repos.backups.find, latestPushed: repos.backups.latestPushed },
             backupVerifications: { latest: repos.backupVerifications.latest },
             recoveryBundle: { get: repos.recoveryBundle.get },

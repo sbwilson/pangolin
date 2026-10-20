@@ -9,6 +9,8 @@ import type {
   PayeeAliasRow,
   PayeeRepo,
   PayeeRow,
+  RuleRepo,
+  RuleRow,
   SplitTagged,
   TagRepo,
   TagRow,
@@ -24,6 +26,7 @@ import { category } from "./schema/category.ts";
 import { categoryGroup } from "./schema/category-group.ts";
 import { payee } from "./schema/payee.ts";
 import { payeeAlias } from "./schema/payee-alias.ts";
+import { rule } from "./schema/rule.ts";
 import { split } from "./schema/split.ts";
 import { splitTag } from "./schema/split-tag.ts";
 import { tag } from "./schema/tag.ts";
@@ -649,6 +652,90 @@ export function createPayeeAliasRepo(orm: Orm, check: () => void): PayeeAliasRep
         .delete(payeeAlias)
         .where(or(eq(payeeAlias.scopePersonId, personId), inArray(payeeAlias.payeeId, mine)))
         .run().changes;
+    },
+  };
+}
+
+/** The `rule` repository. Reads compose `visibleScope`. Evaluated in ascending priority order. */
+export function createRuleRepo(orm: Orm, check: () => void): RuleRepo {
+  const columns = {
+    id: rule.id,
+    name: rule.name,
+    priority: rule.priority,
+    conditions: rule.conditions,
+    actions: rule.actions,
+    origin: rule.origin,
+    scopePersonId: rule.scopePersonId,
+    createdAt: rule.createdAt,
+    updatedAt: rule.updatedAt,
+  };
+  return {
+    insert: (row, originAccountId) => {
+      check();
+      orm
+        .insert(rule)
+        .values({ ...row, originAccountId })
+        .run();
+    },
+    find: (viewer, id) => {
+      const scope = visibleScope(rule.scopePersonId, viewer);
+      check();
+      return orm
+        .select(columns)
+        .from(rule)
+        .where(and(eq(rule.id, id), isNull(rule.deletedAt), scope))
+        .get() as RuleRow | undefined;
+    },
+    list: (viewer) => {
+      const scope = visibleScope(rule.scopePersonId, viewer);
+      check();
+      return orm
+        .select(columns)
+        .from(rule)
+        .where(and(isNull(rule.deletedAt), scope))
+        .orderBy(asc(rule.priority), asc(rule.name), asc(rule.id))
+        .all() as RuleRow[];
+    },
+    update: (viewer, row) => {
+      const scope = visibleScope(rule.scopePersonId, viewer);
+      check();
+      return (
+        orm
+          .update(rule)
+          .set({
+            name: row.name,
+            priority: row.priority,
+            conditions: row.conditions,
+            actions: row.actions,
+            updatedAt: row.updatedAt,
+          })
+          .where(and(eq(rule.id, row.id), isNull(rule.deletedAt), scope))
+          .run().changes === 1
+      );
+    },
+    softDelete: (viewer, id, at) => {
+      const scope = visibleScope(rule.scopePersonId, viewer);
+      check();
+      return (
+        orm
+          .update(rule)
+          .set({ deletedAt: at, updatedAt: at })
+          .where(and(eq(rule.id, id), isNull(rule.deletedAt), scope))
+          .run().changes === 1
+      );
+    },
+    originOf: (viewer, id) => {
+      const scope = visibleScope(rule.scopePersonId, viewer);
+      check();
+      return orm
+        .select({ origin: rule.originAccountId })
+        .from(rule)
+        .where(and(eq(rule.id, id), isNull(rule.deletedAt), scope))
+        .get()?.origin as Id<"Account"> | null | undefined;
+    },
+    deleteScopedTo: (personId) => {
+      check();
+      return orm.delete(rule).where(eq(rule.scopePersonId, personId)).run().changes;
     },
   };
 }

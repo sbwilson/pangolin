@@ -114,6 +114,13 @@ export {
   updateCategoryGroupInput,
 } from "./classify/category-groups.ts";
 export {
+  type ClassificationContext,
+  type ClassifyTransactionInput,
+  type ClassifyTransactionResult,
+  classifyTransaction,
+  loadClassificationContext,
+} from "./classify/classify-transaction.ts";
+export {
   DEFAULT_CATEGORIES,
   DEFAULT_TAX_CATEGORIES,
   seedDefaults,
@@ -143,6 +150,35 @@ export {
   updatePayeeAliasInput,
   updatePayeeInput,
 } from "./classify/payees.ts";
+export {
+  type AcceptRuleOfferInput,
+  acceptRuleOffer,
+  acceptRuleOfferInput,
+  CLASSIFY_RULE_OFFER_REVIEW,
+  CLASSIFY_UNCLASSIFIED_REVIEW,
+  type CreateRuleInput,
+  createRule,
+  createRuleInput,
+  type DeleteRuleInput,
+  type DismissRuleOfferInput,
+  deleteRule,
+  deleteRuleInput,
+  dismissRuleOffer,
+  dismissRuleOfferInput,
+  type GetRuleInput,
+  generateRuleFromCorrection,
+  getRule,
+  getRuleInput,
+  type ListRulesInput,
+  listRules,
+  listRulesInput,
+  type RuleCorrectionProposal,
+  ruleActionsSchema,
+  ruleConditionsSchema,
+  type UpdateRuleInput,
+  updateRule,
+  updateRuleInput,
+} from "./classify/rules.ts";
 export { type Scope, scopeFor } from "./classify/scope.ts";
 export {
   type CreateTagInput,
@@ -498,6 +534,10 @@ export type {
   ReEnrolmentLinkRow,
   ReviewItemRepo,
   ReviewItemRow,
+  RULE_ORIGINS,
+  RuleOrigin,
+  RuleRepo,
+  RuleRow,
   RunningJobRow,
   SetupLinkRepo,
   SetupLinkRow,

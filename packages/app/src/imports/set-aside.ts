@@ -7,14 +7,20 @@ import type { Id } from "@pangolin/shared";
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import { syncClosingBalance } from "../accounts/closing-balance.ts";
+import {
+  classifyTransaction,
+  loadClassificationContext,
+} from "../classify/classify-transaction.ts";
+import { CLASSIFY_UNCLASSIFIED_REVIEW } from "../classify/rules.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { idInput } from "../inputs.ts";
 import { requireOpenOn } from "../ledger/closed-lock.ts";
 import { descriptionField, postedOnField } from "../ledger/fields.ts";
+import { transactionEntityRef } from "../ledger/needs-review.ts";
 import { privateOwner } from "../ledger/split-targets.ts";
 import type { ImportRowRow, SplitRow, TransactionRow } from "../ports/unit-of-work.ts";
-import { defineReviewKind, resolveReviewItem } from "../system/review-items.ts";
+import { defineReviewKind, raiseReviewItem, resolveReviewItem } from "../system/review-items.ts";
 import { write } from "../write.ts";
 
 /** An import batch contains set-aside rows needing review. Account scope; entity `import_batch:<id>`. */
@@ -152,13 +158,23 @@ export function fixSetAsideRow(
       occurrence,
     });
 
+    const classificationContext = loadClassificationContext(tx, ctx.viewer, account.id);
+    const { payeeId, categoryId, categorySource, unclassified } = classifyTransaction(
+      {
+        accountId: account.id,
+        rawDescription: parsed.description,
+        amountCents: parsed.amountCents,
+      },
+      classificationContext,
+    );
+
     const txnRow: TransactionRow = {
       id: txnId,
       accountId: account.id,
       postedOn: parsed.postedOn,
       amountCents: parsed.amountCents,
       descriptionRaw: parsed.description,
-      payeeId: null,
+      payeeId,
       status: "posted",
       externalId: parsed.externalId ?? null,
       fingerprint,
@@ -166,7 +182,7 @@ export function fixSetAsideRow(
       importId: batch.id,
       performedBy: null,
       transferGroupId: null,
-      needsReview: false,
+      needsReview: unclassified,
       isHidden: false,
       nameHiddenBy: null,
       nameHiddenUntil: null,
@@ -179,14 +195,14 @@ export function fixSetAsideRow(
       id: ctx.newId<"Split">(),
       transactionId: txnId,
       amountCents: parsed.amountCents,
-      categoryId: null,
+      categoryId,
       activityId: null,
       beneficiary,
       propertyId: null,
       taxCategoryId: null,
       deductibleBp: null,
       memo: null,
-      categorySource: null,
+      categorySource,
       activitySource: null,
       taxCategorySource: null,
       beneficiarySource: null,
@@ -196,6 +212,14 @@ export function fixSetAsideRow(
     };
 
     tx.transactions.insert(txnRow, [splitRow]);
+    if (unclassified) {
+      raiseReviewItem(tx, audit, ctx, {
+        kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+        entityRef: transactionEntityRef(txnId),
+        dedupeKey: `classify.unclassified:${txnId}`,
+        accountId: account.id,
+      });
+    }
     audit({
       entity: "transaction",
       entityId: txnId,

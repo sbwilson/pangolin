@@ -53,6 +53,8 @@ import type {
   ReEnrolmentLinkRow,
   ReviewItemRepo,
   ReviewItemRow,
+  RuleRepo,
+  RuleRow,
   ScopedReference,
   SetupLinkRepo,
   SetupLinkRow,
@@ -80,6 +82,7 @@ import {
   BALANCE_SOURCES,
   CATEGORY_GROUP_KINDS,
   INSTITUTION_KINDS,
+  RULE_ORIGINS,
   SPLIT_SOURCES,
   TRANSFER_MATCHES,
 } from "../ports/unit-of-work.ts";
@@ -107,6 +110,7 @@ export interface MemoryState {
   activities: ActivityRow[];
   payees: PayeeRow[];
   payeeAliases: PayeeAliasRow[];
+  rules: RuleRow[];
   /** IDs of soft-deleted rows (ULIDs are unique across tables); the rows stay, as in SQLite. */
   deleted: Set<string>;
   /** The origin account of each scoped row (AD-18), by row ID; never part of a row type. */
@@ -958,6 +962,7 @@ function accountRepo(working: MemoryState, check: () => void): AccountRepo {
       const scopedOrigins = [
         ...working.payees,
         ...working.payeeAliases,
+        ...working.rules,
         ...working.tags,
         ...working.activities,
       ];
@@ -2441,6 +2446,50 @@ function payeeAliasRepo(working: MemoryState, check: () => void): PayeeAliasRepo
   };
 }
 
+function ruleRepo(working: MemoryState, check: () => void): RuleRepo {
+  const base = scoped(
+    working,
+    check,
+    () => working.rules,
+    (next) => {
+      working.rules = next;
+    },
+    (row) => row.name,
+    (row) => String(row.priority).padStart(10, "0") + row.name,
+    "rule.name",
+  );
+  return {
+    insert: (row, origin) => {
+      check();
+      if (!RULE_ORIGINS.includes(row.origin)) {
+        throw new Error(
+          "CHECK constraint failed: rule.origin IN ('user', 'correction', 'llm_suggested')",
+        );
+      }
+      base.insertRow(row, origin);
+    },
+    find: base.find,
+    list: (viewer) => {
+      const all = base.list(viewer);
+      return all.sort(
+        (a, b) => a.priority - b.priority || byText(a.name, b.name) || byText(a.id, b.id),
+      );
+    },
+    update: (viewer, row) =>
+      base.update(viewer, row, (before, next) => ({
+        ...before,
+        name: next.name,
+        priority: next.priority,
+        conditions: next.conditions,
+        actions: next.actions,
+        updatedAt: next.updatedAt,
+      })),
+    softDelete: base.softDelete,
+    originOf: base.originOf,
+    deleteScopedTo: (personId) => base.removeWhere((row) => row.scopePersonId === personId).size,
+  };
+}
+
 export function memoryUnitOfWork(
   settings: HouseholdSettingsRow = DEFAULT_SETTINGS,
 ): MemoryUnitOfWork {
@@ -2467,6 +2516,7 @@ export function memoryUnitOfWork(
       activities: [],
       payees: [],
       payeeAliases: [],
+      rules: [],
       deleted: new Set(),
       origins: new Map(),
       backups: [],
@@ -2508,6 +2558,7 @@ export function memoryUnitOfWork(
         activities: [...uow.state.activities],
         payees: [...uow.state.payees],
         payeeAliases: [...uow.state.payeeAliases],
+        rules: [...uow.state.rules],
         deleted: new Set(uow.state.deleted),
         origins: new Map(uow.state.origins),
         backups: [...uow.state.backups],
@@ -2563,6 +2614,7 @@ export function memoryUnitOfWork(
         activities: activityRepo(working, check),
         payees: payeeRepo(working, check),
         payeeAliases: payeeAliasRepo(working, check),
+        rules: ruleRepo(working, check),
         backups: backupRepo(working, check),
         backupVerifications: backupVerificationRepo(working, check),
         importBatches: importBatchRepo(working, check),
@@ -2601,6 +2653,7 @@ export function memoryUnitOfWork(
         uow.state.activities = working.activities;
         uow.state.payees = working.payees;
         uow.state.payeeAliases = working.payeeAliases;
+        uow.state.rules = working.rules;
         uow.state.deleted = working.deleted;
         uow.state.origins = working.origins;
         uow.state.backups = working.backups;
@@ -2710,6 +2763,10 @@ export function memoryUnitOfWork(
         payeeAliases: {
           find: payeeAliasRepo(uow.state, check).find,
           list: payeeAliasRepo(uow.state, check).list,
+        },
+        rules: {
+          find: ruleRepo(uow.state, check).find,
+          list: ruleRepo(uow.state, check).list,
         },
         backups: {
           find: backupRepo(uow.state, check).find,

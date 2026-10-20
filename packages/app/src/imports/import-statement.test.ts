@@ -7,6 +7,7 @@ import { Temporal } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.ts";
 import { createIdGenerator } from "../ids.ts";
+import { registerTransactionNeedsReviewSync } from "../ledger/needs-review.ts";
 import { manualClock } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import type { Viewer } from "../viewer.ts";
@@ -19,6 +20,7 @@ const now = Temporal.Instant.from("2026-10-20T12:00:00.000Z");
 const clock = manualClock("2026-10-20T12:00:00.000Z");
 
 function setup() {
+  registerTransactionNeedsReviewSync();
   let ms = 1792400000000;
   const newId = createIdGenerator({
     now: () => ++ms,
@@ -119,7 +121,16 @@ function setup() {
     uow,
   };
 
-  return { ctx, alexViewer, sharedAccountId, privateAccountId, alexPersonId, uow };
+  return {
+    ctx,
+    alexViewer,
+    sharedAccountId,
+    privateAccountId,
+    alexPersonId,
+    samPersonId,
+    newId,
+    uow,
+  };
 }
 
 describe("importStatement use case", () => {
@@ -1191,6 +1202,271 @@ MMemo Only
       expect(rows).toHaveLength(1);
       expect(rows[0]?.status).toBe("set_aside");
       expect(rows[0]?.reason).toMatch(/missing date/i);
+    });
+  });
+
+  describe("Classification cascade during import (payee alias, rules, payee default, review items)", () => {
+    it("sets payeeId on imported transaction when description matches payee alias pattern", () => {
+      const { ctx, sharedAccountId, uow, newId } = setup();
+
+      const payeeId = newId<"Payee">();
+      uow.state.payees.push({
+        id: payeeId,
+        name: "Woolworths",
+        websiteUrl: null,
+        logoAttachmentId: null,
+        defaultCategoryId: null,
+        scopePersonId: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+        deletedAt: null,
+      });
+
+      uow.state.payeeAliases.push({
+        id: newId<"PayeeAlias">(),
+        payeeId,
+        pattern: "WOOLWORTHS",
+        matchKind: "prefix",
+        scopePersonId: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      const csv = `20/10/2026,-52.30,WOOLWORTHS 1234 SUBIACO`;
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csv,
+      });
+
+      expect(res.newCount).toBe(1);
+      const txn = uow.state.transactions.find((t) => t.id === res.transactionIds[0]);
+      expect(txn?.payeeId).toBe(payeeId);
+    });
+
+    it("applies the rule with lowest priority number when multiple rules match", () => {
+      const { ctx, sharedAccountId, uow, newId } = setup();
+
+      const catGroceries = newId<"Category">();
+      const catSnacks = newId<"Category">();
+      const catGroup = newId<"CategoryGroup">();
+
+      uow.state.categoryGroups.push({
+        id: catGroup,
+        name: "Food",
+        kind: "expense",
+        sort: 1,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+      uow.state.categories.push(
+        {
+          id: catGroceries,
+          groupId: catGroup,
+          name: "Groceries",
+          isFixedCost: false,
+          createdAt: now.toString(),
+          updatedAt: now.toString(),
+          deletedAt: null,
+        },
+        {
+          id: catSnacks,
+          groupId: catGroup,
+          name: "Snacks",
+          isFixedCost: false,
+          createdAt: now.toString(),
+          updatedAt: now.toString(),
+          deletedAt: null,
+        },
+      );
+
+      // Rule A: priority 10 (Groceries)
+      uow.state.rules.push({
+        id: newId<"Rule">(),
+        name: "Rule A - Groceries",
+        priority: 10,
+        conditions: JSON.stringify({ descriptionPattern: "WOOLWORTHS" }),
+        actions: JSON.stringify({ categoryId: catGroceries }),
+        origin: "user",
+        scopePersonId: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      // Rule B: priority 20 (Snacks)
+      uow.state.rules.push({
+        id: newId<"Rule">(),
+        name: "Rule B - Snacks",
+        priority: 20,
+        conditions: JSON.stringify({ descriptionPattern: "WOOLWORTHS" }),
+        actions: JSON.stringify({ categoryId: catSnacks }),
+        origin: "user",
+        scopePersonId: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      const csv = `20/10/2026,-45.00,WOOLWORTHS SUBIACO`;
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csv,
+      });
+
+      expect(res.newCount).toBe(1);
+      const split = uow.state.splits.find((s) => s.transactionId === res.transactionIds[0]);
+      expect(split?.categoryId).toBe(catGroceries);
+      expect(split?.categorySource).toBe("rule");
+    });
+
+    it("falls back to payee defaultCategoryId when no rule matches", () => {
+      const { ctx, sharedAccountId, uow, newId } = setup();
+
+      const catFuel = newId<"Category">();
+      const catGroup = newId<"CategoryGroup">();
+
+      uow.state.categoryGroups.push({
+        id: catGroup,
+        name: "Transport",
+        kind: "expense",
+        sort: 1,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+      uow.state.categories.push({
+        id: catFuel,
+        groupId: catGroup,
+        name: "Fuel",
+        isFixedCost: false,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+        deletedAt: null,
+      });
+
+      const payeeId = newId<"Payee">();
+      uow.state.payees.push({
+        id: payeeId,
+        name: "BP Connect",
+        websiteUrl: null,
+        logoAttachmentId: null,
+        defaultCategoryId: catFuel,
+        scopePersonId: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+        deletedAt: null,
+      });
+
+      uow.state.payeeAliases.push({
+        id: newId<"PayeeAlias">(),
+        payeeId,
+        pattern: "BP",
+        matchKind: "prefix",
+        scopePersonId: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      const csv = `20/10/2026,-80.00,BP CONNECT SUBIACO`;
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csv,
+      });
+
+      expect(res.newCount).toBe(1);
+      const split = uow.state.splits.find((s) => s.transactionId === res.transactionIds[0]);
+      expect(split?.categoryId).toBe(catFuel);
+      expect(split?.categorySource).toBe("payee");
+
+      const txn = uow.state.transactions.find((t) => t.id === res.transactionIds[0]);
+      expect(txn?.needsReview).toBe(false);
+    });
+
+    it("leaves split unclassified, raises review item, and sets needsReview when no rule or default matches", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+
+      const csv = `20/10/2026,-15.00,UNKNOWN SHOP 9999`;
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csv,
+      });
+
+      expect(res.newCount).toBe(1);
+      const txnId = res.transactionIds[0];
+      const txn = uow.state.transactions.find((t) => t.id === txnId);
+      const split = uow.state.splits.find((s) => s.transactionId === txnId);
+
+      expect(split?.categoryId).toBeNull();
+      expect(split?.categorySource).toBeNull();
+      expect(txn?.needsReview).toBe(true);
+
+      const reviewItem = uow.state.reviewItems.find(
+        (ri) => ri.dedupeKey === `classify.unclassified:${txnId}`,
+      );
+      expect(reviewItem).toBeDefined();
+      expect(reviewItem?.kind).toBe("classify.unclassified");
+      expect(reviewItem?.resolvedAt).toBeNull();
+    });
+
+    it("does not apply Person A's private rule when Person B imports into a shared account", () => {
+      const { sharedAccountId, alexPersonId, samPersonId, uow, newId } = setup();
+
+      const catHealth = newId<"Category">();
+      const catGroup = newId<"CategoryGroup">();
+
+      uow.state.categoryGroups.push({
+        id: catGroup,
+        name: "Health",
+        kind: "expense",
+        sort: 1,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+      uow.state.categories.push({
+        id: catHealth,
+        groupId: catGroup,
+        name: "GP and Specialists",
+        isFixedCost: false,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+        deletedAt: null,
+      });
+
+      // Alex creates a private rule for "CLINIC"
+      uow.state.rules.push({
+        id: newId<"Rule">(),
+        name: "Alex Private Clinic Rule",
+        priority: 1,
+        conditions: JSON.stringify({ descriptionPattern: "CLINIC" }),
+        actions: JSON.stringify({ categoryId: catHealth }),
+        origin: "user",
+        scopePersonId: alexPersonId,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      // Sam imports statement into the shared account
+      const samCtx = {
+        viewer: { kind: "person", personId: samPersonId, authAt: now } as Viewer,
+        clock,
+        newId,
+        uow,
+      };
+
+      const csv = `20/10/2026,-150.00,SUBIACO CLINIC`;
+      const res = importStatement(samCtx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csv,
+      });
+
+      expect(res.newCount).toBe(1);
+      const split = uow.state.splits.find((s) => s.transactionId === res.transactionIds[0]);
+
+      // Alex's private rule must NOT apply to the shared account!
+      expect(split?.categoryId).toBeNull();
+      expect(split?.categorySource).toBeNull();
     });
   });
 });

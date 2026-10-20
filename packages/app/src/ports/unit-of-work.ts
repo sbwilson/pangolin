@@ -1044,6 +1044,41 @@ export interface PayeeAliasRepo {
   deleteScopedTo(personId: string): number;
 }
 
+export const RULE_ORIGINS = ["user", "correction", "llm_suggested"] as const;
+export type RuleOrigin = (typeof RULE_ORIGINS)[number];
+
+/** `rule`: deterministic categorisation rule. */
+export interface RuleRow extends ScopedRows {
+  readonly id: Id<"Rule">;
+  readonly name: string;
+  readonly priority: number;
+  readonly conditions: string;
+  readonly actions: string;
+  readonly origin: RuleOrigin;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface RuleRepo {
+  insert(row: RuleRow, originAccountId: Id<"Account"> | null): void;
+  find(viewer: Viewer, id: string): RuleRow | undefined;
+  list(viewer: Viewer): RuleRow[];
+  /**
+   * Overwrites the mutable fields and `updatedAt` of the live row with `row.id` when `viewer`
+   * may see it; false (changing nothing) otherwise. Scope and origin never change.
+   */
+  update(viewer: Viewer, row: RuleRow): boolean;
+  /** Soft-deletes a live row `viewer` may see; false when there is none. */
+  softDelete(viewer: Viewer, id: string, at: string): boolean;
+  /** The origin account stored with a row `viewer` may see: non-null only for a private origin. */
+  originOf(viewer: Viewer, id: string): Id<"Account"> | null | undefined;
+  /**
+   * Hard-deletes every rule scoped to `personId`, live or deleted; returns how many. Only the household
+   * leave calls it.
+   */
+  deleteScopedTo(personId: string): number;
+}
+
 /**
  * `recovery_bundle`: the recovery bundle the household confirmed it stored safely (story 1.17).
  * Only its id, never a secret.
@@ -1390,6 +1425,7 @@ export interface TxRepos {
   readonly activities: ActivityRepo;
   readonly payees: PayeeRepo;
   readonly payeeAliases: PayeeAliasRepo;
+  readonly rules: RuleRepo;
   readonly backups: BackupSnapshotRepo;
   readonly backupVerifications: BackupVerificationRepo;
   readonly recoveryBundle: RecoveryBundleRepo;
@@ -1437,6 +1473,7 @@ export interface ReadRepos {
   readonly activities: Pick<ActivityRepo, "find" | "list">;
   readonly payees: Pick<PayeeRepo, "find" | "list">;
   readonly payeeAliases: Pick<PayeeAliasRepo, "find" | "list">;
+  readonly rules: Pick<RuleRepo, "find" | "list">;
   readonly backups: Pick<BackupSnapshotRepo, "find" | "latestPushed">;
   readonly backupVerifications: Pick<BackupVerificationRepo, "latest">;
   readonly recoveryBundle: Pick<RecoveryBundleRepo, "get">;

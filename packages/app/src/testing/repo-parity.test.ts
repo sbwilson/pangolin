@@ -19,6 +19,7 @@ import { AppError } from "../errors.ts";
 import { fixedClockAt, personViewer, setPrivacy, type Viewer } from "../index.ts";
 import type {
   AccountRow,
+  RuleRow,
   SplitRow,
   TransactionRow,
   TxRepos,
@@ -450,6 +451,68 @@ function scenario(
     r.payeeAliases.list(asB).length,
     r.payeeAliases.list(system).length,
   ]);
+
+  const ruleRow = (
+    id: Id<"Rule">,
+    name: string,
+    priority: number,
+    scopePersonId: Id<"Person"> | null,
+    origin: "user" | "correction" | "llm_suggested" = "user",
+  ): RuleRow => ({
+    id,
+    name,
+    priority,
+    conditions: JSON.stringify({ descriptionPattern: name, descriptionMatchKind: "contains" }),
+    actions: JSON.stringify({ categoryId: "cat-dummy" }),
+    origin,
+    scopePersonId,
+    createdAt: T,
+    updatedAt: T,
+  });
+  const rShared = newId<"Rule">();
+  const rA = newId<"Rule">();
+  const rB = newId<"Rule">();
+  step("rule.shared", (r) => r.rules.insert(ruleRow(rShared, "Groceries", 20, null), null));
+  step("rule.sameNameInOwnerScope", (r) => r.rules.insert(ruleRow(rA, "Groceries", 10, a), privA));
+  step("rule.sameNameTwiceShared", (r) =>
+    r.rules.insert(ruleRow(newId(), "Groceries", 30, null), null),
+  );
+  step("rule.sameNameTwiceOwner", (r) =>
+    r.rules.insert(ruleRow(newId(), "Groceries", 40, a), privA),
+  );
+  step("rule.sameNameOtherOwner", (r) => r.rules.insert(ruleRow(rB, "Groceries", 5, b), privB));
+  step("rule.unknownOrigin", (r) =>
+    r.rules.insert(ruleRow(newId(), "Nowhere", 100, a), newId<"Account">()),
+  );
+  step("rule.badOrigin", (r) =>
+    r.rules.insert(ruleRow(newId(), "Bad Origin", 100, null, "invalid" as never), null),
+  );
+  const ruleNames = (v: Viewer) => (r: TxRepos) => r.rules.list(v).map((x) => x.name);
+  out["rule.listA"] = tx(ruleNames(asA));
+  out["rule.listB"] = tx(ruleNames(asB));
+  out["rule.listSystem"] = tx(ruleNames(system));
+  out["rule.findOthersScope"] = tx((r) => r.rules.find(asB, rA));
+  out["rule.findOwnScope"] = tx((r) => r.rules.find(asA, rA)?.name);
+  out["rule.softDeleteAsOther"] = tx((r) => r.rules.softDelete(asB, rA, T2));
+  out["rule.softDeleteAsOwner"] = tx((r) => r.rules.softDelete(asA, rA, T2));
+  out["rule.afterDelete"] = tx((r) => [
+    r.rules.find(system, rA),
+    r.rules.list(asA).map((x) => x.name),
+  ]);
+  step("rule.reuseDeletedName", (r) => r.rules.insert(ruleRow(newId(), "Groceries", 10, a), privA));
+  out["rule.originAsA"] = tx((r) => r.rules.originOf(asA, rA));
+  out["rule.originAsB"] = tx((r) => r.rules.originOf(asB, rA));
+  out["rule.updateAsOther"] = tx((r) =>
+    r.rules.update(asB, { ...ruleRow(rA, "Hijack", 1, a), updatedAt: T2 }),
+  );
+  out["rule.updateAsOwner"] = tx((r) =>
+    r.rules.update(asA, { ...ruleRow(rShared, "Groceries Renamed", 25, null), updatedAt: T2 }),
+  );
+  out["rule.afterUpdate"] = tx((r) => r.rules.find(system, rShared)?.name);
+  step("rule.deleteScopedTo", (r) => {
+    r.rules.deleteScopedTo(b);
+  });
+  out["rule.afterDeleteScoped"] = tx((r) => r.rules.list(system).map((x) => x.name));
 
   const tagRow = (name: string, scopePersonId: Id<"Person"> | null) => ({
     id: newId<"Tag">(),
@@ -1638,6 +1701,12 @@ describe("ledger and classification schema on SQLite", () => {
     expect(out["payee.sameNameTwiceShared"]).toBe("error:UNIQUE");
     expect(out["payee.sameNameTwiceOwner"]).toBe("error:UNIQUE");
     expect(out["payee.sameNameOtherOwner"]).toBe("ok");
+    expect(out["rule.sameNameInOwnerScope"]).toBe("ok");
+    expect(out["rule.sameNameTwiceShared"]).toBe("error:UNIQUE");
+    expect(out["rule.sameNameTwiceOwner"]).toBe("error:UNIQUE");
+    expect(out["rule.sameNameOtherOwner"]).toBe("ok");
+    expect(out["rule.unknownOrigin"]).toBe("error:FOREIGN KEY");
+    expect(out["rule.badOrigin"]).toBe("error:CHECK");
     expect(out["category.afterDelete"]).toEqual([undefined, []]);
     expect(out["institution.afterDelete"]).toEqual([undefined, [], false]);
     expect(out["txn.listA"]).toContain("joint");
@@ -1844,9 +1913,17 @@ describe("ledger and classification schema on SQLite", () => {
     expect(
       db.prepare("SELECT count(*) FROM payee WHERE origin_account_id IS NOT NULL").pluck().get(),
     ).toBe(7);
+    expect(
+      db.prepare("SELECT count(*) FROM rule WHERE origin_account_id IS NOT NULL").pluck().get(),
+    ).toBe(2);
     const row = createUnitOfWork(db).read((r) => r.payees.list(systemViewer("cli:test"))[0]);
     expect(row).toBeDefined();
     expect(Object.keys(row ?? {})).not.toContain("originAccountId");
+    const ruleRowSqlite = createUnitOfWork(db).read(
+      (r) => r.rules.list(systemViewer("cli:test"))[0],
+    );
+    expect(ruleRowSqlite).toBeDefined();
+    expect(Object.keys(ruleRowSqlite ?? {})).not.toContain("originAccountId");
   });
 });
 

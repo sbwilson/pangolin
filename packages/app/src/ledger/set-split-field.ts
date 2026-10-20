@@ -1,5 +1,6 @@
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
+import { CLASSIFY_RULE_OFFER_REVIEW } from "../classify/rules.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { idInput } from "../inputs.ts";
@@ -9,8 +10,10 @@ import {
   type SplitSource,
   type TxRepos,
 } from "../ports/unit-of-work.ts";
+import { raiseReviewItem, resolveReviewItem } from "../system/review-items.ts";
 import { type Audit, write } from "../write.ts";
 import { requireEntryOpen } from "./closed-lock.ts";
+import { transactionEntityRef } from "./needs-review.ts";
 import { mayOverwrite } from "./provenance.ts";
 import {
   privateOwner,
@@ -182,6 +185,18 @@ export function setSplitField(ctx: UseCaseContext, input: SetSplitFieldInput): S
       before: auditSnapshot(stored, tagsBefore),
       after: auditSnapshot(storedTransaction(tx, ctx.viewer, before.id), tagsAfter),
     });
+    if (field === "category" && source === "user" && value !== null && old.categoryId !== value) {
+      resolveReviewItem(tx, audit, ctx, {
+        dedupeKey: `classify.unclassified:${before.id}`,
+        resolution: "user categorized",
+      });
+      raiseReviewItem(tx, audit, ctx, {
+        kind: CLASSIFY_RULE_OFFER_REVIEW,
+        entityRef: transactionEntityRef(before.id),
+        dedupeKey: `classify.rule_offer:${before.id}`,
+        accountId: before.accountId,
+      });
+    }
     for (const listener of listeners) {
       listener(tx, audit, { transactionId: before.id, splitId: old.id, field, value, source });
     }

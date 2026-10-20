@@ -43,7 +43,7 @@ describe("committed migrations", () => {
     expect(loadMigrations(packageMigrationsDir)[0]?.name).toBe("0000_baseline");
   });
 
-  it("migrates a fresh database to version 16, then re-applies nothing", () => {
+  it("migrates a fresh database to version 17, then re-applies nothing", () => {
     const migrations = loadMigrations(packageMigrationsDir);
     const names = [
       "0000_baseline",
@@ -62,12 +62,22 @@ describe("committed migrations", () => {
       "0013_absent_argent",
       "0014_person_preference",
       "0015_import_batch_and_row",
+      "0016_rule_schema",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 16 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 16 });
-    expect(schemaVersion(db)).toBe(16);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 17 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 17 });
+    expect(schemaVersion(db)).toBe(17);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
+  });
+
+  it("creates rule table when 0015 upgrades to 0016", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 16));
+    expect(schemaVersion(db)).toBe(16);
+    expect(migrate(db, migrations.slice(0, 17)).applied).toEqual(["0016_rule_schema"]);
+    expect(schemaVersion(db)).toBe(17);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
   });
 
   it("creates import_batch and import_row tables when 0014 upgrades to 0015", () => {

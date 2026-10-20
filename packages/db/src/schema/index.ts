@@ -31,6 +31,7 @@ export { reEnrolmentLink } from "./re-enrolment-link.ts";
 export { recoveryBundle } from "./recovery-bundle.ts";
 export { recoveryCode } from "./recovery-code.ts";
 export { reviewItem } from "./review-item.ts";
+export { rule } from "./rule.ts";
 export { setupLink } from "./setup-link.ts";
 export { split } from "./split.ts";
 export { splitTag } from "./split-tag.ts";

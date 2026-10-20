@@ -20,6 +20,9 @@ const SCOPED_REPOS = [
   "activities",
   "payees",
   "payeeAliases",
+  "rules",
+  "importBatches",
+  "importRows",
 ] as const;
 
 /** `TxRepos` keys that hold no scoped data, each with its reason. Every other key is checked. */
@@ -76,6 +79,13 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
   "ActivityRepo.insert": "a new row; its scope is the creating person's",
   "PayeeRepo.insert": "a new row; its scope is the creating person's",
   "PayeeAliasRepo.insert": "a new row; its scope is the creating person's",
+  "RuleRepo.insert": "a new row; its scope is the creating person's",
+  "ImportBatchRepo.insert": "a new batch; the use case checked the account with findVisible",
+  "ImportBatchRepo.updateCountsAndStatus": "the use case checked the account with findVisible",
+  "ImportRowRepo.insertMany":
+    "new rows; the use case checked the batch and account with findVisible",
+  "ImportRowRepo.insert": "a new row; the use case checked the batch and account with findVisible",
+  "ImportRowRepo.updateStatus": "the use case checked the row and account with findVisible",
   "PayeeRepo.clearDefaultCategory":
     "a household-wide cascade of a category delete that reaches every payee, whatever its scope (a known gap in the route manifest)",
   "PayeeAliasRepo.softDeleteForPayee":
@@ -107,7 +117,14 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
   "PayeeRepo.deleteScopedTo": "hard-deletes the payees scoped to the leaver",
   "PayeeAliasRepo.deleteScopedTo":
     "hard-deletes the aliases scoped to the leaver and those of a payee scoped to them",
+  "RuleRepo.deleteScopedTo": "hard-deletes the rules scoped to the leaver",
   // Reads with no viewer: the only ones.
+  "TransactionRepo.listForDedupe":
+    "reads transactions for deduplication in an account checked by the use case",
+  "TransactionRepo.findByExternalId":
+    "finds duplicate transaction by externalId in an account checked by the use case",
+  "TransactionRepo.findByFingerprint":
+    "finds duplicate transaction by fingerprint in an account checked by the use case",
   "AccountRepo.any": "whether any account exists, for first-run setup; returns no row",
   "AccountRepo.owners": "the owners of an account the use case already read with the viewer",
   "AccountRepo.hasSplitForOthers":
