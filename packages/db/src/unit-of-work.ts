@@ -42,6 +42,7 @@ import {
 import type { Db } from "./open.ts";
 import { auditHiddenUntil, auditPayeeHidden, visibleAudit } from "./privacy.ts";
 import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
+import { createImportBatchRepo, createImportRowRepo } from "./repositories/import-repos.ts";
 import { createPersonPreferenceRepo } from "./repositories/person-preference.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
 import { auditLog } from "./schema/audit-log.ts";
@@ -253,6 +254,8 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     backups: createBackupSnapshotRepo(orm, () => guard(scope)),
     backupVerifications: createBackupVerificationRepo(orm, () => guard(scope)),
     recoveryBundle: createRecoveryBundleRepo(orm, () => guard(scope)),
+    importBatches: createImportBatchRepo(orm, () => guard(scope)),
+    importRows: createImportRowRepo(orm, () => guard(scope)),
   };
 }
 
@@ -331,6 +334,9 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               countBefore: repos.transactions.countBefore,
               dayNets: repos.transactions.dayNets,
               latestPostedOn: repos.transactions.latestPostedOn,
+              listForDedupe: repos.transactions.listForDedupe,
+              findByExternalId: repos.transactions.findByExternalId,
+              findByFingerprint: repos.transactions.findByFingerprint,
             },
             institutions: { find: repos.institutions.find, list: repos.institutions.list },
             balanceSnapshots: {
@@ -353,6 +359,12 @@ export function createUnitOfWork(db: Db): UnitOfWork {
             backups: { find: repos.backups.find, latestPushed: repos.backups.latestPushed },
             backupVerifications: { latest: repos.backupVerifications.latest },
             recoveryBundle: { get: repos.recoveryBundle.get },
+            importBatches: {
+              find: repos.importBatches.find,
+              findByAccountAndFileSha: repos.importBatches.findByAccountAndFileSha,
+              listVisible: repos.importBatches.listVisible,
+            },
+            importRows: { listForBatch: repos.importRows.listForBatch },
           };
         },
         fn,

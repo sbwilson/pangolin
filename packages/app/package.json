@@ -6,7 +6,8 @@
   "description": "Application: use cases (the only write path) and port interfaces",
   "exports": {
     ".": "./src/index.ts",
-    "./system-viewer": "./src/system-viewer.ts"
+    "./system-viewer": "./src/system-viewer.ts",
+    "./testing/memory-uow": "./src/testing/memory-uow.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

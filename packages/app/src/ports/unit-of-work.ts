@@ -679,6 +679,29 @@ export interface TransactionRepo {
    * transfer groups first.
    */
   deleteForAccount(accountId: string): void;
+  /**
+   * Returns all transactions (including soft-deleted) of account `accountId` whose `postedOn` is in `dates`.
+   * For deduplication checks and occurrence count assignment.
+   */
+  listForDedupe(
+    accountId: string,
+    dates: readonly string[],
+  ): readonly {
+    readonly id: string;
+    readonly externalId: string | null;
+    readonly fingerprint: string;
+    readonly postedOn: string;
+    readonly amountCents: number;
+    readonly descriptionRaw: string;
+  }[];
+  /**
+   * Finds any transaction (including soft-deleted) of account `accountId` by `externalId`.
+   */
+  findByExternalId(accountId: string, externalId: string): { readonly id: string } | undefined;
+  /**
+   * Finds any transaction (including soft-deleted) of account `accountId` by `fingerprint`.
+   */
+  findByFingerprint(accountId: string, fingerprint: string): { readonly id: string } | undefined;
 }
 
 /** What kind of body an institution is. */
@@ -1281,6 +1304,65 @@ export interface AuditRepo {
   deleteForPerson(personId: string): number;
 }
 
+export const IMPORT_BATCH_STATUSES = ["staged", "ready", "committed", "failed"] as const;
+export type ImportBatchStatus = (typeof IMPORT_BATCH_STATUSES)[number];
+
+export const IMPORT_ROW_STATUSES = ["staged", "committed", "set_aside", "discarded"] as const;
+export type ImportRowStatus = (typeof IMPORT_ROW_STATUSES)[number];
+
+export interface ImportBatchRow {
+  readonly id: Id<"ImportBatch">;
+  readonly accountId: Id<"Account">;
+  readonly source: string;
+  readonly fileSha256: string;
+  readonly rowCount: number;
+  readonly newCount: number;
+  readonly dupCount: number;
+  readonly status: ImportBatchStatus;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface ImportRowRow {
+  readonly id: Id<"ImportRow">;
+  readonly batchId: Id<"ImportBatch">;
+  readonly rowNumber: number;
+  readonly rawLine: string;
+  readonly status: ImportRowStatus;
+  readonly reason: string | null;
+  readonly pdfPage: number | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface ImportBatchRepo {
+  insert(row: ImportBatchRow): void;
+  find(viewer: Viewer, id: string): ImportBatchRow | undefined;
+  findByAccountAndFileSha(
+    viewer: Viewer,
+    accountId: string,
+    fileSha256: string,
+  ): ImportBatchRow | undefined;
+  updateCountsAndStatus(
+    id: string,
+    changes: {
+      readonly rowCount?: number;
+      readonly newCount?: number;
+      readonly dupCount?: number;
+      readonly status: ImportBatchStatus;
+    },
+    at: string,
+  ): boolean;
+  listVisible(viewer: Viewer, accountId: string): ImportBatchRow[];
+}
+
+export interface ImportRowRepo {
+  insert(row: ImportRowRow): void;
+  insertMany(rows: readonly ImportRowRow[]): void;
+  listForBatch(viewer: Viewer, batchId: string): ImportRowRow[];
+  updateStatus(id: string, status: ImportRowStatus, at: string, reason?: string | null): boolean;
+}
+
 /** Repositories bound to one open transaction. They throw once that transaction has ended. */
 export interface TxRepos {
   readonly householdSettings: HouseholdSettingsRepo;
@@ -1310,6 +1392,8 @@ export interface TxRepos {
   readonly backups: BackupSnapshotRepo;
   readonly backupVerifications: BackupVerificationRepo;
   readonly recoveryBundle: RecoveryBundleRepo;
+  readonly importBatches: ImportBatchRepo;
+  readonly importRows: ImportRowRepo;
 }
 
 /** The read-only subset of `TxRepos`, for queries. */
@@ -1338,6 +1422,9 @@ export interface ReadRepos {
     | "countBefore"
     | "dayNets"
     | "latestPostedOn"
+    | "listForDedupe"
+    | "findByExternalId"
+    | "findByFingerprint"
   >;
   readonly institutions: Pick<InstitutionRepo, "find" | "list">;
   readonly balanceSnapshots: Pick<BalanceSnapshotRepo, "listVisible" | "balanceAsOf">;
@@ -1352,6 +1439,8 @@ export interface ReadRepos {
   readonly backups: Pick<BackupSnapshotRepo, "find" | "latestPushed">;
   readonly backupVerifications: Pick<BackupVerificationRepo, "latest">;
   readonly recoveryBundle: Pick<RecoveryBundleRepo, "get">;
+  readonly importBatches: Pick<ImportBatchRepo, "find" | "findByAccountAndFileSha" | "listVisible">;
+  readonly importRows: Pick<ImportRowRepo, "listForBatch">;
 }
 
 export interface UnitOfWork {

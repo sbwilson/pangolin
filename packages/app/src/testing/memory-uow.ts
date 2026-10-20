@@ -26,6 +26,10 @@ import type {
   CategoryRow,
   CredentialRepo,
   HouseholdSettingsRow,
+  ImportBatchRepo,
+  ImportBatchRow,
+  ImportRowRepo,
+  ImportRowRow,
   InstitutionRepo,
   InstitutionRow,
   JobRepo,
@@ -109,6 +113,8 @@ export interface MemoryState {
   origins: Map<string, string | null>;
   backups: BackupSnapshotRow[];
   backupVerifications: BackupVerificationRow[];
+  importBatches: ImportBatchRow[];
+  importRows: ImportRowRow[];
   /** The confirmed recovery bundle; undefined until the first confirmation. */
   recoveryBundle: RecoveryBundleRow | undefined;
   /** IDs of better-auth users; tests add them to stand in for better-auth's inserts. */
@@ -339,6 +345,124 @@ function backupVerificationRepo(working: MemoryState, check: () => void): Backup
       return working.backupVerifications
         .filter((v) => v.kind === kind)
         .sort((a, b) => (`${a.at}|${a.id}` < `${b.at}|${b.id}` ? 1 : -1))[0];
+    },
+  };
+}
+
+function importBatchRepo(working: MemoryState, check: () => void): ImportBatchRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.importBatches.some((b) => b.id === row.id)) {
+        throw new Error("UNIQUE constraint failed: import_batch.id");
+      }
+      if (
+        working.importBatches.some(
+          (b) => b.accountId === row.accountId && b.fileSha256 === row.fileSha256,
+        )
+      ) {
+        throw new Error(
+          "UNIQUE constraint failed: import_batch.account_id, import_batch.file_sha256",
+        );
+      }
+      working.importBatches.push(row);
+    },
+    find: (viewer, id) => {
+      requireViewer(viewer);
+      check();
+      const batch = working.importBatches.find((b) => b.id === id);
+      if (batch === undefined) return undefined;
+      const account = working.accounts.find((a) => a.id === batch.accountId);
+      if (account === undefined || !accountVisible(working, viewer, account)) return undefined;
+      return batch;
+    },
+    findByAccountAndFileSha: (viewer, accountId, fileSha256) => {
+      requireViewer(viewer);
+      check();
+      const account = working.accounts.find((a) => a.id === accountId);
+      if (account === undefined || !accountVisible(working, viewer, account)) return undefined;
+      return working.importBatches.find(
+        (b) => b.accountId === accountId && b.fileSha256 === fileSha256,
+      );
+    },
+    updateCountsAndStatus: (id, changes, at) => {
+      check();
+      const index = working.importBatches.findIndex((b) => b.id === id);
+      const b = working.importBatches[index];
+      if (index === -1 || !b) return false;
+      working.importBatches[index] = {
+        ...b,
+        ...(changes.rowCount !== undefined ? { rowCount: changes.rowCount } : {}),
+        ...(changes.newCount !== undefined ? { newCount: changes.newCount } : {}),
+        ...(changes.dupCount !== undefined ? { dupCount: changes.dupCount } : {}),
+        status: changes.status,
+        updatedAt: at,
+      };
+      return true;
+    },
+    listVisible: (viewer, accountId) => {
+      requireViewer(viewer);
+      check();
+      const account = working.accounts.find((a) => a.id === accountId);
+      if (account === undefined || !accountVisible(working, viewer, account)) return [];
+      return working.importBatches
+        .filter((b) => b.accountId === accountId)
+        .sort((a, b) => byText(b.createdAt, a.createdAt));
+    },
+  };
+}
+
+function importRowRepo(working: MemoryState, check: () => void): ImportRowRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.importRows.some((r) => r.id === row.id)) {
+        throw new Error("UNIQUE constraint failed: import_row.id");
+      }
+      if (
+        working.importRows.some((r) => r.batchId === row.batchId && r.rowNumber === row.rowNumber)
+      ) {
+        throw new Error("UNIQUE constraint failed: import_row.batch_id, import_row.row_number");
+      }
+      working.importRows.push(row);
+    },
+    insertMany: (rows) => {
+      check();
+      for (const row of rows) {
+        if (working.importRows.some((r) => r.id === row.id)) {
+          throw new Error("UNIQUE constraint failed: import_row.id");
+        }
+        if (
+          working.importRows.some((r) => r.batchId === row.batchId && r.rowNumber === row.rowNumber)
+        ) {
+          throw new Error("UNIQUE constraint failed: import_row.batch_id, import_row.row_number");
+        }
+        working.importRows.push(row);
+      }
+    },
+    listForBatch: (viewer, batchId) => {
+      requireViewer(viewer);
+      check();
+      const batch = working.importBatches.find((b) => b.id === batchId);
+      if (batch === undefined) return [];
+      const account = working.accounts.find((a) => a.id === batch.accountId);
+      if (account === undefined || !accountVisible(working, viewer, account)) return [];
+      return working.importRows
+        .filter((r) => r.batchId === batchId)
+        .sort((a, b) => a.rowNumber - b.rowNumber);
+    },
+    updateStatus: (id, status, at, reason) => {
+      check();
+      const index = working.importRows.findIndex((r) => r.id === id);
+      const r = working.importRows[index];
+      if (index === -1 || !r) return false;
+      working.importRows[index] = {
+        ...r,
+        status,
+        ...(reason !== undefined ? { reason } : {}),
+        updatedAt: at,
+      };
+      return true;
     },
   };
 }
@@ -1361,6 +1485,35 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       }
       return nets;
     },
+    listForDedupe: (accountId, dates) => {
+      check();
+      if (dates.length === 0) return [];
+      const dateSet = new Set(dates);
+      return working.transactions
+        .filter((t) => t.accountId === accountId && dateSet.has(t.postedOn))
+        .map((t) => ({
+          id: t.id,
+          externalId: t.externalId,
+          fingerprint: t.fingerprint,
+          postedOn: t.postedOn,
+          amountCents: t.amountCents,
+          descriptionRaw: t.descriptionRaw,
+        }));
+    },
+    findByExternalId: (accountId, externalId) => {
+      check();
+      const t = working.transactions.find(
+        (row) => row.accountId === accountId && row.externalId === externalId,
+      );
+      return t === undefined ? undefined : { id: t.id };
+    },
+    findByFingerprint: (accountId, fingerprint) => {
+      check();
+      const t = working.transactions.find(
+        (row) => row.accountId === accountId && row.fingerprint === fingerprint,
+      );
+      return t === undefined ? undefined : { id: t.id };
+    },
   };
 }
 
@@ -2307,6 +2460,8 @@ export function memoryUnitOfWork(
       origins: new Map(),
       backups: [],
       backupVerifications: [],
+      importBatches: [],
+      importRows: [],
       recoveryBundle: undefined,
       users: [],
       emails: {},
@@ -2346,6 +2501,8 @@ export function memoryUnitOfWork(
         origins: new Map(uow.state.origins),
         backups: [...uow.state.backups],
         backupVerifications: [...uow.state.backupVerifications],
+        importBatches: [...uow.state.importBatches],
+        importRows: [...uow.state.importRows],
         recoveryBundle: uow.state.recoveryBundle,
         users: [...uow.state.users],
         emails: uow.state.emails,
@@ -2397,6 +2554,8 @@ export function memoryUnitOfWork(
         payeeAliases: payeeAliasRepo(working, check),
         backups: backupRepo(working, check),
         backupVerifications: backupVerificationRepo(working, check),
+        importBatches: importBatchRepo(working, check),
+        importRows: importRowRepo(working, check),
         recoveryBundle: {
           get: () => {
             check();
@@ -2435,6 +2594,8 @@ export function memoryUnitOfWork(
         uow.state.origins = working.origins;
         uow.state.backups = working.backups;
         uow.state.backupVerifications = working.backupVerifications;
+        uow.state.importBatches = working.importBatches;
+        uow.state.importRows = working.importRows;
         uow.state.recoveryBundle = working.recoveryBundle;
         uow.state.users = working.users;
         uow.state.setupLinks = working.setupLinks;
@@ -2496,6 +2657,9 @@ export function memoryUnitOfWork(
           countBefore: transactionRepo(uow.state, check).countBefore,
           dayNets: transactionRepo(uow.state, check).dayNets,
           latestPostedOn: transactionRepo(uow.state, check).latestPostedOn,
+          listForDedupe: transactionRepo(uow.state, check).listForDedupe,
+          findByExternalId: transactionRepo(uow.state, check).findByExternalId,
+          findByFingerprint: transactionRepo(uow.state, check).findByFingerprint,
         },
         institutions: {
           find: institutionRepo(uow.state, check).find,
@@ -2547,6 +2711,12 @@ export function memoryUnitOfWork(
             return uow.state.recoveryBundle;
           },
         },
+        importBatches: {
+          find: importBatchRepo(uow.state, check).find,
+          findByAccountAndFileSha: importBatchRepo(uow.state, check).findByAccountAndFileSha,
+          listVisible: importBatchRepo(uow.state, check).listVisible,
+        },
+        importRows: { listForBatch: importRowRepo(uow.state, check).listForBatch },
       });
     },
   };

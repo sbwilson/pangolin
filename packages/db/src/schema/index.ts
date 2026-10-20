@@ -18,6 +18,8 @@ export { balanceSnapshot } from "./balance-snapshot.ts";
 export { category } from "./category.ts";
 export { categoryGroup } from "./category-group.ts";
 export { householdSettings } from "./household-settings.ts";
+export { importBatch } from "./import-batch.ts";
+export { importRow } from "./import-row.ts";
 export { institution } from "./institution.ts";
 export { job } from "./job.ts";
 export { loginAttempt } from "./login-attempt.ts";

@@ -756,6 +756,54 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
       orm.delete(transaction).where(eq(transaction.accountId, accountId)).run();
       optimizeSearchIndex(orm);
     },
+
+    listForDedupe: (accountId, dates) => {
+      check();
+      if (dates.length === 0) return [];
+      const results: {
+        id: string;
+        externalId: string | null;
+        fingerprint: string;
+        postedOn: string;
+        amountCents: number;
+        descriptionRaw: string;
+      }[] = [];
+      for (let i = 0; i < dates.length; i += 400) {
+        const slice = dates.slice(i, i + 400) as string[];
+        const rows = orm
+          .select({
+            id: transaction.id,
+            externalId: transaction.externalId,
+            fingerprint: transaction.fingerprint,
+            postedOn: transaction.postedOn,
+            amountCents: transaction.amountCents,
+            descriptionRaw: transaction.descriptionRaw,
+          })
+          .from(transaction)
+          .where(and(eq(transaction.accountId, accountId), inArray(transaction.postedOn, slice)))
+          .all();
+        results.push(...rows);
+      }
+      return results;
+    },
+
+    findByExternalId: (accountId, externalId) => {
+      check();
+      return orm
+        .select({ id: transaction.id })
+        .from(transaction)
+        .where(and(eq(transaction.accountId, accountId), eq(transaction.externalId, externalId)))
+        .get();
+    },
+
+    findByFingerprint: (accountId, fingerprint) => {
+      check();
+      return orm
+        .select({ id: transaction.id })
+        .from(transaction)
+        .where(and(eq(transaction.accountId, accountId), eq(transaction.fingerprint, fingerprint)))
+        .get();
+    },
   };
 }
 

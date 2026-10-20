@@ -294,6 +294,13 @@ export {
   type IdentityContext,
 } from "./identity/sign-up.ts";
 export { createIdGenerator, type IdGenerator, type IdSources, newId } from "./ids.ts";
+export {
+  type ImportStatementInput,
+  type ImportStatementOptions,
+  type ImportStatementResult,
+  importStatement,
+  importStatementInput,
+} from "./imports/import-statement.ts";
 export { type EnqueueOptions, enqueueJob } from "./jobs/enqueue.ts";
 export {
   type CancelJobsForRestoreInput,
@@ -429,6 +436,10 @@ export {
   updateTransactionInput,
 } from "./ledger/update-transaction.ts";
 export type { Clock } from "./ports/clock.ts";
+export type {
+  ParsedStatementRow,
+  StatementParser,
+} from "./ports/statement-parser.ts";
 export type { SystemHealthPort } from "./ports/system-health.ts";
 export type { CodeHasher, TokenPort } from "./ports/tokens.ts";
 export type {
@@ -500,6 +511,14 @@ export {
   type CategoryGroupRow,
   type CategoryRepo,
   type CategoryRow,
+  IMPORT_BATCH_STATUSES,
+  IMPORT_ROW_STATUSES,
+  type ImportBatchRepo,
+  type ImportBatchRow,
+  type ImportBatchStatus,
+  type ImportRowRepo,
+  type ImportRowRow,
+  type ImportRowStatus,
   INSTITUTION_KINDS,
   type InstitutionKind,
   type InstitutionRepo,
