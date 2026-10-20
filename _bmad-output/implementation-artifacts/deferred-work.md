@@ -423,3 +423,16 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-transfer-matching-and-probable-duplicate-detection-plan.md`
   summary: Open `import.transfer_ambiguous` items are never re-evaluated or auto-resolved when a later link or deletion removes the ambiguity.
   evidence: Raised once per new transaction; only a manual dismiss clears it. Unverified severity medium; needs a re-evaluation design (probably with the review inbox, 3.8).
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-encrypted-attachment-storage-and-partner-hand-off-plan.md`
+  summary: Decide retention for an accepted hand-off's encrypted statement (currently kept on disk forever).
+  evidence: `acceptHandoff` keeps the attachment link; batch undo (entry 7) may need the file, otherwise it should be released on accept.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-encrypted-attachment-storage-and-partner-hand-off-plan.md`
+  summary: Add an orphan-file sweep for data/attachments and a startup check that the auth secret still decrypts stored files.
+  evidence: AD-21 requires the sweep; a crash between file write and commit leaves unreferenced ciphertext, and a rotated or restored-without secret makes every file undecryptable.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-encrypted-attachment-storage-and-partner-hand-off-plan.md`
+  summary: Wire the file attachment store into the server's request context and run acceptHandoff against the SQLite unit of work in a db-level test.
+  evidence: `createFileAttachmentStore` is unused outside tests, so the leave route now throws if a leaver has hand-off files; accept atomicity is verified only on the memory UoW. Needed when the hand-off routes ship.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-encrypted-attachment-storage-and-partner-hand-off-plan.md`
+  summary: Handle `import_handoff.batch_id` when a batch is deleted or undone.
+  evidence: The FK and the status/batch CHECK would block deleting an imported hand-off's batch (unverified; entry 7).

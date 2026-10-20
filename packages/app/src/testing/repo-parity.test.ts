@@ -1670,6 +1670,91 @@ function scenario(
       .filter((row) => row.entity.startsWith("leave-"))
       .map((row) => row.entity),
   );
+  // Hand-offs (story 3.6): person-scoped reads, the sender's projection, and file linking.
+  const att1 = { id: newId<"Attachment">(), name: "n1", mime: "text/csv", bytes: 5, createdAt: T };
+  const handoffRow = (attachmentId: string | null, recipientId: Id<"Person">, name: string) => ({
+    id: newId<"ImportHandoff">(),
+    attachmentId: attachmentId as Id<"Attachment"> | null,
+    senderId: a,
+    recipientId,
+    filename: name,
+    format: "commbank_csv",
+    csvMapping: null,
+    status: "pending" as const,
+    batchId: null,
+    createdAt: T,
+    updatedAt: T,
+  });
+  const h1 = handoffRow(att1.id, b, "h1.csv");
+  const h2 = handoffRow(att1.id, b, "h2.csv");
+  const hSelf = handoffRow(att1.id, a, "self.csv");
+  const handoffBatch = newId<"ImportBatch">();
+  step("handoff.unknownAttachment", (r) => r.importHandoffs.insert(h1));
+  step("handoff.attachment", (r) => r.attachments.insert(att1));
+  step("handoff.attachmentTwice", (r) =>
+    r.attachments.insert({ ...att1, id: newId<"Attachment">() }),
+  );
+  step("handoff.toSelf", (r) => r.importHandoffs.insert(hSelf));
+  step("handoff.insert", (r) => {
+    r.importHandoffs.insert(h1);
+    r.importHandoffs.insert(h2);
+  });
+  step("handoff.importedWithoutBatch", (r) =>
+    r.importHandoffs.insert({ ...handoffRow(att1.id, b, "x"), status: "imported" }),
+  );
+  out["handoff.reads"] = tx((r) => [
+    r.importHandoffs.findForRecipient(asB, h1.id)?.filename,
+    r.importHandoffs.findForRecipient(asA, h1.id),
+    r.importHandoffs.findForRecipient(system, h1.id)?.filename,
+    r.importHandoffs.findForRecipient(asB, "nobody"),
+    r.importHandoffs.listForSender(asA).map((row) => [row.filename, Object.keys(row).sort()]),
+    r.importHandoffs.listForSender(asB),
+    r.attachments.findByName("n1")?.id === att1.id,
+    r.attachments.find("nobody"),
+    throws(() => r.importHandoffs.findForRecipient(undefined as never, h1.id)),
+    throws(() => r.importHandoffs.listForSender(undefined as never)),
+  ]);
+  step("handoff.importUnknownBatch", (r) => r.importHandoffs.markImported(h1.id, "nobody", T2));
+  out["handoff.finalise"] = tx((r) => {
+    r.importBatches.insert({
+      id: handoffBatch,
+      accountId: shared,
+      source: "commbank_csv",
+      fileSha256: "handoff-sha",
+      rowCount: 0,
+      newCount: 0,
+      dupCount: 0,
+      status: "committed",
+      createdAt: T,
+      updatedAt: T,
+    });
+    return [
+      r.importHandoffs.markImported(h1.id, handoffBatch, T2),
+      r.importHandoffs.markImported(h1.id, handoffBatch, T2),
+      r.importHandoffs.markDismissed(h1.id, T2),
+      r.importHandoffs.findForRecipient(asB, h1.id)?.batchId === handoffBatch,
+      r.attachments.deleteIfUnlinked(att1.id),
+      r.importHandoffs.markDismissed(h2.id, T2),
+      r.importHandoffs.markDismissed(h2.id, T2),
+      r.importHandoffs.findForRecipient(asB, h2.id)?.attachmentId,
+      r.importHandoffs.listForSender(asA).map((row) => row.status),
+      r.attachments.deleteIfUnlinked(att1.id),
+      r.attachments.deleteIfUnlinked(att1.id),
+    ];
+  });
+  out["handoff.deleteForPerson"] = tx((r) => {
+    const att2 = { ...att1, id: newId<"Attachment">(), name: "n2" };
+    r.attachments.insert(att2);
+    r.importHandoffs.insert(handoffRow(att2.id, b, "h3.csv"));
+    r.importHandoffs.insert(handoffRow(null, b, "h4.csv"));
+    return [
+      r.importHandoffs.deleteForPerson(b).map((row) => row.attachmentId === att2.id),
+      r.importHandoffs.deleteForPerson(b),
+      r.importHandoffs.listForSender(asA),
+      r.attachments.deleteIfUnlinked(att2.id),
+    ];
+  });
+
   return out;
 }
 
@@ -1678,6 +1763,11 @@ describe("ledger and classification schema on SQLite", () => {
     const out = scenario(createUnitOfWork(db), softDeleteInSqlite);
     expect(out["txn.duplicateFingerprint"]).toBe("error:UNIQUE");
     expect(out["txn.duplicateExternalId"]).toBe("error:UNIQUE");
+    expect(out["handoff.unknownAttachment"]).toBe("error:FOREIGN KEY");
+    expect(out["handoff.attachmentTwice"]).toBe("error:UNIQUE");
+    expect(out["handoff.toSelf"]).toBe("error:CHECK");
+    expect(out["handoff.importedWithoutBatch"]).toBe("error:CHECK");
+    expect(out["handoff.importUnknownBatch"]).toBe("error:FOREIGN KEY");
     expect(out["txn.sameExternalIdOtherAccount"]).toBe("ok");
     expect(out["txn.twoNullExternalIds"]).toBe("ok");
     expect(out["txn.reinsertDeleted"]).toBe("error:UNIQUE");

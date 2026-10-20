@@ -23,6 +23,7 @@ const SCOPED_REPOS = [
   "rules",
   "importBatches",
   "importRows",
+  "importHandoffs",
 ] as const;
 
 /** `TxRepos` keys that hold no scoped data, each with its reason. Every other key is checked. */
@@ -45,6 +46,8 @@ const UNSCOPED_REPOS: Readonly<Record<string, string>> = {
   backupVerifications:
     "one row per check or drill: its kind, whether it passed and fixed words naming the check; no figure of the household's data",
   recoveryBundle: "whether the recovery bundle is confirmed",
+  attachments:
+    "encrypted-file metadata (a keyed hash name, mime, size); no statement content, and a file is reached only through the hand-off that links it",
   personPreferences:
     "a person's UI preferences (theme, mode), read and written by their own id; no ledger data",
 };
@@ -86,6 +89,10 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
     "new rows; the use case checked the batch and account with findVisible",
   "ImportRowRepo.insert": "a new row; the use case checked the batch and account with findVisible",
   "ImportRowRepo.updateStatus": "the use case checked the row and account with findVisible",
+  "ImportHandoffRepo.insert": "a new hand-off; the use case set the sender to the viewer",
+  "ImportHandoffRepo.markImported": "the use case found the hand-off with findForRecipient first",
+  "ImportHandoffRepo.markDismissed": "the use case found the hand-off with findForRecipient first",
+  "ImportHandoffRepo.deleteForPerson": "hard-deletes the leaver's hand-offs, sent or received",
   "PayeeRepo.clearDefaultCategory":
     "a household-wide cascade of a category delete that reaches every payee, whatever its scope (a known gap in the route manifest)",
   "PayeeAliasRepo.softDeleteForPayee":

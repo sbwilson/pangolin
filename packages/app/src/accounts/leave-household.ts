@@ -5,7 +5,9 @@ import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { clearCredentials, unusablePasswordHash } from "../identity/re-enrolment.ts";
 import { requireRecentAuth } from "../identity/reauth.ts";
+import { dropHandoffsOf } from "../imports/handoff.ts";
 import { auditSnapshot } from "../ledger/transaction-view.ts";
+import type { AttachmentStore } from "../ports/attachment-store.ts";
 import type { TokenPort } from "../ports/tokens.ts";
 import type { AccountRow, PersonRow, TxRepos } from "../ports/unit-of-work.ts";
 import { type Audit, write } from "../write.ts";
@@ -17,6 +19,8 @@ export type LeaveHouseholdInput = z.input<typeof leaveHouseholdInput>;
 /** A use-case context that can mint the random bytes of an unusable password. */
 export interface LeaveHouseholdContext extends UseCaseContext {
   readonly tokens: TokenPort;
+  /** Where the leaver's hand-off files live; when absent their rows go but no file is removed. */
+  readonly attachments?: AttachmentStore;
 }
 
 /**
@@ -30,6 +34,8 @@ export interface LeaveHouseholdContext extends UseCaseContext {
  *    turned private to the partner, as an upkeep write that bypasses the closed-date lock;
  *  - hard-deletes the leaver's payees, aliases, tags and activities (`scope_person_id`), nulling
  *    the references to them that remain on other rows, and their person-scoped review items;
+ *  - drops every hand-off the leaver sent or received, and, after the commit, the encrypted
+ *    files no other hand-off still links;
  *  - hard-deletes each private account of the leaver, with its transactions, splits, split tags,
  *    snapshots, owner rows, transfer-group links, account-scoped review items and audit rows. The
  *    surviving side of a transfer is unlinked and kept (decision 81);
@@ -51,7 +57,7 @@ export function leaveHousehold(ctx: LeaveHouseholdContext, input: LeaveHousehold
   requireRecentAuth(ctx);
   // Drawn before the write (AD-2): the random bytes of the password nobody will know.
   const unusable = unusablePasswordHash(ctx.tokens);
-  write(ctx, (tx, audit) => {
+  const orphans = write(ctx, (tx, audit) => {
     const active = tx.person.listActive();
     const leaver = active.find((person) => person.id === viewer.personId);
     if (leaver === undefined) throw new AppError("Unauthenticated", "Sign in first");
@@ -69,6 +75,11 @@ export function leaveHousehold(ctx: LeaveHouseholdContext, input: LeaveHousehold
       else handOver(tx, audit, owned.row, partner.id, at);
     }
     tx.reviewItems.deleteForPerson(leaver.id);
+    const orphanFiles = dropHandoffsOf(tx, audit, ctx, leaver.id);
+    if (orphanFiles.length > 0 && ctx.attachments === undefined) {
+      // Rolls the leave back rather than leave ciphertext nobody can reach.
+      throw new Error("leaveHousehold: files to remove but no attachment store in the context");
+    }
 
     if (!tx.person.markLeft(leaver.id, at)) {
       throw new Error(`Person ${leaver.id} vanished during their leave`);
@@ -92,7 +103,15 @@ export function leaveHousehold(ctx: LeaveHouseholdContext, input: LeaveHousehold
     }
     // Last, so no row this write scoped to the leaver outlives it.
     tx.audit.deleteForPerson(leaver.id);
+    return orphanFiles;
   });
+  for (const name of orphans) {
+    try {
+      ctx.attachments?.remove(name);
+    } catch {
+      // Committed already: a file left behind is an orphan, not a failed leave.
+    }
+  }
 }
 
 /**

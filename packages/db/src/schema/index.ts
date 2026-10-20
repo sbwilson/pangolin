@@ -3,6 +3,7 @@
 export { account } from "./account.ts";
 export { accountOwner } from "./account-owner.ts";
 export { activity } from "./activity.ts";
+export { attachment } from "./attachment.ts";
 export { auditLog } from "./audit-log.ts";
 export {
   authAccount,
@@ -19,6 +20,7 @@ export { category } from "./category.ts";
 export { categoryGroup } from "./category-group.ts";
 export { householdSettings } from "./household-settings.ts";
 export { importBatch } from "./import-batch.ts";
+export { importHandoff } from "./import-handoff.ts";
 export { importRow } from "./import-row.ts";
 export { institution } from "./institution.ts";
 export { job } from "./job.ts";

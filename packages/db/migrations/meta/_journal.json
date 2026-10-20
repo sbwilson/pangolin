@@ -120,6 +120,13 @@
       "when": 1792500000000,
       "tag": "0016_rule_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1792540118650,
+      "tag": "0017_attachment_and_handoff",
+      "breakpoints": true
     }
   ]
 }

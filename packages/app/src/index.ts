@@ -204,7 +204,7 @@ export {
   updateTaxCategoryInput,
 } from "./classify/tax-categories.ts";
 export { fixedClock, fixedClockAt, systemClock } from "./clock.ts";
-export type { UseCaseContext } from "./context.ts";
+export type { AttachmentContext, UseCaseContext } from "./context.ts";
 export {
   AppError,
   ERROR_CODES,
@@ -330,6 +330,22 @@ export {
   type IdentityContext,
 } from "./identity/sign-up.ts";
 export { createIdGenerator, type IdGenerator, type IdSources, newId } from "./ids.ts";
+export {
+  type AcceptHandoffInput,
+  acceptHandoff,
+  acceptHandoffInput,
+  type CreateHandoffInput,
+  createHandoff,
+  createHandoffInput,
+  dismissHandoff,
+  type HandoffIdInput,
+  handoffIdInput,
+  IMPORT_HANDOFF_REVIEW,
+  type ListMyHandoffsInput,
+  listMyHandoffs,
+  listMyHandoffsInput,
+  MAX_HANDOFF_BYTES,
+} from "./imports/handoff.ts";
 export {
   type ImportStatementInput,
   type ImportStatementOptions,
@@ -494,6 +510,7 @@ export {
   updateTransaction,
   updateTransactionInput,
 } from "./ledger/update-transaction.ts";
+export type { AttachmentStore } from "./ports/attachment-store.ts";
 export type { Clock } from "./ports/clock.ts";
 export type {
   CsvColumnMapping,
@@ -569,6 +586,8 @@ export {
   type ActivityRow,
   ALIAS_MATCH_KINDS,
   type AliasMatchKind,
+  type AttachmentRepo,
+  type AttachmentRow,
   BALANCE_SOURCES,
   type BalanceSnapshotRepo,
   type BalanceSnapshotRow,
@@ -579,11 +598,16 @@ export {
   type CategoryGroupRow,
   type CategoryRepo,
   type CategoryRow,
+  type HandoffStatus,
   IMPORT_BATCH_STATUSES,
+  IMPORT_HANDOFF_STATUSES,
   IMPORT_ROW_STATUSES,
   type ImportBatchRepo,
   type ImportBatchRow,
   type ImportBatchStatus,
+  type ImportHandoffRepo,
+  type ImportHandoffRow,
+  type ImportHandoffStatus,
   type ImportRowRepo,
   type ImportRowRow,
   type ImportRowStatus,

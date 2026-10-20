@@ -43,7 +43,7 @@ describe("committed migrations", () => {
     expect(loadMigrations(packageMigrationsDir)[0]?.name).toBe("0000_baseline");
   });
 
-  it("migrates a fresh database to version 17, then re-applies nothing", () => {
+  it("migrates a fresh database to version 18, then re-applies nothing", () => {
     const migrations = loadMigrations(packageMigrationsDir);
     const names = [
       "0000_baseline",
@@ -63,10 +63,11 @@ describe("committed migrations", () => {
       "0014_person_preference",
       "0015_import_batch_and_row",
       "0016_rule_schema",
+      "0017_attachment_and_handoff",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 17 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 17 });
-    expect(schemaVersion(db)).toBe(17);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 18 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 18 });
+    expect(schemaVersion(db)).toBe(18);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });
@@ -77,6 +78,15 @@ describe("committed migrations", () => {
     expect(schemaVersion(db)).toBe(16);
     expect(migrate(db, migrations.slice(0, 17)).applied).toEqual(["0016_rule_schema"]);
     expect(schemaVersion(db)).toBe(17);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+
+  it("creates attachment and import_handoff tables when 0016 upgrades to 0017", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 17));
+    expect(schemaVersion(db)).toBe(17);
+    expect(migrate(db, migrations.slice(0, 18)).applied).toEqual(["0017_attachment_and_handoff"]);
+    expect(schemaVersion(db)).toBe(18);
     expect(db.pragma("foreign_key_check")).toEqual([]);
   });
 

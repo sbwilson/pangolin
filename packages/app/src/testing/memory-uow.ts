@@ -11,6 +11,8 @@ import type {
   AccountRow,
   ActivityRepo,
   ActivityRow,
+  AttachmentRepo,
+  AttachmentRow,
   AuditedOwner,
   AuditRow,
   AuditView,
@@ -28,6 +30,8 @@ import type {
   HouseholdSettingsRow,
   ImportBatchRepo,
   ImportBatchRow,
+  ImportHandoffRepo,
+  ImportHandoffRow,
   ImportRowRepo,
   ImportRowRow,
   InstitutionRepo,
@@ -119,6 +123,8 @@ export interface MemoryState {
   backupVerifications: BackupVerificationRow[];
   importBatches: ImportBatchRow[];
   importRows: ImportRowRow[];
+  attachments: AttachmentRow[];
+  importHandoffs: ImportHandoffRow[];
   /** The confirmed recovery bundle; undefined until the first confirmation. */
   recoveryBundle: RecoveryBundleRow | undefined;
   /** IDs of better-auth users; tests add them to stand in for better-auth's inserts. */
@@ -478,6 +484,110 @@ function importRowRepo(working: MemoryState, check: () => void): ImportRowRepo {
         updatedAt: at,
       };
       return true;
+    },
+  };
+}
+
+function attachmentRepo(working: MemoryState, check: () => void): AttachmentRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.attachments.some((a) => a.id === row.id || a.name === row.name)) {
+        throw new Error("UNIQUE constraint failed: attachment");
+      }
+      working.attachments.push(row);
+    },
+    findByName: (name) => {
+      check();
+      return working.attachments.find((a) => a.name === name);
+    },
+    find: (id) => {
+      check();
+      return working.attachments.find((a) => a.id === id);
+    },
+    deleteIfUnlinked: (id) => {
+      check();
+      const row = working.attachments.find((a) => a.id === id);
+      if (row === undefined) return undefined;
+      if (working.importHandoffs.some((h) => h.attachmentId === id)) return undefined;
+      working.attachments = working.attachments.filter((a) => a.id !== id);
+      return row.name;
+    },
+  };
+}
+
+function importHandoffRepo(working: MemoryState, check: () => void): ImportHandoffRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.importHandoffs.some((h) => h.id === row.id)) {
+        throw new Error("UNIQUE constraint failed: import_handoff.id");
+      }
+      if (row.senderId === row.recipientId)
+        throw new Error("CHECK constraint failed: import_handoff_people");
+      if ((row.status === "imported") !== (row.batchId !== null)) {
+        throw new Error("CHECK constraint failed: import_handoff_batch");
+      }
+      references(working.people, row.senderId, "import_handoff.sender_id");
+      references(working.people, row.recipientId, "import_handoff.recipient_id");
+      references(working.attachments, row.attachmentId, "import_handoff.attachment_id");
+      references(working.importBatches, row.batchId, "import_handoff.batch_id");
+      working.importHandoffs.push(row);
+    },
+    findForRecipient: (viewer, id) => {
+      check();
+      requireViewer(viewer);
+      return working.importHandoffs.find(
+        (h) => h.id === id && (viewer.kind === "system" || h.recipientId === viewer.personId),
+      );
+    },
+    listForSender: (viewer) => {
+      check();
+      requireViewer(viewer);
+      return working.importHandoffs
+        .filter((h) => viewer.kind === "system" || h.senderId === viewer.personId)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+        .map((h) => ({
+          id: h.id,
+          recipient: h.recipientId,
+          filename: h.filename,
+          status: h.status,
+        }));
+    },
+    markImported: (id, batchId, at) => {
+      check();
+      const index = working.importHandoffs.findIndex((h) => h.id === id && h.status === "pending");
+      const row = working.importHandoffs[index];
+      if (row === undefined) return false;
+      references(working.importBatches, batchId, "import_handoff.batch_id");
+      working.importHandoffs[index] = {
+        ...row,
+        status: "imported",
+        batchId: batchId as ImportHandoffRow["batchId"],
+        updatedAt: at,
+      };
+      return true;
+    },
+    markDismissed: (id, at) => {
+      check();
+      const index = working.importHandoffs.findIndex((h) => h.id === id && h.status === "pending");
+      const row = working.importHandoffs[index];
+      if (row === undefined) return false;
+      working.importHandoffs[index] = {
+        ...row,
+        status: "dismissed",
+        attachmentId: null,
+        updatedAt: at,
+      };
+      return true;
+    },
+    deleteForPerson: (personId) => {
+      check();
+      const mine = working.importHandoffs.filter(
+        (h) => h.senderId === personId || h.recipientId === personId,
+      );
+      working.importHandoffs = working.importHandoffs.filter((h) => !mine.includes(h));
+      return mine.map((h) => ({ id: h.id, attachmentId: h.attachmentId }));
     },
   };
 }
@@ -2563,6 +2673,8 @@ export function memoryUnitOfWork(
       backupVerifications: [],
       importBatches: [],
       importRows: [],
+      attachments: [],
+      importHandoffs: [],
       recoveryBundle: undefined,
       users: [],
       emails: {},
@@ -2605,6 +2717,8 @@ export function memoryUnitOfWork(
         backupVerifications: [...uow.state.backupVerifications],
         importBatches: [...uow.state.importBatches],
         importRows: [...uow.state.importRows],
+        attachments: [...uow.state.attachments],
+        importHandoffs: [...uow.state.importHandoffs],
         recoveryBundle: uow.state.recoveryBundle,
         users: [...uow.state.users],
         emails: uow.state.emails,
@@ -2659,6 +2773,8 @@ export function memoryUnitOfWork(
         backupVerifications: backupVerificationRepo(working, check),
         importBatches: importBatchRepo(working, check),
         importRows: importRowRepo(working, check),
+        attachments: attachmentRepo(working, check),
+        importHandoffs: importHandoffRepo(working, check),
         recoveryBundle: {
           get: () => {
             check();
@@ -2700,6 +2816,8 @@ export function memoryUnitOfWork(
         uow.state.backupVerifications = working.backupVerifications;
         uow.state.importBatches = working.importBatches;
         uow.state.importRows = working.importRows;
+        uow.state.attachments = working.attachments;
+        uow.state.importHandoffs = working.importHandoffs;
         uow.state.recoveryBundle = working.recoveryBundle;
         uow.state.users = working.users;
         uow.state.setupLinks = working.setupLinks;
@@ -2827,6 +2945,10 @@ export function memoryUnitOfWork(
         importRows: {
           listForBatch: importRowRepo(uow.state, check).listForBatch,
           find: importRowRepo(uow.state, check).find,
+        },
+        importHandoffs: {
+          findForRecipient: importHandoffRepo(uow.state, check).findForRecipient,
+          listForSender: importHandoffRepo(uow.state, check).listForSender,
         },
       });
     },

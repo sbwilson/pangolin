@@ -43,6 +43,7 @@ import {
 import type { Db } from "./open.ts";
 import { auditHiddenUntil, auditPayeeHidden, visibleAudit } from "./privacy.ts";
 import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
+import { createAttachmentRepo, createImportHandoffRepo } from "./repositories/handoff-repos.ts";
 import { createImportBatchRepo, createImportRowRepo } from "./repositories/import-repos.ts";
 import { createPersonPreferenceRepo } from "./repositories/person-preference.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
@@ -258,6 +259,8 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     recoveryBundle: createRecoveryBundleRepo(orm, () => guard(scope)),
     importBatches: createImportBatchRepo(orm, () => guard(scope)),
     importRows: createImportRowRepo(orm, () => guard(scope)),
+    attachments: createAttachmentRepo(orm, () => guard(scope)),
+    importHandoffs: createImportHandoffRepo(orm, () => guard(scope)),
   };
 }
 
@@ -370,6 +373,10 @@ export function createUnitOfWork(db: Db): UnitOfWork {
             importRows: {
               listForBatch: repos.importRows.listForBatch,
               find: repos.importRows.find,
+            },
+            importHandoffs: {
+              findForRecipient: repos.importHandoffs.findForRecipient,
+              listForSender: repos.importHandoffs.listForSender,
             },
           };
         },

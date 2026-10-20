@@ -1437,6 +1437,74 @@ export interface ImportRowRepo {
   updateStatus(id: string, status: ImportRowStatus, at: string, reason?: string | null): boolean;
 }
 
+export const IMPORT_HANDOFF_STATUSES = ["pending", "imported", "dismissed"] as const;
+export type ImportHandoffStatus = (typeof IMPORT_HANDOFF_STATUSES)[number];
+
+/** One encrypted file (AD-21), deduplicated by `name`. Holds no statement content. */
+export interface AttachmentRow {
+  readonly id: Id<"Attachment">;
+  /** The HMAC of the content, and the file's name in the store. */
+  readonly name: string;
+  readonly mime: string;
+  readonly bytes: number;
+  readonly createdAt: string;
+}
+
+/** Write-only: a file is reached through the hand-off that links it, never by name. */
+export interface AttachmentRepo {
+  insert(row: AttachmentRow): void;
+  findByName(name: string): AttachmentRow | undefined;
+  find(id: string): AttachmentRow | undefined;
+  /**
+   * Deletes the attachment when no hand-off links it, returning its store name; undefined when
+   * it is still linked or does not exist.
+   */
+  deleteIfUnlinked(id: string): string | undefined;
+}
+
+/** A hand-off (AD-5). `batchId` is the recipient's: only `findForRecipient` returns it. */
+export interface ImportHandoffRow {
+  readonly id: Id<"ImportHandoff">;
+  readonly attachmentId: Id<"Attachment"> | null;
+  readonly senderId: Id<"Person">;
+  readonly recipientId: Id<"Person">;
+  readonly filename: string;
+  readonly format: string;
+  /** The CSV column mapping as JSON, or null. */
+  readonly csvMapping: string | null;
+  readonly status: ImportHandoffStatus;
+  readonly batchId: Id<"ImportBatch"> | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** What the sender may read of a hand-off: no batch, no account, nothing of the content. */
+export interface HandoffStatus {
+  readonly id: Id<"ImportHandoff">;
+  readonly recipient: Id<"Person">;
+  readonly filename: string;
+  readonly status: ImportHandoffStatus;
+}
+
+export interface ImportHandoffRepo {
+  insert(row: ImportHandoffRow): void;
+  /** The hand-off only when `viewer` is its recipient (a system viewer reads any). */
+  findForRecipient(viewer: Viewer, id: string): ImportHandoffRow | undefined;
+  /** The sender's hand-offs as the sender may see them, oldest first. */
+  listForSender(viewer: Viewer): HandoffStatus[];
+  /** Marks a pending hand-off imported into `batchId`; false when it is not pending. */
+  markImported(id: string, batchId: string, at: string): boolean;
+  /** Marks a pending hand-off dismissed and clears its attachment link; false when not pending. */
+  markDismissed(id: string, at: string): boolean;
+  /**
+   * Hard-deletes every hand-off sent or received by `personId`; returns each one's ID and the
+   * attachment it linked (null once dismissed).
+   */
+  deleteForPerson(
+    personId: string,
+  ): { readonly id: string; readonly attachmentId: string | null }[];
+}
+
 /** Repositories bound to one open transaction. They throw once that transaction has ended. */
 export interface TxRepos {
   readonly householdSettings: HouseholdSettingsRepo;
@@ -1469,6 +1537,8 @@ export interface TxRepos {
   readonly recoveryBundle: RecoveryBundleRepo;
   readonly importBatches: ImportBatchRepo;
   readonly importRows: ImportRowRepo;
+  readonly attachments: AttachmentRepo;
+  readonly importHandoffs: ImportHandoffRepo;
 }
 
 /** The read-only subset of `TxRepos`, for queries. */
@@ -1517,6 +1587,7 @@ export interface ReadRepos {
   readonly recoveryBundle: Pick<RecoveryBundleRepo, "get">;
   readonly importBatches: Pick<ImportBatchRepo, "find" | "findByAccountAndFileSha" | "listVisible">;
   readonly importRows: Pick<ImportRowRepo, "listForBatch" | "find">;
+  readonly importHandoffs: Pick<ImportHandoffRepo, "findForRecipient" | "listForSender">;
 }
 
 export interface UnitOfWork {
