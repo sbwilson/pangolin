@@ -38,7 +38,9 @@ export function parseCsvLine(line: string, delimiter = ","): string[] {
  * Parses CommBank CSV statement format:
  * Columns: Date (DD/MM/YYYY), Amount (signed decimal), Description, Balance (decimal)
  */
-export function parseCommBankCsv(content: string): StatementParseResult {
+export function parseCommBankCsv(
+  content: string,
+): readonly ParsedStatementRow[] & StatementParseResult {
   if (!content || typeof content !== "string") {
     throw new Error("CSV content is empty or not a string");
   }

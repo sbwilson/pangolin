@@ -29,7 +29,9 @@ function parseTimestampToIsoDate(timestampStr: string, rowNumber: number): strin
  * Parses FY2025 multi-bank CSV statement format:
  * Columns: Timestamp, Account, Amount, Description, Balance
  */
-export function parseFy2025MultiBankCsv(content: string): StatementParseResult {
+export function parseFy2025MultiBankCsv(
+  content: string,
+): readonly ParsedStatementRow[] & StatementParseResult {
   if (!content || typeof content !== "string") {
     throw new Error("CSV content is empty or not a string");
   }

@@ -7,6 +7,7 @@ import {
   type RuleConditions,
   type TransactionForRules,
 } from "@pangolin/domain";
+import type { Id } from "@pangolin/shared";
 import { privateOwner } from "../ledger/split-targets.ts";
 import type { PayeeAliasRow, PayeeRow, SplitSource, TxRepos } from "../ports/unit-of-work.ts";
 import type { Viewer } from "../viewer.ts";
@@ -80,8 +81,8 @@ export interface ClassifyTransactionInput {
 }
 
 export interface ClassifyTransactionResult {
-  readonly payeeId: string | null;
-  readonly categoryId: string | null;
+  readonly payeeId: Id<"Payee"> | null;
+  readonly categoryId: Id<"Category"> | null;
   readonly categorySource: SplitSource | null;
   readonly unclassified: boolean;
 }
@@ -98,9 +99,10 @@ export function classifyTransaction(
   context: ClassificationContext,
 ): ClassifyTransactionResult {
   // 1. Match payee
-  let payeeId = matchPayeeAlias(input.rawDescription, context.aliases);
+  let payeeId = (matchPayeeAlias(input.rawDescription, context.aliases) ??
+    null) as Id<"Payee"> | null;
   if (payeeId === null) {
-    payeeId = matchFuzzyPayee(input.rawDescription, context.payees);
+    payeeId = (matchFuzzyPayee(input.rawDescription, context.payees) ?? null) as Id<"Payee"> | null;
   }
 
   // 2. Evaluate rules
@@ -115,7 +117,7 @@ export function classifyTransaction(
   if (matchingRule?.actions.categoryId) {
     return {
       payeeId,
-      categoryId: matchingRule.actions.categoryId,
+      categoryId: matchingRule.actions.categoryId as Id<"Category">,
       categorySource: "rule",
       unclassified: false,
     };

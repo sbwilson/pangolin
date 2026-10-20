@@ -402,7 +402,6 @@ describe("set-aside rows management", () => {
         isFixedCost: false,
         createdAt: now.toString(),
         updatedAt: now.toString(),
-        deletedAt: null,
       });
 
       uow.state.rules.push({

@@ -186,16 +186,18 @@ export function setSplitField(ctx: UseCaseContext, input: SetSplitFieldInput): S
       after: auditSnapshot(storedTransaction(tx, ctx.viewer, before.id), tagsAfter),
     });
     if (field === "category" && source === "user" && value !== null && old.categoryId !== value) {
-      resolveReviewItem(tx, audit, ctx, {
+      const resolved = resolveReviewItem(tx, audit, ctx, {
         dedupeKey: `classify.unclassified:${before.id}`,
         resolution: "user categorized",
       });
-      raiseReviewItem(tx, audit, ctx, {
-        kind: CLASSIFY_RULE_OFFER_REVIEW,
-        entityRef: transactionEntityRef(before.id),
-        dedupeKey: `classify.rule_offer:${before.id}`,
-        accountId: before.accountId,
-      });
+      if (resolved) {
+        raiseReviewItem(tx, audit, ctx, {
+          kind: CLASSIFY_RULE_OFFER_REVIEW,
+          entityRef: transactionEntityRef(before.id),
+          dedupeKey: `classify.rule_offer:${before.id}`,
+          accountId: before.accountId,
+        });
+      }
     }
     for (const listener of listeners) {
       listener(tx, audit, { transactionId: before.id, splitId: old.id, field, value, source });

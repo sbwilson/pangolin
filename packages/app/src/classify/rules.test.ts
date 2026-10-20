@@ -99,9 +99,27 @@ function setup() {
   );
 
   uow.state.accountOwners.push(
-    { accountId: sharedAccountId, personId: alexPersonId },
-    { accountId: sharedAccountId, personId: samPersonId },
-    { accountId: alexPrivateAccountId, personId: alexPersonId },
+    {
+      accountId: sharedAccountId,
+      personId: alexPersonId,
+      shareBp: 5000,
+      createdAt: now.toString(),
+      updatedAt: now.toString(),
+    },
+    {
+      accountId: sharedAccountId,
+      personId: samPersonId,
+      shareBp: 5000,
+      createdAt: now.toString(),
+      updatedAt: now.toString(),
+    },
+    {
+      accountId: alexPrivateAccountId,
+      personId: alexPersonId,
+      shareBp: 10000,
+      createdAt: now.toString(),
+      updatedAt: now.toString(),
+    },
   );
 
   const groceriesCatId = newId<"Category">();
@@ -125,7 +143,6 @@ function setup() {
       isFixedCost: false,
       createdAt: now.toString(),
       updatedAt: now.toString(),
-      deletedAt: null,
     },
     {
       id: snacksCatId,
@@ -134,7 +151,6 @@ function setup() {
       isFixedCost: false,
       createdAt: now.toString(),
       updatedAt: now.toString(),
-      deletedAt: null,
     },
   );
 
@@ -430,6 +446,18 @@ describe("Rule offer lifecycle: setSplitField -> acceptRuleOffer / dismissRuleOf
       deductibleBpSource: null,
       createdAt: at,
       updatedAt: at,
+    });
+
+    uow.state.reviewItems.push({
+      id: newId<"ReviewItem">(),
+      kind: "classify.unclassified",
+      accountId: sharedAccountId,
+      personId: null,
+      entityRef: `transaction:${txnId}`,
+      dedupeKey: `classify.unclassified:${txnId}`,
+      createdAt: at,
+      resolvedAt: null,
+      resolution: null,
     });
 
     setSplitField(ctx, {

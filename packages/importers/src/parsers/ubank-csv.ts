@@ -38,7 +38,9 @@ function parseDateToIso(dateStr: string, rowNumber: number): string {
  * Parses ubank CSV statement format:
  * Columns: Date (DD/MM/YYYY), Description, Amount (signed decimal), Balance (decimal)
  */
-export function parseUbankCsv(content: string): StatementParseResult {
+export function parseUbankCsv(
+  content: string,
+): readonly ParsedStatementRow[] & StatementParseResult {
   if (!content || typeof content !== "string") {
     throw new Error("CSV content is empty or not a string");
   }

@@ -30,7 +30,7 @@ function parseSettledDate(dateStr: string, rowNumber: number): string {
  * Columns: Time, Settled Date, Description, Amount, Status
  * Only settled transactions are imported; pending/unsettled rows are skipped.
  */
-export function parseUpCsv(content: string): StatementParseResult {
+export function parseUpCsv(content: string): readonly ParsedStatementRow[] & StatementParseResult {
   if (!content || typeof content !== "string") {
     throw new Error("CSV content is empty or not a string");
   }

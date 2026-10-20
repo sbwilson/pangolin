@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.ts";
 import { createIdGenerator } from "../ids.ts";
 import { registerTransactionNeedsReviewSync } from "../ledger/needs-review.ts";
+import type { StatementParseResult } from "../ports/statement-parser.ts";
 import { manualClock } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import type { Viewer } from "../viewer.ts";
@@ -865,6 +866,7 @@ N1004
     it("handles custom parser returning result omitting setAside", () => {
       const { ctx, sharedAccountId } = setup();
       const customParser = {
+        format: "custom",
         parse: () =>
           ({
             rows: [
@@ -1219,7 +1221,6 @@ MMemo Only
         scopePersonId: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
-        deletedAt: null,
       });
 
       uow.state.payeeAliases.push({
@@ -1267,7 +1268,6 @@ MMemo Only
           isFixedCost: false,
           createdAt: now.toString(),
           updatedAt: now.toString(),
-          deletedAt: null,
         },
         {
           id: catSnacks,
@@ -1276,7 +1276,6 @@ MMemo Only
           isFixedCost: false,
           createdAt: now.toString(),
           updatedAt: now.toString(),
-          deletedAt: null,
         },
       );
 
@@ -1340,7 +1339,6 @@ MMemo Only
         isFixedCost: false,
         createdAt: now.toString(),
         updatedAt: now.toString(),
-        deletedAt: null,
       });
 
       const payeeId = newId<"Payee">();
@@ -1353,7 +1351,6 @@ MMemo Only
         scopePersonId: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
-        deletedAt: null,
       });
 
       uow.state.payeeAliases.push({
@@ -1430,7 +1427,6 @@ MMemo Only
         isFixedCost: false,
         createdAt: now.toString(),
         updatedAt: now.toString(),
-        deletedAt: null,
       });
 
       // Alex creates a private rule for "CLINIC"

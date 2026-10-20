@@ -40,7 +40,7 @@ function parseQifDate(dateStr: string, recordIndex: number): string {
  * Parses standard QIF statement files (!Type:Bank).
  * Extracts date (D), amount (T), payee (P), memo (M), and reference number (N as externalId).
  */
-export function parseQif(content: string): StatementParseResult {
+export function parseQif(content: string): readonly ParsedStatementRow[] & StatementParseResult {
   if (!content || typeof content !== "string") {
     throw new Error("QIF content is empty or not a string");
   }

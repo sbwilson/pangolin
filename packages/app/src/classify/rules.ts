@@ -280,9 +280,7 @@ export function generateRuleFromCorrection(
     name,
     priority: 100,
     conditions,
-    actions: {
-      categoryId: split.categoryId ?? undefined,
-    },
+    actions: split.categoryId ? { categoryId: split.categoryId } : {},
   };
 }
 
@@ -324,7 +322,7 @@ export function acceptRuleOffer(ctx: UseCaseContext, input: AcceptRuleOfferInput
 
     // Determine scope from the transaction's account (AD-18)
     const owner = privateOwner(tx, ctx.viewer, txn.accountId);
-    const scopePersonId = owner;
+    const scopePersonId = owner as Id<"Person"> | null;
     const originAccountId = owner !== null ? (txn.accountId as Id<"Account">) : null;
 
     requireRuleNameFree(tx, ctx, scopePersonId, name);

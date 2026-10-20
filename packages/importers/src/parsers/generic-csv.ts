@@ -90,7 +90,10 @@ function resolveColumnIndex(
   return index;
 }
 
-export function parseGenericCsv(content: string, mapping: CsvColumnMapping): StatementParseResult {
+export function parseGenericCsv(
+  content: string,
+  mapping: CsvColumnMapping,
+): readonly ParsedStatementRow[] & StatementParseResult {
   if (!content || typeof content !== "string") {
     throw new Error("CSV content is empty or not a string");
   }
