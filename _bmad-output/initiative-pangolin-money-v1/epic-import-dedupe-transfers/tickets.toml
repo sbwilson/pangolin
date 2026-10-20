@@ -1,0 +1,123 @@
+# tickets.toml — epic-import-dedupe-transfers
+# Table order is build order; id is permanent.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Core import engine, schema, and CommBank OFX/CSV parsing"
+description = "Implements import_batch and import_row schema with migration, fingerprint dedupe engine with occurrence counts, CommBank OFX/CSV normalisation, and mock statement generator across all v1 formats."
+verify = "Unit and integration tests verify CommBank OFX and CSV parse, dedupe with occurrence counts, and commit transactions idempotently."
+covers = ["IMP-1"]
+after = ["2.8", "13.1"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Format parsers suite and anonymised test fixtures"
+description = "Adds parsers for ubank CSV, Up CSV, QIF, FY2025 multi-bank format, and generic CSV mapper with column mapping config, backed by committed anonymised test files."
+verify = "Test suite imports every format's sample file; re-importing the same file or overlapping dates adds zero rows."
+covers = ["IMP-2"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Partial import and set-aside rows"
+description = "Implements partial import for CSV/OFX/QIF: invalid lines are set aside in import_row with row number and reason, good rows commit, and set-aside rows gather into an import.set_aside review item with inline fix/discard."
+verify = "A file with invalid rows commits good rows, sets aside bad rows, and fixing a set-aside row commits it through the same batch."
+covers = ["IMP-3"]
+after = [2]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Payee matching, aliases, and rule engine"
+description = "Implements payee alias matching (payee_alias), fuzzy matching against known payees, deterministic rule engine in priority order, payee default category fallback, and offering a new rule on correction."
+verify = "Unit tests verify rule matching order, payee defaults, unclassified splits marked for review, and rule generation from user corrections."
+covers = ["IMP-4"]
+after = [1, "2.9"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Transfer matching and probable duplicate detection"
+description = "Detects transfers between owned/shared accounts within ±3 days, auto-linking unique matches into transfer_group; routes ambiguous transfer matches and probable duplicates to review."
+verify = "Unit tests verify unique opposite amounts link automatically, ambiguous transfers raise review items, and probable duplicates never commit silently."
+covers = ["IMP-5"]
+after = [1, "2.14"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Encrypted attachment storage and partner hand-off"
+description = "Implements encrypted attachment storage (AES-GCM at data/attachments/<HMAC>, AD-21) and partner hand-off (import_handoff table, AD-5); partner imports into her private account without leaking destination to sender."
+verify = "Tests prove attachments are encrypted at rest, sender sees only hand-off status, and partner's private account responses are identical to before."
+covers = ["IMP-6"]
+after = [1, "2.16"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Batch undo and account freshness"
+description = "Implements batch undo reverting an import batch (deleting transactions, restoring unlinked transfer counterparts, clearing review items) and migrates account freshness to import_batch timestamp and provenance."
+verify = "Batch undo completely reverses an import cleanly, and Accounts list displays accurate import freshness and provenance."
+covers = ["IMP-7"]
+after = [5, 6]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Needs Review inbox framework and UI"
+description = "Builds the /review route rendering all registered review kinds (AI suggestion, Rule offer, Duplicates, Transfers, Hand-offs, Set-aside rows, Closing balance warnings), partner-pending count on shared data, and migrates identity notices."
+verify = "Component and e2e tests verify /review renders all item kinds, partner-pending count ignores partner private items, and actions resolve items."
+covers = ["IMP-8"]
+after = [3, 4, 5, 6, "13.3"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Import popover component and shell header integration"
+description = "Builds Import popover component (drag-and-drop drop zone, account picker with 'For <partner>', collapsible per-bank export tips, progress summary) and integrates with shell header Import button."
+verify = "E2E tests verify file upload via Import popover, progress display, and summary line 'N need review' navigation."
+covers = ["IMP-9"]
+after = [7, 8]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Milestone M1 gate verification and refactor sweep"
+description = "Human provides de-identified NetBank statements; verifies 12 months data import since 1 July 2024 with zero unexplained balance gaps (M1 gate); conducts package boundary and strictness refactor sweep."
+verify = "M1 gate criteria met: 12 months history reconciles to bank balances; check-boundaries and biome check pass cleanly."
+covers = ["IMP-10"]
+after = [9]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Release v0.2.4 and deploy"
+description = "Prepares release v0.2.4 and deployment checklist for home server (pang-dev), runs release workflow, verifies post-upgrade status, /healthz, and backup manifest."
+verify = "v0.2.4 release workflow passes all jobs; pangolin upgrade v0.2.4 succeeds on pang-dev with schema migrated and readiness ok."
+covers = ["IMP-11"]
+after = [10]
+hitl = true
+risk = "medium"

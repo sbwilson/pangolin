@@ -2,7 +2,7 @@
 type: epic
 title: "Import, dedupe and transfer matching"
 parent: initiative-pangolin-money-v1
-covers: [CAP-1, CAP-2, CAP-18]
+covers: [CAP-1, CAP-2, CAP-18, CAP-16]
 after: []
 assignee: ""
 risk: high
@@ -17,6 +17,22 @@ Every v1 format except PDF goes through one idempotent pipeline: parse, normalis
 ## Outcome
 
 Our real history since 1 July 2024 is in the ledger and reconciles to the bank. This is the M1 gate.
+
+## Requirements
+
+Source: SPEC.md CAP-1, CAP-2, CAP-18, import-pipeline.md, categorisation.md, and UX design.
+
+- IMP-1: Core import pipeline (parse, normalise, fingerprint dedupe with occurrence counts, commit), `import_batch` and `import_row` schema, CommBank OFX/CSV parsers, and mock data generation across formats.
+- IMP-2: Statement format suite (ubank CSV, Up CSV, QIF, FY2025 multi-bank profile, generic CSV mapper with column mapping configuration) with committed anonymised sample files and idempotent re-import tests.
+- IMP-3: Partial import and set-aside rows for CSV/OFX/QIF: invalid lines staged in `import_row` (`status: set_aside`), good lines commit, with review item gathering and inline resolution.
+- IMP-4: Payee matching, aliases (`payee_alias`), and deterministic rule engine with priority order, payee default category fallback, and offering new rule on correction.
+- IMP-5: Transfer matching (±3 days opposite amount across accounts, auto-linking unique matches, ambiguous to review) and probable duplicate detection.
+- IMP-6: Encrypted attachment storage (AES-GCM at `data/attachments/<HMAC(key, content)>`, AD-21) and partner hand-off (`import_handoff`, AD-5).
+- IMP-7: Batch undo (reverting an entire import batch and restoring unlinked transfers) and account freshness derived from `import_batch`.
+- IMP-8: Unified Needs Review inbox UI at `/review` with cards for all registered review-item kinds, partner-pending count ("<partner>: N left") restricted to shared data, and identity notices migration.
+- IMP-9: Import popover component (file drop zone, account picker with "For <partner>", bank export tips, upload summary) integrated into the shell header.
+- IMP-10: Milestone M1 gate verification (12 months real/deidentified data reconciliation with zero balance gaps) and refactor sweep.
+- IMP-11: Release v0.2.4 & deploy to `pang-dev` with schema migration and post-upgrade backup verification.
 
 ## Done when
 
@@ -55,3 +71,6 @@ packages/importers and the import, payee-matching, rules and transfer stages in 
 - Waits on epic-ledger-accounts-privacy because: the pipeline writes its account, transaction, split and transfer_group tables through visibleAccounts()/redact().
 - Waits on epic-app-shell-settings-theming because: the Import button and Needs review live in its shell, and the identity notices leave its Settings page.
 - Handoff (2026-10-06, from epic-ledger-accounts-privacy entry 23): an import must not commit entries dated after a closed account's closedOn; it surfaces the same choice (move the closed date, or the entries' dates) or skips them to review. The closing-balance warning of entry 24 is an account-scoped review item to show in the inbox when its UI exists.
+- Decision (2026-10-20, inception): Tracer bullet is entry 1 (3.1) delivering core import pipeline, import_batch/import_row schema, and CommBank OFX/CSV parsers, with mock data generator for all formats.
+- Decision (2026-10-20, inception): Review inbox route path is /review per UX spec (nav label 'Needs review').
+- Decision (2026-10-20, inception): Real NetBank history prior to FY2026 will be de-identified by Simon for the M1 gate check (entry 10).
