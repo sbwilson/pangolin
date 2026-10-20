@@ -111,6 +111,28 @@ export function createImportRowRepo(orm: Orm, check: () => void): ImportRowRepo 
       return rows as ImportRowRow[];
     },
 
+    find: (viewer, id) => {
+      check();
+      const visible = visibleAccountId(importBatch.accountId, viewer);
+      const row = orm
+        .select({
+          id: importRow.id,
+          batchId: importRow.batchId,
+          rowNumber: importRow.rowNumber,
+          rawLine: importRow.rawLine,
+          status: importRow.status,
+          reason: importRow.reason,
+          pdfPage: importRow.pdfPage,
+          createdAt: importRow.createdAt,
+          updatedAt: importRow.updatedAt,
+        })
+        .from(importRow)
+        .innerJoin(importBatch, eq(importRow.batchId, importBatch.id))
+        .where(and(eq(importRow.id, id), visible))
+        .get();
+      return row as ImportRowRow | undefined;
+    },
+
     updateStatus: (id, status, at, reason) => {
       check();
       const updateData: {

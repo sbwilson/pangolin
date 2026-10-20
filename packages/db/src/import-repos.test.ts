@@ -215,6 +215,11 @@ describe("SQLite Import Repositories & Dedupe", () => {
       // Sam cannot see rows of Alex's private account batch
       const samRows = repos.importRows.listForBatch(samViewer, batchId);
       expect(samRows).toHaveLength(0);
+
+      // Single row find visibility
+      expect(repos.importRows.find(alexViewer, rowId1)).toBeDefined();
+      expect(repos.importRows.find(alexViewer, rowId1)?.rowNumber).toBe(1);
+      expect(repos.importRows.find(samViewer, rowId1)).toBeUndefined();
     });
 
     // Update status and reason

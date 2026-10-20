@@ -792,24 +792,96 @@ N1004
       ).toThrowError(AppError);
     });
 
-    it("throws Validation when both debit and credit are present in a row", () => {
-      const { ctx, sharedAccountId } = setup();
+    it("sets aside row when both debit and credit are present in a row", () => {
+      const { ctx, sharedAccountId, uow } = setup();
       const badContent = `Date,Description,Debit,Credit
 01/09/2024,Conflict,50.00,50.00`;
 
-      expect(() =>
-        importStatement(ctx, {
+      const result = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "generic_csv",
+        content: badContent,
+        csvMapping: {
+          date: "Date",
+          description: "Description",
+          debit: "Debit",
+          credit: "Credit",
+        },
+      });
+
+      expect(result.setAsideCount).toBe(1);
+      expect(result.newCount).toBe(0);
+
+      // Verify row is staged with status set_aside and reason mentions both debit and credit
+      const batchRows = uow.state.importRows.filter((r) => r.batchId === result.batchId);
+      expect(batchRows).toHaveLength(1);
+      expect(batchRows[0]?.status).toBe("set_aside");
+      expect(batchRows[0]?.reason).toMatch(/both debit and credit/i);
+
+      // Verify review item was raised
+      const reviewItem = uow.state.reviewItems.find(
+        (ri) => ri.dedupeKey === `import.set_aside:${result.batchId}`,
+      );
+      expect(reviewItem).toBeDefined();
+    });
+
+    it("sets aside row when debit column is malformed text even if credit column has an amount", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const content = `Date,Description,Debit,Credit
+01/09/2024,Cafe,not-a-number,20.00`;
+
+      const result = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "generic_csv",
+        content,
+        csvMapping: {
+          date: "Date",
+          description: "Description",
+          debit: "Debit",
+          credit: "Credit",
+        },
+      });
+
+      expect(result.setAsideCount).toBe(1);
+      expect(result.newCount).toBe(0);
+
+      const batchRows = uow.state.importRows.filter((r) => r.batchId === result.batchId);
+      expect(batchRows).toHaveLength(1);
+      expect(batchRows[0]?.status).toBe("set_aside");
+      expect(batchRows[0]?.reason).toMatch(/invalid debit amount/i);
+    });
+
+    it("handles custom parser returning result omitting setAside", () => {
+      const { ctx, sharedAccountId } = setup();
+      const customParser = {
+        parse: () =>
+          ({
+            rows: [
+              {
+                rowNumber: 1,
+                rawLine: "mock line",
+                postedOn: "2024-09-01",
+                amountCents: -5000,
+                rawDescription: "Mock txn",
+                externalId: null,
+                balanceCents: null,
+              },
+            ],
+          }) as unknown as StatementParseResult,
+      };
+
+      const result = importStatement(
+        ctx,
+        {
           accountId: sharedAccountId,
-          format: "generic_csv",
-          content: badContent,
-          csvMapping: {
-            date: "Date",
-            description: "Description",
-            debit: "Debit",
-            credit: "Credit",
-          },
-        }),
-      ).toThrowError(AppError);
+          format: "commbank_csv",
+          content: "mock",
+        },
+        { parser: customParser },
+      );
+
+      expect(result.newCount).toBe(1);
+      expect(result.setAsideCount).toBe(0);
     });
 
     it("concatenates description and memo in generic CSV", () => {
@@ -927,6 +999,198 @@ PCAFE
       expect(res.rowCount).toBe(1);
       expect(res.newCount).toBe(1);
       expect(uow.state.transactions[0]?.postedOn).toBe("2024-09-15");
+    });
+  });
+
+  describe("Partial import and set-aside pipeline", () => {
+    it("imports valid CSV rows while setting aside malformed rows and raising review item", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const csv = `01/09/2024,-50.00,Good Coffee
+bad-date,-10.00,Bad Row
+02/09/2024,not-a-number,Bad Amount
+03/09/2024,100.00,Valid Salary`;
+
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csv,
+      });
+
+      expect(res.rowCount).toBe(4);
+      expect(res.newCount).toBe(2);
+      expect(res.dupCount).toBe(0);
+      expect(res.setAsideCount).toBe(2);
+
+      // Ledger has only the 2 valid transactions
+      expect(uow.state.transactions).toHaveLength(2);
+      expect(uow.state.transactions.map((t) => t.descriptionRaw)).toEqual([
+        "Good Coffee",
+        "Valid Salary",
+      ]);
+
+      // import_batch has recorded counts
+      const batch = uow.state.importBatches.find((b) => b.id === res.batchId);
+      expect(batch).toBeDefined();
+      expect(batch?.rowCount).toBe(4);
+      expect(batch?.newCount).toBe(2);
+      expect(batch?.dupCount).toBe(0);
+
+      // import_row has staged 4 rows: 2 committed, 2 set_aside
+      const rows = uow.state.importRows.filter((r) => r.batchId === res.batchId);
+      expect(rows).toHaveLength(4);
+
+      const setAsideRows = rows.filter((r) => r.status === "set_aside");
+      expect(setAsideRows).toHaveLength(2);
+      expect(setAsideRows[0]?.rowNumber).toBe(2);
+      expect(setAsideRows[0]?.rawLine).toBe("bad-date,-10.00,Bad Row");
+      expect(setAsideRows[0]?.reason).toMatch(/date/i);
+
+      expect(setAsideRows[1]?.rowNumber).toBe(3);
+      expect(setAsideRows[1]?.rawLine).toBe("02/09/2024,not-a-number,Bad Amount");
+      expect(setAsideRows[1]?.reason).toMatch(/amount/i);
+
+      // Review item was raised
+      const reviewItem = uow.state.reviewItems.find(
+        (ri) => ri.dedupeKey === `import.set_aside:${res.batchId}`,
+      );
+      expect(reviewItem).toBeDefined();
+      expect(reviewItem?.kind).toBe("import.set_aside");
+      expect(reviewItem?.accountId).toBe(sharedAccountId);
+      expect(reviewItem?.entityRef).toBe(`import_batch:${res.batchId}`);
+      expect(reviewItem?.resolvedAt).toBeNull();
+    });
+
+    it("partially imports OFX with malformed STMTTRN blocks", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const ofx = `<OFX>
+<BANKMSGSRSV1>
+<STMTTRNRS>
+<STMTRS>
+<BANKTRANLIST>
+<STMTTRN>
+<TRNTYPE>DEBIT
+<DTPOSTED>20240901120000
+<TRNAMT>-25.00
+<FITID>OFX1
+<NAME>Good OFX Transaction
+</STMTTRN>
+<STMTTRN>
+<TRNTYPE>DEBIT
+<TRNAMT>-50.00
+<FITID>OFX2
+<NAME>Missing Date OFX
+</STMTTRN>
+</BANKTRANLIST>
+</STMTRS>
+</STMTTRNRS>
+</BANKMSGSRSV1>
+</OFX>`;
+
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_ofx",
+        content: ofx,
+      });
+
+      expect(res.rowCount).toBe(2);
+      expect(res.newCount).toBe(1);
+      expect(res.setAsideCount).toBe(1);
+
+      expect(uow.state.transactions).toHaveLength(1);
+      expect(uow.state.transactions[0]?.descriptionRaw).toBe("Good OFX Transaction");
+
+      const rows = uow.state.importRows.filter((r) => r.batchId === res.batchId);
+      expect(rows).toHaveLength(2);
+      const setAsideRow = rows.find((r) => r.status === "set_aside");
+      expect(setAsideRow).toBeDefined();
+      expect(setAsideRow?.reason).toMatch(/dtposted/i);
+
+      const reviewItem = uow.state.reviewItems.find(
+        (ri) => ri.dedupeKey === `import.set_aside:${res.batchId}`,
+      );
+      expect(reviewItem).toBeDefined();
+    });
+
+    it("partially imports QIF with malformed records", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const qif = `!Type:Bank
+D01/09/2024
+T-35.00
+PValid QIF
+^
+D02/09/2024
+PMissing Amount QIF
+^`;
+
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "qif",
+        content: qif,
+      });
+
+      expect(res.rowCount).toBe(2);
+      expect(res.newCount).toBe(1);
+      expect(res.setAsideCount).toBe(1);
+
+      expect(uow.state.transactions).toHaveLength(1);
+      expect(uow.state.transactions[0]?.descriptionRaw).toBe("Valid QIF");
+
+      const rows = uow.state.importRows.filter((r) => r.batchId === res.batchId);
+      expect(rows).toHaveLength(2);
+      const setAsideRow = rows.find((r) => r.status === "set_aside");
+      expect(setAsideRow).toBeDefined();
+      expect(setAsideRow?.reason).toMatch(/missing amount/i);
+
+      const reviewItem = uow.state.reviewItems.find(
+        (ri) => ri.dedupeKey === `import.set_aside:${res.batchId}`,
+      );
+      expect(reviewItem).toBeDefined();
+    });
+
+    it("stages all rows as set-aside when every row is malformed in a recognizable CSV", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const csv = `invalid-date-1,-10.00,Item 1
+invalid-date-2,-20.00,Item 2`;
+
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csv,
+      });
+
+      expect(res.rowCount).toBe(2);
+      expect(res.newCount).toBe(0);
+      expect(res.dupCount).toBe(0);
+      expect(res.setAsideCount).toBe(2);
+      expect(uow.state.transactions).toHaveLength(0);
+
+      const reviewItem = uow.state.reviewItems.find(
+        (ri) => ri.dedupeKey === `import.set_aside:${res.batchId}`,
+      );
+      expect(reviewItem).toBeDefined();
+    });
+
+    it("sets aside QIF record with non-empty lines but missing date and amount", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const qif = `!Type:Bank
+PPayee Only No Date Or Amount
+MMemo Only
+^`;
+
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "qif",
+        content: qif,
+      });
+
+      expect(res.rowCount).toBe(1);
+      expect(res.newCount).toBe(0);
+      expect(res.setAsideCount).toBe(1);
+
+      const rows = uow.state.importRows.filter((r) => r.batchId === res.batchId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.status).toBe("set_aside");
+      expect(rows[0]?.reason).toMatch(/missing date/i);
     });
   });
 });

@@ -15,9 +15,20 @@ export interface ParsedStatementRow {
   readonly balanceCents?: number | null;
 }
 
+export interface SetAsideStatementRow {
+  readonly rowNumber: number;
+  readonly rawLine: string;
+  readonly reason: string;
+}
+
+export interface StatementParseResult {
+  readonly rows: readonly ParsedStatementRow[];
+  readonly setAside: readonly SetAsideStatementRow[];
+}
+
 export interface StatementParser {
   readonly format: string;
-  parse(content: string): readonly ParsedStatementRow[];
+  parse(content: string): StatementParseResult | readonly ParsedStatementRow[];
 }
 
 export type DateFormat = "DD/MM/YYYY" | "YYYY-MM-DD" | "MM/DD/YYYY" | "DD-MM-YYYY";

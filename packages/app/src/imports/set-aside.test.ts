@@ -1,0 +1,943 @@
+import { Temporal } from "@pangolin/shared/temporal";
+import { describe, expect, it } from "vitest";
+import { AppError } from "../errors.ts";
+import { createIdGenerator } from "../ids.ts";
+import { manualClock } from "../testing/fixtures.ts";
+import { memoryUnitOfWork } from "../testing/memory-uow.ts";
+import type { Viewer } from "../viewer.ts";
+import { importStatement } from "./import-statement.ts";
+import {
+  discardSetAsideRow,
+  fixSetAsideRow,
+  IMPORT_SET_ASIDE_REVIEW,
+  listSetAsideRowsForBatch,
+} from "./set-aside.ts";
+
+const now = Temporal.Instant.from("2026-10-20T12:00:00.000Z");
+const clock = manualClock("2026-10-20T12:00:00.000Z");
+
+function setup() {
+  let ms = 1792400000000;
+  const newId = createIdGenerator({
+    now: () => ++ms,
+    random: () => 0.5,
+  });
+  const uow = memoryUnitOfWork();
+
+  const alexPersonId = newId<"Person">();
+  const samPersonId = newId<"Person">();
+
+  const alexViewer: Viewer = {
+    kind: "person",
+    personId: alexPersonId,
+    authAt: now,
+  };
+
+  const samViewer: Viewer = {
+    kind: "person",
+    personId: samPersonId,
+    authAt: now,
+  };
+
+  const sharedAccountId = newId<"Account">();
+  const alexPrivateAccountId = newId<"Account">();
+  const samPrivateAccountId = newId<"Account">();
+
+  uow.state.people.push(
+    {
+      id: alexPersonId,
+      userId: "user-alex",
+      displayName: "Alex",
+      colour: "#ff0000",
+      createdAt: now.toString(),
+      updatedAt: now.toString(),
+      deletedAt: null,
+    },
+    {
+      id: samPersonId,
+      userId: "user-sam",
+      displayName: "Sam",
+      colour: "#0000ff",
+      createdAt: now.toString(),
+      updatedAt: now.toString(),
+      deletedAt: null,
+    },
+  );
+
+  // Shared account owned by both Alex and Sam
+  uow.state.accounts.push({
+    id: sharedAccountId,
+    name: "Joint Everyday",
+    type: "transaction",
+    currency: "AUD",
+    isPrivate: false,
+    institutionId: null,
+    openedOn: "2024-01-01",
+    closedOn: null,
+    isSavings: false,
+    createdAt: now.toString(),
+    updatedAt: now.toString(),
+  });
+  uow.state.accountOwners.push(
+    {
+      accountId: sharedAccountId,
+      personId: alexPersonId,
+      shareBp: 5000,
+      createdAt: now.toString(),
+      updatedAt: now.toString(),
+    },
+    {
+      accountId: sharedAccountId,
+      personId: samPersonId,
+      shareBp: 5000,
+      createdAt: now.toString(),
+      updatedAt: now.toString(),
+    },
+  );
+
+  // Alex private account
+  uow.state.accounts.push({
+    id: alexPrivateAccountId,
+    name: "Alex Spending",
+    type: "transaction",
+    currency: "AUD",
+    isPrivate: true,
+    institutionId: null,
+    openedOn: "2024-01-01",
+    closedOn: null,
+    isSavings: false,
+    createdAt: now.toString(),
+    updatedAt: now.toString(),
+  });
+  uow.state.accountOwners.push({
+    accountId: alexPrivateAccountId,
+    personId: alexPersonId,
+    shareBp: 10000,
+    createdAt: now.toString(),
+    updatedAt: now.toString(),
+  });
+
+  // Sam private account
+  uow.state.accounts.push({
+    id: samPrivateAccountId,
+    name: "Sam Spending",
+    type: "transaction",
+    currency: "AUD",
+    isPrivate: true,
+    institutionId: null,
+    openedOn: "2024-01-01",
+    closedOn: null,
+    isSavings: false,
+    createdAt: now.toString(),
+    updatedAt: now.toString(),
+  });
+  uow.state.accountOwners.push({
+    accountId: samPrivateAccountId,
+    personId: samPersonId,
+    shareBp: 10000,
+    createdAt: now.toString(),
+    updatedAt: now.toString(),
+  });
+
+  const alexCtx = {
+    viewer: alexViewer,
+    clock,
+    newId,
+    uow,
+  };
+
+  const samCtx = {
+    viewer: samViewer,
+    clock,
+    newId,
+    uow,
+  };
+
+  return {
+    alexCtx,
+    samCtx,
+    alexViewer,
+    samViewer,
+    alexPersonId,
+    samPersonId,
+    sharedAccountId,
+    alexPrivateAccountId,
+    samPrivateAccountId,
+    uow,
+    newId,
+  };
+}
+
+describe("set-aside rows management", () => {
+  describe("listSetAsideRowsForBatch", () => {
+    it("lists only set-aside rows for a batch", () => {
+      const { alexCtx, sharedAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: sharedAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 3,
+        newCount: 1,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      const row1Id = newId<"ImportRow">();
+      const row2Id = newId<"ImportRow">();
+      const row3Id = newId<"ImportRow">();
+
+      uow.state.importRows.push(
+        {
+          id: row1Id,
+          batchId,
+          rowNumber: 1,
+          rawLine: "row-1",
+          status: "committed",
+          reason: null,
+          pdfPage: null,
+          createdAt: now.toString(),
+          updatedAt: now.toString(),
+        },
+        {
+          id: row2Id,
+          batchId,
+          rowNumber: 2,
+          rawLine: "row-2-bad",
+          status: "set_aside",
+          reason: "Invalid date format",
+          pdfPage: null,
+          createdAt: now.toString(),
+          updatedAt: now.toString(),
+        },
+        {
+          id: row3Id,
+          batchId,
+          rowNumber: 3,
+          rawLine: "row-3-bad",
+          status: "set_aside",
+          reason: "Invalid amount",
+          pdfPage: null,
+          createdAt: now.toString(),
+          updatedAt: now.toString(),
+        },
+      );
+
+      const rows = listSetAsideRowsForBatch(alexCtx, { batchId });
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => r.id)).toEqual([row2Id, row3Id]);
+      expect(rows[0]?.reason).toBe("Invalid date format");
+      expect(rows[1]?.reason).toBe("Invalid amount");
+    });
+
+    it("throws NotFound if batch does not exist", () => {
+      const { alexCtx, newId } = setup();
+      expect(() =>
+        listSetAsideRowsForBatch(alexCtx, { batchId: newId<"ImportBatch">() }),
+      ).toThrowError(AppError);
+    });
+
+    it("throws NotFound if batch belongs to an account hidden from viewer", () => {
+      const { samCtx, alexPrivateAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: alexPrivateAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 1,
+        newCount: 0,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      // Sam cannot see Alex's private account
+      expect(() => listSetAsideRowsForBatch(samCtx, { batchId })).toThrowError(AppError);
+    });
+  });
+
+  describe("fixSetAsideRow", () => {
+    it("commits fixed transaction to ledger with importId and increments batch newCount", () => {
+      const { alexCtx, sharedAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+      const rowId = newId<"ImportRow">();
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: sharedAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 2,
+        newCount: 1,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importRows.push({
+        id: rowId,
+        batchId,
+        rowNumber: 2,
+        rawLine: "bad-row-line",
+        status: "set_aside",
+        reason: "Invalid amount",
+        pdfPage: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      const res = fixSetAsideRow(alexCtx, {
+        rowId,
+        postedOn: "2024-09-01",
+        amountCents: -4500,
+        description: "Fixed Supermarket purchase",
+      });
+
+      expect(res.transactionId).toBeDefined();
+
+      // Transaction committed to ledger
+      const txn = uow.state.transactions.find((t) => t.id === res.transactionId);
+      expect(txn).toBeDefined();
+      expect(txn?.accountId).toBe(sharedAccountId);
+      expect(txn?.postedOn).toBe("2024-09-01");
+      expect(txn?.amountCents).toBe(-4500);
+      expect(txn?.descriptionRaw).toBe("Fixed Supermarket purchase");
+      expect(txn?.importId).toBe(batchId);
+
+      // Split beneficiary is shared for shared account
+      const splits = uow.state.splits.filter((s) => s.transactionId === res.transactionId);
+      expect(splits).toHaveLength(1);
+      expect(splits[0]?.beneficiary).toBe("shared");
+
+      // import_row status updated to committed and reason cleared
+      const updatedRow = uow.state.importRows.find((r) => r.id === rowId);
+      expect(updatedRow?.status).toBe("committed");
+      expect(updatedRow?.reason).toBeNull();
+
+      // batch newCount incremented from 1 to 2
+      const updatedBatch = uow.state.importBatches.find((b) => b.id === batchId);
+      expect(updatedBatch?.newCount).toBe(2);
+    });
+
+    it("assigns split beneficiary to account owner for private account", () => {
+      const { alexCtx, alexPrivateAccountId, alexPersonId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+      const rowId = newId<"ImportRow">();
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: alexPrivateAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 1,
+        newCount: 0,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importRows.push({
+        id: rowId,
+        batchId,
+        rowNumber: 1,
+        rawLine: "bad-row-line",
+        status: "set_aside",
+        reason: "Invalid date",
+        pdfPage: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      const res = fixSetAsideRow(alexCtx, {
+        rowId,
+        postedOn: "2024-09-05",
+        amountCents: -1200,
+        description: "Alex Private Lunch",
+      });
+
+      const splits = uow.state.splits.filter((s) => s.transactionId === res.transactionId);
+      expect(splits).toHaveLength(1);
+      expect(splits[0]?.beneficiary).toBe(alexPersonId);
+    });
+
+    it("throws Conflict if externalId already exists on a transaction in the account", () => {
+      const { alexCtx, sharedAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+      const rowId = newId<"ImportRow">();
+
+      uow.state.transactions.push({
+        id: newId<"Transaction">(),
+        accountId: sharedAccountId,
+        postedOn: "2024-09-01",
+        amountCents: -1000,
+        descriptionRaw: "Existing external txn",
+        payeeId: null,
+        status: "posted",
+        externalId: "ext-12345",
+        fingerprint: "dummy-fp",
+        fingerprintVersion: 1,
+        importId: null,
+        performedBy: null,
+        transferGroupId: null,
+        needsReview: false,
+        isHidden: false,
+        nameHiddenBy: null,
+        nameHiddenUntil: null,
+        notes: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: sharedAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 1,
+        newCount: 0,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importRows.push({
+        id: rowId,
+        batchId,
+        rowNumber: 1,
+        rawLine: "bad-row-line",
+        status: "set_aside",
+        reason: "Invalid amount",
+        pdfPage: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      expect(() =>
+        fixSetAsideRow(alexCtx, {
+          rowId,
+          postedOn: "2024-09-02",
+          amountCents: -1000,
+          description: "Fixed with existing externalId",
+          externalId: "ext-12345",
+        }),
+      ).toThrowError(AppError);
+
+      try {
+        fixSetAsideRow(alexCtx, {
+          rowId,
+          postedOn: "2024-09-02",
+          amountCents: -1000,
+          description: "Fixed with existing externalId",
+          externalId: "ext-12345",
+        });
+      } catch (err) {
+        expect((err as AppError).code).toBe("Conflict");
+      }
+    });
+
+    it("throws NotFound if row is in private account invisible to viewer", () => {
+      const { samCtx, alexPrivateAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+      const rowId = newId<"ImportRow">();
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: alexPrivateAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 1,
+        newCount: 0,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importRows.push({
+        id: rowId,
+        batchId,
+        rowNumber: 1,
+        rawLine: "bad-row-line",
+        status: "set_aside",
+        reason: "Invalid date",
+        pdfPage: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      expect(() =>
+        fixSetAsideRow(samCtx, {
+          rowId,
+          postedOn: "2024-09-05",
+          amountCents: -1200,
+          description: "Unauthorized Fix Attempt",
+        }),
+      ).toThrowError(AppError);
+    });
+
+    it("throws Validation if row status is not set_aside", () => {
+      const { alexCtx, sharedAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+      const rowId = newId<"ImportRow">();
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: sharedAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 1,
+        newCount: 1,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importRows.push({
+        id: rowId,
+        batchId,
+        rowNumber: 1,
+        rawLine: "row-line",
+        status: "committed",
+        reason: null,
+        pdfPage: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      expect(() =>
+        fixSetAsideRow(alexCtx, {
+          rowId,
+          postedOn: "2024-09-05",
+          amountCents: -1200,
+          description: "Attempt to fix already committed row",
+        }),
+      ).toThrowError(AppError);
+    });
+  });
+
+  describe("discardSetAsideRow", () => {
+    it("marks row as discarded without creating a ledger transaction", () => {
+      const { alexCtx, sharedAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+      const rowId = newId<"ImportRow">();
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: sharedAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 1,
+        newCount: 0,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importRows.push({
+        id: rowId,
+        batchId,
+        rowNumber: 1,
+        rawLine: "bad-row-line",
+        status: "set_aside",
+        reason: "Unparseable junk",
+        pdfPage: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      const res = discardSetAsideRow(alexCtx, {
+        rowId,
+        reason: "Duplicate or corrupt row",
+      });
+
+      expect(res.rowId).toBe(rowId);
+
+      const row = uow.state.importRows.find((r) => r.id === rowId);
+      expect(row?.status).toBe("discarded");
+      expect(row?.reason).toBe("Duplicate or corrupt row");
+
+      // No ledger transaction created
+      expect(uow.state.transactions).toHaveLength(0);
+
+      // Batch counts remain unchanged
+      const batch = uow.state.importBatches.find((b) => b.id === batchId);
+      expect(batch?.newCount).toBe(0);
+    });
+
+    it("preserves existing row reason when parsed.reason is undefined", () => {
+      const { alexCtx, sharedAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+      const rowId = newId<"ImportRow">();
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: sharedAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 1,
+        newCount: 0,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importRows.push({
+        id: rowId,
+        batchId,
+        rowNumber: 1,
+        rawLine: "bad-row-line",
+        status: "set_aside",
+        reason: "Original parser error",
+        pdfPage: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      discardSetAsideRow(alexCtx, { rowId });
+
+      const row = uow.state.importRows.find((r) => r.id === rowId);
+      expect(row?.status).toBe("discarded");
+      expect(row?.reason).toBe("Original parser error");
+    });
+
+    it("throws NotFound if row belongs to private account invisible to viewer", () => {
+      const { samCtx, alexPrivateAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+      const rowId = newId<"ImportRow">();
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: alexPrivateAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 1,
+        newCount: 0,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importRows.push({
+        id: rowId,
+        batchId,
+        rowNumber: 1,
+        rawLine: "bad-row-line",
+        status: "set_aside",
+        reason: "Unparseable junk",
+        pdfPage: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      expect(() => discardSetAsideRow(samCtx, { rowId })).toThrowError(AppError);
+    });
+
+    it("throws Validation if row status is not set_aside", () => {
+      const { alexCtx, sharedAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+      const rowId = newId<"ImportRow">();
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: sharedAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 1,
+        newCount: 0,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importRows.push({
+        id: rowId,
+        batchId,
+        rowNumber: 1,
+        rawLine: "bad-row-line",
+        status: "discarded",
+        reason: "Already discarded",
+        pdfPage: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      expect(() => discardSetAsideRow(alexCtx, { rowId })).toThrowError(AppError);
+    });
+  });
+
+  describe("auto-resolution of import.set_aside review item", () => {
+    it("auto-resolves review item when a single set-aside row is fixed", () => {
+      const { alexCtx, sharedAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+      const rowId = newId<"ImportRow">();
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: sharedAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 1,
+        newCount: 0,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importRows.push({
+        id: rowId,
+        batchId,
+        rowNumber: 1,
+        rawLine: "bad-row",
+        status: "set_aside",
+        reason: "Bad date",
+        pdfPage: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.reviewItems.push({
+        id: newId<"ReviewItem">(),
+        kind: IMPORT_SET_ASIDE_REVIEW.kind,
+        accountId: sharedAccountId,
+        personId: null,
+        entityRef: `import_batch:${batchId}`,
+        dedupeKey: `import.set_aside:${batchId}`,
+        createdAt: now.toString(),
+        resolvedAt: null,
+        resolution: null,
+      });
+
+      fixSetAsideRow(alexCtx, {
+        rowId,
+        postedOn: "2024-09-10",
+        amountCents: -1500,
+        description: "Fixed Coffee",
+      });
+
+      const reviewItem = uow.state.reviewItems.find(
+        (ri) => ri.dedupeKey === `import.set_aside:${batchId}`,
+      );
+      expect(reviewItem).toBeDefined();
+      expect(reviewItem?.resolvedAt).not.toBeNull();
+      expect(reviewItem?.resolution).toBe("all rows resolved");
+    });
+
+    it("auto-resolves review item when a single set-aside row is discarded", () => {
+      const { alexCtx, sharedAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+      const rowId = newId<"ImportRow">();
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: sharedAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 1,
+        newCount: 0,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importRows.push({
+        id: rowId,
+        batchId,
+        rowNumber: 1,
+        rawLine: "corrupt-row",
+        status: "set_aside",
+        reason: "Corrupt bytes",
+        pdfPage: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.reviewItems.push({
+        id: newId<"ReviewItem">(),
+        kind: IMPORT_SET_ASIDE_REVIEW.kind,
+        accountId: sharedAccountId,
+        personId: null,
+        entityRef: `import_batch:${batchId}`,
+        dedupeKey: `import.set_aside:${batchId}`,
+        createdAt: now.toString(),
+        resolvedAt: null,
+        resolution: null,
+      });
+
+      discardSetAsideRow(alexCtx, { rowId, reason: "Corrupt row" });
+
+      const reviewItem = uow.state.reviewItems.find(
+        (ri) => ri.dedupeKey === `import.set_aside:${batchId}`,
+      );
+      expect(reviewItem?.resolvedAt).not.toBeNull();
+      expect(reviewItem?.resolution).toBe("all rows resolved");
+    });
+
+    it("keeps review item open until the last set-aside row is resolved", () => {
+      const { alexCtx, sharedAccountId, uow, newId } = setup();
+      const batchId = newId<"ImportBatch">();
+      const row1Id = newId<"ImportRow">();
+      const row2Id = newId<"ImportRow">();
+
+      uow.state.importBatches.push({
+        id: batchId,
+        accountId: sharedAccountId,
+        source: "commbank_csv",
+        fileSha256: "dummy-sha",
+        rowCount: 2,
+        newCount: 0,
+        dupCount: 0,
+        status: "committed",
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+
+      uow.state.importRows.push(
+        {
+          id: row1Id,
+          batchId,
+          rowNumber: 1,
+          rawLine: "row-1",
+          status: "set_aside",
+          reason: "Bad date",
+          pdfPage: null,
+          createdAt: now.toString(),
+          updatedAt: now.toString(),
+        },
+        {
+          id: row2Id,
+          batchId,
+          rowNumber: 2,
+          rawLine: "row-2",
+          status: "set_aside",
+          reason: "Bad amount",
+          pdfPage: null,
+          createdAt: now.toString(),
+          updatedAt: now.toString(),
+        },
+      );
+
+      uow.state.reviewItems.push({
+        id: newId<"ReviewItem">(),
+        kind: IMPORT_SET_ASIDE_REVIEW.kind,
+        accountId: sharedAccountId,
+        personId: null,
+        entityRef: `import_batch:${batchId}`,
+        dedupeKey: `import.set_aside:${batchId}`,
+        createdAt: now.toString(),
+        resolvedAt: null,
+        resolution: null,
+      });
+
+      // 1. Fix row 1 -> review item should remain open
+      fixSetAsideRow(alexCtx, {
+        rowId: row1Id,
+        postedOn: "2024-09-01",
+        amountCents: -2000,
+        description: "Fixed Row 1",
+      });
+
+      const reviewItemAfterFirst = uow.state.reviewItems.find(
+        (ri) => ri.dedupeKey === `import.set_aside:${batchId}`,
+      );
+      expect(reviewItemAfterFirst?.resolvedAt).toBeNull();
+
+      // 2. Discard row 2 -> review item should now be resolved
+      discardSetAsideRow(alexCtx, {
+        rowId: row2Id,
+        reason: "Irrelevant Row 2",
+      });
+
+      const reviewItemAfterSecond = uow.state.reviewItems.find(
+        (ri) => ri.dedupeKey === `import.set_aside:${batchId}`,
+      );
+      expect(reviewItemAfterSecond?.resolvedAt).not.toBeNull();
+      expect(reviewItemAfterSecond?.resolution).toBe("all rows resolved");
+    });
+  });
+
+  describe("end-to-end import to set-aside resolution workflow", () => {
+    it("handles partial import, listing, fixing one row, and discarding another", () => {
+      const { alexCtx, sharedAccountId, uow } = setup();
+
+      const csvContent = `01/09/2024,-10.00,Valid Row 1
+bad-date,-20.00,Row 2 Bad Date
+03/09/2024,invalid-amount,Row 3 Bad Amount`;
+
+      // 1. Partial import
+      const importRes = importStatement(alexCtx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csvContent,
+      });
+
+      expect(importRes.rowCount).toBe(3);
+      expect(importRes.newCount).toBe(1);
+      expect(importRes.setAsideCount).toBe(2);
+
+      // Review item raised
+      const reviewItem = uow.state.reviewItems.find(
+        (ri) => ri.dedupeKey === `import.set_aside:${importRes.batchId}`,
+      );
+      expect(reviewItem).toBeDefined();
+      expect(reviewItem?.resolvedAt).toBeNull();
+
+      // 2. List set-aside rows
+      const setAsideRows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
+      expect(setAsideRows).toHaveLength(2);
+      const badDateRow = setAsideRows[0];
+      const badAmountRow = setAsideRows[1];
+      if (!badDateRow || !badAmountRow) {
+        throw new Error("Expected 2 set-aside rows");
+      }
+
+      // 3. Fix row 2
+      const fixRes = fixSetAsideRow(alexCtx, {
+        rowId: badDateRow.id,
+        postedOn: "2024-09-02",
+        amountCents: -2000,
+        description: "Row 2 Bad Date (Corrected)",
+      });
+      expect(fixRes.transactionId).toBeDefined();
+
+      // Ledger now has 2 transactions
+      expect(uow.state.transactions).toHaveLength(2);
+
+      // Review item still open
+      expect(reviewItem?.resolvedAt).toBeNull();
+
+      // 4. Discard row 3
+      discardSetAsideRow(alexCtx, {
+        rowId: badAmountRow.id,
+        reason: "Row 3 cannot be corrected",
+      });
+
+      // Review item auto-resolved
+      const resolvedReviewItem = uow.state.reviewItems.find(
+        (ri) => ri.dedupeKey === `import.set_aside:${importRes.batchId}`,
+      );
+      expect(resolvedReviewItem?.resolvedAt).not.toBeNull();
+      expect(resolvedReviewItem?.resolution).toBe("all rows resolved");
+
+      // Set aside list is now empty
+      const remainingRows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
+      expect(remainingRows).toHaveLength(0);
+    });
+  });
+});

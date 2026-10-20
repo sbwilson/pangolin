@@ -451,6 +451,17 @@ function importRowRepo(working: MemoryState, check: () => void): ImportRowRepo {
         .filter((r) => r.batchId === batchId)
         .sort((a, b) => a.rowNumber - b.rowNumber);
     },
+    find: (viewer, id) => {
+      requireViewer(viewer);
+      check();
+      const row = working.importRows.find((r) => r.id === id);
+      if (row === undefined) return undefined;
+      const batch = working.importBatches.find((b) => b.id === row.batchId);
+      if (batch === undefined) return undefined;
+      const account = working.accounts.find((a) => a.id === batch.accountId);
+      if (account === undefined || !accountVisible(working, viewer, account)) return undefined;
+      return row;
+    },
     updateStatus: (id, status, at, reason) => {
       check();
       const index = working.importRows.findIndex((r) => r.id === id);
@@ -2716,7 +2727,10 @@ export function memoryUnitOfWork(
           findByAccountAndFileSha: importBatchRepo(uow.state, check).findByAccountAndFileSha,
           listVisible: importBatchRepo(uow.state, check).listVisible,
         },
-        importRows: { listForBatch: importRowRepo(uow.state, check).listForBatch },
+        importRows: {
+          listForBatch: importRowRepo(uow.state, check).listForBatch,
+          find: importRowRepo(uow.state, check).find,
+        },
       });
     },
   };

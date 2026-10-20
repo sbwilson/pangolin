@@ -1,4 +1,9 @@
-import type { ParsedStatementRow, StatementParser } from "@pangolin/app";
+import type {
+  ParsedStatementRow,
+  SetAsideStatementRow,
+  StatementParseResult,
+  StatementParser,
+} from "@pangolin/app";
 import { toCents } from "@pangolin/shared";
 
 function parseQifDate(dateStr: string, recordIndex: number): string {
@@ -35,7 +40,7 @@ function parseQifDate(dateStr: string, recordIndex: number): string {
  * Parses standard QIF statement files (!Type:Bank).
  * Extracts date (D), amount (T), payee (P), memo (M), and reference number (N as externalId).
  */
-export function parseQif(content: string): readonly ParsedStatementRow[] {
+export function parseQif(content: string): StatementParseResult {
   if (!content || typeof content !== "string") {
     throw new Error("QIF content is empty or not a string");
   }
@@ -48,6 +53,7 @@ export function parseQif(content: string): readonly ParsedStatementRow[] {
 
   const lines = cleanContent.split(/\r?\n/);
   const rows: ParsedStatementRow[] = [];
+  const setAside: SetAsideStatementRow[] = [];
 
   let currentBlockLines: string[] = [];
   let recordIndex = 0;
@@ -68,8 +74,7 @@ export function parseQif(content: string): readonly ParsedStatementRow[] {
     }
 
     if (trimmedLine === "^") {
-      if (!dateRaw && !amountRaw) {
-        currentBlockLines = [];
+      if (currentBlockLines.length === 0) {
         payeeRaw = null;
         memoRaw = null;
         numberRaw = null;
@@ -80,47 +85,55 @@ export function parseQif(content: string): readonly ParsedStatementRow[] {
       recordIndex += 1;
       currentBlockLines.push(line);
 
-      if (!dateRaw) {
-        throw new Error(`QIF record ${recordIndex} is missing date (D) field`);
-      }
-      if (!amountRaw) {
-        throw new Error(`QIF record ${recordIndex} is missing amount (T) field`);
-      }
-
-      const postedOn = parseQifDate(dateRaw, recordIndex);
-
-      // Clean amount: strip commas
-      const cleanAmt = amountRaw.replace(/,/g, "");
-      let amountCents: number;
       try {
-        amountCents = toCents(cleanAmt);
+        if (!dateRaw) {
+          throw new Error(`QIF record ${recordIndex} is missing date (D) field`);
+        }
+        if (!amountRaw) {
+          throw new Error(`QIF record ${recordIndex} is missing amount (T) field`);
+        }
+
+        const postedOn = parseQifDate(dateRaw, recordIndex);
+
+        // Clean amount: strip commas
+        const cleanAmt = amountRaw.replace(/,/g, "");
+        let amountCents: number;
+        try {
+          amountCents = toCents(cleanAmt);
+        } catch (err) {
+          throw new Error(`QIF record ${recordIndex} has invalid amount: "${amountRaw}"`, {
+            cause: err,
+          });
+        }
+
+        const payee = payeeRaw?.trim() ?? "";
+        const memo = memoRaw?.trim() ?? "";
+        let rawDescription = payee;
+        if (memo && memo !== payee) {
+          rawDescription = payee ? `${payee} ${memo}` : memo;
+        }
+        if (!rawDescription) {
+          rawDescription = "Transaction";
+        }
+
+        const externalId = numberRaw?.trim() || null;
+
+        rows.push({
+          rowNumber: recordIndex,
+          rawLine: currentBlockLines.join("\n"),
+          postedOn,
+          amountCents,
+          rawDescription,
+          externalId,
+          balanceCents: null,
+        });
       } catch (err) {
-        throw new Error(`QIF record ${recordIndex} has invalid amount: "${amountRaw}"`, {
-          cause: err,
+        setAside.push({
+          rowNumber: recordIndex,
+          rawLine: currentBlockLines.join("\n"),
+          reason: err instanceof Error ? err.message : String(err),
         });
       }
-
-      const payee = payeeRaw?.trim() ?? "";
-      const memo = memoRaw?.trim() ?? "";
-      let rawDescription = payee;
-      if (memo && memo !== payee) {
-        rawDescription = payee ? `${payee} ${memo}` : memo;
-      }
-      if (!rawDescription) {
-        rawDescription = "Transaction";
-      }
-
-      const externalId = numberRaw?.trim() || null;
-
-      rows.push({
-        rowNumber: recordIndex,
-        rawLine: currentBlockLines.join("\n"),
-        postedOn,
-        amountCents,
-        rawDescription,
-        externalId,
-        balanceCents: null,
-      });
 
       // Reset for next record
       currentBlockLines = [];
@@ -156,63 +169,71 @@ export function parseQif(content: string): readonly ParsedStatementRow[] {
   }
 
   // Handle trailing record if not terminated by ^
-  if (currentBlockLines.length > 0 && (dateRaw || amountRaw)) {
+  if (currentBlockLines.length > 0) {
     recordIndex += 1;
-    if (!dateRaw) {
-      throw new Error(`QIF record ${recordIndex} is missing date (D) field`);
-    }
-    if (!amountRaw) {
-      throw new Error(`QIF record ${recordIndex} is missing amount (T) field`);
-    }
-    const postedOn = parseQifDate(dateRaw, recordIndex);
-    const cleanAmt = amountRaw.replace(/,/g, "");
-    let amountCents: number;
     try {
-      amountCents = toCents(cleanAmt);
+      if (!dateRaw) {
+        throw new Error(`QIF record ${recordIndex} is missing date (D) field`);
+      }
+      if (!amountRaw) {
+        throw new Error(`QIF record ${recordIndex} is missing amount (T) field`);
+      }
+      const postedOn = parseQifDate(dateRaw, recordIndex);
+      const cleanAmt = amountRaw.replace(/,/g, "");
+      let amountCents: number;
+      try {
+        amountCents = toCents(cleanAmt);
+      } catch (err) {
+        throw new Error(`QIF record ${recordIndex} has invalid amount: "${amountRaw}"`, {
+          cause: err,
+        });
+      }
+
+      const payee = payeeRaw?.trim() ?? "";
+      const memo = memoRaw?.trim() ?? "";
+      let rawDescription = payee;
+      if (memo && memo !== payee) {
+        rawDescription = payee ? `${payee} ${memo}` : memo;
+      }
+      if (!rawDescription) {
+        rawDescription = "Transaction";
+      }
+
+      rows.push({
+        rowNumber: recordIndex,
+        rawLine: currentBlockLines.join("\n"),
+        postedOn,
+        amountCents,
+        rawDescription,
+        externalId: numberRaw?.trim() || null,
+        balanceCents: null,
+      });
     } catch (err) {
-      throw new Error(`QIF record ${recordIndex} has invalid amount: "${amountRaw}"`, {
-        cause: err,
+      setAside.push({
+        rowNumber: recordIndex,
+        rawLine: currentBlockLines.join("\n"),
+        reason: err instanceof Error ? err.message : String(err),
       });
     }
-
-    const payee = payeeRaw?.trim() ?? "";
-    const memo = memoRaw?.trim() ?? "";
-    let rawDescription = payee;
-    if (memo && memo !== payee) {
-      rawDescription = payee ? `${payee} ${memo}` : memo;
-    }
-    if (!rawDescription) {
-      rawDescription = "Transaction";
-    }
-
-    rows.push({
-      rowNumber: recordIndex,
-      rawLine: currentBlockLines.join("\n"),
-      postedOn,
-      amountCents,
-      rawDescription,
-      externalId: numberRaw?.trim() || null,
-      balanceCents: null,
-    });
   }
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && setAside.length === 0) {
     throw new Error("QIF statement contained no transaction records");
   }
 
-  return rows;
+  return Object.assign([...rows], { rows, setAside });
 }
 
 export const qifParser: StatementParser = {
   format: "qif",
-  parse(content: string): readonly ParsedStatementRow[] {
+  parse(content: string): StatementParseResult {
     return parseQif(content);
   },
 };
 
 export const commbankQifParser: StatementParser = {
   format: "commbank_qif",
-  parse(content: string): readonly ParsedStatementRow[] {
+  parse(content: string): StatementParseResult {
     return parseQif(content);
   },
 };

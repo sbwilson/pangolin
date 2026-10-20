@@ -1,4 +1,9 @@
-import type { ParsedStatementRow, StatementParser } from "@pangolin/app";
+import type {
+  ParsedStatementRow,
+  SetAsideStatementRow,
+  StatementParseResult,
+  StatementParser,
+} from "@pangolin/app";
 import { toCents } from "@pangolin/shared";
 import { parseCsvLine } from "./commbank-csv.ts";
 
@@ -25,7 +30,7 @@ function parseSettledDate(dateStr: string, rowNumber: number): string {
  * Columns: Time, Settled Date, Description, Amount, Status
  * Only settled transactions are imported; pending/unsettled rows are skipped.
  */
-export function parseUpCsv(content: string): readonly ParsedStatementRow[] {
+export function parseUpCsv(content: string): StatementParseResult {
   if (!content || typeof content !== "string") {
     throw new Error("CSV content is empty or not a string");
   }
@@ -38,8 +43,12 @@ export function parseUpCsv(content: string): readonly ParsedStatementRow[] {
   if (lines.length === 0) {
     throw new Error("CSV content contains no rows");
   }
+  if (!lines.some((l) => parseCsvLine(l).length >= 2)) {
+    throw new Error("Unrecognised CSV format");
+  }
 
   const rows: ParsedStatementRow[] = [];
+  const setAside: SetAsideStatementRow[] = [];
   let fileLineNumber = 0;
 
   for (const line of lines) {
@@ -51,56 +60,64 @@ export function parseUpCsv(content: string): readonly ParsedStatementRow[] {
       continue;
     }
 
-    if (fields.length < 4) {
-      throw new Error(`Up CSV row ${fileLineNumber} has fewer than 4 columns: "${line}"`);
-    }
-
-    const settledDateRaw = fields[1]?.trim() ?? "";
-    const status = fields[4]?.trim().toUpperCase();
-
-    // Skip non-settled / pending transactions or transactions with no settled date
-    if (!settledDateRaw || (status !== undefined && status !== "" && status !== "SETTLED")) {
-      continue;
-    }
-
-    const postedOn = parseSettledDate(settledDateRaw, fileLineNumber);
-
-    const rawDescription = fields[2]?.trim() ?? "";
-    if (!rawDescription) {
-      throw new Error(`Up CSV row ${fileLineNumber} has empty description`);
-    }
-
-    const amountStr = fields[3]?.trim() ?? "";
-    let amountCents: number;
     try {
-      amountCents = toCents(amountStr);
+      if (fields.length < 4) {
+        throw new Error(`Up CSV row ${fileLineNumber} has fewer than 4 columns: "${line}"`);
+      }
+
+      const settledDateRaw = fields[1]?.trim() ?? "";
+      const status = fields[4]?.trim().toUpperCase();
+
+      // Skip non-settled / pending transactions or transactions with no settled date
+      if (!settledDateRaw || (status !== undefined && status !== "" && status !== "SETTLED")) {
+        continue;
+      }
+
+      const postedOn = parseSettledDate(settledDateRaw, fileLineNumber);
+
+      const rawDescription = fields[2]?.trim() ?? "";
+      if (!rawDescription) {
+        throw new Error(`Up CSV row ${fileLineNumber} has empty description`);
+      }
+
+      const amountStr = fields[3]?.trim() ?? "";
+      let amountCents: number;
+      try {
+        amountCents = toCents(amountStr);
+      } catch (err) {
+        throw new Error(`Up CSV row ${fileLineNumber} has invalid amount: "${amountStr}"`, {
+          cause: err,
+        });
+      }
+
+      rows.push({
+        rowNumber: fileLineNumber,
+        rawLine: line,
+        postedOn,
+        amountCents,
+        rawDescription,
+        externalId: null,
+        balanceCents: null,
+      });
     } catch (err) {
-      throw new Error(`Up CSV row ${fileLineNumber} has invalid amount: "${amountStr}"`, {
-        cause: err,
+      setAside.push({
+        rowNumber: fileLineNumber,
+        rawLine: line,
+        reason: err instanceof Error ? err.message : String(err),
       });
     }
-
-    rows.push({
-      rowNumber: fileLineNumber,
-      rawLine: line,
-      postedOn,
-      amountCents,
-      rawDescription,
-      externalId: null,
-      balanceCents: null,
-    });
   }
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && setAside.length === 0) {
     throw new Error("Up CSV statement contained no valid transaction rows");
   }
 
-  return rows;
+  return Object.assign([...rows], { rows, setAside });
 }
 
 export const upCsvParser: StatementParser = {
   format: "up_csv",
-  parse(content: string): readonly ParsedStatementRow[] {
+  parse(content: string): StatementParseResult {
     return parseUpCsv(content);
   },
 };

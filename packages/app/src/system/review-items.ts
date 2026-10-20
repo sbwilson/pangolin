@@ -20,7 +20,7 @@ export interface ReviewKind {
   readonly scope: ReviewScope;
 }
 
-const KIND_RE = /^[a-z0-9-]+\.[a-z0-9-]+(?:\.[a-z0-9-]+)*$/;
+const KIND_RE = /^[a-z0-9_-]+\.[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$/;
 const registry = new Map<string, ReviewKind>();
 
 /**

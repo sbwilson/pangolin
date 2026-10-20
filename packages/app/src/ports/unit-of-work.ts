@@ -1360,6 +1360,7 @@ export interface ImportRowRepo {
   insert(row: ImportRowRow): void;
   insertMany(rows: readonly ImportRowRow[]): void;
   listForBatch(viewer: Viewer, batchId: string): ImportRowRow[];
+  find(viewer: Viewer, id: string): ImportRowRow | undefined;
   updateStatus(id: string, status: ImportRowStatus, at: string, reason?: string | null): boolean;
 }
 
@@ -1440,7 +1441,7 @@ export interface ReadRepos {
   readonly backupVerifications: Pick<BackupVerificationRepo, "latest">;
   readonly recoveryBundle: Pick<RecoveryBundleRepo, "get">;
   readonly importBatches: Pick<ImportBatchRepo, "find" | "findByAccountAndFileSha" | "listVisible">;
-  readonly importRows: Pick<ImportRowRepo, "listForBatch">;
+  readonly importRows: Pick<ImportRowRepo, "listForBatch" | "find">;
 }
 
 export interface UnitOfWork {

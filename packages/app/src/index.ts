@@ -301,6 +301,20 @@ export {
   importStatement,
   importStatementInput,
 } from "./imports/import-statement.ts";
+export {
+  type DiscardSetAsideRowInput,
+  type DiscardSetAsideRowResult,
+  discardSetAsideRow,
+  discardSetAsideRowInput,
+  type FixSetAsideRowInput,
+  type FixSetAsideRowResult,
+  fixSetAsideRow,
+  fixSetAsideRowInput,
+  IMPORT_SET_ASIDE_REVIEW,
+  type ListSetAsideRowsInput,
+  listSetAsideRowsForBatch,
+  listSetAsideRowsInput,
+} from "./imports/set-aside.ts";
 export { type EnqueueOptions, enqueueJob } from "./jobs/enqueue.ts";
 export {
   type CancelJobsForRestoreInput,
@@ -440,7 +454,9 @@ export type {
   CsvColumnMapping,
   DateFormat,
   ParsedStatementRow,
+  SetAsideStatementRow,
   SignConvention,
+  StatementParseResult,
   StatementParser,
 } from "./ports/statement-parser.ts";
 export type { SystemHealthPort } from "./ports/system-health.ts";

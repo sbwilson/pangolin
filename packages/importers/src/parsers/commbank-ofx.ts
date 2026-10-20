@@ -1,4 +1,9 @@
-import type { ParsedStatementRow, StatementParser } from "@pangolin/app";
+import type {
+  ParsedStatementRow,
+  SetAsideStatementRow,
+  StatementParseResult,
+  StatementParser,
+} from "@pangolin/app";
 import { toCents } from "@pangolin/shared";
 
 function extractTag(block: string, tag: string): string | undefined {
@@ -11,6 +16,7 @@ export interface CommBankOfxResult {
   readonly accountId?: string | undefined;
   readonly closingBalanceCents?: number | undefined;
   readonly rows: readonly ParsedStatementRow[];
+  readonly setAside: readonly SetAsideStatementRow[];
 }
 
 /**
@@ -44,6 +50,7 @@ export function parseCommBankOfx(content: string): CommBankOfxResult {
   }
 
   const rows: ParsedStatementRow[] = [];
+  const setAside: SetAsideStatementRow[] = [];
   const trnRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
   let rowNumber = 1;
 
@@ -51,46 +58,54 @@ export function parseCommBankOfx(content: string): CommBankOfxResult {
     const block = match[1] ?? "";
     const rawLine = match[0].trim();
 
-    const dtPostedRaw = extractTag(block, "DTPOSTED");
-    if (!dtPostedRaw) {
-      throw new Error(`STMTTRN row ${rowNumber} missing DTPOSTED`);
+    try {
+      const dtPostedRaw = extractTag(block, "DTPOSTED");
+      if (!dtPostedRaw) {
+        throw new Error(`STMTTRN row ${rowNumber} missing DTPOSTED`);
+      }
+
+      const dateMatch = /^(\d{4})(\d{2})(\d{2})/.exec(dtPostedRaw);
+      if (!dateMatch?.[1] || !dateMatch[2] || !dateMatch[3]) {
+        throw new Error(`STMTTRN row ${rowNumber} has invalid DTPOSTED: ${dtPostedRaw}`);
+      }
+      const postedOn = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+
+      const trnamtRaw = extractTag(block, "TRNAMT");
+      if (!trnamtRaw) {
+        throw new Error(`STMTTRN row ${rowNumber} missing TRNAMT`);
+      }
+      const amountCents = toCents(trnamtRaw);
+
+      const fitid = extractTag(block, "FITID") ?? null;
+      const name = extractTag(block, "NAME") ?? "";
+      const memo = extractTag(block, "MEMO") ?? "";
+
+      let rawDescription = name;
+      if (memo && memo !== name) {
+        rawDescription = name ? `${name} ${memo}` : memo;
+      }
+
+      rows.push({
+        rowNumber,
+        rawLine,
+        postedOn,
+        amountCents,
+        rawDescription,
+        externalId: fitid,
+        balanceCents: null,
+      });
+    } catch (err) {
+      setAside.push({
+        rowNumber,
+        rawLine,
+        reason: err instanceof Error ? err.message : String(err),
+      });
     }
-
-    const dateMatch = /^(\d{4})(\d{2})(\d{2})/.exec(dtPostedRaw);
-    if (!dateMatch?.[1] || !dateMatch[2] || !dateMatch[3]) {
-      throw new Error(`STMTTRN row ${rowNumber} has invalid DTPOSTED: ${dtPostedRaw}`);
-    }
-    const postedOn = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
-
-    const trnamtRaw = extractTag(block, "TRNAMT");
-    if (!trnamtRaw) {
-      throw new Error(`STMTTRN row ${rowNumber} missing TRNAMT`);
-    }
-    const amountCents = toCents(trnamtRaw);
-
-    const fitid = extractTag(block, "FITID") ?? null;
-    const name = extractTag(block, "NAME") ?? "";
-    const memo = extractTag(block, "MEMO") ?? "";
-
-    let rawDescription = name;
-    if (memo && memo !== name) {
-      rawDescription = name ? `${name} ${memo}` : memo;
-    }
-
-    rows.push({
-      rowNumber,
-      rawLine,
-      postedOn,
-      amountCents,
-      rawDescription,
-      externalId: fitid,
-      balanceCents: null,
-    });
 
     rowNumber += 1;
   }
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && setAside.length === 0) {
     throw new Error("No transactions found in OFX statement");
   }
 
@@ -98,12 +113,14 @@ export function parseCommBankOfx(content: string): CommBankOfxResult {
     accountId: acctId,
     closingBalanceCents,
     rows,
+    setAside,
   };
 }
 
 export const commbankOfxParser: StatementParser = {
   format: "commbank_ofx",
-  parse(content: string): readonly ParsedStatementRow[] {
-    return parseCommBankOfx(content).rows;
+  parse(content: string): StatementParseResult {
+    const res = parseCommBankOfx(content);
+    return Object.assign([...res.rows], { rows: res.rows, setAside: res.setAside });
   },
 };

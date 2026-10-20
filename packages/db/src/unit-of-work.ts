@@ -364,7 +364,10 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               findByAccountAndFileSha: repos.importBatches.findByAccountAndFileSha,
               listVisible: repos.importBatches.listVisible,
             },
-            importRows: { listForBatch: repos.importRows.listForBatch },
+            importRows: {
+              listForBatch: repos.importRows.listForBatch,
+              find: repos.importRows.find,
+            },
           };
         },
         fn,

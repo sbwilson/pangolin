@@ -2,6 +2,8 @@ import type {
   CsvColumnMapping,
   DateFormat,
   ParsedStatementRow,
+  SetAsideStatementRow,
+  StatementParseResult,
   StatementParser,
 } from "@pangolin/app";
 import { toCents } from "@pangolin/shared";
@@ -88,10 +90,7 @@ function resolveColumnIndex(
   return index;
 }
 
-export function parseGenericCsv(
-  content: string,
-  mapping: CsvColumnMapping,
-): readonly ParsedStatementRow[] {
+export function parseGenericCsv(content: string, mapping: CsvColumnMapping): StatementParseResult {
   if (!content || typeof content !== "string") {
     throw new Error("CSV content is empty or not a string");
   }
@@ -153,136 +152,153 @@ export function parseGenericCsv(
   }
 
   const rows: ParsedStatementRow[] = [];
+  const setAside: SetAsideStatementRow[] = [];
 
   for (let i = startIndex; i < lines.length; i++) {
     const fileLineNumber = i + 1;
     const line = lines[i];
     if (!line) continue;
 
-    const fields = parseCsvLine(line, delimiter);
+    try {
+      const fields = parseCsvLine(line, delimiter);
 
-    // Validate required columns exist in row
-    const maxRequiredCol = Math.max(
-      dateCol,
-      descCol,
-      amountCol ?? -1,
-      debitCol ?? -1,
-      creditCol ?? -1,
-    );
-    if (fields.length <= maxRequiredCol) {
-      throw new Error(
-        `CSV row ${fileLineNumber} has fewer columns (${fields.length}) than required by mapping (${maxRequiredCol + 1})`,
+      // Validate required columns exist in row
+      const maxRequiredCol = Math.max(
+        dateCol,
+        descCol,
+        amountCol ?? -1,
+        debitCol ?? -1,
+        creditCol ?? -1,
       );
-    }
-
-    const dateVal = fields[dateCol]?.trim() ?? "";
-    if (!dateVal) {
-      throw new Error(`CSV row ${fileLineNumber} has empty date`);
-    }
-    const postedOn = parseDateWithFormat(dateVal, mapping.dateFormat, fileLineNumber);
-
-    let rawDescription = fields[descCol]?.trim() ?? "";
-    if (memoCol !== undefined && fields[memoCol]) {
-      const memoVal = fields[memoCol].trim();
-      if (memoVal && memoVal !== rawDescription) {
-        rawDescription = rawDescription ? `${rawDescription} ${memoVal}` : memoVal;
-      }
-    }
-    if (!rawDescription) {
-      throw new Error(`CSV row ${fileLineNumber} has empty description`);
-    }
-
-    let amountCents: number;
-
-    if (amountCol !== undefined) {
-      const amountStr = fields[amountCol]?.trim() ?? "";
-      if (!amountStr) {
-        throw new Error(`CSV row ${fileLineNumber} has empty amount`);
-      }
-      try {
-        amountCents = toCents(amountStr);
-      } catch (err) {
-        throw new Error(`CSV row ${fileLineNumber} has invalid amount "${amountStr}"`, {
-          cause: err,
-        });
-      }
-    } else {
-      // Debit/Credit columns
-      const parseOptionalCents = (val: string | undefined): number | null => {
-        if (!val) return null;
-        const trimmed = val.trim();
-        if (trimmed === "") return null;
-        try {
-          const cents = toCents(trimmed);
-          return cents !== 0 ? cents : null;
-        } catch {
-          return null;
-        }
-      };
-
-      const debitCents = debitCol !== undefined ? parseOptionalCents(fields[debitCol]) : null;
-      const creditCents = creditCol !== undefined ? parseOptionalCents(fields[creditCol]) : null;
-
-      if (debitCents !== null && creditCents !== null) {
-        const dVal = debitCol !== undefined ? fields[debitCol] : "";
-        const cVal = creditCol !== undefined ? fields[creditCol] : "";
+      if (fields.length <= maxRequiredCol) {
         throw new Error(
-          `CSV row ${fileLineNumber} has both debit and credit amounts: debit="${dVal}", credit="${cVal}"`,
+          `CSV row ${fileLineNumber} has fewer columns (${fields.length}) than required by mapping (${maxRequiredCol + 1})`,
         );
       }
-      if (debitCents === null && creditCents === null) {
-        throw new Error(`CSV row ${fileLineNumber} has neither debit nor credit amount`);
+
+      const dateVal = fields[dateCol]?.trim() ?? "";
+      if (!dateVal) {
+        throw new Error(`CSV row ${fileLineNumber} has empty date`);
+      }
+      const postedOn = parseDateWithFormat(dateVal, mapping.dateFormat, fileLineNumber);
+
+      let rawDescription = fields[descCol]?.trim() ?? "";
+      if (memoCol !== undefined && fields[memoCol]) {
+        const memoVal = fields[memoCol].trim();
+        if (memoVal && memoVal !== rawDescription) {
+          rawDescription = rawDescription ? `${rawDescription} ${memoVal}` : memoVal;
+        }
+      }
+      if (!rawDescription) {
+        throw new Error(`CSV row ${fileLineNumber} has empty description`);
       }
 
-      if (debitCents !== null) {
-        amountCents = -debitCents;
-      } else if (creditCents !== null) {
-        amountCents = creditCents;
+      let amountCents: number;
+
+      if (amountCol !== undefined) {
+        const amountStr = fields[amountCol]?.trim() ?? "";
+        if (!amountStr) {
+          throw new Error(`CSV row ${fileLineNumber} has empty amount`);
+        }
+        try {
+          amountCents = toCents(amountStr);
+        } catch (err) {
+          throw new Error(`CSV row ${fileLineNumber} has invalid amount "${amountStr}"`, {
+            cause: err,
+          });
+        }
       } else {
-        throw new Error(`CSV row ${fileLineNumber} has neither debit nor credit amount`);
+        // Debit/Credit columns
+        const parseOptionalCents = (
+          val: string | undefined,
+          colName: "debit" | "credit",
+        ): number | null => {
+          if (!val) return null;
+          const trimmed = val.trim();
+          if (trimmed === "") return null;
+          try {
+            const cents = toCents(trimmed);
+            return cents !== 0 ? cents : null;
+          } catch (err) {
+            throw new Error(
+              `CSV row ${fileLineNumber} has invalid ${colName} amount: "${trimmed}"`,
+              { cause: err },
+            );
+          }
+        };
+
+        const debitCents =
+          debitCol !== undefined ? parseOptionalCents(fields[debitCol], "debit") : null;
+        const creditCents =
+          creditCol !== undefined ? parseOptionalCents(fields[creditCol], "credit") : null;
+
+        if (debitCents !== null && creditCents !== null) {
+          const dVal = debitCol !== undefined ? fields[debitCol] : "";
+          const cVal = creditCol !== undefined ? fields[creditCol] : "";
+          throw new Error(
+            `CSV row ${fileLineNumber} has both debit and credit amounts: debit="${dVal}", credit="${cVal}"`,
+          );
+        }
+        if (debitCents === null && creditCents === null) {
+          throw new Error(`CSV row ${fileLineNumber} has neither debit nor credit amount`);
+        }
+
+        if (debitCents !== null) {
+          amountCents = -debitCents;
+        } else if (creditCents !== null) {
+          amountCents = creditCents;
+        } else {
+          throw new Error(`CSV row ${fileLineNumber} has neither debit nor credit amount`);
+        }
       }
-    }
 
-    if (mapping.signConvention === "inverted") {
-      amountCents = -amountCents;
-    }
-
-    let balanceCents: number | null = null;
-    if (balanceCol !== undefined && fields[balanceCol]?.trim()) {
-      try {
-        balanceCents = toCents(fields[balanceCol].trim());
-      } catch {
-        balanceCents = null;
+      if (mapping.signConvention === "inverted") {
+        amountCents = -amountCents;
       }
-    }
 
-    let externalId: string | null = null;
-    if (extIdCol !== undefined && fields[extIdCol]?.trim()) {
-      externalId = fields[extIdCol].trim();
-    }
+      let balanceCents: number | null = null;
+      if (balanceCol !== undefined && fields[balanceCol]?.trim()) {
+        try {
+          balanceCents = toCents(fields[balanceCol].trim());
+        } catch {
+          balanceCents = null;
+        }
+      }
 
-    rows.push({
-      rowNumber: fileLineNumber,
-      rawLine: line,
-      postedOn,
-      amountCents,
-      rawDescription,
-      externalId,
-      balanceCents,
-    });
+      let externalId: string | null = null;
+      if (extIdCol !== undefined && fields[extIdCol]?.trim()) {
+        externalId = fields[extIdCol].trim();
+      }
+
+      rows.push({
+        rowNumber: fileLineNumber,
+        rawLine: line,
+        postedOn,
+        amountCents,
+        rawDescription,
+        externalId,
+        balanceCents,
+      });
+    } catch (err) {
+      setAside.push({
+        rowNumber: fileLineNumber,
+        rawLine: line,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && setAside.length === 0) {
     throw new Error("Generic CSV statement contained no valid transaction rows");
   }
 
-  return rows;
+  return Object.assign([...rows], { rows, setAside });
 }
 
 export function createGenericCsvParser(mapping: CsvColumnMapping): StatementParser {
   return {
     format: "generic_csv",
-    parse(content: string): readonly ParsedStatementRow[] {
+    parse(content: string): StatementParseResult {
       return parseGenericCsv(content, mapping);
     },
   };

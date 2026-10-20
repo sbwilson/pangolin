@@ -1,4 +1,9 @@
-import type { ParsedStatementRow, StatementParser } from "@pangolin/app";
+import type {
+  ParsedStatementRow,
+  SetAsideStatementRow,
+  StatementParseResult,
+  StatementParser,
+} from "@pangolin/app";
 import { toCents } from "@pangolin/shared";
 import { parseCsvLine } from "./commbank-csv.ts";
 
@@ -24,7 +29,7 @@ function parseTimestampToIsoDate(timestampStr: string, rowNumber: number): strin
  * Parses FY2025 multi-bank CSV statement format:
  * Columns: Timestamp, Account, Amount, Description, Balance
  */
-export function parseFy2025MultiBankCsv(content: string): readonly ParsedStatementRow[] {
+export function parseFy2025MultiBankCsv(content: string): StatementParseResult {
   if (!content || typeof content !== "string") {
     throw new Error("CSV content is empty or not a string");
   }
@@ -39,6 +44,7 @@ export function parseFy2025MultiBankCsv(content: string): readonly ParsedStateme
   }
 
   const rows: ParsedStatementRow[] = [];
+  const setAside: SetAsideStatementRow[] = [];
   let fileLineNumber = 0;
 
   for (const line of lines) {
@@ -50,57 +56,65 @@ export function parseFy2025MultiBankCsv(content: string): readonly ParsedStateme
       continue;
     }
 
-    if (fields.length < 4) {
-      throw new Error(`CSV row ${fileLineNumber} has fewer than 4 columns: "${line}"`);
-    }
-
-    const postedOn = parseTimestampToIsoDate(firstCol, fileLineNumber);
-
-    const amountStr = fields[2]?.trim() ?? "";
-    let amountCents: number;
     try {
-      amountCents = toCents(amountStr);
+      if (fields.length < 4) {
+        throw new Error(`CSV row ${fileLineNumber} has fewer than 4 columns: "${line}"`);
+      }
+
+      const postedOn = parseTimestampToIsoDate(firstCol, fileLineNumber);
+
+      const amountStr = fields[2]?.trim() ?? "";
+      let amountCents: number;
+      try {
+        amountCents = toCents(amountStr);
+      } catch (err) {
+        throw new Error(`CSV row ${fileLineNumber} has invalid amount: "${amountStr}"`, {
+          cause: err,
+        });
+      }
+
+      const rawDescription = fields[3]?.trim() ?? "";
+      if (!rawDescription) {
+        throw new Error(`CSV row ${fileLineNumber} has empty description`);
+      }
+
+      let balanceCents: number | null = null;
+      if (fields.length >= 5 && fields[4]?.trim()) {
+        try {
+          balanceCents = toCents(fields[4].trim());
+        } catch {
+          balanceCents = null;
+        }
+      }
+
+      rows.push({
+        rowNumber: fileLineNumber,
+        rawLine: line,
+        postedOn,
+        amountCents,
+        rawDescription,
+        externalId: null,
+        balanceCents,
+      });
     } catch (err) {
-      throw new Error(`CSV row ${fileLineNumber} has invalid amount: "${amountStr}"`, {
-        cause: err,
+      setAside.push({
+        rowNumber: fileLineNumber,
+        rawLine: line,
+        reason: err instanceof Error ? err.message : String(err),
       });
     }
-
-    const rawDescription = fields[3]?.trim() ?? "";
-    if (!rawDescription) {
-      throw new Error(`CSV row ${fileLineNumber} has empty description`);
-    }
-
-    let balanceCents: number | null = null;
-    if (fields.length >= 5 && fields[4]?.trim()) {
-      try {
-        balanceCents = toCents(fields[4].trim());
-      } catch {
-        balanceCents = null;
-      }
-    }
-
-    rows.push({
-      rowNumber: fileLineNumber,
-      rawLine: line,
-      postedOn,
-      amountCents,
-      rawDescription,
-      externalId: null,
-      balanceCents,
-    });
   }
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && setAside.length === 0) {
     throw new Error("FY2025 multi-bank CSV statement contained no valid transaction rows");
   }
 
-  return rows;
+  return Object.assign([...rows], { rows, setAside });
 }
 
 export const fy2025MultiBankCsvParser: StatementParser = {
   format: "fy2025_multibank_csv",
-  parse(content: string): readonly ParsedStatementRow[] {
+  parse(content: string): StatementParseResult {
     return parseFy2025MultiBankCsv(content);
   },
 };

@@ -1,4 +1,9 @@
-import type { ParsedStatementRow, StatementParser } from "@pangolin/app";
+import type {
+  ParsedStatementRow,
+  SetAsideStatementRow,
+  StatementParseResult,
+  StatementParser,
+} from "@pangolin/app";
 import { toCents } from "@pangolin/shared";
 
 /**
@@ -33,7 +38,7 @@ export function parseCsvLine(line: string, delimiter = ","): string[] {
  * Parses CommBank CSV statement format:
  * Columns: Date (DD/MM/YYYY), Amount (signed decimal), Description, Balance (decimal)
  */
-export function parseCommBankCsv(content: string): readonly ParsedStatementRow[] {
+export function parseCommBankCsv(content: string): StatementParseResult {
   if (!content || typeof content !== "string") {
     throw new Error("CSV content is empty or not a string");
   }
@@ -46,8 +51,12 @@ export function parseCommBankCsv(content: string): readonly ParsedStatementRow[]
   if (lines.length === 0) {
     throw new Error("CSV content contains no rows");
   }
+  if (!lines.some((l) => parseCsvLine(l).length >= 2)) {
+    throw new Error("Unrecognised CSV format");
+  }
 
   const rows: ParsedStatementRow[] = [];
+  const setAside: SetAsideStatementRow[] = [];
   let fileLineNumber = 0;
 
   for (const line of lines) {
@@ -60,62 +69,70 @@ export function parseCommBankCsv(content: string): readonly ParsedStatementRow[]
       continue;
     }
 
-    if (fields.length < 3) {
-      throw new Error(`CSV row ${fileLineNumber} has fewer than 3 columns: "${line}"`);
-    }
-
-    const dateMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(firstCol);
-    if (!dateMatch?.[1] || !dateMatch[2] || !dateMatch[3]) {
-      throw new Error(`CSV row ${fileLineNumber} has invalid date format: "${firstCol}"`);
-    }
-
-    const day = dateMatch[1].padStart(2, "0");
-    const month = dateMatch[2].padStart(2, "0");
-    const year = dateMatch[3];
-    const postedOn = `${year}-${month}-${day}`;
-
-    const amountStr = fields[1]?.trim() ?? "";
-    let amountCents: number;
     try {
-      amountCents = toCents(amountStr);
+      if (fields.length < 3) {
+        throw new Error(`CSV row ${fileLineNumber} has fewer than 3 columns: "${line}"`);
+      }
+
+      const dateMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(firstCol);
+      if (!dateMatch?.[1] || !dateMatch[2] || !dateMatch[3]) {
+        throw new Error(`CSV row ${fileLineNumber} has invalid date format: "${firstCol}"`);
+      }
+
+      const day = dateMatch[1].padStart(2, "0");
+      const month = dateMatch[2].padStart(2, "0");
+      const year = dateMatch[3];
+      const postedOn = `${year}-${month}-${day}`;
+
+      const amountStr = fields[1]?.trim() ?? "";
+      let amountCents: number;
+      try {
+        amountCents = toCents(amountStr);
+      } catch (err) {
+        throw new Error(`CSV row ${fileLineNumber} has invalid amount: "${amountStr}"`, {
+          cause: err,
+        });
+      }
+
+      const rawDescription = fields[2]?.trim() ?? "";
+
+      let balanceCents: number | null = null;
+      if (fields.length >= 4 && fields[3]?.trim()) {
+        try {
+          balanceCents = toCents(fields[3].trim());
+        } catch {
+          balanceCents = null;
+        }
+      }
+
+      rows.push({
+        rowNumber: fileLineNumber,
+        rawLine: line,
+        postedOn,
+        amountCents,
+        rawDescription,
+        externalId: null,
+        balanceCents,
+      });
     } catch (err) {
-      throw new Error(`CSV row ${fileLineNumber} has invalid amount: "${amountStr}"`, {
-        cause: err,
+      setAside.push({
+        rowNumber: fileLineNumber,
+        rawLine: line,
+        reason: err instanceof Error ? err.message : String(err),
       });
     }
-
-    const rawDescription = fields[2]?.trim() ?? "";
-
-    let balanceCents: number | null = null;
-    if (fields.length >= 4 && fields[3]?.trim()) {
-      try {
-        balanceCents = toCents(fields[3].trim());
-      } catch {
-        balanceCents = null;
-      }
-    }
-
-    rows.push({
-      rowNumber: fileLineNumber,
-      rawLine: line,
-      postedOn,
-      amountCents,
-      rawDescription,
-      externalId: null,
-      balanceCents,
-    });
   }
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && setAside.length === 0) {
     throw new Error("CSV statement contained no valid transaction rows");
   }
 
-  return rows;
+  return Object.assign([...rows], { rows, setAside });
 }
 
 export const commbankCsvParser: StatementParser = {
   format: "commbank_csv",
-  parse(content: string): readonly ParsedStatementRow[] {
+  parse(content: string): StatementParseResult {
     return parseCommBankCsv(content);
   },
 };

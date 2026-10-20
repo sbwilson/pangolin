@@ -194,9 +194,12 @@ describe("CommBank CSV Parser", () => {
     expect(rows[0]?.rawDescription).toBe('Smith, Jones & "Co"');
   });
 
-  it("throws on empty or malformed CSV content", () => {
+  it("handles empty CSV and isolates malformed rows into setAside", () => {
     expect(() => parseCommBankCsv("")).toThrow();
-    expect(() => parseCommBankCsv("invalid date,not-an-amount")).toThrow();
+    const res = parseCommBankCsv("invalid date,not-an-amount");
+    expect(res.rows).toHaveLength(0);
+    expect(res.setAside).toHaveLength(1);
+    expect(res.setAside[0]?.reason).toMatch(/columns|date/i);
   });
 });
 
@@ -229,10 +232,21 @@ describe("ubank CSV Parser", () => {
     expect(rows[0]?.postedOn).toBe("2024-08-15");
   });
 
-  it("throws on malformed line or missing columns", () => {
-    expect(() => parseUbankCsv("Date,Description,Amount\n01/09/2024")).toThrow();
-    expect(() => parseUbankCsv("Date,Description,Amount\nnot-a-date,Desc,50.00")).toThrow();
-    expect(() => parseUbankCsv("Date,Description,Amount\n01/09/2024,,50.00")).toThrow();
+  it("isolates malformed line or missing columns into setAside", () => {
+    const res1 = parseUbankCsv("Date,Description,Amount\n01/09/2024");
+    expect(res1.rows).toHaveLength(0);
+    expect(res1.setAside).toHaveLength(1);
+    expect(res1.setAside[0]?.reason).toMatch(/columns/i);
+
+    const res2 = parseUbankCsv("Date,Description,Amount\nnot-a-date,Desc,50.00");
+    expect(res2.rows).toHaveLength(0);
+    expect(res2.setAside).toHaveLength(1);
+    expect(res2.setAside[0]?.reason).toMatch(/date/i);
+
+    const res3 = parseUbankCsv("Date,Description,Amount\n01/09/2024,,50.00");
+    expect(res3.rows).toHaveLength(0);
+    expect(res3.setAside).toHaveLength(1);
+    expect(res3.setAside[0]?.reason).toMatch(/description/i);
   });
 });
 
@@ -258,11 +272,14 @@ describe("Up CSV Parser", () => {
     expect(rows[1]?.amountCents).toBe(120000);
   });
 
-  it("throws on invalid settled date or empty content", () => {
+  it("throws on empty content and isolates invalid settled date into setAside", () => {
     expect(() => parseUpCsv("")).toThrow();
     const bad = `Time,Settled Date,Description,Amount,Status
 2024-09-01T08:00:00Z,invalid-date,"Desc",-10.00,SETTLED`;
-    expect(() => parseUpCsv(bad)).toThrow();
+    const res = parseUpCsv(bad);
+    expect(res.rows).toHaveLength(0);
+    expect(res.setAside).toHaveLength(1);
+    expect(res.setAside[0]?.reason).toMatch(/date/i);
   });
 });
 
@@ -322,9 +339,17 @@ PVALID
     expect(rows[0]?.rawDescription).toBe("VALID");
   });
 
-  it("throws on missing !Type header or missing date/amount", () => {
+  it("throws on missing !Type header and isolates missing date/amount into setAside", () => {
     expect(() => parseQif("D01/09/2024\nT-10.00\n^")).toThrow();
-    expect(() => parseQif("!Type:Bank\nT-10.00\n^")).toThrow();
+    const res = parseQif("!Type:Bank\nT-10.00\n^");
+    expect(res.rows).toHaveLength(0);
+    expect(res.setAside).toHaveLength(1);
+    expect(res.setAside[0]?.reason).toMatch(/date/i);
+
+    const res2 = parseQif("!Type:Bank\nPOnly Payee No Date Or Amount\n^");
+    expect(res2.rows).toHaveLength(0);
+    expect(res2.setAside).toHaveLength(1);
+    expect(res2.setAside[0]?.reason).toMatch(/date/i);
   });
 });
 
@@ -350,10 +375,13 @@ describe("FY2025 MultiBank CSV Parser", () => {
     expect(rows[1]?.balanceCents).toBe(250000);
   });
 
-  it("throws on invalid timestamp or amount", () => {
+  it("isolates invalid timestamp or amount into setAside", () => {
     const bad = `Timestamp,Account,Amount,Description,Balance
 bad-timestamp,Everyday,-45.00,"WOOLWORTHS",1000.00`;
-    expect(() => parseFy2025MultiBankCsv(bad)).toThrow();
+    const res = parseFy2025MultiBankCsv(bad);
+    expect(res.rows).toHaveLength(0);
+    expect(res.setAside).toHaveLength(1);
+    expect(res.setAside[0]?.reason).toMatch(/timestamp/i);
   });
 });
 
@@ -481,26 +509,39 @@ describe("Generic CSV Parser", () => {
     expect(rows[0]?.externalId).toBe("EXT123");
   });
 
-  it("throws when both debit and credit or neither are present in debit/credit mode", () => {
+  it("isolates rows when both debit and credit or neither are present in debit/credit mode", () => {
     const both = `Date,Description,Debit,Credit\n2024-09-01,Desc,50.00,50.00`;
-    expect(() =>
-      parseGenericCsv(both, {
-        date: "Date",
-        description: "Description",
-        debit: "Debit",
-        credit: "Credit",
-      }),
-    ).toThrow(/both/i);
+    const resBoth = parseGenericCsv(both, {
+      date: "Date",
+      description: "Description",
+      debit: "Debit",
+      credit: "Credit",
+    });
+    expect(resBoth.rows).toHaveLength(0);
+    expect(resBoth.setAside).toHaveLength(1);
+    expect(resBoth.setAside[0]?.reason).toMatch(/both/i);
 
     const neither = `Date,Description,Debit,Credit\n2024-09-01,Desc,,`;
-    expect(() =>
-      parseGenericCsv(neither, {
-        date: "Date",
-        description: "Description",
-        debit: "Debit",
-        credit: "Credit",
-      }),
-    ).toThrow(/neither/i);
+    const resNeither = parseGenericCsv(neither, {
+      date: "Date",
+      description: "Description",
+      debit: "Debit",
+      credit: "Credit",
+    });
+    expect(resNeither.rows).toHaveLength(0);
+    expect(resNeither.setAside).toHaveLength(1);
+    expect(resNeither.setAside[0]?.reason).toMatch(/neither/i);
+
+    const malformedDebit = `Date,Description,Debit,Credit\n2024-09-01,Desc,invalid-debit,50.00`;
+    const resMalformedDebit = parseGenericCsv(malformedDebit, {
+      date: "Date",
+      description: "Description",
+      debit: "Debit",
+      credit: "Credit",
+    });
+    expect(resMalformedDebit.rows).toHaveLength(0);
+    expect(resMalformedDebit.setAside).toHaveLength(1);
+    expect(resMalformedDebit.setAside[0]?.reason).toMatch(/invalid debit amount/i);
   });
 });
 
@@ -907,5 +948,92 @@ describe("importers integrated with importStatement", () => {
     expect(res.newCount).toBe(1);
     expect(uow.state.transactions).toHaveLength(1);
     expect(uow.state.transactions[0]?.amountCents).toBe(-1500);
+  });
+
+  describe("Partial Parsing across Statement Formats", () => {
+    it("isolates invalid CSV rows in CommBank CSV while parsing valid rows", () => {
+      const content = `Date,Amount,Description,Balance
+01/09/2024,-10.00,Coffee,100.00
+bad-date,-20.00,Lunch,80.00
+03/09/2024,not-an-amount,Dinner,60.00
+04/09/2024,50.00,Refund,110.00`;
+
+      const result = parseCommBankCsv(content);
+      expect(result.rows).toHaveLength(2);
+      expect(result.setAside).toHaveLength(2);
+      expect(result.rows[0]?.postedOn).toBe("2024-09-01");
+      expect(result.rows[1]?.postedOn).toBe("2024-09-04");
+      expect(result.setAside[0]?.rowNumber).toBe(3);
+      expect(result.setAside[0]?.reason).toMatch(/date/i);
+      expect(result.setAside[1]?.rowNumber).toBe(4);
+      expect(result.setAside[1]?.reason).toMatch(/amount/i);
+    });
+
+    it("isolates invalid STMTTRN in CommBank OFX while parsing valid transactions", () => {
+      const ofxContent = `OFXHEADER:100
+DATA:OFXSGML
+<OFX>
+<BANKMSGSRSV1>
+<STMTTRNRS>
+<STMTRS>
+<BANKTRANLIST>
+<STMTTRN>
+<TRNTYPE>DEBIT
+<DTPOSTED>20240901120000
+<TRNAMT>-25.00
+<FITID>VALID1
+<NAME>Supermarket
+</STMTTRN>
+<STMTTRN>
+<TRNTYPE>DEBIT
+<TRNAMT>-10.00
+<FITID>BAD1
+<NAME>Missing Date
+</STMTTRN>
+<STMTTRN>
+<TRNTYPE>CREDIT
+<DTPOSTED>20240902120000
+<TRNAMT>100.00
+<FITID>VALID2
+<NAME>Salary
+</STMTTRN>
+</BANKTRANLIST>
+</STMTRS>
+</STMTTRNRS>
+</BANKMSGSRSV1>
+</OFX>`;
+
+      const result = parseCommBankOfx(ofxContent);
+      expect(result.rows).toHaveLength(2);
+      expect(result.setAside).toHaveLength(1);
+      expect(result.rows[0]?.externalId).toBe("VALID1");
+      expect(result.rows[1]?.externalId).toBe("VALID2");
+      expect(result.setAside[0]?.rowNumber).toBe(2);
+      expect(result.setAside[0]?.reason).toMatch(/DTPOSTED/i);
+    });
+
+    it("isolates invalid QIF records while parsing valid records", () => {
+      const qifContent = `!Type:Bank
+D01/09/2024
+T-15.00
+PCoffee
+^
+D02/09/2024
+Tbad-amount
+PLunch
+^
+D03/09/2024
+T50.00
+PRefund
+^`;
+
+      const result = parseQif(qifContent);
+      expect(result.rows).toHaveLength(2);
+      expect(result.setAside).toHaveLength(1);
+      expect(result.rows[0]?.rawDescription).toBe("Coffee");
+      expect(result.rows[1]?.rawDescription).toBe("Refund");
+      expect(result.setAside[0]?.rowNumber).toBe(2);
+      expect(result.setAside[0]?.reason).toMatch(/amount/i);
+    });
   });
 });
