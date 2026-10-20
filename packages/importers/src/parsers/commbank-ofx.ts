@@ -8,8 +8,8 @@ function extractTag(block: string, tag: string): string | undefined {
 }
 
 export interface CommBankOfxResult {
-  readonly accountId?: string;
-  readonly closingBalanceCents?: number;
+  readonly accountId?: string | undefined;
+  readonly closingBalanceCents?: number | undefined;
   readonly rows: readonly ParsedStatementRow[];
 }
 
@@ -21,14 +21,20 @@ export function parseCommBankOfx(content: string): CommBankOfxResult {
     throw new Error("OFX content is empty or not a string");
   }
 
+  const cleanContent = content.replace(/^\uFEFF/, "");
+
   // Verify it contains basic OFX tags
-  if (!content.includes("<OFX>") && !content.includes("<ofx>") && !content.includes("OFXHEADER")) {
+  if (
+    !cleanContent.includes("<OFX>") &&
+    !cleanContent.includes("<ofx>") &&
+    !cleanContent.includes("OFXHEADER")
+  ) {
     throw new Error("Invalid OFX: missing OFX header or root element");
   }
 
-  const acctId = extractTag(content, "ACCTID");
+  const acctId = extractTag(cleanContent, "ACCTID");
 
-  const ledgerBalMatch = /<LEDGERBAL>([\s\S]*?)<\/LEDGERBAL>/i.exec(content);
+  const ledgerBalMatch = /<LEDGERBAL>([\s\S]*?)<\/LEDGERBAL>/i.exec(cleanContent);
   let closingBalanceCents: number | undefined;
   if (ledgerBalMatch?.[1]) {
     const balAmtStr = extractTag(ledgerBalMatch[1], "BALAMT");
@@ -41,7 +47,7 @@ export function parseCommBankOfx(content: string): CommBankOfxResult {
   const trnRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
   let rowNumber = 1;
 
-  for (const match of content.matchAll(trnRegex)) {
+  for (const match of cleanContent.matchAll(trnRegex)) {
     const block = match[1] ?? "";
     const rawLine = match[0].trim();
 

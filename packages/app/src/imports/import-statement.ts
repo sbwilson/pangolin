@@ -13,7 +13,11 @@ import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { idInput } from "../inputs.ts";
 import { privateOwner } from "../ledger/split-targets.ts";
-import type { ParsedStatementRow, StatementParser } from "../ports/statement-parser.ts";
+import type {
+  CsvColumnMapping,
+  ParsedStatementRow,
+  StatementParser,
+} from "../ports/statement-parser.ts";
 import type {
   ImportBatchRow,
   ImportBatchStatus,
@@ -23,11 +27,38 @@ import type {
 } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
 
+export const csvColumnMappingSchema = z
+  .object({
+    date: z.union([z.number().int().nonnegative(), z.string().min(1)]),
+    dateFormat: z.enum(["DD/MM/YYYY", "YYYY-MM-DD", "MM/DD/YYYY", "DD-MM-YYYY"]).optional(),
+    description: z.union([z.number().int().nonnegative(), z.string().min(1)]),
+    amount: z.union([z.number().int().nonnegative(), z.string().min(1)]).optional(),
+    debit: z.union([z.number().int().nonnegative(), z.string().min(1)]).optional(),
+    credit: z.union([z.number().int().nonnegative(), z.string().min(1)]).optional(),
+    balance: z.union([z.number().int().nonnegative(), z.string().min(1)]).optional(),
+    externalId: z.union([z.number().int().nonnegative(), z.string().min(1)]).optional(),
+    memo: z.union([z.number().int().nonnegative(), z.string().min(1)]).optional(),
+    signConvention: z.enum(["normal", "inverted"]).optional(),
+    hasHeader: z.boolean().optional(),
+    delimiter: z.string().length(1, "Delimiter must be a single character").optional(),
+  })
+  .strict();
+
 export const importStatementInput = z
   .object({
     accountId: idInput,
-    format: z.enum(["commbank_ofx", "commbank_csv"]),
+    format: z.enum([
+      "commbank_ofx",
+      "commbank_csv",
+      "commbank_qif",
+      "qif",
+      "ubank_csv",
+      "up_csv",
+      "fy2025_multibank_csv",
+      "generic_csv",
+    ]),
     content: z.string().min(1, "Statement content cannot be empty"),
+    csvMapping: csvColumnMappingSchema.optional(),
   })
   .strict();
 
@@ -46,7 +77,7 @@ export interface ImportStatementOptions {
   readonly parser?: StatementParser;
 }
 
-function parseCsvLine(line: string): string[] {
+function parseCsvLine(line: string, delimiter = ","): string[] {
   const fields: string[] = [];
   let current = "";
   let inQuotes = false;
@@ -59,7 +90,7 @@ function parseCsvLine(line: string): string[] {
       } else {
         inQuotes = !inQuotes;
       }
-    } else if (char === "," && !inQuotes) {
+    } else if (char === delimiter && !inQuotes) {
       fields.push(current);
       current = "";
     } else {
@@ -77,7 +108,12 @@ function extractTag(block: string, tag: string): string | undefined {
 }
 
 function parseBuiltinCommBankOfx(content: string): ParsedStatementRow[] {
-  if (!content.includes("<OFX>") && !content.includes("<ofx>") && !content.includes("OFXHEADER")) {
+  const cleanContent = content.replace(/^\uFEFF/, "");
+  if (
+    !cleanContent.includes("<OFX>") &&
+    !cleanContent.includes("<ofx>") &&
+    !cleanContent.includes("OFXHEADER")
+  ) {
     throw new Error("Invalid OFX: missing OFX header or root element");
   }
 
@@ -85,7 +121,7 @@ function parseBuiltinCommBankOfx(content: string): ParsedStatementRow[] {
   const trnRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
   let rowNumber = 1;
 
-  for (const match of content.matchAll(trnRegex)) {
+  for (const match of cleanContent.matchAll(trnRegex)) {
     const block = match[1] ?? "";
     const rawLine = match[0].trim();
 
@@ -135,7 +171,8 @@ function parseBuiltinCommBankOfx(content: string): ParsedStatementRow[] {
 }
 
 function parseBuiltinCommBankCsv(content: string): ParsedStatementRow[] {
-  const lines = content
+  const cleanContent = content.replace(/^\uFEFF/, "");
+  const lines = cleanContent
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
@@ -198,8 +235,549 @@ function parseBuiltinCommBankCsv(content: string): ParsedStatementRow[] {
   return rows;
 }
 
+function parseBuiltinUbankCsv(content: string): ParsedStatementRow[] {
+  const cleanContent = content.replace(/^\uFEFF/, "");
+  const lines = cleanContent
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  if (lines.length === 0) throw new Error("CSV statement is empty");
+
+  const rows: ParsedStatementRow[] = [];
+  let fileLineNumber = 0;
+
+  for (const line of lines) {
+    fileLineNumber += 1;
+    const fields = parseCsvLine(line);
+    const firstCol = fields[0]?.trim() ?? "";
+    if (firstCol.toLowerCase() === "date" || firstCol.toLowerCase() === '"date"') {
+      continue;
+    }
+    if (fields.length < 3) {
+      throw new Error(`CSV row ${fileLineNumber} has fewer than 3 columns`);
+    }
+
+    const ddmmyyyy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(firstCol);
+    const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(firstCol);
+    const ddmmyy = /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/.exec(firstCol);
+    let postedOn: string;
+    if (ddmmyyyy?.[1] && ddmmyyyy[2] && ddmmyyyy[3]) {
+      postedOn = `${ddmmyyyy[3]}-${ddmmyyyy[2].padStart(2, "0")}-${ddmmyyyy[1].padStart(2, "0")}`;
+    } else if (ymd?.[1] && ymd[2] && ymd[3]) {
+      postedOn = firstCol;
+    } else if (ddmmyy?.[1] && ddmmyy[2] && ddmmyy[3]) {
+      const yr = Number.parseInt(ddmmyy[3], 10);
+      const year = yr >= 70 ? `19${ddmmyy[3]}` : `20${ddmmyy[3]}`;
+      postedOn = `${year}-${ddmmyy[2].padStart(2, "0")}-${ddmmyy[1].padStart(2, "0")}`;
+    } else {
+      throw new Error(`CSV row ${fileLineNumber} has invalid date format: "${firstCol}"`);
+    }
+
+    const rawDescription = fields[1]?.trim() ?? "";
+    if (!rawDescription) {
+      throw new Error(`CSV row ${fileLineNumber} has empty description`);
+    }
+
+    const amountStr = fields[2]?.trim() ?? "";
+    let amountCents: number;
+    try {
+      amountCents = toCents(amountStr);
+    } catch (err) {
+      throw new Error(`CSV row ${fileLineNumber} has invalid amount: "${amountStr}"`, {
+        cause: err,
+      });
+    }
+
+    let balanceCents: number | null = null;
+    if (fields.length >= 4 && fields[3]?.trim()) {
+      try {
+        balanceCents = toCents(fields[3].trim());
+      } catch {
+        balanceCents = null;
+      }
+    }
+
+    rows.push({
+      rowNumber: fileLineNumber,
+      rawLine: line,
+      postedOn,
+      amountCents,
+      rawDescription,
+      externalId: null,
+      balanceCents,
+    });
+  }
+
+  if (rows.length === 0) {
+    throw new Error("CSV statement contained no valid transaction rows");
+  }
+
+  return rows;
+}
+
+function parseBuiltinUpCsv(content: string): ParsedStatementRow[] {
+  const cleanContent = content.replace(/^\uFEFF/, "");
+  const lines = cleanContent
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  if (lines.length === 0) throw new Error("CSV statement is empty");
+
+  const rows: ParsedStatementRow[] = [];
+  let fileLineNumber = 0;
+
+  for (const line of lines) {
+    fileLineNumber += 1;
+    const fields = parseCsvLine(line);
+    const firstCol = fields[0]?.trim() ?? "";
+    if (firstCol.toLowerCase() === "time" || firstCol.toLowerCase() === '"time"') {
+      continue;
+    }
+    if (fields.length < 4) {
+      throw new Error(`Up CSV row ${fileLineNumber} has fewer than 4 columns`);
+    }
+
+    const settledDateRaw = fields[1]?.trim() ?? "";
+    const status = fields[4]?.trim().toUpperCase();
+    if (!settledDateRaw || (status !== undefined && status !== "" && status !== "SETTLED")) {
+      continue;
+    }
+
+    let postedOn: string;
+    const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(settledDateRaw);
+    if (ymd?.[1] && ymd[2] && ymd[3]) {
+      postedOn = settledDateRaw;
+    } else {
+      const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(settledDateRaw);
+      if (dmy?.[1] && dmy[2] && dmy[3]) {
+        postedOn = `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+      } else {
+        throw new Error(
+          `Up CSV row ${fileLineNumber} has invalid settled date: "${settledDateRaw}"`,
+        );
+      }
+    }
+
+    const rawDescription = fields[2]?.trim() ?? "";
+    if (!rawDescription) {
+      throw new Error(`Up CSV row ${fileLineNumber} has empty description`);
+    }
+
+    let amountCents: number;
+    try {
+      amountCents = toCents(fields[3]?.trim() ?? "");
+    } catch (err) {
+      throw new Error(`Up CSV row ${fileLineNumber} has invalid amount: "${fields[3]}"`, {
+        cause: err,
+      });
+    }
+
+    rows.push({
+      rowNumber: fileLineNumber,
+      rawLine: line,
+      postedOn,
+      amountCents,
+      rawDescription,
+      externalId: null,
+      balanceCents: null,
+    });
+  }
+
+  if (rows.length === 0) {
+    throw new Error("Up CSV statement contained no valid transaction rows");
+  }
+
+  return rows;
+}
+
+function parseBuiltinQif(content: string): ParsedStatementRow[] {
+  const cleanContent = content.replace(/^\uFEFF/, "");
+  const trimmed = cleanContent.trim();
+  if (!trimmed.includes("!Type:")) {
+    throw new Error("Invalid QIF: missing !Type header");
+  }
+
+  const lines = cleanContent.split(/\r?\n/);
+  const rows: ParsedStatementRow[] = [];
+
+  let currentBlockLines: string[] = [];
+  let recordIndex = 0;
+  let dateRaw: string | null = null;
+  let amountRaw: string | null = null;
+  let payeeRaw: string | null = null;
+  let memoRaw: string | null = null;
+  let numberRaw: string | null = null;
+
+  const commitRecord = () => {
+    if (!dateRaw && !amountRaw) {
+      currentBlockLines = [];
+      payeeRaw = null;
+      memoRaw = null;
+      numberRaw = null;
+      return;
+    }
+    recordIndex += 1;
+    if (!dateRaw) throw new Error(`QIF record ${recordIndex} missing date`);
+    if (!amountRaw) throw new Error(`QIF record ${recordIndex} missing amount`);
+
+    const trimmedDate = dateRaw.trim();
+    let postedOn: string;
+    const dmy = /^(\d{1,2})[/'-](\d{1,2})[/'-](\d{2,4})$/.exec(trimmedDate);
+    const ymd = /^(\d{4})[/'-](\d{1,2})[/'-](\d{1,2})$/.exec(trimmedDate);
+    if (dmy?.[1] && dmy[2] && dmy[3]) {
+      const yr =
+        dmy[3].length === 2
+          ? Number.parseInt(dmy[3], 10) >= 70
+            ? `19${dmy[3]}`
+            : `20${dmy[3]}`
+          : dmy[3];
+      postedOn = `${yr}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+    } else if (ymd?.[1] && ymd[2] && ymd[3]) {
+      postedOn = `${ymd[1]}-${ymd[2].padStart(2, "0")}-${ymd[3].padStart(2, "0")}`;
+    } else {
+      throw new Error(`QIF record ${recordIndex} has invalid date: "${dateRaw}"`);
+    }
+
+    let amountCents: number;
+    try {
+      amountCents = toCents(amountRaw.replace(/,/g, ""));
+    } catch (err) {
+      throw new Error(`QIF record ${recordIndex} has invalid amount: "${amountRaw}"`, {
+        cause: err,
+      });
+    }
+
+    const payee = payeeRaw?.trim() ?? "";
+    const memo = memoRaw?.trim() ?? "";
+    let rawDescription = payee;
+    if (memo && memo !== payee) {
+      rawDescription = payee ? `${payee} ${memo}` : memo;
+    }
+    if (!rawDescription) rawDescription = "Transaction";
+
+    rows.push({
+      rowNumber: recordIndex,
+      rawLine: currentBlockLines.join("\n"),
+      postedOn,
+      amountCents,
+      rawDescription,
+      externalId: numberRaw?.trim() || null,
+      balanceCents: null,
+    });
+
+    currentBlockLines = [];
+    dateRaw = null;
+    amountRaw = null;
+    payeeRaw = null;
+    memoRaw = null;
+    numberRaw = null;
+  };
+
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+    if (!trimmedLine || trimmedLine.startsWith("!")) continue;
+    if (trimmedLine === "^") {
+      if (!dateRaw && !amountRaw) {
+        currentBlockLines = [];
+        payeeRaw = null;
+        memoRaw = null;
+        numberRaw = null;
+        continue;
+      }
+      currentBlockLines.push(line);
+      commitRecord();
+    } else {
+      currentBlockLines.push(line);
+      const code = trimmedLine[0];
+      const rest = trimmedLine.slice(1);
+      if (code === "D") dateRaw = rest;
+      else if (code === "T" || code === "U") {
+        if (!amountRaw) amountRaw = rest;
+      } else if (code === "P") payeeRaw = rest;
+      else if (code === "M") memoRaw = rest;
+      else if (code === "N") numberRaw = rest;
+    }
+  }
+
+  if (currentBlockLines.length > 0) {
+    commitRecord();
+  }
+
+  if (rows.length === 0) {
+    throw new Error("QIF statement contained no transaction rows");
+  }
+
+  return rows;
+}
+
+function parseBuiltinFy2025MultiBankCsv(content: string): ParsedStatementRow[] {
+  const cleanContent = content.replace(/^\uFEFF/, "");
+  const lines = cleanContent
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  if (lines.length === 0) throw new Error("CSV statement is empty");
+
+  const rows: ParsedStatementRow[] = [];
+  let fileLineNumber = 0;
+
+  for (const line of lines) {
+    fileLineNumber += 1;
+    const fields = parseCsvLine(line);
+    const firstCol = fields[0]?.trim() ?? "";
+    if (firstCol.toLowerCase() === "timestamp" || firstCol.toLowerCase() === '"timestamp"') {
+      continue;
+    }
+    if (fields.length < 4) {
+      throw new Error(`CSV row ${fileLineNumber} has fewer than 4 columns`);
+    }
+
+    let postedOn: string;
+    const ymd = /^(\d{4})-(\d{2})-(\d{2})/.exec(firstCol);
+    if (ymd?.[1] && ymd[2] && ymd[3]) {
+      postedOn = `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+    } else {
+      const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(firstCol);
+      if (dmy?.[1] && dmy[2] && dmy[3]) {
+        postedOn = `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+      } else {
+        throw new Error(`CSV row ${fileLineNumber} has invalid timestamp: "${firstCol}"`);
+      }
+    }
+
+    let amountCents: number;
+    try {
+      amountCents = toCents(fields[2]?.trim() ?? "");
+    } catch (err) {
+      throw new Error(`CSV row ${fileLineNumber} has invalid amount: "${fields[2]}"`, {
+        cause: err,
+      });
+    }
+
+    const rawDescription = fields[3]?.trim() ?? "";
+    if (!rawDescription) {
+      throw new Error(`CSV row ${fileLineNumber} has empty description`);
+    }
+
+    let balanceCents: number | null = null;
+    if (fields.length >= 5 && fields[4]?.trim()) {
+      try {
+        balanceCents = toCents(fields[4].trim());
+      } catch {
+        balanceCents = null;
+      }
+    }
+
+    rows.push({
+      rowNumber: fileLineNumber,
+      rawLine: line,
+      postedOn,
+      amountCents,
+      rawDescription,
+      externalId: null,
+      balanceCents,
+    });
+  }
+
+  if (rows.length === 0) {
+    throw new Error("CSV statement contained no valid transaction rows");
+  }
+
+  return rows;
+}
+
+function parseBuiltinGenericCsv(content: string, mapping: CsvColumnMapping): ParsedStatementRow[] {
+  const cleanContent = content.replace(/^\uFEFF/, "");
+  const delimiter = mapping.delimiter ?? ",";
+  const lines = cleanContent
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  if (lines.length === 0) throw new Error("CSV content contains no rows");
+
+  const hasStringKey =
+    typeof mapping.date === "string" ||
+    typeof mapping.description === "string" ||
+    typeof mapping.amount === "string" ||
+    typeof mapping.debit === "string" ||
+    typeof mapping.credit === "string" ||
+    typeof mapping.balance === "string" ||
+    typeof mapping.externalId === "string" ||
+    typeof mapping.memo === "string";
+
+  const hasHeader = mapping.hasHeader ?? Boolean(hasStringKey);
+  let headerRow: string[] = [];
+  let startIndex = 0;
+
+  if (hasHeader) {
+    headerRow = parseCsvLine(lines[0] ?? "", delimiter);
+    startIndex = 1;
+  }
+
+  const resolveCol = (col: number | string | undefined, name: string): number | undefined => {
+    if (col === undefined) return undefined;
+    if (typeof col === "number") return col;
+    if (!hasHeader) throw new Error(`Named column "${col}" for "${name}" requires hasHeader: true`);
+    const idx = headerRow.findIndex((h) => h.trim().toLowerCase() === col.trim().toLowerCase());
+    if (idx === -1) throw new Error(`Column "${col}" for "${name}" not found in CSV header`);
+    return idx;
+  };
+
+  const dateCol = resolveCol(mapping.date, "date");
+  if (dateCol === undefined) throw new Error('CsvColumnMapping must specify a "date" column');
+  const descCol = resolveCol(mapping.description, "description");
+  if (descCol === undefined)
+    throw new Error('CsvColumnMapping must specify a "description" column');
+  const amountCol = resolveCol(mapping.amount, "amount");
+  const debitCol = resolveCol(mapping.debit, "debit");
+  const creditCol = resolveCol(mapping.credit, "credit");
+  const balanceCol = resolveCol(mapping.balance, "balance");
+  const extIdCol = resolveCol(mapping.externalId, "externalId");
+  const memoCol = resolveCol(mapping.memo, "memo");
+
+  if (amountCol === undefined && debitCol === undefined && creditCol === undefined) {
+    throw new Error('CsvColumnMapping must specify either "amount" or "debit"/"credit" columns');
+  }
+
+  const rows: ParsedStatementRow[] = [];
+
+  for (let i = startIndex; i < lines.length; i++) {
+    const fileLineNumber = i + 1;
+    const line = lines[i];
+    if (!line) continue;
+
+    const fields = parseCsvLine(line, delimiter);
+    const maxCol = Math.max(dateCol, descCol, amountCol ?? -1, debitCol ?? -1, creditCol ?? -1);
+    if (fields.length <= maxCol) {
+      throw new Error(`CSV row ${fileLineNumber} has fewer columns than required by mapping`);
+    }
+
+    const dateVal = fields[dateCol]?.trim() ?? "";
+    if (!dateVal) throw new Error(`CSV row ${fileLineNumber} has empty date`);
+
+    let postedOn: string;
+    if (mapping.dateFormat === "YYYY-MM-DD") {
+      const match = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/.exec(dateVal);
+      if (!match?.[1] || !match[2] || !match[3])
+        throw new Error(`CSV row ${fileLineNumber} invalid date`);
+      postedOn = `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
+    } else if (mapping.dateFormat === "MM/DD/YYYY") {
+      const match = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/.exec(dateVal);
+      if (!match?.[1] || !match[2] || !match[3])
+        throw new Error(`CSV row ${fileLineNumber} invalid date`);
+      postedOn = `${match[3]}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}`;
+    } else {
+      const dmy = /^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})/.exec(dateVal);
+      const ymd = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/.exec(dateVal);
+      if (dmy?.[1] && dmy[2] && dmy[3]) {
+        const yr =
+          dmy[3].length === 2
+            ? Number.parseInt(dmy[3], 10) >= 70
+              ? `19${dmy[3]}`
+              : `20${dmy[3]}`
+            : dmy[3];
+        postedOn = `${yr}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+      } else if (ymd?.[1] && ymd[2] && ymd[3]) {
+        postedOn = `${ymd[1]}-${ymd[2].padStart(2, "0")}-${ymd[3].padStart(2, "0")}`;
+      } else {
+        throw new Error(`CSV row ${fileLineNumber} has unrecognised date format: "${dateVal}"`);
+      }
+    }
+
+    let rawDescription = fields[descCol]?.trim() ?? "";
+    if (memoCol !== undefined && fields[memoCol]) {
+      const memoVal = fields[memoCol].trim();
+      if (memoVal && memoVal !== rawDescription) {
+        rawDescription = rawDescription ? `${rawDescription} ${memoVal}` : memoVal;
+      }
+    }
+    if (!rawDescription) throw new Error(`CSV row ${fileLineNumber} has empty description`);
+
+    let amountCents: number;
+    if (amountCol !== undefined) {
+      const amountStr = fields[amountCol]?.trim() ?? "";
+      if (!amountStr) throw new Error(`CSV row ${fileLineNumber} has empty amount`);
+      try {
+        amountCents = toCents(amountStr);
+      } catch (err) {
+        throw new Error(`CSV row ${fileLineNumber} has invalid amount: "${amountStr}"`, {
+          cause: err,
+        });
+      }
+    } else {
+      const parseOptionalCents = (val: string | undefined): number | null => {
+        if (!val) return null;
+        const trimmed = val.trim();
+        if (trimmed === "") return null;
+        try {
+          const cents = toCents(trimmed);
+          return cents !== 0 ? cents : null;
+        } catch {
+          return null;
+        }
+      };
+
+      const debitCents = debitCol !== undefined ? parseOptionalCents(fields[debitCol]) : null;
+      const creditCents = creditCol !== undefined ? parseOptionalCents(fields[creditCol]) : null;
+
+      if (debitCents !== null && creditCents !== null) {
+        const dVal = debitCol !== undefined ? fields[debitCol] : "";
+        const cVal = creditCol !== undefined ? fields[creditCol] : "";
+        throw new Error(
+          `CSV row ${fileLineNumber} has both debit and credit amounts: debit="${dVal}", credit="${cVal}"`,
+        );
+      }
+      if (debitCents === null && creditCents === null) {
+        throw new Error(`CSV row ${fileLineNumber} has neither debit nor credit amount`);
+      }
+
+      if (debitCents !== null) {
+        amountCents = -debitCents;
+      } else if (creditCents !== null) {
+        amountCents = creditCents;
+      } else {
+        throw new Error(`CSV row ${fileLineNumber} has neither debit nor credit amount`);
+      }
+    }
+
+    if (mapping.signConvention === "inverted") {
+      amountCents = -amountCents;
+    }
+
+    let balanceCents: number | null = null;
+    if (balanceCol !== undefined && fields[balanceCol]?.trim()) {
+      try {
+        balanceCents = toCents(fields[balanceCol].trim());
+      } catch {
+        balanceCents = null;
+      }
+    }
+
+    let externalId: string | null = null;
+    if (extIdCol !== undefined && fields[extIdCol]?.trim()) {
+      externalId = fields[extIdCol].trim();
+    }
+
+    rows.push({
+      rowNumber: fileLineNumber,
+      rawLine: line,
+      postedOn,
+      amountCents,
+      rawDescription,
+      externalId,
+      balanceCents,
+    });
+  }
+
+  if (rows.length === 0) {
+    throw new Error("Generic CSV statement contained no valid transaction rows");
+  }
+
+  return rows;
+}
+
 /**
- * Imports a bank statement file (CommBank OFX or CSV) into an account.
+ * Imports a bank statement file (CommBank OFX, CSV, QIF, ubank, Up, FY2025, or generic CSV) into an account.
  * Stages batch and rows in `import_batch` and `import_row`, deduplicates rows against
  * ledger (accounting for occurrence counts among same-day identical transactions and external IDs),
  * and commits new transactions and full splits idempotently (AD-1, AD-12, AD-20).
@@ -220,6 +798,19 @@ export function importStatement(
       parsedRows = parseBuiltinCommBankOfx(parsed.content);
     } else if (parsed.format === "commbank_csv") {
       parsedRows = parseBuiltinCommBankCsv(parsed.content);
+    } else if (parsed.format === "commbank_qif" || parsed.format === "qif") {
+      parsedRows = parseBuiltinQif(parsed.content);
+    } else if (parsed.format === "ubank_csv") {
+      parsedRows = parseBuiltinUbankCsv(parsed.content);
+    } else if (parsed.format === "up_csv") {
+      parsedRows = parseBuiltinUpCsv(parsed.content);
+    } else if (parsed.format === "fy2025_multibank_csv") {
+      parsedRows = parseBuiltinFy2025MultiBankCsv(parsed.content);
+    } else if (parsed.format === "generic_csv") {
+      if (!parsed.csvMapping) {
+        throw new Error("Generic CSV format requires csvMapping configuration");
+      }
+      parsedRows = parseBuiltinGenericCsv(parsed.content, parsed.csvMapping);
     } else {
       throw new Error(`Unsupported format: ${parsed.format}`);
     }

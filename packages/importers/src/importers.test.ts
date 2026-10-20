@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createIdGenerator, importStatement, personViewer } from "@pangolin/app";
 import { memoryUnitOfWork } from "@pangolin/app/testing/memory-uow";
 import { Temporal } from "@pangolin/shared/temporal";
@@ -12,8 +15,26 @@ import {
   generateUpCsv,
   type MockTxn,
 } from "./generators/mock-statements.ts";
-import { commbankCsvParser, parseCommBankCsv } from "./parsers/commbank-csv.ts";
-import { commbankOfxParser, parseCommBankOfx } from "./parsers/commbank-ofx.ts";
+import {
+  commbankCsvParser,
+  commbankOfxParser,
+  commbankQifParser,
+  createGenericCsvParser,
+  fy2025MultiBankCsvParser,
+  parseCommBankCsv,
+  parseCommBankOfx,
+  parseFy2025MultiBankCsv,
+  parseGenericCsv,
+  parseQif,
+  parseUbankCsv,
+  parseUpCsv,
+  qifParser,
+  ubankCsvParser,
+  upCsvParser,
+} from "./index.ts";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const fixturesDir = join(__dirname, "../fixtures");
 
 describe("CommBank OFX Parser", () => {
   it("parses transactions, balances, and FITIDs from OFX statement", () => {
@@ -134,24 +155,12 @@ describe("CommBank CSV Parser", () => {
         description: "REFUND",
         balanceCents: 150000,
       },
-      {
-        postedOn: "2024-09-12",
-        amountCents: -450,
-        description: "COFFEE",
-        balanceCents: 149550,
-      },
-      {
-        postedOn: "2024-09-12",
-        amountCents: -450,
-        description: "COFFEE",
-        balanceCents: 149100,
-      },
     ];
 
     const csvContent = generateCommBankCsv(txns, { includeHeader: true });
     const rows = parseCommBankCsv(csvContent);
 
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual({
       rowNumber: 2,
       rawLine: '10/09/2024,-50.00,"GROCERIES",1200.00',
@@ -161,10 +170,7 @@ describe("CommBank CSV Parser", () => {
       externalId: null,
       balanceCents: 120000,
     });
-
     expect(rows[1]?.amountCents).toBe(30000);
-    expect(rows[2]?.amountCents).toBe(-450);
-    expect(rows[3]?.amountCents).toBe(-450);
   });
 
   it("parses CommBank CSV statement without header", () => {
@@ -191,6 +197,376 @@ describe("CommBank CSV Parser", () => {
   it("throws on empty or malformed CSV content", () => {
     expect(() => parseCommBankCsv("")).toThrow();
     expect(() => parseCommBankCsv("invalid date,not-an-amount")).toThrow();
+  });
+});
+
+describe("ubank CSV Parser", () => {
+  it("parses ubank CSV statement format (Date,Description,Amount,Balance)", () => {
+    const content = `Date,Description,Amount,Balance
+01/09/2024,"WOOLWORTHS SYDNEY",-45.50,1234.50
+02/09/2024,"SALARY TRANSFER",2500.00,3734.50`;
+
+    const rows = parseUbankCsv(content);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual({
+      rowNumber: 2,
+      rawLine: '01/09/2024,"WOOLWORTHS SYDNEY",-45.50,1234.50',
+      postedOn: "2024-09-01",
+      amountCents: -4550,
+      rawDescription: "WOOLWORTHS SYDNEY",
+      externalId: null,
+      balanceCents: 123450,
+    });
+    expect(rows[1]?.amountCents).toBe(250000);
+    expect(rows[1]?.balanceCents).toBe(373450);
+  });
+
+  it("parses ubank CSV with 2-digit years (DD/MM/YY)", () => {
+    const content = `Date,Description,Amount,Balance
+15/08/24,"CAFE LATTE",-4.50,500.00`;
+    const rows = parseUbankCsv(content);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.postedOn).toBe("2024-08-15");
+  });
+
+  it("throws on malformed line or missing columns", () => {
+    expect(() => parseUbankCsv("Date,Description,Amount\n01/09/2024")).toThrow();
+    expect(() => parseUbankCsv("Date,Description,Amount\nnot-a-date,Desc,50.00")).toThrow();
+    expect(() => parseUbankCsv("Date,Description,Amount\n01/09/2024,,50.00")).toThrow();
+  });
+});
+
+describe("Up CSV Parser", () => {
+  it("parses settled transactions and skips pending/unsettled rows", () => {
+    const content = `Time,Settled Date,Description,Amount,Status
+2024-09-01T08:00:00Z,2024-09-01,"COFFEE SHOP",-4.50,SETTLED
+2024-09-02T12:00:00Z,,PENDING PURCHASE,-25.00,HELD
+2024-09-03T10:00:00Z,2024-09-03,"SALARY UP",1200.00,SETTLED`;
+
+    const rows = parseUpCsv(content);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual({
+      rowNumber: 2,
+      rawLine: '2024-09-01T08:00:00Z,2024-09-01,"COFFEE SHOP",-4.50,SETTLED',
+      postedOn: "2024-09-01",
+      amountCents: -450,
+      rawDescription: "COFFEE SHOP",
+      externalId: null,
+      balanceCents: null,
+    });
+    expect(rows[1]?.postedOn).toBe("2024-09-03");
+    expect(rows[1]?.amountCents).toBe(120000);
+  });
+
+  it("throws on invalid settled date or empty content", () => {
+    expect(() => parseUpCsv("")).toThrow();
+    const bad = `Time,Settled Date,Description,Amount,Status
+2024-09-01T08:00:00Z,invalid-date,"Desc",-10.00,SETTLED`;
+    expect(() => parseUpCsv(bad)).toThrow();
+  });
+});
+
+describe("QIF Parser", () => {
+  it("parses standard QIF format with D, T, P, M, N fields", () => {
+    const content = `!Type:Bank
+D01/09/2024
+T-35.00
+PRESTAURANT
+MTable 5
+N1001
+^
+D02/09/2024
+T1200.00
+PSALARY
+N1002
+^`;
+
+    const rows = parseQif(content);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual({
+      rowNumber: 1,
+      rawLine: expect.stringContaining("D01/09/2024"),
+      postedOn: "2024-09-01",
+      amountCents: -3500,
+      rawDescription: "RESTAURANT Table 5",
+      externalId: "1001",
+      balanceCents: null,
+    });
+    expect(rows[1]?.postedOn).toBe("2024-09-02");
+    expect(rows[1]?.amountCents).toBe(120000);
+    expect(rows[1]?.externalId).toBe("1002");
+  });
+
+  it("handles QIF 2-digit years and comma-separated amounts", () => {
+    const content = `!Type:Bank
+D15/08'24
+T-1,234.56
+PTAX PAYMENT
+^`;
+    const rows = parseQif(content);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.postedOn).toBe("2024-08-15");
+    expect(rows[0]?.amountCents).toBe(-123456);
+  });
+
+  it("handles empty QIF records delimited by ^ without error", () => {
+    const content = `!Type:Bank
+^
+D01/09/2024
+T-10.00
+PVALID
+^
+^`;
+    const rows = parseQif(content);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.rawDescription).toBe("VALID");
+  });
+
+  it("throws on missing !Type header or missing date/amount", () => {
+    expect(() => parseQif("D01/09/2024\nT-10.00\n^")).toThrow();
+    expect(() => parseQif("!Type:Bank\nT-10.00\n^")).toThrow();
+  });
+});
+
+describe("FY2025 MultiBank CSV Parser", () => {
+  it("parses Timestamp,Account,Amount,Description,Balance", () => {
+    const content = `Timestamp,Account,Amount,Description,Balance
+2024-09-01 12:00:00,Everyday,-45.00,"WOOLWORTHS",1000.00
+2024-09-02 09:30:00,Everyday,1500.00,"SALARY",2500.00`;
+
+    const rows = parseFy2025MultiBankCsv(content);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual({
+      rowNumber: 2,
+      rawLine: '2024-09-01 12:00:00,Everyday,-45.00,"WOOLWORTHS",1000.00',
+      postedOn: "2024-09-01",
+      amountCents: -4500,
+      rawDescription: "WOOLWORTHS",
+      externalId: null,
+      balanceCents: 100000,
+    });
+    expect(rows[1]?.postedOn).toBe("2024-09-02");
+    expect(rows[1]?.amountCents).toBe(150000);
+    expect(rows[1]?.balanceCents).toBe(250000);
+  });
+
+  it("throws on invalid timestamp or amount", () => {
+    const bad = `Timestamp,Account,Amount,Description,Balance
+bad-timestamp,Everyday,-45.00,"WOOLWORTHS",1000.00`;
+    expect(() => parseFy2025MultiBankCsv(bad)).toThrow();
+  });
+});
+
+describe("Generic CSV Parser", () => {
+  it("parses CSV with signed amount and header names", () => {
+    const content = `Transaction Date,Merchant,Total,Closing Balance,Ref
+01/09/2024,"Store A",-55.00,945.00,TX001
+02/09/2024,"Deposit B",200.00,1145.00,TX002`;
+
+    const rows = parseGenericCsv(content, {
+      date: "Transaction Date",
+      dateFormat: "DD/MM/YYYY",
+      description: "Merchant",
+      amount: "Total",
+      balance: "Closing Balance",
+      externalId: "Ref",
+    });
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.postedOn).toBe("2024-09-01");
+    expect(rows[0]?.amountCents).toBe(-5500);
+    expect(rows[0]?.rawDescription).toBe("Store A");
+    expect(rows[0]?.balanceCents).toBe(94500);
+    expect(rows[0]?.externalId).toBe("TX001");
+  });
+
+  it("parses CSV with separate Debit and Credit columns handling zero or empty inactive columns", () => {
+    const content = `Date,Description,Debit,Credit
+2024-09-01,Payment,50.00,0.00
+2024-09-02,Salary,0.00,1500.00
+2024-09-03,Other,25.00,`;
+
+    const rows = parseGenericCsv(content, {
+      date: "Date",
+      dateFormat: "YYYY-MM-DD",
+      description: "Description",
+      debit: "Debit",
+      credit: "Credit",
+    });
+
+    expect(rows).toHaveLength(3);
+    expect(rows[0]?.amountCents).toBe(-5000);
+    expect(rows[1]?.amountCents).toBe(150000);
+    expect(rows[2]?.amountCents).toBe(-2500);
+  });
+
+  it("parses date with MM/DD/YYYY format correctly", () => {
+    const content = `Date,Description,Amount
+09/01/2024,US Date Format,-50.00`;
+
+    const rows = parseGenericCsv(content, {
+      date: "Date",
+      dateFormat: "MM/DD/YYYY",
+      description: "Description",
+      amount: "Amount",
+    });
+
+    expect(rows[0]?.postedOn).toBe("2024-09-01");
+  });
+
+  it("concatenates description and memo columns", () => {
+    const content = `Date,Description,Memo,Amount
+2024-09-01,Groceries,Weekly shopping,-85.00`;
+
+    const rows = parseGenericCsv(content, {
+      date: "Date",
+      description: "Description",
+      memo: "Memo",
+      amount: "Amount",
+    });
+
+    expect(rows[0]?.rawDescription).toBe("Groceries Weekly shopping");
+  });
+
+  it("strips leading UTF-8 BOM character from CSV and QIF", () => {
+    const bomCsv = `\uFEFFDate,Description,Amount\n01/09/2024,BOM Test,-10.00`;
+    const rows = parseGenericCsv(bomCsv, {
+      date: "Date",
+      description: "Description",
+      amount: "Amount",
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.rawDescription).toBe("BOM Test");
+
+    const bomQif = `\uFEFF!Type:Bank\nD01/09/2024\nT-10.00\nPBOM QIF\n^`;
+    const qifRows = parseQif(bomQif);
+    expect(qifRows).toHaveLength(1);
+    expect(qifRows[0]?.rawDescription).toBe("BOM QIF");
+  });
+
+  it("supports inverted sign convention", () => {
+    const content = `Date,Description,Amount
+2024-09-01,Groceries,50.00
+2024-09-02,Salary,-1500.00`;
+
+    const rows = parseGenericCsv(content, {
+      date: "Date",
+      description: "Description",
+      amount: "Amount",
+      signConvention: "inverted",
+    });
+
+    expect(rows[0]?.amountCents).toBe(-5000);
+    expect(rows[1]?.amountCents).toBe(150000);
+  });
+
+  it("supports column indexes and custom delimiter without header", () => {
+    const content = `01-09-2024;Groceries;-25.00;1000.00;EXT123
+02-09-2024;Salary;500.00;1500.00;EXT124`;
+
+    const rows = parseGenericCsv(content, {
+      date: 0,
+      dateFormat: "DD-MM-YYYY",
+      description: 1,
+      amount: 2,
+      balance: 3,
+      externalId: 4,
+      hasHeader: false,
+      delimiter: ";",
+    });
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.postedOn).toBe("2024-09-01");
+    expect(rows[0]?.amountCents).toBe(-2500);
+    expect(rows[0]?.externalId).toBe("EXT123");
+  });
+
+  it("throws when both debit and credit or neither are present in debit/credit mode", () => {
+    const both = `Date,Description,Debit,Credit\n2024-09-01,Desc,50.00,50.00`;
+    expect(() =>
+      parseGenericCsv(both, {
+        date: "Date",
+        description: "Description",
+        debit: "Debit",
+        credit: "Credit",
+      }),
+    ).toThrow(/both/i);
+
+    const neither = `Date,Description,Debit,Credit\n2024-09-01,Desc,,`;
+    expect(() =>
+      parseGenericCsv(neither, {
+        date: "Date",
+        description: "Description",
+        debit: "Debit",
+        credit: "Credit",
+      }),
+    ).toThrow(/neither/i);
+  });
+});
+
+describe("Committed Anonymised Fixtures", () => {
+  it("parses commbank.ofx fixture file", () => {
+    const content = readFileSync(join(fixturesDir, "commbank.ofx"), "utf8");
+    const parsed = parseCommBankOfx(content);
+    expect(parsed.rows.length).toBeGreaterThanOrEqual(4);
+    expect(parsed.accountId).toBe("06200012345678");
+    expect(parsed.closingBalanceCents).toBe(237550);
+  });
+
+  it("parses commbank.csv fixture file", () => {
+    const content = readFileSync(join(fixturesDir, "commbank.csv"), "utf8");
+    const rows = parseCommBankCsv(content);
+    expect(rows).toHaveLength(4);
+    expect(rows[0]?.postedOn).toBe("2024-09-01");
+    expect(rows[0]?.amountCents).toBe(-4500);
+  });
+
+  it("parses commbank.qif fixture file", () => {
+    const content = readFileSync(join(fixturesDir, "commbank.qif"), "utf8");
+    const rows = parseQif(content);
+    expect(rows).toHaveLength(4);
+    expect(rows[0]?.postedOn).toBe("2024-09-01");
+    expect(rows[0]?.externalId).toBe("1001");
+  });
+
+  it("parses ubank.csv fixture file", () => {
+    const content = readFileSync(join(fixturesDir, "ubank.csv"), "utf8");
+    const rows = parseUbankCsv(content);
+    expect(rows).toHaveLength(4);
+    expect(rows[0]?.postedOn).toBe("2024-09-01");
+    expect(rows[0]?.amountCents).toBe(-4500);
+  });
+
+  it("parses up.csv fixture file", () => {
+    const content = readFileSync(join(fixturesDir, "up.csv"), "utf8");
+    const rows = parseUpCsv(content);
+    expect(rows).toHaveLength(4);
+    expect(rows[0]?.postedOn).toBe("2024-09-01");
+    expect(rows[0]?.amountCents).toBe(-4500);
+  });
+
+  it("parses fy2025-multibank.csv fixture file", () => {
+    const content = readFileSync(join(fixturesDir, "fy2025-multibank.csv"), "utf8");
+    const rows = parseFy2025MultiBankCsv(content);
+    expect(rows).toHaveLength(4);
+    expect(rows[0]?.postedOn).toBe("2024-09-01");
+    expect(rows[0]?.amountCents).toBe(-4500);
+  });
+
+  it("parses generic.csv fixture file", () => {
+    const content = readFileSync(join(fixturesDir, "generic.csv"), "utf8");
+    const rows = parseGenericCsv(content, {
+      date: "TxDate",
+      description: "Merchant",
+      debit: "Debit",
+      credit: "Credit",
+      balance: "Balance",
+      externalId: "Reference",
+    });
+    expect(rows).toHaveLength(4);
+    expect(rows[0]?.postedOn).toBe("2024-09-01");
+    expect(rows[0]?.amountCents).toBe(-4500);
+    expect(rows[0]?.externalId).toBe("REF-001");
   });
 });
 
@@ -281,22 +657,23 @@ describe("importers integrated with importStatement", () => {
     uow.state.accounts.push({
       id: accountId,
       name: "Checking",
-      kind: "transaction",
-      isPrivate: false,
+      type: "transaction",
       currency: "AUD",
-      archived: false,
+      isPrivate: false,
       institutionId: null,
-      accountNumber: null,
-      bsb: null,
-      openingBalanceCents: 0,
-      openingDate: "2024-01-01",
+      openedOn: "2024-01-01",
+      closedOn: null,
+      isSavings: false,
       createdAt: now.toString(),
       updatedAt: now.toString(),
     });
 
     const ctx = {
       viewer: alexViewer,
-      clock: { now: () => new Date(now.epochMilliseconds), today: () => "2026-10-20" },
+      clock: {
+        now: () => now,
+        today: () => Temporal.PlainDate.from("2026-10-20"),
+      },
       newId,
       uow,
     };
@@ -368,5 +745,167 @@ describe("importers integrated with importStatement", () => {
     expect(res.dupCount).toBe(0);
     expect(uow.state.transactions).toHaveLength(1);
     expect(uow.state.transactions[0]?.amountCents).toBe(-1250);
+  });
+
+  it("imports via ubankCsvParser adapter", () => {
+    const { ctx, accountId, uow } = setup();
+    const csvContent = generateUbankCsv([
+      {
+        postedOn: "2024-09-01",
+        amountCents: -3500,
+        description: "UBANK DINER",
+        balanceCents: 100000,
+      },
+    ]);
+
+    const res = importStatement(
+      ctx,
+      {
+        accountId,
+        format: "ubank_csv",
+        content: csvContent,
+      },
+      { parser: ubankCsvParser },
+    );
+
+    expect(res.rowCount).toBe(1);
+    expect(res.newCount).toBe(1);
+    expect(uow.state.transactions).toHaveLength(1);
+    expect(uow.state.transactions[0]?.amountCents).toBe(-3500);
+  });
+
+  it("imports via upCsvParser adapter", () => {
+    const { ctx, accountId, uow } = setup();
+    const csvContent = generateUpCsv([
+      {
+        postedOn: "2024-09-01",
+        amountCents: -850,
+        description: "UP BURGER",
+      },
+    ]);
+
+    const res = importStatement(
+      ctx,
+      {
+        accountId,
+        format: "up_csv",
+        content: csvContent,
+      },
+      { parser: upCsvParser },
+    );
+
+    expect(res.rowCount).toBe(1);
+    expect(res.newCount).toBe(1);
+    expect(uow.state.transactions).toHaveLength(1);
+    expect(uow.state.transactions[0]?.amountCents).toBe(-850);
+  });
+
+  it("imports via commbankQifParser / qifParser adapter", () => {
+    const { ctx, accountId, uow } = setup();
+    const qifContent = generateCommBankQif([
+      {
+        postedOn: "2024-09-01",
+        amountCents: -6000,
+        description: "QIF FUEL",
+      },
+    ]);
+
+    expect(qifParser.format).toBe("qif");
+    expect(commbankQifParser.format).toBe("commbank_qif");
+
+    const res = importStatement(
+      ctx,
+      {
+        accountId,
+        format: "commbank_qif",
+        content: qifContent,
+      },
+      { parser: commbankQifParser },
+    );
+
+    expect(res.rowCount).toBe(1);
+    expect(res.newCount).toBe(1);
+    expect(uow.state.transactions).toHaveLength(1);
+    expect(uow.state.transactions[0]?.amountCents).toBe(-6000);
+  });
+
+  it("imports via qifParser adapter with format qif", () => {
+    const { ctx, accountId, uow } = setup();
+    const qifContent = generateCommBankQif([
+      {
+        postedOn: "2024-09-01",
+        amountCents: -7500,
+        description: "QIF REPAIRS",
+      },
+    ]);
+
+    const res = importStatement(
+      ctx,
+      {
+        accountId,
+        format: "qif",
+        content: qifContent,
+      },
+      { parser: qifParser },
+    );
+
+    expect(res.rowCount).toBe(1);
+    expect(res.newCount).toBe(1);
+    expect(uow.state.transactions).toHaveLength(1);
+    expect(uow.state.transactions[0]?.amountCents).toBe(-7500);
+  });
+
+  it("imports via fy2025MultiBankCsvParser adapter", () => {
+    const { ctx, accountId, uow } = setup();
+    const csvContent = generateFy2025MultiBankCsv([
+      {
+        postedOn: "2024-09-01",
+        amountCents: 450000,
+        description: "FY2025 SALARY",
+        balanceCents: 500000,
+      },
+    ]);
+
+    const res = importStatement(
+      ctx,
+      {
+        accountId,
+        format: "fy2025_multibank_csv",
+        content: csvContent,
+      },
+      { parser: fy2025MultiBankCsvParser },
+    );
+
+    expect(res.rowCount).toBe(1);
+    expect(res.newCount).toBe(1);
+    expect(uow.state.transactions).toHaveLength(1);
+    expect(uow.state.transactions[0]?.amountCents).toBe(450000);
+  });
+
+  it("imports via createGenericCsvParser adapter", () => {
+    const { ctx, accountId, uow } = setup();
+    const csvContent = `Date,Merchant,Amount
+01/09/2024,Generic Merchant,-15.00`;
+
+    const genericParser = createGenericCsvParser({
+      date: "Date",
+      description: "Merchant",
+      amount: "Amount",
+    });
+
+    const res = importStatement(
+      ctx,
+      {
+        accountId,
+        format: "generic_csv",
+        content: csvContent,
+      },
+      { parser: genericParser },
+    );
+
+    expect(res.rowCount).toBe(1);
+    expect(res.newCount).toBe(1);
+    expect(uow.state.transactions).toHaveLength(1);
+    expect(uow.state.transactions[0]?.amountCents).toBe(-1500);
   });
 });

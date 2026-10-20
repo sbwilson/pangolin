@@ -4,7 +4,7 @@ import { toCents } from "@pangolin/shared";
 /**
  * Splits an RFC-4180 CSV line into fields, handling quotes and escaped quotes.
  */
-export function parseCsvLine(line: string): string[] {
+export function parseCsvLine(line: string, delimiter = ","): string[] {
   const fields: string[] = [];
   let current = "";
   let inQuotes = false;
@@ -18,7 +18,7 @@ export function parseCsvLine(line: string): string[] {
       } else {
         inQuotes = !inQuotes;
       }
-    } else if (char === "," && !inQuotes) {
+    } else if (char === delimiter && !inQuotes) {
       fields.push(current);
       current = "";
     } else {
@@ -38,7 +38,8 @@ export function parseCommBankCsv(content: string): readonly ParsedStatementRow[]
     throw new Error("CSV content is empty or not a string");
   }
 
-  const lines = content
+  const cleanContent = content.replace(/^\uFEFF/, "");
+  const lines = cleanContent
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length > 0);

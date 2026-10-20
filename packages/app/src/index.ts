@@ -437,7 +437,10 @@ export {
 } from "./ledger/update-transaction.ts";
 export type { Clock } from "./ports/clock.ts";
 export type {
+  CsvColumnMapping,
+  DateFormat,
   ParsedStatementRow,
+  SignConvention,
   StatementParser,
 } from "./ports/statement-parser.ts";
 export type { SystemHealthPort } from "./ports/system-health.ts";

@@ -45,9 +45,9 @@ function toOfxDate(isoDate: string): string {
 }
 
 export function generateCommBankOfx(
-  account: { acctId?: string },
+  account: { acctId?: string | undefined },
   txns: readonly MockTxn[],
-  options?: { closingBalanceCents?: number },
+  options?: { closingBalanceCents?: number | undefined },
 ): string {
   const acctId = account.acctId ?? "123456789";
   const lastTxn = txns[txns.length - 1];
@@ -126,7 +126,7 @@ ${stmtTrnBlocks.join("\n")}
 
 export function generateCommBankCsv(
   txns: readonly MockTxn[],
-  options?: { includeHeader?: boolean },
+  options?: { includeHeader?: boolean | undefined },
 ): string {
   const lines: string[] = [];
   if (options?.includeHeader) {
@@ -199,7 +199,11 @@ export function generateFy2025MultiBankCsv(txns: readonly MockTxn[]): string {
 export function generateMockStatement(
   format: StatementFormat,
   txns: readonly MockTxn[],
-  options?: { acctId?: string; closingBalanceCents?: number; includeHeader?: boolean },
+  options?: {
+    acctId?: string | undefined;
+    closingBalanceCents?: number | undefined;
+    includeHeader?: boolean | undefined;
+  },
 ): string {
   switch (format) {
     case "commbank_ofx":

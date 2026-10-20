@@ -19,3 +19,22 @@ export interface StatementParser {
   readonly format: string;
   parse(content: string): readonly ParsedStatementRow[];
 }
+
+export type DateFormat = "DD/MM/YYYY" | "YYYY-MM-DD" | "MM/DD/YYYY" | "DD-MM-YYYY";
+
+export type SignConvention = "normal" | "inverted";
+
+export interface CsvColumnMapping {
+  readonly date: number | string;
+  readonly dateFormat?: DateFormat | undefined;
+  readonly description: number | string;
+  readonly amount?: number | string | undefined;
+  readonly debit?: number | string | undefined;
+  readonly credit?: number | string | undefined;
+  readonly balance?: number | string | undefined;
+  readonly externalId?: number | string | undefined;
+  readonly memo?: number | string | undefined;
+  readonly signConvention?: SignConvention | undefined;
+  readonly hasHeader?: boolean | undefined;
+  readonly delimiter?: string | undefined;
+}

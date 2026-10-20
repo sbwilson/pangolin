@@ -1,15 +1,22 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { computeFingerprint } from "@pangolin/domain";
 import type { Id } from "@pangolin/shared";
 import { Temporal } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.ts";
 import { createIdGenerator } from "../ids.ts";
+import { manualClock } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import type { Viewer } from "../viewer.ts";
 import { importStatement } from "./import-statement.ts";
 
-const now = new Date("2026-10-20T12:00:00.000Z");
-const clock = { now: () => now, today: () => "2026-10-20" };
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const fixturesDir = join(__dirname, "../../../importers/fixtures");
+
+const now = Temporal.Instant.from("2026-10-20T12:00:00.000Z");
+const clock = manualClock("2026-10-20T12:00:00.000Z");
 
 function setup() {
   let ms = 1792400000000;
@@ -25,7 +32,7 @@ function setup() {
   const alexViewer: Viewer = {
     kind: "person",
     personId: alexPersonId,
-    authAt: Temporal.Instant.from(now.toISOString()),
+    authAt: now,
   };
 
   const sharedAccountId = newId<"Account">();
@@ -37,8 +44,8 @@ function setup() {
       userId: "user-alex",
       displayName: "Alex",
       colour: "#ff0000",
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
+      createdAt: now.toString(),
+      updatedAt: now.toString(),
       deletedAt: null,
     },
     {
@@ -46,8 +53,8 @@ function setup() {
       userId: "user-sam",
       displayName: "Sam",
       colour: "#0000ff",
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
+      createdAt: now.toString(),
+      updatedAt: now.toString(),
       deletedAt: null,
     },
   );
@@ -63,24 +70,23 @@ function setup() {
     openedOn: "2024-01-01",
     closedOn: null,
     isSavings: false,
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString(),
-    deletedAt: null,
+    createdAt: now.toString(),
+    updatedAt: now.toString(),
   });
   uow.state.accountOwners.push(
     {
       accountId: sharedAccountId,
       personId: alexPersonId,
       shareBp: 5000,
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
+      createdAt: now.toString(),
+      updatedAt: now.toString(),
     },
     {
       accountId: sharedAccountId,
       personId: samPersonId,
       shareBp: 5000,
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
+      createdAt: now.toString(),
+      updatedAt: now.toString(),
     },
   );
 
@@ -95,16 +101,15 @@ function setup() {
     openedOn: "2024-01-01",
     closedOn: null,
     isSavings: false,
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString(),
-    deletedAt: null,
+    createdAt: now.toString(),
+    updatedAt: now.toString(),
   });
   uow.state.accountOwners.push({
     accountId: privateAccountId,
     personId: alexPersonId,
     shareBp: 10000,
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString(),
+    createdAt: now.toString(),
+    updatedAt: now.toString(),
   });
 
   const ctx = {
@@ -374,7 +379,7 @@ describe("importStatement use case", () => {
 
     // Soft delete the transaction
     uow.transaction((tx) => {
-      tx.transactions.softDelete(alexViewer, txnId, now.toISOString());
+      tx.transactions.softDelete(alexViewer, txnId, now.toString());
     });
 
     // Re-import a new file that contains the deleted transaction and a new transaction
@@ -425,7 +430,7 @@ describe("importStatement use case", () => {
         occurrence: 0,
       }),
     );
-    expect(tx2.fingerprint).toBe(
+    expect(tx2?.fingerprint).toBe(
       computeFingerprint({
         accountId: sharedAccountId,
         postedOn: "2024-09-01",
@@ -478,5 +483,450 @@ describe("importStatement use case", () => {
     } catch (err) {
       expect((err as AppError).code).toBe("Validation");
     }
+  });
+
+  describe("All format fixtures and re-import idempotency", () => {
+    it("imports and re-imports commbank.ofx fixture with zero duplicates", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const content = readFileSync(join(fixturesDir, "commbank.ofx"), "utf8");
+
+      const res1 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_ofx",
+        content,
+      });
+
+      expect(res1.rowCount).toBe(4);
+      expect(res1.newCount).toBe(4);
+      expect(res1.dupCount).toBe(0);
+      expect(uow.state.transactions).toHaveLength(4);
+      expect(uow.state.splits).toHaveLength(4);
+
+      // Re-importing identical file
+      const res2 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_ofx",
+        content,
+      });
+
+      expect(res2.rowCount).toBe(4);
+      expect(res2.newCount).toBe(0);
+      expect(res2.dupCount).toBe(4);
+      expect(uow.state.transactions).toHaveLength(4);
+    });
+
+    it("imports and re-imports commbank.csv fixture with zero duplicates", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const content = readFileSync(join(fixturesDir, "commbank.csv"), "utf8");
+
+      const res1 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content,
+      });
+
+      expect(res1.rowCount).toBe(4);
+      expect(res1.newCount).toBe(4);
+      expect(res1.dupCount).toBe(0);
+      expect(uow.state.transactions).toHaveLength(4);
+
+      const res2 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content,
+      });
+
+      expect(res2.newCount).toBe(0);
+      expect(res2.dupCount).toBe(4);
+      expect(uow.state.transactions).toHaveLength(4);
+    });
+
+    it("imports and re-imports commbank.qif fixture with zero duplicates", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const content = readFileSync(join(fixturesDir, "commbank.qif"), "utf8");
+
+      const res1 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_qif",
+        content,
+      });
+
+      expect(res1.rowCount).toBe(4);
+      expect(res1.newCount).toBe(4);
+      expect(res1.dupCount).toBe(0);
+      expect(uow.state.transactions).toHaveLength(4);
+      expect(uow.state.transactions[0]?.externalId).toBe("1001");
+
+      const res2 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_qif",
+        content,
+      });
+
+      expect(res2.newCount).toBe(0);
+      expect(res2.dupCount).toBe(4);
+      expect(uow.state.transactions).toHaveLength(4);
+    });
+
+    it("imports and re-imports ubank.csv fixture with zero duplicates", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const content = readFileSync(join(fixturesDir, "ubank.csv"), "utf8");
+
+      const res1 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "ubank_csv",
+        content,
+      });
+
+      expect(res1.rowCount).toBe(4);
+      expect(res1.newCount).toBe(4);
+      expect(res1.dupCount).toBe(0);
+      expect(uow.state.transactions).toHaveLength(4);
+      expect(uow.state.transactions[0]?.amountCents).toBe(-4500);
+
+      const res2 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "ubank_csv",
+        content,
+      });
+
+      expect(res2.newCount).toBe(0);
+      expect(res2.dupCount).toBe(4);
+      expect(uow.state.transactions).toHaveLength(4);
+    });
+
+    it("imports and re-imports up.csv fixture with zero duplicates (skipping pending)", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const content = readFileSync(join(fixturesDir, "up.csv"), "utf8");
+
+      const res1 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "up_csv",
+        content,
+      });
+
+      expect(res1.rowCount).toBe(4);
+      expect(res1.newCount).toBe(4);
+      expect(res1.dupCount).toBe(0);
+      expect(uow.state.transactions).toHaveLength(4);
+
+      const res2 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "up_csv",
+        content,
+      });
+
+      expect(res2.newCount).toBe(0);
+      expect(res2.dupCount).toBe(4);
+      expect(uow.state.transactions).toHaveLength(4);
+    });
+
+    it("imports and re-imports fy2025-multibank.csv fixture with zero duplicates", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const content = readFileSync(join(fixturesDir, "fy2025-multibank.csv"), "utf8");
+
+      const res1 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "fy2025_multibank_csv",
+        content,
+      });
+
+      expect(res1.rowCount).toBe(4);
+      expect(res1.newCount).toBe(4);
+      expect(res1.dupCount).toBe(0);
+      expect(uow.state.transactions).toHaveLength(4);
+
+      const res2 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "fy2025_multibank_csv",
+        content,
+      });
+
+      expect(res2.newCount).toBe(0);
+      expect(res2.dupCount).toBe(4);
+      expect(uow.state.transactions).toHaveLength(4);
+    });
+
+    it("imports and re-imports generic.csv fixture with debit/credit mapping", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const content = readFileSync(join(fixturesDir, "generic.csv"), "utf8");
+
+      const mapping = {
+        date: "TxDate",
+        dateFormat: "YYYY-MM-DD" as const,
+        description: "Merchant",
+        debit: "Debit",
+        credit: "Credit",
+        balance: "Balance",
+        externalId: "Reference",
+      };
+
+      const res1 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "generic_csv",
+        content,
+        csvMapping: mapping,
+      });
+
+      expect(res1.rowCount).toBe(4);
+      expect(res1.newCount).toBe(4);
+      expect(res1.dupCount).toBe(0);
+      expect(uow.state.transactions).toHaveLength(4);
+      expect(uow.state.transactions[0]?.amountCents).toBe(-4500);
+      expect(uow.state.transactions[1]?.amountCents).toBe(150000);
+      expect(uow.state.transactions[0]?.externalId).toBe("REF-001");
+
+      const res2 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "generic_csv",
+        content,
+        csvMapping: mapping,
+      });
+
+      expect(res2.newCount).toBe(0);
+      expect(res2.dupCount).toBe(4);
+      expect(uow.state.transactions).toHaveLength(4);
+    });
+  });
+
+  describe("Overlapping date range import across statement files", () => {
+    it("commits only genuine new transactions and skips overlapping transactions", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+
+      // First file has 2 transactions with externalId
+      const file1 = `!Type:Bank
+D01/09/2024
+T-45.00
+PWOOLWORTHS
+N1001
+^
+D02/09/2024
+T1500.00
+PSALARY
+N1002
+^`;
+
+      const res1 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_qif",
+        content: file1,
+      });
+
+      expect(res1.rowCount).toBe(2);
+      expect(res1.newCount).toBe(2);
+      expect(res1.dupCount).toBe(0);
+      expect(uow.state.transactions).toHaveLength(2);
+
+      // Second file has the same 2 transactions PLUS 2 new transactions
+      const file2 = `!Type:Bank
+D01/09/2024
+T-45.00
+PWOOLWORTHS
+N1001
+^
+D02/09/2024
+T1500.00
+PSALARY
+N1002
+^
+D03/09/2024
+T-4.50
+PCAFE LATTE
+N1003
+^
+D04/09/2024
+T-120.00
+PENERGY BILL
+N1004
+^`;
+
+      const res2 = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_qif",
+        content: file2,
+      });
+
+      expect(res2.rowCount).toBe(4);
+      expect(res2.newCount).toBe(2);
+      expect(res2.dupCount).toBe(2);
+      expect(uow.state.transactions).toHaveLength(4);
+      expect(uow.state.transactions[2]?.amountCents).toBe(-450);
+      expect(uow.state.transactions[3]?.amountCents).toBe(-12000);
+    });
+  });
+
+  describe("Generic CSV mapping edge cases", () => {
+    it("handles signed amounts and inverted sign convention", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const content = `Date,Description,Amount
+01/09/2024,Expense,50.00
+02/09/2024,Income,-1500.00`;
+
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "generic_csv",
+        content,
+        csvMapping: {
+          date: "Date",
+          dateFormat: "DD/MM/YYYY",
+          description: "Description",
+          amount: "Amount",
+          signConvention: "inverted",
+        },
+      });
+
+      expect(res.rowCount).toBe(2);
+      expect(res.newCount).toBe(2);
+      expect(uow.state.transactions[0]?.amountCents).toBe(-5000);
+      expect(uow.state.transactions[1]?.amountCents).toBe(150000);
+    });
+
+    it("throws Validation when generic_csv is called without csvMapping", () => {
+      const { ctx, sharedAccountId } = setup();
+      expect(() =>
+        importStatement(ctx, {
+          accountId: sharedAccountId,
+          format: "generic_csv",
+          content: "Date,Desc,Amt\n01/09/2024,Test,10.00",
+        }),
+      ).toThrowError(AppError);
+    });
+
+    it("throws Validation when both debit and credit are present in a row", () => {
+      const { ctx, sharedAccountId } = setup();
+      const badContent = `Date,Description,Debit,Credit
+01/09/2024,Conflict,50.00,50.00`;
+
+      expect(() =>
+        importStatement(ctx, {
+          accountId: sharedAccountId,
+          format: "generic_csv",
+          content: badContent,
+          csvMapping: {
+            date: "Date",
+            description: "Description",
+            debit: "Debit",
+            credit: "Credit",
+          },
+        }),
+      ).toThrowError(AppError);
+    });
+
+    it("concatenates description and memo in generic CSV", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const content = `Date,Merchant,Notes,Amount
+01/09/2024,Bunnings,Hardware tools,-120.50`;
+
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "generic_csv",
+        content,
+        csvMapping: {
+          date: "Date",
+          dateFormat: "DD/MM/YYYY",
+          description: "Merchant",
+          memo: "Notes",
+          amount: "Amount",
+        },
+      });
+
+      expect(res.rowCount).toBe(1);
+      expect(res.newCount).toBe(1);
+      expect(uow.state.transactions[0]?.descriptionRaw).toBe("Bunnings Hardware tools");
+    });
+
+    it("imports generic CSV with custom delimiter, hasHeader false, and numeric column indices", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const content = `01/09/2024;Supermarket;-65.00;1000.00
+02/09/2024;Salary;3000.00;4000.00`;
+
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "generic_csv",
+        content,
+        csvMapping: {
+          date: 0,
+          dateFormat: "DD/MM/YYYY",
+          description: 1,
+          amount: 2,
+          balance: 3,
+          hasHeader: false,
+          delimiter: ";",
+        },
+      });
+
+      expect(res.rowCount).toBe(2);
+      expect(res.newCount).toBe(2);
+      expect(uow.state.transactions[0]?.amountCents).toBe(-6500);
+      expect(uow.state.transactions[1]?.amountCents).toBe(300000);
+    });
+
+    it("rejects multi-character delimiter in csvMapping with Validation error", () => {
+      const { ctx, sharedAccountId } = setup();
+      expect(() =>
+        importStatement(ctx, {
+          accountId: sharedAccountId,
+          format: "generic_csv",
+          content: "01/09/2024::Test::-10.00",
+          csvMapping: {
+            date: 0,
+            description: 1,
+            amount: 2,
+            hasHeader: false,
+            delimiter: "::",
+          },
+        }),
+      ).toThrowError(AppError);
+    });
+
+    it("imports standard QIF using format 'qif'", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const qif = `!Type:Bank
+D01/09/2024
+T-22.50
+PCAFE
+^`;
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "qif",
+        content: qif,
+      });
+
+      expect(res.rowCount).toBe(1);
+      expect(res.newCount).toBe(1);
+      expect(uow.state.transactions[0]?.amountCents).toBe(-2250);
+    });
+
+    it("imports statement files with leading UTF-8 BOM", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const bomContent = `\uFEFFDate,Description,Amount,Balance
+01/09/2024,"BOM MERCHANT",-55.00,1000.00`;
+
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "ubank_csv",
+        content: bomContent,
+      });
+
+      expect(res.rowCount).toBe(1);
+      expect(res.newCount).toBe(1);
+      expect(uow.state.transactions[0]?.descriptionRaw).toBe("BOM MERCHANT");
+    });
+
+    it("imports ubank CSV with 2-digit years (DD/MM/YY)", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      const content = `Date,Description,Amount,Balance
+15/09/24,"UBANK 2-DIGIT YEAR",-30.00,970.00`;
+
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "ubank_csv",
+        content,
+      });
+
+      expect(res.rowCount).toBe(1);
+      expect(res.newCount).toBe(1);
+      expect(uow.state.transactions[0]?.postedOn).toBe("2024-09-15");
+    });
   });
 });

@@ -22,6 +22,7 @@ data/
 !samples/**/*.qif
 !samples/**/*.csv
 !samples/**/*.pdf
+!packages/importers/fixtures/**
 secrets/
 backups/
 archive/
