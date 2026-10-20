@@ -1069,6 +1069,7 @@ export interface PersonPreferenceRepo {
     readonly createdAt: string;
     readonly updatedAt: string;
   }): PersonPreferenceRow;
+  deleteForPerson(personId: string): void;
 }
 
 /** An active person with a login, as the server console lists them. */

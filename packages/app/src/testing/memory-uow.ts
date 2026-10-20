@@ -409,6 +409,10 @@ function personPreferenceRepo(working: MemoryState, check: () => void): PersonPr
       }
       return row;
     },
+    deleteForPerson: (personId) => {
+      check();
+      working.preferences = working.preferences.filter((p) => p.personId !== personId);
+    },
   };
 }
 

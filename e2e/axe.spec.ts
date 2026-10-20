@@ -40,6 +40,8 @@ async function alexSession(browser: Browser): Promise<string | undefined> {
           await context.storageState({ path: firstSessionFile });
           return firstSessionFile;
         }
+      } catch {
+        // Transient error during sign in attempt; proceed to wait and retry
       } finally {
         await context.close();
       }

@@ -395,10 +395,12 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-theme-engine-and-preferences-persistence-plan.md`
   summary: Clean up `person_preference` records in `leaveHousehold` when a person leaves the household.
   evidence: `packages/app/src/accounts/leave-household.ts` hard-deletes person-scoped rows on household leave; `person_preference` cleanup belongs in Story 13.5 (account lifecycle settings behind re-auth).
+  disposition: fixed (post-13 retro remediation)
 
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-refactor-sweep-plan.md`
   summary: Add dedicated unit test suites for extracted hooks (useBulkSelection, useTransactionFilters, useTransactionExport, SearchBox).
   evidence: Extracted hooks are currently validated through TransactionList.test.tsx integration tests; isolated hook test suites can be added during a test coverage sweep.
+  disposition: fixed (post-13 retro remediation)
 
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-refactor-sweep-plan.md`
   summary: Handle partial batch failure rollbacks in runBulkAction.
@@ -410,6 +412,7 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-end-to-end-shell-settings-and-theming-journey-plan.md`
   summary: Handle exceptions inside alexSession sign-in loop to guarantee retries and TOTP time step roll-over across all test specs.
   evidence: Review of story 13.8: alexSession helper lacks catch block around signInWithPassword, so unexpected transient errors abort before retry loop.
+  disposition: fixed (post-13 retro remediation)
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-end-to-end-shell-settings-and-theming-journey-plan.md`
   summary: Add comprehensive unit and integration coverage for ReauthDialog keyboard dismissal (Escape), backdrop click, and two-factor TOTP verification step.
   evidence: Review of story 13.8: e2e test verifies passkey/password tabs and cancel button dismissal; deeper TOTP and key handler edge cases deferred to dedicated component test suite.

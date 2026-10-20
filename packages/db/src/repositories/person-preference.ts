@@ -40,5 +40,9 @@ export function createPersonPreferenceRepo(orm: Orm, check: () => void): PersonP
       }
       return result as PersonPreferenceRow;
     },
+    deleteForPerson: (personId) => {
+      check();
+      orm.delete(personPreference).where(eq(personPreference.personId, personId)).run();
+    },
   };
 }

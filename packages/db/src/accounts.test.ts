@@ -1361,6 +1361,20 @@ describe("leaving the household (story 26)", () => {
       ),
     ).toBeGreaterThan(0);
   });
+
+  it("deletes the leaver's person_preference records", () => {
+    db.prepare(
+      "INSERT INTO person_preference (person_id, theme, mode, created_at, updated_at) VALUES (?, 'fern-gully', 'dark', ?, ?)",
+    ).run(a, at, at);
+    db.prepare(
+      "INSERT INTO person_preference (person_id, theme, mode, created_at, updated_at) VALUES (?, 'galah-party', 'light', ?, ?)",
+    ).run(b, at, at);
+
+    leaveHousehold(leaver(a), { confirm: true });
+
+    expect(count("SELECT count(*) FROM person_preference WHERE person_id = ?", a)).toBe(0);
+    expect(count("SELECT count(*) FROM person_preference WHERE person_id = ?", b)).toBe(1);
+  });
 });
 
 describe("one closed state for the list, the warning and the review item", () => {

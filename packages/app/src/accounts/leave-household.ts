@@ -173,6 +173,7 @@ function deleteScopedRows(tx: TxRepos, leaver: Id<"Person">): void {
   tx.payees.deleteScopedTo(leaver);
   tx.tags.deleteScopedTo(leaver);
   tx.activities.deleteScopedTo(leaver);
+  tx.personPreferences.deleteForPerson(leaver);
 }
 
 /**
