@@ -416,3 +416,10 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/story-end-to-end-shell-settings-and-theming-journey-plan.md`
   summary: Add comprehensive unit and integration coverage for ReauthDialog keyboard dismissal (Escape), backdrop click, and two-factor TOTP verification step.
   evidence: Review of story 13.8: e2e test verifies passkey/password tabs and cancel button dismissal; deeper TOTP and key handler edge cases deferred to dedicated component test suite.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-transfer-matching-and-probable-duplicate-detection-plan.md`
+  summary: Transfer matching compares only amount and dates, not account currency.
+  evidence: A same-cents pair across AUD and a foreign-currency account would auto-link; v1 is single-currency so it is unreachable today, but the candidate row would need a currency field.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-transfer-matching-and-probable-duplicate-detection-plan.md`
+  summary: Open `import.transfer_ambiguous` items are never re-evaluated or auto-resolved when a later link or deletion removes the ambiguity.
+  evidence: Raised once per new transaction; only a manual dismiss clears it. Unverified severity medium; needs a re-evaluation design (probably with the review inbox, 3.8).

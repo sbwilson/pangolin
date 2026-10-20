@@ -20,3 +20,14 @@ export {
   sha256Hex,
 } from "./dedupe/fingerprint.ts";
 export { normaliseCommBankDescription } from "./normalise/commbank.ts";
+export {
+  type DuplicateSubject,
+  daysApart,
+  findTransferMatch,
+  isProbableDuplicate,
+  shiftDay,
+  TRANSFER_WINDOW_DAYS,
+  type TransferLeg,
+  type TransferMatchResult,
+  transferCandidates,
+} from "./transfers/match-transfers.ts";

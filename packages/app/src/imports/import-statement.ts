@@ -35,6 +35,12 @@ import type {
 } from "../ports/unit-of-work.ts";
 import { raiseReviewItem } from "../system/review-items.ts";
 import { write } from "../write.ts";
+import {
+  dayKey,
+  hasProbableDuplicate,
+  matchTransfersForBatch,
+  raiseProbableDuplicate,
+} from "./match-transfers.ts";
 import { IMPORT_SET_ASIDE_REVIEW } from "./set-aside.ts";
 
 export const csvColumnMappingSchema = z
@@ -1043,6 +1049,14 @@ export function importStatement(
       occurrenceMap.set(dayKey, (occurrenceMap.get(dayKey) ?? 0) + 1);
     }
 
+    // Existing rows an exact duplicate in this file accounts for are not probable duplicates.
+    const fileDayKeys = new Set(
+      parsedRows.map((r) =>
+        dayKey(r.postedOn, r.amountCents, normaliseCommBankDescription(r.rawDescription)),
+      ),
+    );
+    const committed: { id: Id<"Transaction">; postedOn: string; amountCents: number }[] = [];
+
     let newCount = 0;
     let dupCount = 0;
     const transactionIds: Id<"Transaction">[] = [];
@@ -1100,6 +1114,17 @@ export function importStatement(
 
       const txnId = ctx.newId<"Transaction">();
       transactionIds.push(txnId);
+      const probableDuplicate = hasProbableDuplicate(
+        tx,
+        account.id,
+        {
+          postedOn: row.postedOn,
+          amountCents: row.amountCents,
+          description: row.rawDescription,
+          externalId: row.externalId ?? null,
+        },
+        fileDayKeys,
+      );
 
       const { payeeId, categoryId, categorySource, unclassified } = classifyTransaction(
         {
@@ -1162,6 +1187,9 @@ export function importStatement(
           accountId: account.id,
         });
       }
+      if (probableDuplicate)
+        raiseProbableDuplicate(tx, audit, ctx, { id: txnId, accountId: account.id });
+      committed.push({ id: txnId, postedOn: row.postedOn, amountCents: row.amountCents });
       tx.importRows.updateStatus(stagedRow.id, "committed", at);
 
       audit({
@@ -1173,6 +1201,13 @@ export function importStatement(
         after: { ...txnRow, splits: [splitRow] },
       });
     }
+
+    matchTransfersForBatch(
+      tx,
+      audit,
+      ctx,
+      committed.map((c) => ({ ...c, accountId: account.id })),
+    );
 
     // Update batch status and counts
     tx.importBatches.updateCountsAndStatus(

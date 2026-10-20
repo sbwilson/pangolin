@@ -121,6 +121,8 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
   // Reads with no viewer: the only ones.
   "TransactionRepo.listForDedupe":
     "reads transactions for deduplication in an account checked by the use case",
+  "TransactionRepo.listNearDuplicates":
+    "reads live same-account near-duplicates in an account checked by the use case",
   "TransactionRepo.findByExternalId":
     "finds duplicate transaction by externalId in an account checked by the use case",
   "TransactionRepo.findByFingerprint":

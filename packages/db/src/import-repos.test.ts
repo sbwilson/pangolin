@@ -365,4 +365,73 @@ describe("SQLite Import Repositories & Dedupe", () => {
       ).toBeUndefined();
     });
   });
+  it("lists transfer candidates and near-duplicates with visibility enforced", () => {
+    const at = now.toString();
+    const add = (
+      accountId: Id<"Account">,
+      postedOn: string,
+      amountCents: number,
+      fingerprint: string,
+      extra: { transferGroupId?: Id<"TransferGroup"> } = {},
+    ) => {
+      const id = newId<"Transaction">();
+      uow.transaction((tx) => {
+        tx.transactions.insert(
+          {
+            id,
+            accountId,
+            postedOn,
+            amountCents,
+            descriptionRaw: "CAFE",
+            payeeId: null,
+            status: "posted",
+            externalId: null,
+            fingerprint,
+            fingerprintVersion: 1,
+            importId: null,
+            performedBy: null,
+            transferGroupId: extra.transferGroupId ?? null,
+            needsReview: false,
+            isHidden: false,
+            nameHiddenBy: null,
+            nameHiddenUntil: null,
+            notes: null,
+            createdAt: at,
+            updatedAt: at,
+          },
+          [],
+        );
+      });
+      return id;
+    };
+    const shared = add(sharedAccountId, "2026-03-02", 50000, "fp-a");
+    const priv = add(alexPrivateAccountId, "2026-03-02", 50000, "fp-b");
+    const later = add(sharedAccountId, "2026-03-09", 50000, "fp-c");
+    const deleted = add(sharedAccountId, "2026-03-03", 50000, "fp-d");
+    uow.transaction((tx) => {
+      tx.transactions.softDelete(alexViewer, deleted, at);
+    });
+    const query = { amountCents: 50000, from: "2026-03-01", to: "2026-03-05" };
+    uow.transaction((repos) => {
+      const alex = repos.transactions.listTransferCandidates(alexViewer, query).map((r) => r.id);
+      expect(alex.sort()).toEqual([shared, priv].sort());
+      const sam = repos.transactions.listTransferCandidates(samViewer, query).map((r) => r.id);
+      expect(sam).toEqual([shared]);
+      const other = repos.transactions
+        .listTransferCandidates(alexViewer, { ...query, excludeAccountId: sharedAccountId })
+        .map((r) => r.id);
+      expect(other).toEqual([priv]);
+    });
+    uow.transaction((tx) => {
+      const near = tx.transactions.listNearDuplicates(
+        sharedAccountId,
+        50000,
+        "2026-03-01",
+        "2026-03-31",
+      );
+      expect(near.map((r) => r.id)).toEqual([shared, later]);
+      expect(near.map((r) => r.id)).not.toContain(deleted);
+      expect(near.map((r) => r.id)).not.toContain(priv);
+    });
+  });
 });

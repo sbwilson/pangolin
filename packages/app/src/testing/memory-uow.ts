@@ -1516,6 +1516,46 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
           descriptionRaw: t.descriptionRaw,
         }));
     },
+    listTransferCandidates: (viewer, query) => {
+      requireViewer(viewer);
+      check();
+      return visibleRows(viewer)
+        .filter(
+          (t) =>
+            t.transferGroupId === null &&
+            t.amountCents === query.amountCents &&
+            t.postedOn >= query.from &&
+            t.postedOn <= query.to &&
+            t.accountId !== query.excludeAccountId,
+        )
+        .sort((a, b) => byText(`${a.postedOn}|${a.id}`, `${b.postedOn}|${b.id}`))
+        .map((t) => ({
+          id: t.id,
+          accountId: t.accountId,
+          postedOn: t.postedOn,
+          amountCents: t.amountCents,
+        }));
+    },
+    listNearDuplicates: (accountId, amountCents, from, to) => {
+      check();
+      return working.transactions
+        .filter(
+          (t) =>
+            t.accountId === accountId &&
+            !working.deleted.has(t.id) &&
+            t.amountCents === amountCents &&
+            t.postedOn >= from &&
+            t.postedOn <= to,
+        )
+        .sort((a, b) => byText(`${a.postedOn}|${a.id}`, `${b.postedOn}|${b.id}`))
+        .map((t) => ({
+          id: t.id,
+          externalId: t.externalId,
+          postedOn: t.postedOn,
+          amountCents: t.amountCents,
+          descriptionRaw: t.descriptionRaw,
+        }));
+    },
     findByExternalId: (accountId, externalId) => {
       check();
       const t = working.transactions.find(

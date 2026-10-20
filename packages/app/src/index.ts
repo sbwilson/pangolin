@@ -338,6 +338,15 @@ export {
   importStatementInput,
 } from "./imports/import-statement.ts";
 export {
+  dismissTransferAmbiguity,
+  IMPORT_PROBABLE_DUPLICATE_REVIEW,
+  IMPORT_TRANSFER_AMBIGUOUS_REVIEW,
+  keepProbableDuplicate,
+  type ResolveImportFlagInput,
+  removeProbableDuplicate,
+  resolveImportFlagInput,
+} from "./imports/match-transfers.ts";
+export {
   type DiscardSetAsideRowInput,
   type DiscardSetAsideRowResult,
   discardSetAsideRow,
@@ -607,6 +616,7 @@ export {
   type TransactionRow,
   type TransactionSummary,
   type TransactionWithSplits,
+  type TransferCandidateRow,
   type TransferGroupRepo,
   type TransferGroupRow,
   type TransferMatch,

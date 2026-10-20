@@ -695,6 +695,36 @@ export interface TransactionRepo {
     readonly descriptionRaw: string;
   }[];
   /**
+   * The live, unlinked (no transfer group) transactions `viewer` may see whose amount is exactly
+   * `amountCents` and whose `postedOn` is within `from`..`to` (inclusive), in any account but
+   * `excludeAccountId`. Throws without a viewer. For transfer matching.
+   */
+  listTransferCandidates(
+    viewer: Viewer,
+    query: {
+      readonly excludeAccountId?: string;
+      readonly amountCents: number;
+      readonly from: string;
+      readonly to: string;
+    },
+  ): readonly TransferCandidateRow[];
+  /**
+   * The live transactions of account `accountId` with amount `amountCents` posted within
+   * `from`..`to` (inclusive). For probable-duplicate detection in an account the use case checked.
+   */
+  listNearDuplicates(
+    accountId: string,
+    amountCents: number,
+    from: string,
+    to: string,
+  ): readonly {
+    readonly id: string;
+    readonly externalId: string | null;
+    readonly postedOn: string;
+    readonly amountCents: number;
+    readonly descriptionRaw: string;
+  }[];
+  /**
    * Finds any transaction (including soft-deleted) of account `accountId` by `externalId`.
    */
   findByExternalId(accountId: string, externalId: string): { readonly id: string } | undefined;
@@ -702,6 +732,14 @@ export interface TransactionRepo {
    * Finds any transaction (including soft-deleted) of account `accountId` by `fingerprint`.
    */
   findByFingerprint(accountId: string, fingerprint: string): { readonly id: string } | undefined;
+}
+
+/** A transaction offered to the transfer matcher. */
+export interface TransferCandidateRow {
+  readonly id: Id<"Transaction">;
+  readonly accountId: Id<"Account">;
+  readonly postedOn: string;
+  readonly amountCents: number;
 }
 
 /** What kind of body an institution is. */

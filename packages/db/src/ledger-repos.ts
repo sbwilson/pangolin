@@ -12,6 +12,7 @@ import type {
   TransactionFilter,
   TransactionRepo,
   TransactionRow,
+  TransferCandidateRow,
   TransferGroupRepo,
   TransferGroupRow,
   Viewer,
@@ -785,6 +786,57 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
         results.push(...rows);
       }
       return results;
+    },
+
+    listTransferCandidates: (viewer, query) => {
+      const visible = liveVisibleTxn(viewer);
+      check();
+      return orm
+        .select({
+          id: transaction.id,
+          accountId: transaction.accountId,
+          postedOn: transaction.postedOn,
+          amountCents: transaction.amountCents,
+        })
+        .from(transaction)
+        .where(
+          and(
+            visible,
+            isNull(transaction.transferGroupId),
+            eq(transaction.amountCents, query.amountCents),
+            gte(transaction.postedOn, query.from),
+            lte(transaction.postedOn, query.to),
+            query.excludeAccountId === undefined
+              ? undefined
+              : ne(transaction.accountId, query.excludeAccountId),
+          ),
+        )
+        .orderBy(asc(transaction.postedOn), asc(transaction.id))
+        .all() as TransferCandidateRow[];
+    },
+
+    listNearDuplicates: (accountId, amountCents, from, to) => {
+      check();
+      return orm
+        .select({
+          id: transaction.id,
+          externalId: transaction.externalId,
+          postedOn: transaction.postedOn,
+          amountCents: transaction.amountCents,
+          descriptionRaw: transaction.descriptionRaw,
+        })
+        .from(transaction)
+        .where(
+          and(
+            eq(transaction.accountId, accountId),
+            isNull(transaction.deletedAt),
+            eq(transaction.amountCents, amountCents),
+            gte(transaction.postedOn, from),
+            lte(transaction.postedOn, to),
+          ),
+        )
+        .orderBy(asc(transaction.postedOn), asc(transaction.id))
+        .all();
     },
 
     findByExternalId: (accountId, externalId) => {

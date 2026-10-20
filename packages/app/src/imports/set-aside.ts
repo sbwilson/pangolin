@@ -22,6 +22,11 @@ import { privateOwner } from "../ledger/split-targets.ts";
 import type { ImportRowRow, SplitRow, TransactionRow } from "../ports/unit-of-work.ts";
 import { defineReviewKind, raiseReviewItem, resolveReviewItem } from "../system/review-items.ts";
 import { write } from "../write.ts";
+import {
+  hasProbableDuplicate,
+  matchTransfersForBatch,
+  raiseProbableDuplicate,
+} from "./match-transfers.ts";
 
 /** An import batch contains set-aside rows needing review. Account scope; entity `import_batch:<id>`. */
 export const IMPORT_SET_ASIDE_REVIEW = defineReviewKind({
@@ -211,7 +216,20 @@ export function fixSetAsideRow(
       updatedAt: at,
     };
 
+    const probableDuplicate = hasProbableDuplicate(
+      tx,
+      account.id,
+      {
+        postedOn: parsed.postedOn,
+        amountCents: parsed.amountCents,
+        description: parsed.description,
+        externalId: parsed.externalId ?? null,
+      },
+      new Set(),
+    );
     tx.transactions.insert(txnRow, [splitRow]);
+    if (probableDuplicate)
+      raiseProbableDuplicate(tx, audit, ctx, { id: txnId, accountId: account.id });
     if (unclassified) {
       raiseReviewItem(tx, audit, ctx, {
         kind: CLASSIFY_UNCLASSIFIED_REVIEW,
@@ -228,6 +246,15 @@ export function fixSetAsideRow(
       before: null,
       after: { ...txnRow, splits: [splitRow] },
     });
+
+    matchTransfersForBatch(tx, audit, ctx, [
+      {
+        id: txnId,
+        accountId: account.id,
+        postedOn: parsed.postedOn,
+        amountCents: parsed.amountCents,
+      },
+    ]);
 
     tx.importRows.updateStatus(row.id, "committed", at, null);
     audit({
