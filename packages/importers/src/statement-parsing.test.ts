@@ -1,7 +1,18 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createIdGenerator, importStatement, personViewer } from "@pangolin/app";
+import {
+  createIdGenerator,
+  importStatement,
+  parseBuiltinCommBankCsv,
+  parseBuiltinCommBankOfx,
+  parseBuiltinFy2025MultiBankCsv,
+  parseBuiltinGenericCsv,
+  parseBuiltinQif,
+  parseBuiltinUbankCsv,
+  parseBuiltinUpCsv,
+  personViewer,
+} from "@pangolin/app";
 import { memoryUnitOfWork } from "@pangolin/app/testing/memory-uow";
 import { Temporal } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
@@ -15,23 +26,6 @@ import {
   generateUpCsv,
   type MockTxn,
 } from "./generators/mock-statements.ts";
-import {
-  commbankCsvParser,
-  commbankOfxParser,
-  commbankQifParser,
-  createGenericCsvParser,
-  fy2025MultiBankCsvParser,
-  parseCommBankCsv,
-  parseCommBankOfx,
-  parseFy2025MultiBankCsv,
-  parseGenericCsv,
-  parseQif,
-  parseUbankCsv,
-  parseUpCsv,
-  qifParser,
-  ubankCsvParser,
-  upCsvParser,
-} from "./index.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, "../fixtures");
@@ -79,10 +73,9 @@ describe("CommBank OFX Parser", () => {
     const ofxContent = generateCommBankOfx({ acctId: "06200012345678" }, txns, {
       closingBalanceCents: 237100,
     });
-    const parsed = parseCommBankOfx(ofxContent);
+    const parsed = parseBuiltinCommBankOfx(ofxContent);
 
-    expect(parsed.accountId).toBe("06200012345678");
-    expect(parsed.closingBalanceCents).toBe(237100);
+    expect(parsed.setAside).toHaveLength(0);
     expect(parsed.rows).toHaveLength(5);
 
     expect(parsed.rows[0]).toEqual({
@@ -92,7 +85,6 @@ describe("CommBank OFX Parser", () => {
       amountCents: -4500,
       rawDescription: "WOOLWORTHS SYDNEY",
       externalId: "FITID001",
-      balanceCents: null,
     });
 
     expect(parsed.rows[1]?.amountCents).toBe(150000);
@@ -124,7 +116,7 @@ describe("CommBank OFX Parser", () => {
 </STMTRS></STMTTRNRS></BANKMSGSRSV1>
 </OFX>`;
 
-    const parsed = parseCommBankOfx(xmlOfx);
+    const parsed = parseBuiltinCommBankOfx(xmlOfx);
     expect(parsed.rows).toHaveLength(1);
     expect(parsed.rows[0]).toMatchObject({
       postedOn: "2024-08-15",
@@ -135,8 +127,8 @@ describe("CommBank OFX Parser", () => {
   });
 
   it("throws on invalid or empty OFX content", () => {
-    expect(() => parseCommBankOfx("")).toThrow();
-    expect(() => parseCommBankOfx("not an ofx file")).toThrow();
+    expect(() => parseBuiltinCommBankOfx("")).toThrow();
+    expect(() => parseBuiltinCommBankOfx("not an ofx file")).toThrow();
   });
 });
 
@@ -158,7 +150,7 @@ describe("CommBank CSV Parser", () => {
     ];
 
     const csvContent = generateCommBankCsv(txns, { includeHeader: true });
-    const rows = parseCommBankCsv(csvContent);
+    const { rows } = parseBuiltinCommBankCsv(csvContent);
 
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual({
@@ -175,7 +167,7 @@ describe("CommBank CSV Parser", () => {
 
   it("parses CommBank CSV statement without header", () => {
     const csvContent = '23/08/2024,-45.00,"Woolworths Sydney",1234.56';
-    const rows = parseCommBankCsv(csvContent);
+    const { rows } = parseBuiltinCommBankCsv(csvContent);
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -188,15 +180,15 @@ describe("CommBank CSV Parser", () => {
 
   it("handles descriptions containing commas and escaped quotes", () => {
     const csvContent = '23/08/2024,-12.50,"Smith, Jones & ""Co""",500.00';
-    const rows = parseCommBankCsv(csvContent);
+    const { rows } = parseBuiltinCommBankCsv(csvContent);
 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.rawDescription).toBe('Smith, Jones & "Co"');
   });
 
   it("handles empty CSV and isolates malformed rows into setAside", () => {
-    expect(() => parseCommBankCsv("")).toThrow();
-    const res = parseCommBankCsv("invalid date,not-an-amount");
+    expect(() => parseBuiltinCommBankCsv("")).toThrow();
+    const res = parseBuiltinCommBankCsv("invalid date,not-an-amount");
     expect(res.rows).toHaveLength(0);
     expect(res.setAside).toHaveLength(1);
     expect(res.setAside[0]?.reason).toMatch(/columns|date/i);
@@ -209,7 +201,7 @@ describe("ubank CSV Parser", () => {
 01/09/2024,"WOOLWORTHS SYDNEY",-45.50,1234.50
 02/09/2024,"SALARY TRANSFER",2500.00,3734.50`;
 
-    const rows = parseUbankCsv(content);
+    const { rows } = parseBuiltinUbankCsv(content);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual({
       rowNumber: 2,
@@ -227,23 +219,23 @@ describe("ubank CSV Parser", () => {
   it("parses ubank CSV with 2-digit years (DD/MM/YY)", () => {
     const content = `Date,Description,Amount,Balance
 15/08/24,"CAFE LATTE",-4.50,500.00`;
-    const rows = parseUbankCsv(content);
+    const { rows } = parseBuiltinUbankCsv(content);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.postedOn).toBe("2024-08-15");
   });
 
   it("isolates malformed line or missing columns into setAside", () => {
-    const res1 = parseUbankCsv("Date,Description,Amount\n01/09/2024");
+    const res1 = parseBuiltinUbankCsv("Date,Description,Amount\n01/09/2024");
     expect(res1.rows).toHaveLength(0);
     expect(res1.setAside).toHaveLength(1);
     expect(res1.setAside[0]?.reason).toMatch(/columns/i);
 
-    const res2 = parseUbankCsv("Date,Description,Amount\nnot-a-date,Desc,50.00");
+    const res2 = parseBuiltinUbankCsv("Date,Description,Amount\nnot-a-date,Desc,50.00");
     expect(res2.rows).toHaveLength(0);
     expect(res2.setAside).toHaveLength(1);
     expect(res2.setAside[0]?.reason).toMatch(/date/i);
 
-    const res3 = parseUbankCsv("Date,Description,Amount\n01/09/2024,,50.00");
+    const res3 = parseBuiltinUbankCsv("Date,Description,Amount\n01/09/2024,,50.00");
     expect(res3.rows).toHaveLength(0);
     expect(res3.setAside).toHaveLength(1);
     expect(res3.setAside[0]?.reason).toMatch(/description/i);
@@ -257,7 +249,7 @@ describe("Up CSV Parser", () => {
 2024-09-02T12:00:00Z,,PENDING PURCHASE,-25.00,HELD
 2024-09-03T10:00:00Z,2024-09-03,"SALARY UP",1200.00,SETTLED`;
 
-    const rows = parseUpCsv(content);
+    const { rows } = parseBuiltinUpCsv(content);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual({
       rowNumber: 2,
@@ -273,10 +265,10 @@ describe("Up CSV Parser", () => {
   });
 
   it("throws on empty content and isolates invalid settled date into setAside", () => {
-    expect(() => parseUpCsv("")).toThrow();
+    expect(() => parseBuiltinUpCsv("")).toThrow();
     const bad = `Time,Settled Date,Description,Amount,Status
 2024-09-01T08:00:00Z,invalid-date,"Desc",-10.00,SETTLED`;
-    const res = parseUpCsv(bad);
+    const res = parseBuiltinUpCsv(bad);
     expect(res.rows).toHaveLength(0);
     expect(res.setAside).toHaveLength(1);
     expect(res.setAside[0]?.reason).toMatch(/date/i);
@@ -298,7 +290,7 @@ PSALARY
 N1002
 ^`;
 
-    const rows = parseQif(content);
+    const { rows } = parseBuiltinQif(content);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual({
       rowNumber: 1,
@@ -320,7 +312,7 @@ D15/08'24
 T-1,234.56
 PTAX PAYMENT
 ^`;
-    const rows = parseQif(content);
+    const { rows } = parseBuiltinQif(content);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.postedOn).toBe("2024-08-15");
     expect(rows[0]?.amountCents).toBe(-123456);
@@ -334,19 +326,19 @@ T-10.00
 PVALID
 ^
 ^`;
-    const rows = parseQif(content);
+    const { rows } = parseBuiltinQif(content);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.rawDescription).toBe("VALID");
   });
 
   it("throws on missing !Type header and isolates missing date/amount into setAside", () => {
-    expect(() => parseQif("D01/09/2024\nT-10.00\n^")).toThrow();
-    const res = parseQif("!Type:Bank\nT-10.00\n^");
+    expect(() => parseBuiltinQif("D01/09/2024\nT-10.00\n^")).toThrow();
+    const res = parseBuiltinQif("!Type:Bank\nT-10.00\n^");
     expect(res.rows).toHaveLength(0);
     expect(res.setAside).toHaveLength(1);
     expect(res.setAside[0]?.reason).toMatch(/date/i);
 
-    const res2 = parseQif("!Type:Bank\nPOnly Payee No Date Or Amount\n^");
+    const res2 = parseBuiltinQif("!Type:Bank\nPOnly Payee No Date Or Amount\n^");
     expect(res2.rows).toHaveLength(0);
     expect(res2.setAside).toHaveLength(1);
     expect(res2.setAside[0]?.reason).toMatch(/date/i);
@@ -359,7 +351,7 @@ describe("FY2025 MultiBank CSV Parser", () => {
 2024-09-01 12:00:00,Everyday,-45.00,"WOOLWORTHS",1000.00
 2024-09-02 09:30:00,Everyday,1500.00,"SALARY",2500.00`;
 
-    const rows = parseFy2025MultiBankCsv(content);
+    const { rows } = parseBuiltinFy2025MultiBankCsv(content);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual({
       rowNumber: 2,
@@ -378,7 +370,7 @@ describe("FY2025 MultiBank CSV Parser", () => {
   it("isolates invalid timestamp or amount into setAside", () => {
     const bad = `Timestamp,Account,Amount,Description,Balance
 bad-timestamp,Everyday,-45.00,"WOOLWORTHS",1000.00`;
-    const res = parseFy2025MultiBankCsv(bad);
+    const res = parseBuiltinFy2025MultiBankCsv(bad);
     expect(res.rows).toHaveLength(0);
     expect(res.setAside).toHaveLength(1);
     expect(res.setAside[0]?.reason).toMatch(/timestamp/i);
@@ -391,7 +383,7 @@ describe("Generic CSV Parser", () => {
 01/09/2024,"Store A",-55.00,945.00,TX001
 02/09/2024,"Deposit B",200.00,1145.00,TX002`;
 
-    const rows = parseGenericCsv(content, {
+    const { rows } = parseBuiltinGenericCsv(content, {
       date: "Transaction Date",
       dateFormat: "DD/MM/YYYY",
       description: "Merchant",
@@ -414,7 +406,7 @@ describe("Generic CSV Parser", () => {
 2024-09-02,Salary,0.00,1500.00
 2024-09-03,Other,25.00,`;
 
-    const rows = parseGenericCsv(content, {
+    const { rows } = parseBuiltinGenericCsv(content, {
       date: "Date",
       dateFormat: "YYYY-MM-DD",
       description: "Description",
@@ -432,7 +424,7 @@ describe("Generic CSV Parser", () => {
     const content = `Date,Description,Amount
 09/01/2024,US Date Format,-50.00`;
 
-    const rows = parseGenericCsv(content, {
+    const { rows } = parseBuiltinGenericCsv(content, {
       date: "Date",
       dateFormat: "MM/DD/YYYY",
       description: "Description",
@@ -446,7 +438,7 @@ describe("Generic CSV Parser", () => {
     const content = `Date,Description,Memo,Amount
 2024-09-01,Groceries,Weekly shopping,-85.00`;
 
-    const rows = parseGenericCsv(content, {
+    const { rows } = parseBuiltinGenericCsv(content, {
       date: "Date",
       description: "Description",
       memo: "Memo",
@@ -458,7 +450,7 @@ describe("Generic CSV Parser", () => {
 
   it("strips leading UTF-8 BOM character from CSV and QIF", () => {
     const bomCsv = `\uFEFFDate,Description,Amount\n01/09/2024,BOM Test,-10.00`;
-    const rows = parseGenericCsv(bomCsv, {
+    const { rows } = parseBuiltinGenericCsv(bomCsv, {
       date: "Date",
       description: "Description",
       amount: "Amount",
@@ -467,7 +459,7 @@ describe("Generic CSV Parser", () => {
     expect(rows[0]?.rawDescription).toBe("BOM Test");
 
     const bomQif = `\uFEFF!Type:Bank\nD01/09/2024\nT-10.00\nPBOM QIF\n^`;
-    const qifRows = parseQif(bomQif);
+    const { rows: qifRows } = parseBuiltinQif(bomQif);
     expect(qifRows).toHaveLength(1);
     expect(qifRows[0]?.rawDescription).toBe("BOM QIF");
   });
@@ -477,7 +469,7 @@ describe("Generic CSV Parser", () => {
 2024-09-01,Groceries,50.00
 2024-09-02,Salary,-1500.00`;
 
-    const rows = parseGenericCsv(content, {
+    const { rows } = parseBuiltinGenericCsv(content, {
       date: "Date",
       description: "Description",
       amount: "Amount",
@@ -492,7 +484,7 @@ describe("Generic CSV Parser", () => {
     const content = `01-09-2024;Groceries;-25.00;1000.00;EXT123
 02-09-2024;Salary;500.00;1500.00;EXT124`;
 
-    const rows = parseGenericCsv(content, {
+    const { rows } = parseBuiltinGenericCsv(content, {
       date: 0,
       dateFormat: "DD-MM-YYYY",
       description: 1,
@@ -511,7 +503,7 @@ describe("Generic CSV Parser", () => {
 
   it("isolates rows when both debit and credit or neither are present in debit/credit mode", () => {
     const both = `Date,Description,Debit,Credit\n2024-09-01,Desc,50.00,50.00`;
-    const resBoth = parseGenericCsv(both, {
+    const resBoth = parseBuiltinGenericCsv(both, {
       date: "Date",
       description: "Description",
       debit: "Debit",
@@ -522,7 +514,7 @@ describe("Generic CSV Parser", () => {
     expect(resBoth.setAside[0]?.reason).toMatch(/both/i);
 
     const neither = `Date,Description,Debit,Credit\n2024-09-01,Desc,,`;
-    const resNeither = parseGenericCsv(neither, {
+    const resNeither = parseBuiltinGenericCsv(neither, {
       date: "Date",
       description: "Description",
       debit: "Debit",
@@ -533,7 +525,7 @@ describe("Generic CSV Parser", () => {
     expect(resNeither.setAside[0]?.reason).toMatch(/neither/i);
 
     const malformedDebit = `Date,Description,Debit,Credit\n2024-09-01,Desc,invalid-debit,50.00`;
-    const resMalformedDebit = parseGenericCsv(malformedDebit, {
+    const resMalformedDebit = parseBuiltinGenericCsv(malformedDebit, {
       date: "Date",
       description: "Description",
       debit: "Debit",
@@ -548,15 +540,13 @@ describe("Generic CSV Parser", () => {
 describe("Committed Anonymised Fixtures", () => {
   it("parses commbank.ofx fixture file", () => {
     const content = readFileSync(join(fixturesDir, "commbank.ofx"), "utf8");
-    const parsed = parseCommBankOfx(content);
+    const parsed = parseBuiltinCommBankOfx(content);
     expect(parsed.rows.length).toBeGreaterThanOrEqual(4);
-    expect(parsed.accountId).toBe("06200012345678");
-    expect(parsed.closingBalanceCents).toBe(237550);
   });
 
   it("parses commbank.csv fixture file", () => {
     const content = readFileSync(join(fixturesDir, "commbank.csv"), "utf8");
-    const rows = parseCommBankCsv(content);
+    const { rows } = parseBuiltinCommBankCsv(content);
     expect(rows).toHaveLength(4);
     expect(rows[0]?.postedOn).toBe("2024-09-01");
     expect(rows[0]?.amountCents).toBe(-4500);
@@ -564,7 +554,7 @@ describe("Committed Anonymised Fixtures", () => {
 
   it("parses commbank.qif fixture file", () => {
     const content = readFileSync(join(fixturesDir, "commbank.qif"), "utf8");
-    const rows = parseQif(content);
+    const { rows } = parseBuiltinQif(content);
     expect(rows).toHaveLength(4);
     expect(rows[0]?.postedOn).toBe("2024-09-01");
     expect(rows[0]?.externalId).toBe("1001");
@@ -572,7 +562,7 @@ describe("Committed Anonymised Fixtures", () => {
 
   it("parses ubank.csv fixture file", () => {
     const content = readFileSync(join(fixturesDir, "ubank.csv"), "utf8");
-    const rows = parseUbankCsv(content);
+    const { rows } = parseBuiltinUbankCsv(content);
     expect(rows).toHaveLength(4);
     expect(rows[0]?.postedOn).toBe("2024-09-01");
     expect(rows[0]?.amountCents).toBe(-4500);
@@ -580,7 +570,7 @@ describe("Committed Anonymised Fixtures", () => {
 
   it("parses up.csv fixture file", () => {
     const content = readFileSync(join(fixturesDir, "up.csv"), "utf8");
-    const rows = parseUpCsv(content);
+    const { rows } = parseBuiltinUpCsv(content);
     expect(rows).toHaveLength(4);
     expect(rows[0]?.postedOn).toBe("2024-09-01");
     expect(rows[0]?.amountCents).toBe(-4500);
@@ -588,7 +578,7 @@ describe("Committed Anonymised Fixtures", () => {
 
   it("parses fy2025-multibank.csv fixture file", () => {
     const content = readFileSync(join(fixturesDir, "fy2025-multibank.csv"), "utf8");
-    const rows = parseFy2025MultiBankCsv(content);
+    const { rows } = parseBuiltinFy2025MultiBankCsv(content);
     expect(rows).toHaveLength(4);
     expect(rows[0]?.postedOn).toBe("2024-09-01");
     expect(rows[0]?.amountCents).toBe(-4500);
@@ -596,7 +586,7 @@ describe("Committed Anonymised Fixtures", () => {
 
   it("parses generic.csv fixture file", () => {
     const content = readFileSync(join(fixturesDir, "generic.csv"), "utf8");
-    const rows = parseGenericCsv(content, {
+    const { rows } = parseBuiltinGenericCsv(content, {
       date: "TxDate",
       description: "Merchant",
       debit: "Debit",
@@ -670,7 +660,7 @@ describe("Mock Statement Generators", () => {
   });
 });
 
-describe("importers integrated with importStatement", () => {
+describe("statement generators integrated with importStatement", () => {
   const now = Temporal.Instant.from("2026-10-20T12:00:00Z");
 
   function setup() {
@@ -722,7 +712,7 @@ describe("importers integrated with importStatement", () => {
     return { ctx, accountId, uow };
   }
 
-  it("imports via commbankOfxParser adapter", () => {
+  it("imports via the built-in parser (commbankOfx)", () => {
     const { ctx, accountId, uow } = setup();
 
     const ofxContent = generateCommBankOfx(
@@ -739,15 +729,11 @@ describe("importers integrated with importStatement", () => {
       { closingBalanceCents: 100000 },
     );
 
-    const res = importStatement(
-      ctx,
-      {
-        accountId,
-        format: "commbank_ofx",
-        content: ofxContent,
-      },
-      { parser: commbankOfxParser },
-    );
+    const res = importStatement(ctx, {
+      accountId,
+      format: "commbank_ofx",
+      content: ofxContent,
+    });
 
     expect(res.rowCount).toBe(1);
     expect(res.newCount).toBe(1);
@@ -756,7 +742,7 @@ describe("importers integrated with importStatement", () => {
     expect(uow.state.transactions[0]?.externalId).toBe("OFX-FIT-001");
   });
 
-  it("imports via commbankCsvParser adapter", () => {
+  it("imports via the built-in parser (commbankCsv)", () => {
     const { ctx, accountId, uow } = setup();
 
     const csvContent = generateCommBankCsv(
@@ -771,15 +757,11 @@ describe("importers integrated with importStatement", () => {
       { includeHeader: true },
     );
 
-    const res = importStatement(
-      ctx,
-      {
-        accountId,
-        format: "commbank_csv",
-        content: csvContent,
-      },
-      { parser: commbankCsvParser },
-    );
+    const res = importStatement(ctx, {
+      accountId,
+      format: "commbank_csv",
+      content: csvContent,
+    });
 
     expect(res.rowCount).toBe(1);
     expect(res.newCount).toBe(1);
@@ -788,7 +770,7 @@ describe("importers integrated with importStatement", () => {
     expect(uow.state.transactions[0]?.amountCents).toBe(-1250);
   });
 
-  it("imports via ubankCsvParser adapter", () => {
+  it("imports via the built-in parser (ubankCsv)", () => {
     const { ctx, accountId, uow } = setup();
     const csvContent = generateUbankCsv([
       {
@@ -799,15 +781,11 @@ describe("importers integrated with importStatement", () => {
       },
     ]);
 
-    const res = importStatement(
-      ctx,
-      {
-        accountId,
-        format: "ubank_csv",
-        content: csvContent,
-      },
-      { parser: ubankCsvParser },
-    );
+    const res = importStatement(ctx, {
+      accountId,
+      format: "ubank_csv",
+      content: csvContent,
+    });
 
     expect(res.rowCount).toBe(1);
     expect(res.newCount).toBe(1);
@@ -815,7 +793,7 @@ describe("importers integrated with importStatement", () => {
     expect(uow.state.transactions[0]?.amountCents).toBe(-3500);
   });
 
-  it("imports via upCsvParser adapter", () => {
+  it("imports via the built-in parser (upCsv)", () => {
     const { ctx, accountId, uow } = setup();
     const csvContent = generateUpCsv([
       {
@@ -825,15 +803,11 @@ describe("importers integrated with importStatement", () => {
       },
     ]);
 
-    const res = importStatement(
-      ctx,
-      {
-        accountId,
-        format: "up_csv",
-        content: csvContent,
-      },
-      { parser: upCsvParser },
-    );
+    const res = importStatement(ctx, {
+      accountId,
+      format: "up_csv",
+      content: csvContent,
+    });
 
     expect(res.rowCount).toBe(1);
     expect(res.newCount).toBe(1);
@@ -841,7 +815,7 @@ describe("importers integrated with importStatement", () => {
     expect(uow.state.transactions[0]?.amountCents).toBe(-850);
   });
 
-  it("imports via commbankQifParser / qifParser adapter", () => {
+  it("imports commbank_qif via the built-in parser", () => {
     const { ctx, accountId, uow } = setup();
     const qifContent = generateCommBankQif([
       {
@@ -851,18 +825,11 @@ describe("importers integrated with importStatement", () => {
       },
     ]);
 
-    expect(qifParser.format).toBe("qif");
-    expect(commbankQifParser.format).toBe("commbank_qif");
-
-    const res = importStatement(
-      ctx,
-      {
-        accountId,
-        format: "commbank_qif",
-        content: qifContent,
-      },
-      { parser: commbankQifParser },
-    );
+    const res = importStatement(ctx, {
+      accountId,
+      format: "commbank_qif",
+      content: qifContent,
+    });
 
     expect(res.rowCount).toBe(1);
     expect(res.newCount).toBe(1);
@@ -870,7 +837,7 @@ describe("importers integrated with importStatement", () => {
     expect(uow.state.transactions[0]?.amountCents).toBe(-6000);
   });
 
-  it("imports via qifParser adapter with format qif", () => {
+  it("imports format qif via the built-in parser", () => {
     const { ctx, accountId, uow } = setup();
     const qifContent = generateCommBankQif([
       {
@@ -880,15 +847,11 @@ describe("importers integrated with importStatement", () => {
       },
     ]);
 
-    const res = importStatement(
-      ctx,
-      {
-        accountId,
-        format: "qif",
-        content: qifContent,
-      },
-      { parser: qifParser },
-    );
+    const res = importStatement(ctx, {
+      accountId,
+      format: "qif",
+      content: qifContent,
+    });
 
     expect(res.rowCount).toBe(1);
     expect(res.newCount).toBe(1);
@@ -896,7 +859,7 @@ describe("importers integrated with importStatement", () => {
     expect(uow.state.transactions[0]?.amountCents).toBe(-7500);
   });
 
-  it("imports via fy2025MultiBankCsvParser adapter", () => {
+  it("imports via the built-in parser (fy2025MultiBankCsv)", () => {
     const { ctx, accountId, uow } = setup();
     const csvContent = generateFy2025MultiBankCsv([
       {
@@ -907,15 +870,11 @@ describe("importers integrated with importStatement", () => {
       },
     ]);
 
-    const res = importStatement(
-      ctx,
-      {
-        accountId,
-        format: "fy2025_multibank_csv",
-        content: csvContent,
-      },
-      { parser: fy2025MultiBankCsvParser },
-    );
+    const res = importStatement(ctx, {
+      accountId,
+      format: "fy2025_multibank_csv",
+      content: csvContent,
+    });
 
     expect(res.rowCount).toBe(1);
     expect(res.newCount).toBe(1);
@@ -923,26 +882,17 @@ describe("importers integrated with importStatement", () => {
     expect(uow.state.transactions[0]?.amountCents).toBe(450000);
   });
 
-  it("imports via createGenericCsvParser adapter", () => {
+  it("imports generic_csv via the built-in parser with a csvMapping", () => {
     const { ctx, accountId, uow } = setup();
     const csvContent = `Date,Merchant,Amount
 01/09/2024,Generic Merchant,-15.00`;
 
-    const genericParser = createGenericCsvParser({
-      date: "Date",
-      description: "Merchant",
-      amount: "Amount",
+    const res = importStatement(ctx, {
+      accountId,
+      format: "generic_csv",
+      content: csvContent,
+      csvMapping: { date: "Date", description: "Merchant", amount: "Amount" },
     });
-
-    const res = importStatement(
-      ctx,
-      {
-        accountId,
-        format: "generic_csv",
-        content: csvContent,
-      },
-      { parser: genericParser },
-    );
 
     expect(res.rowCount).toBe(1);
     expect(res.newCount).toBe(1);
@@ -958,7 +908,7 @@ bad-date,-20.00,Lunch,80.00
 03/09/2024,not-an-amount,Dinner,60.00
 04/09/2024,50.00,Refund,110.00`;
 
-      const result = parseCommBankCsv(content);
+      const result = parseBuiltinCommBankCsv(content);
       expect(result.rows).toHaveLength(2);
       expect(result.setAside).toHaveLength(2);
       expect(result.rows[0]?.postedOn).toBe("2024-09-01");
@@ -1003,7 +953,7 @@ DATA:OFXSGML
 </BANKMSGSRSV1>
 </OFX>`;
 
-      const result = parseCommBankOfx(ofxContent);
+      const result = parseBuiltinCommBankOfx(ofxContent);
       expect(result.rows).toHaveLength(2);
       expect(result.setAside).toHaveLength(1);
       expect(result.rows[0]?.externalId).toBe("VALID1");
@@ -1027,7 +977,7 @@ T50.00
 PRefund
 ^`;
 
-      const result = parseQif(qifContent);
+      const result = parseBuiltinQif(qifContent);
       expect(result.rows).toHaveLength(2);
       expect(result.setAside).toHaveLength(1);
       expect(result.rows[0]?.rawDescription).toBe("Coffee");

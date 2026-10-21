@@ -3,7 +3,8 @@ title: 'Consolidate the statement parsers into one copy'
 type: 'refactor'
 ticket: ''
 created: '2026-10-22'
-status: 'draft'
+baseline_revision: '79e1130601dccfae4ca694c2738f253dea03a202'
+status: 'built'
 route: 'full'
 route_source: 'auto'
 review: ''
@@ -58,6 +59,12 @@ The importers parsers returned objects such as `{ rows, accountId, closingBalanc
 
 ## Implementation Notes
 
+- `importers.test.ts` renamed to `statement-parsing.test.ts`. All parser, fixture and generator cases ported to the `parseBuiltin*` functions from `@pangolin/app` (call results use `.rows` / `.setAside`; the importers copy returned a bare array with `setAside` attached). No parser was edited.
+- Adapted (app parser is the truth): OFX rows carry no `balanceCents` key, so the `toEqual` expectation dropped `balanceCents: null`.
+- Dropped, not applicable: OFX `accountId` and `closingBalanceCents` assertions (two places: the main OFX test and the `commbank.ofx` fixture test); the app OFX result carries only rows and set-aside. The OFX test now asserts `setAside` is empty instead.
+- Dropped, not applicable: `qifParser.format` / `commbankQifParser.format` assertions (port adapters no longer exist). The seven "imports via ... adapter" tests now run `importStatement` with the built-in parser (no `options.parser`); the generic one passes `csvMapping`. The `options.parser` injection itself is untouched.
+- The two QIF adapter tests and the other adapter tests keep their original row-count and amount assertions.
+
 ## Plan Change Log
 
 ## Review Triage Log
@@ -67,3 +74,10 @@ The importers parsers returned objects such as `{ rows, accountId, closingBalanc
 **Commands:**
 - `npx vitest run` -- expected: all pass.
 - `pnpm typecheck`, `pnpm lint`, `pnpm check:strict` -- expected: clean.
+
+## Review Triage Log
+
+- OFX `accountId` / `closingBalanceCents` assertions dropped (verification-gap) -- verdict: low -- accepted: the production OFX parser never extracted them; the capability does not exist.
+- `options.parser` injection no longer exercised by any test (verification-gap) -- verdict: low -- deferred: the seam is unused in production; removal or a test is a separate decision.
+- Stale architecture-doc line for `importers/` (verification-gap) -- verdict: low -- patched.
+- Test file keeps the importers location; generators and fixtures still live there -- verdict: false -- intended by the plan.

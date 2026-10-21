@@ -519,7 +519,7 @@ pangolin/
 │  ├─ shared/          Zod schemas, branded types (Cents, AccountId), money + date utils
 │  ├─ domain/          ledger, import, rules, transfers, budgets, recurring, goals, lots, tax
 │  ├─ db/              Drizzle schema, migrations, repositories, visibleAccounts(), redact()
-│  ├─ importers/       OFX, QIF, CSV profiles, PDF extraction + anonymised samples
+│  ├─ importers/       mock statement generators + anonymised samples (parsers live in app/imports/parsers)
 │  ├─ connectors/      price sources, super unit-price fetchers
 │  └─ llm/             provider adapters (OpenAI, Anthropic), prompts, schemas, eval harness
 ├─ tools/

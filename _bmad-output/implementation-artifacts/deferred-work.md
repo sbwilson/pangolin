@@ -472,3 +472,7 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/implementation-artifacts/plan-m1-opening-balance.md`
   summary: Decide how batches imported before migration 0020 get opening/closing values and join checks (re-import after undo is blocked by the file hash).
   evidence: The `opening-balance` command covers the leading span for them, but their joins stay unchecked and `m1-report` reports them under "joins not checked".
+
+- source_plan: `_bmad-output/implementation-artifacts/plan-parser-consolidation.md`
+  summary: Decide whether to remove `importStatement`'s optional `options.parser` injection (and the `StatementParser` port) or give it a test.
+  evidence: After the parser consolidation nothing supplies or tests the seam; production uses the built-in parsers only.

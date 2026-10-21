@@ -374,6 +374,13 @@ export {
   removeProbableDuplicate,
   resolveImportFlagInput,
 } from "./imports/match-transfers.ts";
+export { parseBuiltinCommBankCsv } from "./imports/parsers/commbank-csv.ts";
+export { parseBuiltinCommBankOfx } from "./imports/parsers/commbank-ofx.ts";
+export { parseBuiltinFy2025MultiBankCsv } from "./imports/parsers/fy2025-multibank-csv.ts";
+export { parseBuiltinGenericCsv } from "./imports/parsers/generic-csv.ts";
+export { parseBuiltinQif } from "./imports/parsers/qif.ts";
+export { parseBuiltinUbankCsv } from "./imports/parsers/ubank-csv.ts";
+export { parseBuiltinUpCsv } from "./imports/parsers/up-csv.ts";
 export {
   type DiscardSetAsideRowInput,
   type DiscardSetAsideRowResult,

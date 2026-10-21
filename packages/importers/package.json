@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Adapter: statement file parsers",
+  "description": "Adapter: mock statement generators and anonymised fixtures",
   "exports": {
     ".": "./src/index.ts"
   },

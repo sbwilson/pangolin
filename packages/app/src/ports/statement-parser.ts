@@ -1,5 +1,5 @@
 /**
- * Statement parser port (AD-1, AD-12). Implemented in `packages/importers`.
+ * Statement parser port (AD-1, AD-12). Built-in implementations live in `packages/app/src/imports/parsers`.
  */
 export interface ParsedStatementRow {
   readonly rowNumber: number;
