@@ -488,6 +488,11 @@ function printM1Report(io: CliIo, report: M1Report): void {
         `  starts from opening balance ${dollars(a.startsFrom.balanceCents)} on ${a.startsFrom.asOf}`,
       );
     }
+    if (a.ledgerBalance !== null) {
+      io.out(
+        `  ledger balance ${dollars(a.ledgerBalance.balanceCents)} on ${a.ledgerBalance.asOf}`,
+      );
+    }
     io.out(`  account  ${a.accountId}`);
     for (const s of a.covered) io.out(`  covered  ${s.from} to ${s.to}`);
     for (const h of a.holes) io.out(`  HOLE     ${h.from} to ${h.to} (${plural(h.days, "day")})`);

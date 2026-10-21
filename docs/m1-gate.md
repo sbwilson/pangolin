@@ -29,6 +29,13 @@ zero of each.
    dated before its first covered date. The report then prints `starts from opening balance
    <amount> on <date>`. Without such a snapshot the leading span stays a hole. When the first batch derived an opening of its own, only a snapshot with that same balance
    counts. Interior holes and broken batches always count.
+   **Ledger balance.** For an account with an accepted opening, the report prints `ledger balance
+   <amount> on <date>`: the ledger's balance on the account's newest covered date (the opening
+   balance plus every transaction after it). Compare it with the bank's balance on that date and
+   record both under Findings per account. The ledger balance counts every live transaction,
+   pending or posted and manually entered ones included, so a manual entry or a pending row can
+   explain a difference from the bank. With no accepted opening snapshot the sum would start
+   from 0, so nothing is printed.
 3. **A join break.** For batches ordered by first date, where the next starts after the previous
    ends, the previous closing balance must equal the next opening balance, when both are recorded.
    A mismatch is a `JOIN` line and counts in the total. Overlapping batches are not join-checked.
@@ -83,7 +90,7 @@ CommBank accounts has to come from NetBank (the exports on hand start in FY2026)
    ```
 
    Expected: for each account a line `<name>: N batches, M months covered, H holes, B broken
-   batches, J join breaks`, then its `account` id, `starts from opening balance`, `covered`,
+   batches, J join breaks`, then its `starts from opening balance` and `ledger balance` lines, its `account` id, `covered`,
    `HOLE`, `BROKEN` and `JOIN` lines, and a last line `Total: 0 holes, 0 broken batches, 0 join
    breaks`. An account with no statement is listed apart and not counted.
 4. For each `HOLE`, `BROKEN` and `JOIN` line left, record the span and why it is explained (for example "no

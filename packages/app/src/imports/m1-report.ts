@@ -39,6 +39,12 @@ export interface M1OpeningStart {
   readonly balanceCents: number;
 }
 
+/** The ledger's balance on the account's newest covered date, to compare with the bank. */
+export interface M1LedgerBalance {
+  readonly asOf: string;
+  readonly balanceCents: number;
+}
+
 export interface M1AccountReport {
   readonly accountId: string;
   readonly name: string;
@@ -59,6 +65,11 @@ export interface M1AccountReport {
   readonly joinBreaks: readonly M1JoinBreak[];
   /** Consecutive non-overlapping batch pairs not compared because a closing or opening is not recorded. */
   readonly joinsUnchecked: number;
+  /**
+   * `balanceAsOf` at the newest covered date; null when no accepted opening snapshot precedes the
+   * first covered date (the sum would start from 0), or when there is nothing to compare.
+   */
+  readonly ledgerBalance: M1LedgerBalance | null;
 }
 
 export interface M1Report {
@@ -114,6 +125,7 @@ export function accountReport(
   batches: readonly ImportBatchRow[],
   from: string = M1_HISTORY_START,
   snapshots: readonly BalanceSnapshotRow[] = [],
+  balanceOn?: (date: string) => number | undefined,
 ): M1AccountReport {
   const dated = batches.flatMap((b) =>
     b.firstPostedOn !== null && b.lastPostedOn !== null
@@ -158,6 +170,16 @@ export function accountReport(
       }),
     );
   const { breaks: joinBreaks, unchecked: joinsUnchecked } = joinBreaksOf(batches);
+  let ledgerBalance: M1LedgerBalance | null = null;
+  if (
+    balanceOn !== undefined &&
+    newest !== undefined &&
+    firstCovered !== undefined &&
+    openingBefore(snapshots, firstCovered, firstOpenings) !== undefined
+  ) {
+    const balanceCents = balanceOn(newest);
+    if (balanceCents !== undefined) ledgerBalance = { asOf: newest, balanceCents };
+  }
   const checked = (s: ReconcileStatus | null) => s === "ok" || s === "gap";
   return {
     accountId: account.id,
@@ -171,6 +193,7 @@ export function accountReport(
     startsFrom,
     joinBreaks,
     joinsUnchecked,
+    ledgerBalance,
   };
 }
 
@@ -260,6 +283,7 @@ export function m1GateReport(ctx: UseCaseContext): M1Report {
         batches,
         M1_HISTORY_START,
         repos.balanceSnapshots.listVisible(ctx.viewer, a.id),
+        (date) => repos.balanceSnapshots.balanceAsOf(ctx.viewer, a.id, date),
       );
     });
     return {

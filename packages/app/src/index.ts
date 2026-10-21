@@ -360,6 +360,7 @@ export {
   type M1AccountReport,
   type M1BrokenBatch,
   type M1JoinBreak,
+  type M1LedgerBalance,
   type M1OpeningStart,
   type M1Report,
   m1GateReport,

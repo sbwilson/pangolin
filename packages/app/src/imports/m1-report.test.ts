@@ -487,4 +487,47 @@ describe("accountReport joins and accepted start", () => {
     );
     expect(manual.startsFrom).toEqual({ asOf: "2024-07-04", balanceCents: 777 });
   });
+
+  it("reports the ledger balance at the newest covered date only when a snapshot precedes the first", () => {
+    const batches = [batch("a", "2024-07-05", "2024-07-31", null, null)];
+    const asked: string[] = [];
+    const balanceOn = (date: string) => {
+      asked.push(date);
+      return 123_45;
+    };
+    const withOpening = accountReport(
+      acct,
+      batches,
+      "2024-07-01",
+      [snap("2024-07-04", 1000)],
+      balanceOn,
+    );
+    expect(withOpening.ledgerBalance).toEqual({ asOf: "2024-07-31", balanceCents: 123_45 });
+    expect(asked).toEqual(["2024-07-31"]);
+    // A snapshot dated on the first covered day is not an opening: the day's rows are after it.
+    const sameDay = accountReport(
+      acct,
+      batches,
+      "2024-07-01",
+      [snap("2024-07-05", 1000)],
+      balanceOn,
+    );
+    expect(sameDay.ledgerBalance).toBeNull();
+    // A snapshot the first batch's own derived opening contradicts is not an accepted opening.
+    const derived = [batch("a", "2024-07-05", "2024-07-31", 1000, 900)];
+    expect(
+      accountReport(acct, derived, "2024-07-01", [snap("2024-07-04", 777)], balanceOn)
+        .ledgerBalance,
+    ).toBeNull();
+    // No snapshot: the sum would start from 0, so nothing is printed.
+    expect(accountReport(acct, batches, "2024-07-01", [], balanceOn).ledgerBalance).toBeNull();
+    // No balance function (or no balance to read): nothing.
+    expect(
+      accountReport(acct, batches, "2024-07-01", [snap("2024-07-04", 1000)]).ledgerBalance,
+    ).toBeNull();
+    expect(
+      accountReport(acct, batches, "2024-07-01", [snap("2024-07-04", 1000)], () => undefined)
+        .ledgerBalance,
+    ).toBeNull();
+  });
 });

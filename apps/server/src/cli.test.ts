@@ -945,6 +945,9 @@ describe("pangolin m1-report (the M1 gate's machine check)", () => {
       "Everyday: 2 batches, 1 month covered, 0 holes, 0 broken batches, 1 join break",
     );
     expect(result.out).toContain("starts from opening balance $1000.00 on 2024-07-04");
+    // The opening 1000.00 less the four imported debits of 10.00; the second file's printed 880.00
+    // is the join break, so the ledger and the statement deliberately differ.
+    expect(result.out).toContain("ledger balance $960.00 on 2024-07-08");
     expect(result.out).toContain(`account  ${accountId}`);
     expect(result.out).toMatch(
       /JOIN {5}batch \S+ closes at \$980\.00 on 2024-07-06, next batch \S+ opens at \$900\.00 on 2024-07-07/,
