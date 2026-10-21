@@ -75,7 +75,8 @@ test("imports a file from the header popover, reports nothing new on a repeat, a
   await expect(status).toHaveAttribute("aria-live", "polite");
 
   await importOfx();
-  await expect(status).toHaveText("Nothing new. You've already imported all of this.");
+  // The region also holds the review link while the first import's items are still open.
+  await expect(status).toContainText("Nothing new. You've already imported all of this.");
 
   // A CSV with a row that cannot be read: it is set aside and counted in "need review".
   const csv = readFileSync(join(fixtures, "commbank.csv"), "utf8");
