@@ -224,6 +224,11 @@ export {
   recordCredentialChange,
 } from "./identity/credentials.ts";
 export {
+  type FindActivePersonByNameInput,
+  findActivePersonByName,
+  findActivePersonByNameInput,
+} from "./identity/find-person-by-name.ts";
+export {
   type ListLoginsInput,
   type Login,
   listLogins,

@@ -57,9 +57,14 @@ Accounts whose statements print no balances (credit cards, Up, OFX, QIF), and ba
 before this change, have no opening yet. Set one by hand, on the host with the server running:
 
 ```sh
-sudo pangolin m1-report                                      # prints each account's id
-sudo pangolin opening-balance <account-id> <YYYY-MM-DD> <amount>
+sudo pangolin m1-report --as <name>                          # prints each account's id
+sudo pangolin opening-balance --as <name> <account-id> <YYYY-MM-DD> <amount>
 ```
+
+Both commands run as the household person you name (`--as`, their display name, any case), so
+they see and change only what that person can: a partner's private accounts are not in the report
+and are "not found" to `opening-balance`. Run the report once per person; each run's totals cover
+only the accounts that person sees. The named person must be able to see the account (a shared account is visible to both partners).
 
 The date is the day before the account's first transaction; the balance is at the end of that
 day, signed (a credit card owing 500 is `-500.00`). It records a `manual` snapshot, audited, and
@@ -88,8 +93,11 @@ CommBank accounts has to come from NetBank (the exports on hand start in FY2026)
 3. Run the report on the host:
 
    ```sh
-   sudo pangolin m1-report
+   sudo pangolin m1-report --as <name>
    ```
+
+   Run it once for each person (for example `--as Alex`, then `--as Sam`): shared accounts show in
+   both, private ones only for their owner.
 
    Expected: for each account a line `<name>: N batches, M months covered, H holes, B broken
    batches, J join breaks`, then its `starts from opening balance` and `ledger balance` lines, its `account` id, `covered`,

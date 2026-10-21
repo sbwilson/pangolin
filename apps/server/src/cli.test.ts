@@ -160,9 +160,14 @@ describe("pangolin (the admin CLI)", () => {
       code: EXIT_USAGE,
       err: /seed takes no arguments/,
     });
-    expect(await cli(["m1-report", "now"])).toMatchObject({
+    expect(await cli(["m1-report", "now", "--as", "Alex"])).toMatchObject({
       code: EXIT_USAGE,
       err: /m1-report takes no arguments/,
+    });
+    expect(await cli(["m1-report"])).toMatchObject({ code: EXIT_USAGE, err: /needs --as <name>/ });
+    expect(await cli(["m1-report", "--as"])).toMatchObject({
+      code: EXIT_USAGE,
+      err: /--as needs a person's name/,
     });
     expect(await cli(["--help"])).toMatchObject({ out: /m1-report/ });
     expect(await cli(["--help"])).toMatchObject({ out: /confirm-bundle/ });
@@ -839,7 +844,7 @@ describe("pangolin m1-report (the M1 gate's machine check)", () => {
       expect(rows).toHaveLength(12);
       expect(rows.every((b) => b.reconcileStatus === "ok" && b.reconcileGapCents === 0)).toBe(true);
     });
-    const result = await cli(["m1-report"]);
+    const result = await cli(["m1-report", "--as", "Alex"]);
     expect(result.err).toBe("");
     expect(result.code).toBe(EXIT_OK);
     expect(result.out).toContain(
@@ -863,7 +868,7 @@ describe("pangolin m1-report (the M1 gate's machine check)", () => {
         });
       }
     });
-    const result = await cli(["m1-report"]);
+    const result = await cli(["m1-report", "--as", "Alex"]);
     expect(result.code).toBe(EXIT_OK);
     expect(result.out).toContain("1 hole, 1 broken batch");
     expect(result.out).toContain("HOLE     2024-10-01 to 2024-10-31 (31 days)");
@@ -881,7 +886,7 @@ describe("pangolin m1-report (the M1 gate's machine check)", () => {
       undoImportBatch(ctx, { batchId: batch?.id ?? "" });
     });
     // The undone batch's month is now uncovered too, and its break no longer counts.
-    const after = (await cli(["m1-report"])).out;
+    const after = (await cli(["m1-report", "--as", "Alex"])).out;
     expect(after).toContain("HOLE     2024-12-01 to 2024-12-31 (31 days)");
     expect(after).toContain("Total: 2 holes, 0 broken batches");
   });
@@ -905,7 +910,7 @@ describe("pangolin m1-report (the M1 gate's machine check)", () => {
         ],
       });
     });
-    const result = await cli(["m1-report"]);
+    const result = await cli(["m1-report", "--as", "Alex"]);
     expect(result.code).toBe(EXIT_OK);
     expect(result.out).toContain("Empty: no statements imported");
     expect(result.out).toContain("(1 not balance-checked)");
@@ -939,7 +944,7 @@ describe("pangolin m1-report (the M1 gate's machine check)", () => {
         ]),
       });
     });
-    const result = await cli(["m1-report"]);
+    const result = await cli(["m1-report", "--as", "Alex"]);
     expect(result.code).toBe(EXIT_OK);
     expect(result.out).toContain(
       "Everyday: 2 batches, 1 month covered, 0 holes, 0 broken batches, 1 join break",
@@ -967,8 +972,10 @@ describe("pangolin m1-report (the M1 gate's machine check)", () => {
           "Time,Settled Date,Description,Amount,Status\n2026-01-13T00:00:00Z,2026-01-13,A,-10.00,SETTLED\n2026-01-20T00:00:00Z,2026-01-20,B,-5.00,SETTLED",
       });
     });
-    expect(await cli(["m1-report"])).toMatchObject({ out: /HOLE {5}2024-07-01 to 2026-01-12/ });
-    const done = await cli(["opening-balance", accountId, "2026-01-12", "-500.00"]);
+    expect(await cli(["m1-report", "--as", "Alex"])).toMatchObject({
+      out: /HOLE {5}2024-07-01 to 2026-01-12/,
+    });
+    const done = await cli(["opening-balance", "--as", "Alex", accountId, "2026-01-12", "-500.00"]);
     expect(done).toMatchObject({ code: EXIT_OK, err: "" });
     expect(done.out).toContain(
       `Recorded opening balance -$500.00 for account ${accountId} on 2026-01-12`,
@@ -987,48 +994,201 @@ describe("pangolin m1-report (the M1 gate's machine check)", () => {
             "SELECT actor FROM audit_log WHERE entity = 'balance_snapshot' AND action = 'create'",
           )
           .all(),
-      ).toEqual([{ actor: "cli:opening-balance" }]);
+      ).toEqual([
+        {
+          actor: `person:${(db.prepare("SELECT id FROM person WHERE display_name = 'Alex'").get() as { id: string }).id}`,
+        },
+      ]);
     });
     // A second run for the same account and day is refused, and writes nothing.
-    const again = await cli(["opening-balance", accountId, "2026-01-12", "-400.00"]);
+    const again = await cli([
+      "opening-balance",
+      "--as",
+      "Alex",
+      accountId,
+      "2026-01-12",
+      "-400.00",
+    ]);
     expect(again.code).toBe(EXIT_FAILED);
     expect(again.err).toMatch(/already has a balance snapshot dated 2026-01-12/);
     withDb((db) => {
       expect(db.prepare("SELECT count(*) FROM balance_snapshot").pluck().get()).toBe(1);
     });
-    const after = await cli(["m1-report"]);
+    const after = await cli(["m1-report", "--as", "Alex"]);
     expect(after.out).toContain("starts from opening balance -$500.00 on 2026-01-12");
     expect(after.out).not.toContain("HOLE");
-    const unknown = await cli(["opening-balance", "no-such-account", "2026-01-12", "10"]);
+    const unknown = await cli([
+      "opening-balance",
+      "--as",
+      "Alex",
+      "no-such-account",
+      "2026-01-12",
+      "10",
+    ]);
     expect(unknown.code).toBe(EXIT_FAILED);
     expect(unknown.err).toMatch(/not found/i);
   });
 
+  it("rejects a malformed --as as a usage error", async () => {
+    for (const argv of [
+      ["m1-report", "--as", "A", "--as", "B"],
+      ["m1-report", "--as="],
+      ["m1-report", "--as", "--foo"],
+      ["m1-report", "--as", "Alex", "--bogus"],
+    ]) {
+      expect(await cli(argv)).toMatchObject({ code: EXIT_USAGE });
+    }
+  });
+
+  it("opening-balance --as the partner works on a shared account", async () => {
+    await boot();
+    const ids = arrangeTwoPrivate();
+    const shared = withDb(
+      (db) =>
+        (db.prepare("SELECT id FROM account WHERE name = 'Joint'").get() as { id: string }).id,
+    );
+    const done = await cli(["opening-balance", "--as", "Sam", shared, "2026-01-12", "5"]);
+    expect(done).toMatchObject({ code: EXIT_OK, err: "" });
+    expect(ids.sam).not.toBe("");
+  });
+
   it("opening-balance checks its arguments and needs the server", async () => {
     expect(await cli(["opening-balance"])).toMatchObject({ code: EXIT_USAGE });
-    expect(await cli(["opening-balance", "a", "2026-01-12"])).toMatchObject({ code: EXIT_USAGE });
-    expect(await cli(["opening-balance", "a", "12/01/2026", "1"])).toMatchObject({
+    expect(await cli(["opening-balance", "a", "2026-01-12", "1"])).toMatchObject({
+      code: EXIT_USAGE,
+      err: /needs --as <name>/,
+    });
+    expect(await cli(["opening-balance", "--as", "Alex", "a", "2026-01-12"])).toMatchObject({
+      code: EXIT_USAGE,
+    });
+    expect(await cli(["opening-balance", "--as", "Alex", "a", "12/01/2026", "1"])).toMatchObject({
       code: EXIT_USAGE,
       err: /YYYY-MM-DD/,
     });
-    expect(await cli(["opening-balance", "a", "2026-02-30", "1"])).toMatchObject({
+    expect(await cli(["opening-balance", "--as", "Alex", "a", "2026-02-30", "1"])).toMatchObject({
       code: EXIT_USAGE,
       err: /real day/,
     });
-    expect(await cli(["opening-balance", "a", "2026-01-12", "ten"])).toMatchObject({
+    expect(await cli(["opening-balance", "--as", "Alex", "a", "2026-01-12", "ten"])).toMatchObject({
       code: EXIT_USAGE,
       err: /dollars and cents/,
     });
-    expect(await cli(["opening-balance", "a", "2026-01-12", "1", "2"])).toMatchObject({
+    expect(
+      await cli(["opening-balance", "--as", "Alex", "a", "2026-01-12", "1", "2"]),
+    ).toMatchObject({
       code: EXIT_USAGE,
     });
-    expect(await cli(["--help"])).toMatchObject({ out: /opening-balance <account-id>/ });
-    expect(await cli(["opening-balance", "a", "2026-01-12", "-1.5"])).toMatchObject({
-      code: EXIT_NOT_RUNNING,
+    expect(await cli(["--help"])).toMatchObject({
+      out: /opening-balance --as <name> <account-id>/,
+    });
+    expect(await cli(["opening-balance", "--as", "Alex", "a", "2026-01-12", "-1.5"])).toMatchObject(
+      {
+        code: EXIT_NOT_RUNNING,
+      },
+    );
+  });
+
+  /** Alex and Sam, each with a private account holding one imported row, and a shared one. */
+  function arrangeTwoPrivate() {
+    const ids = { alex: "", sam: "", alexAccount: "", samAccount: "" };
+    withDb((db) => {
+      ids.alex = addLogin(db, "alex@example.com", "Alex");
+      ids.sam = addLogin(db, "sam@example.com", "Sam");
+      const clock = systemClock("UTC");
+      let ms = Date.now();
+      const newId = createIdGenerator({ now: () => ++ms, random: Math.random });
+      const uow = createUnitOfWork(db);
+      const as = (id: string) => ({
+        viewer: personViewer(id as never, clock.now()),
+        clock,
+        newId,
+        uow,
+      });
+      const make = (id: string, name: string, isPrivate: boolean) => {
+        const ctx = as(id);
+        const accountId = createAccount(ctx, {
+          name,
+          type: "transaction",
+          currency: "AUD",
+          isPrivate,
+          owners: [{ personId: id as never, shareBp: 10000 }],
+        });
+        importStatement(ctx, {
+          accountId,
+          format: "up_csv",
+          content: `Time,Settled Date,Description,Amount,Status\n2026-01-13T00:00:00Z,2026-01-13,A,-10.00,SETTLED`,
+        });
+        return accountId;
+      };
+      make(ids.alex, "Joint", false);
+      ids.alexAccount = make(ids.alex, "AlexSecret", true);
+      ids.samAccount = make(ids.sam, "SamSecret", true);
+    });
+    return ids;
+  }
+
+  it("reports only what the named person sees, once per person", async () => {
+    await boot();
+    const ids = arrangeTwoPrivate();
+    const alex = await cli(["m1-report", "--as", "alex"]);
+    expect(alex).toMatchObject({ code: EXIT_OK, err: "" });
+    expect(alex.out).toContain("M1 gate report as alex");
+    expect(alex.out).toContain("Joint:");
+    expect(alex.out).toContain("AlexSecret:");
+    expect(alex.out).not.toContain("SamSecret");
+    expect(alex.out).not.toContain(ids.samAccount);
+    const sam = await cli(["m1-report", "--as=Sam"]);
+    expect(sam.out).toContain("Joint:");
+    expect(sam.out).toContain("SamSecret:");
+    expect(sam.out).not.toContain("AlexSecret");
+    expect(sam.out).not.toContain(ids.alexAccount);
+  });
+
+  it("refuses an unknown or ambiguous person without naming any account", async () => {
+    await boot();
+    const ids = arrangeTwoPrivate();
+    const unknown = await cli(["m1-report", "--as", "Nobody"]);
+    expect(unknown).toMatchObject({ code: EXIT_FAILED, out: "" });
+    expect(unknown.err).toContain("No active person named Nobody");
+    expect(unknown.err).not.toContain("Secret");
+    expect(unknown.err).not.toContain(ids.samAccount);
+    withDb((db) => addLogin(db, "sam2@example.com", "SAM"));
+    const ambiguous = await cli(["m1-report", "--as", "Sam"]);
+    expect(ambiguous).toMatchObject({ code: EXIT_FAILED, out: "" });
+    expect(ambiguous.err).toContain("exact display name");
+    const write = await cli(["opening-balance", "--as", "Sam", ids.samAccount, "2026-01-12", "1"]);
+    expect(write.code).toBe(EXIT_FAILED);
+    withDb((db) => {
+      expect(db.prepare("SELECT count(*) FROM balance_snapshot").pluck().get()).toBe(0);
+    });
+  });
+
+  it("opening-balance on the partner's private account answers as an unknown id does and writes nothing", async () => {
+    await boot();
+    const ids = arrangeTwoPrivate();
+    const unknown = await cli(["opening-balance", "--as", "Alex", "no-such-id", "2026-01-12", "5"]);
+    // Seed a snapshot on Sam's account so a leak ("already has a snapshot") would show.
+    const own = await cli(["opening-balance", "--as", "Sam", ids.samAccount, "2026-01-12", "5"]);
+    expect(own).toMatchObject({ code: EXIT_OK, err: "" });
+    const theirs = await cli([
+      "opening-balance",
+      "--as",
+      "Alex",
+      ids.samAccount,
+      "2026-01-12",
+      "9",
+    ]);
+    expect(theirs).toMatchObject({ code: unknown.code, out: unknown.out, err: unknown.err });
+    expect(theirs.err).not.toMatch(/snapshot|2026-01-12/);
+    withDb((db) => {
+      expect(db.prepare("SELECT count(*) FROM balance_snapshot").pluck().get()).toBe(1);
+      expect(
+        db.prepare("SELECT actor FROM audit_log WHERE entity = 'balance_snapshot'").pluck().all(),
+      ).toEqual([`person:${ids.sam}`]);
     });
   });
 
   it("says so when the server is not running, exit 3", async () => {
-    expect(await cli(["m1-report"])).toMatchObject({ code: EXIT_NOT_RUNNING });
+    expect(await cli(["m1-report", "--as", "Alex"])).toMatchObject({ code: EXIT_NOT_RUNNING });
   });
 });

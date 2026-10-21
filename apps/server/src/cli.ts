@@ -75,12 +75,14 @@ Commands:
                                 and the end-to-end run; refused unless the stack sets
                                 PANGOLIN_ENABLE_SEED=true; needs both partners signed up and an
                                 empty ledger, and the server running (exits 3 when it is not)
-  m1-report                     the M1 gate's machine check, read-only: per account, the statement
-                                coverage from 2024-07-01, the spans with no statement and the
-                                batches whose printed balances do not chain; needs the server
-                                running (exits 3 when it is not)
-  opening-balance <account-id> <YYYY-MM-DD> <amount>
-                                record an account's opening balance by hand: its balance at the
+  m1-report --as <name>         the M1 gate's machine check, read-only, as that person (a household
+                                member's display name): the accounts they see, each with its
+                                statement coverage from 2024-07-01, the spans with no statement
+                                and the batches whose printed balances do not chain; run it once
+                                per person; needs the server running (exits 3 when it is not)
+  opening-balance --as <name> <account-id> <YYYY-MM-DD> <amount>
+                                as that person, record an account's opening balance by hand (they
+                                must be able to see the account, else it is not found): its balance at the
                                 end of that day (the day before its first transaction), signed,
                                 so a credit card owing 500 is -500.00. For accounts whose
                                 statements print no balances and for batches imported before
@@ -469,8 +471,8 @@ function dollars(cents: number): string {
   return `${cents < 0 ? "-" : ""}$${(Math.abs(cents) / 100).toFixed(2)}`;
 }
 
-function printM1Report(io: CliIo, report: M1Report): void {
-  io.out(`M1 gate report: statements from ${report.from}`);
+function printM1Report(io: CliIo, report: M1Report, as: string): void {
+  io.out(`M1 gate report as ${as}: statements from ${report.from}`);
   const plural = (n: number, word: string) =>
     `${n} ${n === 1 ? word : word.endsWith("ch") ? `${word}es` : `${word}s`}`;
   for (const a of report.accounts) {
@@ -530,7 +532,7 @@ function parseAmountCents(text: string): number | undefined {
 async function openingBalanceCli(
   config: Config,
   io: CliIo,
-  args: { accountId: string; asOf: string; balanceCents: number },
+  args: { as: string; accountId: string; asOf: string; balanceCents: number },
 ): Promise<number> {
   if (config.adminSocket === null) {
     io.err("pangolin: the admin socket is disabled (PANGOLIN_ADMIN_SOCKET is empty)");
@@ -550,18 +552,18 @@ async function openingBalanceCli(
 }
 
 /** `m1-report`: over the admin socket only. Exit 0 whatever it finds; the human reads it. */
-async function m1ReportCli(config: Config, io: CliIo): Promise<number> {
+async function m1ReportCli(config: Config, io: CliIo, as: string): Promise<number> {
   if (config.adminSocket === null) {
     io.err("pangolin: the admin socket is disabled (PANGOLIN_ADMIN_SOCKET is empty)");
     return EXIT_FAILED;
   }
-  const response = await viaSocket(config, "m1-report", {});
+  const response = await viaSocket(config, "m1-report", { as });
   if (response === undefined) return notAnswering(config, io);
   if (!response.ok) {
     printError(io, response.error);
     return EXIT_FAILED;
   }
-  printM1Report(io, response.result as M1Report);
+  printM1Report(io, response.result as M1Report, as);
   return EXIT_OK;
 }
 
@@ -691,12 +693,42 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
     return usage("confirm-bundle takes no arguments");
   }
   if (command === "seed" && rest.length > 0) return usage("seed takes no arguments");
-  if (command === "m1-report" && rest.length > 0) return usage("m1-report takes no arguments");
-  let openingArgs: { accountId: string; asOf: string; balanceCents: number } | undefined;
+  // `--as <name>` (or `--as=<name>`) for the commands that run as a person; returns the rest.
+  let as: string | undefined;
+  let positional: string[] = rest;
+  if (command === "m1-report" || command === "opening-balance") {
+    positional = [];
+    for (let i = 0; i < rest.length; i++) {
+      const arg = rest[i] as string;
+      if (arg === "--as" || arg.startsWith("--as=")) {
+        if (as !== undefined) return usage("--as is given once");
+        const value = arg === "--as" ? rest[++i] : arg.slice("--as=".length);
+        if (value === undefined || value.trim() === "" || value.startsWith("--")) {
+          return usage("--as needs a person's name");
+        }
+        as = value.trim();
+      } else if (arg.startsWith("--") && arg.length > 2) {
+        return usage(`unknown option ${JSON.stringify(arg)}`);
+      } else {
+        positional.push(arg);
+      }
+    }
+    if (as === undefined) {
+      return usage(`${command} needs --as <name>, the household person to run as`);
+    }
+  }
+  if (command === "m1-report" && positional.length > 0) {
+    return usage("m1-report takes no arguments besides --as <name>");
+  }
+  let openingArgs:
+    | { as: string; accountId: string; asOf: string; balanceCents: number }
+    | undefined;
   if (command === "opening-balance") {
-    const [accountId, asOf, amount, ...extra] = rest;
+    const [accountId, asOf, amount, ...extra] = positional;
     if (accountId === undefined || asOf === undefined || amount === undefined || extra.length > 0) {
-      return usage("opening-balance takes an account ID, a date (YYYY-MM-DD) and an amount");
+      return usage(
+        "opening-balance takes --as <name>, an account ID, a date (YYYY-MM-DD) and an amount",
+      );
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf) || !isRealDay(asOf)) {
       return usage("the date must be a real day, YYYY-MM-DD");
@@ -705,7 +737,7 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
     if (balanceCents === undefined) {
       return usage("the amount must be dollars and cents, like -500.00");
     }
-    openingArgs = { accountId, asOf, balanceCents };
+    openingArgs = { as: as as string, accountId, asOf, balanceCents };
   }
   const flags = rest.filter((arg) => arg.startsWith("--"));
   const operands = rest.filter((arg) => !arg.startsWith("--"));
@@ -758,7 +790,7 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
       case "seed":
         return await seedCli(config, io);
       case "m1-report":
-        return await m1ReportCli(config, io);
+        return await m1ReportCli(config, io, as as string);
       case "opening-balance":
         return await openingBalanceCli(config, io, openingArgs as NonNullable<typeof openingArgs>);
       default:

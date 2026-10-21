@@ -1,6 +1,8 @@
 // The admin commands (story 1.9, AD-16): the fixed set the admin socket accepts, and the stopped
-// stack's `reset-user`. Each runs `app` use cases as `systemViewer("cli:<command>")`; no command
-// reads or writes a repository itself, and there is no generic query, export or eval command.
+// stack's `reset-user`. Each runs `app` use cases; no command reads or writes a repository itself,
+// and there is no generic query, export or eval command. `m1-report` and `opening-balance` take
+// `--as <name>` and run as that person (`findActivePersonByName`, then `personViewer`), so they
+// see and change only what that person can; the others run as `systemViewer("cli:<command>")`.
 import { readFileSync } from "node:fs";
 import {
   AppError,
@@ -13,6 +15,7 @@ import {
   confirmRecoveryBundle,
   type DeadJob,
   deadJobs,
+  findActivePersonByName,
   health,
   type IdGenerator,
   type JobCounts,
@@ -23,6 +26,7 @@ import {
   m1GateReport,
   type PendingJob,
   pendingJobs,
+  personViewer,
   type ReadinessOutput,
   type RunnerLiveness,
   type RunningJob,
@@ -153,6 +157,25 @@ function context(deps: Pick<AdminDeps, "uow" | "clock" | "newId">, command: Admi
   return ctx;
 }
 
+/**
+ * The context of a command that runs as a named household person: the server resolves the name
+ * (`identity.findActivePersonByName`, as the system viewer) and the use cases then run as that
+ * person, so their own filtering and audit apply. An unknown or ambiguous name is refused.
+ */
+function contextAsPerson(
+  deps: Pick<AdminDeps, "uow" | "clock" | "newId">,
+  command: AdminCommand,
+  name: string,
+): UseCaseContext {
+  const personId = findActivePersonByName(context(deps, command), { name });
+  return {
+    viewer: personViewer(personId, deps.clock.now()),
+    clock: deps.clock,
+    newId: deps.newId,
+    uow: deps.uow,
+  };
+}
+
 function parseArgs<S extends z.ZodType>(schema: S, args: unknown): z.output<S> {
   const parsed = schema.safeParse(args ?? {});
   if (!parsed.success) throw new AppError("Validation", "Invalid arguments", parsed.error.issues);
@@ -281,16 +304,18 @@ export function seedCommand(deps: AdminDeps, args: unknown = {}): SeedResult {
   return { accounts, transactions, events };
 }
 
-const m1ReportArgs = z.object({}).strict();
+const asArg = z.string().trim().min(1).max(200);
+const m1ReportArgs = z.object({ as: asArg }).strict();
 
 /**
- * `m1-report`: the M1 gate's machine check (`imports.m1GateReport`), read-only: per account, the
- * statement coverage from 1 July 2024 with its holes, and the batches whose printed balances do
- * not chain. A read: it writes no audit row.
+ * `m1-report { as }`: the M1 gate's machine check (`imports.m1GateReport`), read-only, run as
+ * the named person so it covers only the accounts that person sees: per account, the statement
+ * coverage from 1 July 2024 with its holes, and the batches whose printed balances do not chain.
+ * A read: it writes no audit row. An unknown or ambiguous name is refused.
  */
 export function m1ReportCommand(deps: AdminDeps, args: unknown = {}): M1Report {
-  parseArgs(m1ReportArgs, args);
-  return m1GateReport(context(deps, "m1-report"));
+  const { as } = parseArgs(m1ReportArgs, args);
+  return m1GateReport(contextAsPerson(deps, "m1-report", as));
 }
 
 /** Whether `YYYY-MM-DD` names a day that exists (not 2026-02-30). */
@@ -301,6 +326,7 @@ export function isRealDay(day: string): boolean {
 
 const openingBalanceArgs = z
   .object({
+    as: asArg,
     accountId: z.string().min(1),
     asOf: z
       .string()
@@ -320,15 +346,16 @@ export interface OpeningBalanceResult {
 }
 
 /**
- * `opening-balance`: records a `manual` balance snapshot (`accounts.recordBalanceSnapshot`, as
- * the system viewer, audited as `cli:opening-balance`) as an account's opening balance on a
- * day, for accounts whose statements print no balances and batches imported before openings
- * were derived. The balance is the end of that day, so give the day before the first
- * transaction. An unknown account is `NotFound`.
+ * `opening-balance { as, ... }`: records a `manual` balance snapshot
+ * (`accounts.recordBalanceSnapshot`) as an account's opening balance on a day, for accounts whose
+ * statements print no balances and batches imported before openings were derived. It runs as the
+ * named person and is audited with them as actor. The balance is the end of that day, so give the
+ * day before the first transaction. An unknown account, or one that person cannot see, is
+ * `NotFound`, with no hint which.
  */
 export function openingBalanceCommand(deps: AdminDeps, args: unknown = {}): OpeningBalanceResult {
   const parsed = parseArgs(openingBalanceArgs, args);
-  const ctx = context(deps, "opening-balance");
+  const ctx = contextAsPerson(deps, "opening-balance", parsed.as);
   if (
     listBalanceSnapshots(ctx, { accountId: parsed.accountId }).some((x) => x.asOf === parsed.asOf)
   ) {

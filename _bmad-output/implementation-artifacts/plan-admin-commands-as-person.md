@@ -3,12 +3,13 @@ title: 'm1-report and opening-balance run as a named person'
 type: 'bugfix'
 ticket: ''
 created: '2026-10-22'
-status: 'draft'
+baseline_revision: 'aeabf0b3ad6737faaa2e838f645f8688ccb74551'
+status: 'built'
 route: 'full'
 route_source: 'auto'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'thorough'
+review_source: 'auto'
+lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/epic-import-dedupe-transfers-retrospective.md'
@@ -73,6 +74,12 @@ context:
 ## Plan Change Log
 
 ## Review Triage Log
+
+- `--as` swallows a following option (`--as --foo` is looked up as a name) and the repeated-`--as`, empty `--as=` and unknown-option usage branches are untested, so a typo could run a privacy-scoped command as the wrong person (blind, edge, gap) -- verdict: medium -- route: patch -- reject a value starting with `--` as a usage error; add the four tests.
+- Docs say to run `opening-balance` "as the account's owner" but only visibility is enforced (blind, edge) -- verdict: low -- route: patch -- say visibility applies; one test for a non-owner on a shared account; fix the stale file-header comment in `commands.ts`.
+- Audit provenance of `opening-balance` changes from `cli:opening-balance` to `person:<id>` (blind) -- verdict: low -- route: accept -- stated in the plan: the named person is the operator; the write is still audited with that person.
+- Two people whose names differ only by case cannot be told apart; header echoes the raw typed name; Unicode normalisation; login-less persons; compatibility message for the breaking change; check-then-write race (pre-existing); `rest` filter still seeing `--as` (blind, edge) -- verdict: low/false -- route: reject -- a household has two distinctly named people, the option filter rejects unknown flags in tests, and the breaking change is intended and documented.
+- Gate is documentation-only per person; operator can name any person (intent-alignment) -- verdict: low -- route: accept -- `--as` is a privacy filter on output, not authentication (plan Never list).
 
 ## Verification
 
