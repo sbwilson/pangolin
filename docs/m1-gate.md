@@ -111,9 +111,22 @@ real statements.
 
 | Field | Value |
 | --- | --- |
-| Commit / release tag | |
-| Date | |
-| Accounts imported | |
+| Commit / release tag | `v0.2.4` (`f495879`) on pang-dev; the ledger balance line (`1253a8f`) is not yet released |
+| Date | 2026-10-21 |
+| Accounts imported | 4: Dollarmites, Mastercard, Netbank saver, Hawthorne St (bank CSV exports, de-identified), one batch each |
+
+### Accepted exceptions (decided by the human, 2026-10-21)
+
+- **Start from an opening balance, not from 1 July 2024.** The bank's CSV export reaches back only so
+  far, so each account's first statement starts mid-life. The leading span is accepted when the account
+  has an opening-balance snapshot dated before its first covered date (derived from the first row's
+  balance, or entered with `pangolin opening-balance`). Earlier history may come later from PDF
+  statements. The gate as originally worded (twelve months from 1 July 2024) is therefore not met
+  literally; this exception replaces it for this run.
+- **Mastercard has no running balances.** Its batch is "not balance-checked". Its opening balance
+  ($0.00 on 2026-01-12) was entered by hand and is the human's assertion, not derived from the file.
+- **Balances and account ids are kept out of this record** (the repository may be public); they stay in
+  the `pangolin m1-report` output on the host.
 
 ### Findings per account
 
@@ -121,15 +134,18 @@ One row per account that has statements. Findings are the `HOLE`, `BROKEN` and `
 
 | Account | Source files (bank, period) | Months covered | Holes (spans) | Broken batches | Join breaks | Explained? (why) |
 | --- | --- | --- | --- | --- | --- | --- |
-| | | | | | | |
+| Dollarmites | CSV, 2025-01-02 to 2026-10-15 | 22 | none after the accepted start (a 185-day leading span before 2025-01-02) | 0 | 0 | Yes: starts from a derived opening balance |
+| Mastercard | CSV, 2026-01-13 to 2026-10-18 | 10 | none after the accepted start (a 561-day leading span before 2026-01-13) | 0 | 0 | Yes, with an exception: opening entered by hand; batch not balance-checked |
+| Netbank saver | CSV, 2025-01-03 to 2026-10-14 | 22 | none after the accepted start (a 186-day leading span before 2025-01-03) | 0 | 0 | Yes: starts from a derived opening balance |
+| Hawthorne St | CSV, 2024-10-18 to 2026-10-18 | 25 | none after the accepted start (a 109-day leading span before 2024-10-18) | 0 | 0 | Yes: starts from a derived opening balance |
 
 ### Evidence
 
 | Evidence | |
 | --- | --- |
-| `pangolin m1-report` output (account names may be redacted) | |
-| Needs review "Balance gap" items open | |
-| Outcome | |
+| `pangolin m1-report` output (account names may be redacted) | Run on pang-dev 2026-10-21 after the openings were entered: `Total: 0 holes, 0 broken batches, 0 join breaks`. Full output (with balances and ids) is held by the human, not in this repository |
+| Needs review "Balance gap" items open | Not recorded; check `/review` before signing |
+| Outcome | Machine check is zero after the accepted openings. Not yet compared with the bank: each account's ledger balance (`pangolin m1-report` now prints `ledger balance`, `1253a8f`, after the next release) against the bank's balance, and Mastercard's closing balance by hand |
 
 ### Decision
 
