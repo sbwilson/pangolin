@@ -348,8 +348,8 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | `pangolin status` showing tag and schema 21 of 21 (step 10) | `Pangolin Money v0.2.4`, `Schema: 21 (this build expects 21)`, `Readiness: ok`; warning: recovery bundle not confirmed stored safely; `Jobs: 4 pending, 0 running, 1 dead` (the dead `backup-push` is from 2026-10-02) |
 | **After the upgrade** | |
 | First backup: snapshot ID (step 11) | `5c076085b379aef2819329fcc37e49df8df7b51ffecf2b69fc6c38df172425bd` (backup `01M5EZV3E79QCZY5ZEJJ8VX8C5`, done 2026-10-21T10:24:24.234Z) |
-| First backup: manifest `format` and `schemaVersion` | |
-| First backup: `balanceDate` and accounts count | |
+| First backup: manifest `format` and `schemaVersion` | `"format": 2`, `"schemaVersion": 21` (`restic dump 5c076085 …/manifest.json`, 2026-10-21) |
+| First backup: `balanceDate` and accounts count | (not captured: the 400-character excerpt ended in the migration list; read with `grep` or `jq` if needed) |
 | **Decision** | |
 | Outcome (accepted / failed) and reason | |
 | Accepted by the human (name, date) | |
