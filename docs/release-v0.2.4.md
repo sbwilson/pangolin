@@ -90,7 +90,9 @@ The version is the tag. `package.json` stays `0.0.0` and there is no CHANGELOG f
    popover counted them (the summary now says "Nothing new" whenever every row was already
    imported and shows the review link separately), and the same spec left an account and
    transactions in the shared ledger before `ledger.spec.ts` seeds its empty ledger (it now runs in
-   the `accounts` project, after `accounts.spec.ts`).
+   the `accounts` project, after `accounts.spec.ts`). A last failure (run 39573972901, `import.spec.ts:78`) compared the whole status region, which also
+   holds the review link, so it now matches by substring. Run 39576002990 on `f495879` was the first green
+   run, and the Import, Needs review and axe specs passed in it.
 5. **Schema migrations:** 0015 to 0020 exist in `packages/db/migrations/` with snapshots; schema
    version 21. Migration 0019 ends with a backfill `UPDATE`, which the real-data dry run (step 2) exercises.
 
@@ -171,6 +173,12 @@ sudo pangolin status
 
 Expected: `Pangolin Money v0.2.3`, `Schema: 15 (this build expects 15)`, `Readiness: ok`. Paste it.
 Anything else: stop and record it. Do not upgrade.
+
+> **What happened on this release:** pang-dev reported `Pangolin Money db68f5d`, schema 20, a develop build
+> (`pangolin:local`), because the M1 statements had been imported ahead of the release. The upgrade
+> therefore went 20 to 21 (migration 0020 only) and the step 2 dry run ran on that schema-20 database.
+> This is recorded as a deviation; the page's other expectations (`v0.2.3`,
+> schema 15) did not hold.
 
 ### 4. Manual backup (gate)
 
@@ -311,31 +319,31 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | --- | --- |
 | **Pre-flight** | |
 | Base commit (tip of `develop` before this page) | `e41b6d4f10c8098d3c888a1cbaed479cd7bb860b` |
-| CI on the base commit | |
+| CI on the base commit | `e41b6d4` (cancelled by the next push). Runs on the way to the tag: `391d9e4`..`db68f5d` **failure** (`Container and end-to-end`, four new specs registering the CSP guard twice); `1f62e5d` run 39567388023 **failure** (repeat-import text; import spec polluting the ledger seed); `30f1256` run 39573972901 **failure** (`import.spec.ts:78` compared the whole status region); `f495879` run 39576002990 **success**. See pre-flight item 4 |
 | `v0.2.3` is an ancestor | `git merge-base --is-ancestor v0.2.3 HEAD` exit 0, 2026-10-21 |
 | Migrations between tags | 0015 to 0020 advance schema 15 to 21 |
 | Release machinery tests | 2 files, 35 tests passed, 2026-10-21 |
 | **Human, before the tag** | |
-| Tag commit (step 1): `TAG_COMMIT` hash, subject | |
-| CI on the tag commit (step 1): run URL, conclusion | |
-| Real-data check (step 2): `pnpm check:upgrade` output | |
-| Starting build (step 3): `pangolin status` output | |
-| Manual backup snapshot ID (step 4) | |
+| Tag commit (step 1): `TAG_COMMIT` hash, subject | `f49587983ef8fc36eae8e5d51f5cdb91b3d4d395` `test(e2e): match the repeat-import message by substring` |
+| CI on the tag commit (step 1): run URL, conclusion | Run https://github.com/sbwilson/pangolin/actions/runs/39576002990: **success**, 2026-10-21 (`Secret scan`, `Lint, types, tests, STRICT`, `Container and end-to-end`) |
+| Real-data check (step 2): `pnpm check:upgrade` output | `migrated 20 -> 21; integrity, manifest, schema ok (/Users/sim/dev/pangolin/pang-dev-copy.sqlite)`, run on a copy of pang-dev's real database. **Deviation:** pang-dev was already at schema 20 (see step 3), so this proves migration 0020 only; migrations 0015 to 0019 had been applied earlier by the develop build |
+| Starting build (step 3): `pangolin status` output | `Pangolin Money db68f5d`, `Schema: 20 (this build expects 20)`, `Readiness: ok`, 2026-10-21. **Deviation:** not `v0.2.3` / schema 15. pang-dev ran a develop build (image `pangolin:local`, per the upgrade output) so the epic's M1 data could be imported ahead of the release |
+| Manual backup snapshot ID (step 4) | (human to paste: step 4 was done, the ID was not supplied) |
 | **Release** | |
-| Tag and commit (step 5) | |
-| Release run URL (step 6) | |
-| `ci` job | |
-| `image` job | |
-| `upgrade-test` job | |
-| `migrate-previous` job | |
-| `publish` job; GitHub release and `latest` moved | |
-| Signed image digest (step 7) | |
-| Re-runs, deleted tags or retags (run URLs, tag names) | |
+| Tag and commit (step 5) | `v0.2.4` on `f49587983ef8fc36eae8e5d51f5cdb91b3d4d395` |
+| Release run URL (step 6) | https://github.com/sbwilson/pangolin/actions/runs/39579069460 (`success`, 2026-10-21) |
+| `ci` job | `success` (`ci / Lint, types, tests, STRICT`, `ci / Secret scan`, `ci / Container and end-to-end`) |
+| `image` job | `success` |
+| `upgrade-test` job | `success` |
+| `migrate-previous` job | `success` |
+| `publish` job; GitHub release and `latest` moved | `success`; GitHub release `v0.2.4` published and marked `Latest`, 2026-10-21T09:55:52Z |
+| Signed image digest (step 7) | (not recorded separately; the digest `pangolin upgrade` verified is in the step 8 row below) |
+| Re-runs, deleted tags or retags (run URLs, tag names) | None. The tag was pushed once. A `pangolin upgrade v0.2.4` run before the tag existed failed at the pull (`not found`) and changed nothing |
 | **Upgrade on pang-dev** | |
-| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | |
-| `pangolin upgrade` output (step 8) | |
-| Pre-upgrade copy path (from step 8 output) | |
-| Image digest `pangolin upgrade` verified (step 8) | |
+| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | 2026-10-21, `PANGOLIN_UPGRADE_TIMEOUT=180` |
+| `pangolin upgrade` output (step 8) | `Pulling ghcr.io/sbwilson/pangolin:v0.2.4... Verifying ghcr.io/sbwilson/pangolin@sha256:d152daa95f50da90df51c9ad04b96d1ff5805bdbd490b95c249e41ee550d544f... Stopping stack for upgrade... [+] stop 1/1 Container pangolin-pangolin-1 Stopped 0.4s Starting upgraded stack... [+] up 1/1 Container pangolin-pangolin-1 Started 0.9s Upgrade to v0.2.4 successful. Old image was pangolin:local.` |
+| Pre-upgrade copy path (from step 8 output) | (not shown in the output; see `/srv/pangolin/upgrade-copies/`) |
+| Image digest `pangolin upgrade` verified (step 8) | `sha256:d152daa95f50da90df51c9ad04b96d1ff5805bdbd490b95c249e41ee550d544f` |
 | `/healthz` (step 9) | |
 | `pangolin status` showing tag and schema 21 of 21 (step 10) | |
 | **After the upgrade** | |
