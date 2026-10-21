@@ -3,7 +3,7 @@
 // API, and "Got it" clears an item and drops the count.
 import type { Page } from "@playwright/test";
 import { loadAccount, signInWithPassword } from "./helpers/account.ts";
-import { expect, test, watchCsp } from "./helpers/csp.ts";
+import { expect, test } from "./helpers/csp.ts";
 
 interface Inbox {
   readonly items: readonly { id: string; kind: string }[];
@@ -23,9 +23,7 @@ const heading = (open: number): string =>
 
 test("Needs review lists what is open, agrees with the nav badge, and clears an item", async ({
   page,
-  cspViolations,
 }) => {
-  await watchCsp(page.context(), cspViolations);
   await signInWithPassword(page, loadAccount());
   await expect(page.getByText("Signed in as Alex")).toBeVisible();
 

@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { loadAccount, signInWithPassword } from "./helpers/account.ts";
-import { expect, test, watchCsp } from "./helpers/csp.ts";
+import { expect, test } from "./helpers/csp.ts";
 
 const fixtures = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -38,9 +38,7 @@ async function createAccount(page: Page, name: string): Promise<void> {
 
 test("imports a file from the header popover, reports nothing new on a repeat, and links to Needs review", async ({
   page,
-  cspViolations,
 }) => {
-  await watchCsp(page.context(), cspViolations);
   await signInWithPassword(page, loadAccount());
   const name = `Import e2e ${Date.now()}`;
   await createAccount(page, name);
@@ -95,11 +93,7 @@ test("imports a file from the header popover, reports nothing new on a repeat, a
   await expect(dialog).toBeHidden();
 });
 
-test("Esc closes the popover and focus returns to the Import button", async ({
-  page,
-  cspViolations,
-}) => {
-  await watchCsp(page.context(), cspViolations);
+test("Esc closes the popover and focus returns to the Import button", async ({ page }) => {
   await signInWithPassword(page, loadAccount());
   await page.goto("/transactions");
   const opener = page.getByRole("button", { name: "Import" }).first();
@@ -112,11 +106,7 @@ test("Esc closes the popover and focus returns to the Import button", async ({
   await expect(opener).toBeFocused();
 });
 
-test("another person's account id answers 404 from the import route", async ({
-  page,
-  cspViolations,
-}) => {
-  await watchCsp(page.context(), cspViolations);
+test("another person's account id answers 404 from the import route", async ({ page }) => {
   await signInWithPassword(page, loadAccount());
   const status = await page.evaluate(async () => {
     const res = await fetch("/api/import", {
