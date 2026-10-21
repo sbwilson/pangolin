@@ -31,6 +31,15 @@ export function visibleAccountId(column: SQLiteColumn, viewer: Viewer | undefine
   return sql`${column} IN (SELECT ${account.id} FROM ${account} WHERE ${accounts})`;
 }
 
+/**
+ * `column IN (the ids of the live, non-private accounts)`: the accounts both partners see, whoever
+ * asks. Takes no viewer because the answer must not depend on one (the partner chip counts what
+ * is shared, never what one person alone can see).
+ */
+export function publicAccountId(column: SQLiteColumn): SQL {
+  return sql`${column} IN (SELECT ${account.id} FROM ${account} WHERE ${account.deletedAt} IS NULL AND ${account.isPrivate} = 0)`;
+}
+
 /** Live transactions of visible accounts. Throws without a viewer. Not name-aware. */
 export function liveVisibleTxn(viewer: Viewer | undefined): SQL {
   const accounts = visibleAccounts(viewer);

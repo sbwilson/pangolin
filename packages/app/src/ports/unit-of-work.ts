@@ -249,6 +249,12 @@ export interface ReviewItemRepo {
    * viewer sees every item.
    */
   listOpenFor(viewer: Viewer): ReviewItemRow[];
+  /**
+   * How many open items both partners see: no person scope, and household scope or an account
+   * that is not private. A number only, the same for either partner and for a system viewer;
+   * `viewer` is required but does not change it. Throws when given no viewer.
+   */
+  countSharedVisibleOpen(viewer: Viewer): number;
   /** Hard-deletes every item of account `accountId`, open or resolved; returns how many. */
   deleteForAccount(accountId: string): number;
   /** Hard-deletes every item scoped to `personId`, open or resolved; returns how many. */
@@ -1580,7 +1586,7 @@ export interface ReadRepos {
     "listDead" | "listPending" | "listRunning" | "countByStatus" | "find" | "firstCreatedAt"
   >;
   readonly audit: Pick<AuditRepo, "listVisible" | "ownerChanges">;
-  readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor">;
+  readonly reviewItems: Pick<ReviewItemRepo, "listOpenFor" | "countSharedVisibleOpen">;
   readonly accounts: Pick<AccountRepo, "findVisible" | "list" | "owners" | "any">;
   readonly transactions: Pick<
     TransactionRepo,
@@ -1594,6 +1600,7 @@ export interface ReadRepos {
     | "listForDedupe"
     | "findByExternalId"
     | "findByFingerprint"
+    | "listTransferCandidates"
   >;
   readonly institutions: Pick<InstitutionRepo, "find" | "list">;
   readonly balanceSnapshots: Pick<BalanceSnapshotRepo, "listVisible" | "balanceAsOf">;

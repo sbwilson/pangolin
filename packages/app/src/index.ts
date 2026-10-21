@@ -763,6 +763,25 @@ export {
   recoveryBundleStatus,
 } from "./system/recovery-bundle.ts";
 export {
+  type AcceptHandoffItemInput,
+  type AcceptRuleOfferItemInput,
+  acceptHandoffItem,
+  acceptRuleOfferItem,
+  type DiscardSetAsideRowItemInput,
+  discardSetAsideRowItem,
+  dismissHandoffItem,
+  dismissNoticeItem,
+  dismissRuleOfferItem,
+  dismissTransferItem,
+  type FixSetAsideRowItemInput,
+  fixSetAsideRowItem,
+  keepDuplicateItem,
+  type LinkTransferItemInput,
+  linkTransferItem,
+  removeDuplicateItem,
+  revokeLinksItem,
+} from "./system/review-actions.ts";
+export {
   defineReviewKind,
   type EntitySyncListener,
   JOB_DEAD_REVIEW,
@@ -782,6 +801,17 @@ export {
   resolveReviewItemsForEntity,
   UPGRADE_FAILED_REVIEW,
 } from "./system/review-items.ts";
+export {
+  type CountReviewItemsInput,
+  countReviewItems,
+  type ListReviewCardsInput,
+  listReviewCards,
+  type ReviewCard,
+  type ReviewCounts,
+  type ReviewDetail,
+  type ReviewSetAsideRow,
+  type ReviewTransaction,
+} from "./system/review-view.ts";
 export {
   actorOf,
   type PersonViewer,

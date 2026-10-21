@@ -59,7 +59,8 @@ test("a recovery code and the password sign in to a forced new passkey; the code
   await page.getByRole("complementary").getByRole("button", { name: "Sign out" }).click();
   await page.getByRole("button", { name: "Sign in with a passkey" }).click();
   await expect(page.getByText("Signed in as Alex")).toBeVisible();
-  // Alex is told a code was used.
+  // Alex is told a code was used, on the Needs review page (review.spec dismisses it).
+  await page.goto("/review");
   await expect(page.getByText(/One of your recovery codes was used/)).toBeVisible();
 });
 
@@ -121,24 +122,25 @@ test("Alex resets Sam's access: Sam sets a new password, re-enrols and alone see
     await sam.getByRole("button", { name: "Finish" }).click();
     expect(await saveRecoveryCodes(sam)).toHaveLength(10);
     await expect(sam.getByText("Signed in as Sam")).toBeVisible();
-    await expect(sam.getByRole("heading", { name: "Notices" })).toBeVisible();
+    await sam.goto("/review");
     await expect(
       sam.getByText(/A one-time recovery link for your account was issued on .* by Alex\./),
     ).toBeVisible();
 
     const notices = await sam.evaluate(async () => {
-      const res = await fetch("/api/identity/notices");
-      return (await res.json()) as { notices: { id: string; kind: string }[] };
+      const res = await fetch("/api/review");
+      const body = (await res.json()) as { items: { id: string; kind: string }[] };
+      return body.items.filter((item) => item.kind.startsWith("identity."));
     });
-    expect(notices.notices.map((n) => n.kind)).toEqual(["identity.partner-reset"]);
-    const noticeId = notices.notices[0]?.id ?? "";
+    expect(notices.map((n) => n.kind)).toEqual(["identity.partner-reset"]);
+    const noticeId = notices[0]?.id ?? "";
 
     // Alex does not see it and cannot dismiss it.
-    await page.reload();
+    await page.goto("/review");
     await expect(page.getByText("Signed in as Alex")).toBeVisible();
     await expect(page.getByText(/A one-time recovery link for your account/)).toHaveCount(0);
     const alexDismiss = await page.evaluate(async (id) => {
-      const res = await fetch(`/api/identity/notices/${id}/dismiss`, { method: "POST" });
+      const res = await fetch(`/api/review/${id}/dismiss-notice`, { method: "POST" });
       return res.status;
     }, noticeId);
     expect(alexDismiss).toBe(404);
@@ -152,8 +154,8 @@ test("Alex resets Sam's access: Sam sets a new password, re-enrols and alone see
     expect(await reuse.json()).toMatchObject({ error: { code: "Validation" } });
 
     // Sam dismisses it.
-    await sam.getByRole("button", { name: "Dismiss" }).click();
-    await expect(sam.getByRole("heading", { name: "Notices" })).toHaveCount(0);
+    await sam.getByRole("button", { name: "Got it" }).click();
+    await expect(sam.getByText(/A one-time recovery link for your account/)).toHaveCount(0);
   } finally {
     await samContext.close();
   }

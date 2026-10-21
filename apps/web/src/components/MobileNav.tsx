@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { cn } from "@/lib/utils.ts";
 import type { Me } from "../api.ts";
+import { NeedsReviewBadge } from "./review/index.ts";
 import { Sheet } from "./ui/sheet.tsx";
 
 export interface MobileNavProps {
@@ -72,10 +73,13 @@ export function MobileNav({ signOut, className }: MobileNavProps) {
           <span>Transactions</span>
         </Link>
 
-        <button
-          type="button"
-          disabled
-          className="flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-1 text-center text-[10.5px] leading-tight text-muted-foreground opacity-50"
+        <Link
+          to="/review"
+          className="relative flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-1 text-center text-[10.5px] leading-tight text-muted-foreground transition-colors"
+          activeProps={{
+            className: "font-semibold text-primary",
+            "aria-current": "page",
+          }}
         >
           <svg
             width="20"
@@ -91,7 +95,8 @@ export function MobileNav({ signOut, className }: MobileNavProps) {
             <path d="M3 13h5l2 3h4l2-3h5M5.5 5h13L21 13v6H3v-6z" />
           </svg>
           <span>Needs review</span>
-        </button>
+          <NeedsReviewBadge className="absolute right-2 top-0" />
+        </Link>
 
         <button
           type="button"

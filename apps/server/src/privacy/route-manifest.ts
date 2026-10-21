@@ -151,8 +151,6 @@ export const MANIFEST: readonly ManifestEntry[] = [
   write("PUT", "/api/identity/preferences", {
     body: () => ({ theme: "clay-linen", mode: "system" }),
   }),
-  read("/api/identity/notices"),
-  write("POST", "/api/identity/notices/:id/dismiss", { params: { id: "notice" } }),
   identity("POST", "/api/identity/setup-links", "Household setup link; carries no ledger data."),
   identity("POST", "/api/identity/sign-up", "Sign-up with a setup link."),
   identity("POST", "/api/identity/recovery-codes/initial", "The caller's own recovery codes."),
@@ -163,6 +161,43 @@ export const MANIFEST: readonly ManifestEntry[] = [
   identity("POST", "/api/identity/re-enrol", "Re-enrolment link redemption."),
   identity("GET", "/api/auth/*", "better-auth's own routes: sessions and credentials only."),
   identity("POST", "/api/auth/*", "better-auth's own routes: sessions and credentials only."),
+
+  // The Needs review inbox (ticket 8). `notice` is a review item id: A's person-scoped and
+  // private-account items must answer 404, as an id that never existed does. The list and the
+  // count are replayed as B in both worlds and must be identical bytes.
+  read("/api/review"),
+  read("/api/review/count"),
+  write("POST", "/api/review/:id/accept-rule", { params: { id: "notice" } }),
+  write("POST", "/api/review/:id/dismiss-rule", { params: { id: "notice" } }),
+  write("POST", "/api/review/:id/keep-duplicate", { params: { id: "notice" } }),
+  write("POST", "/api/review/:id/remove-duplicate", { params: { id: "notice" } }),
+  write("POST", "/api/review/:id/dismiss-transfer", { params: { id: "notice" } }),
+  write("POST", "/api/review/:id/link-transfer", {
+    params: { id: "notice" },
+    bodyEntities: ["transaction"],
+    body: (id) => ({ candidateId: id("transaction") }),
+  }),
+  write("POST", "/api/review/:id/accept-handoff", {
+    params: { id: "notice" },
+    bodyEntities: ["account"],
+    body: (id) => ({ accountId: id("account") }),
+  }),
+  write("POST", "/api/review/:id/dismiss-handoff", { params: { id: "notice" } }),
+  write("POST", "/api/review/:id/fix-row", {
+    params: { id: "notice" },
+    body: () => ({
+      rowId: "01J0000000000000000000ROW1",
+      postedOn: posted,
+      amountCents: -100,
+      description: "Privacy probe",
+    }),
+  }),
+  write("POST", "/api/review/:id/discard-row", {
+    params: { id: "notice" },
+    body: () => ({ rowId: "01J0000000000000000000ROW1" }),
+  }),
+  write("POST", "/api/review/:id/dismiss-notice", { params: { id: "notice" } }),
+  write("POST", "/api/review/:id/revoke-links", { params: { id: "notice" } }),
 
   read("/api/ledger/transactions"),
   // Search: the list filtered by `q` through the FTS5 index; the hidden-name and scoped-name

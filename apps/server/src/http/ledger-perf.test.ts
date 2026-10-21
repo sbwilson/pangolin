@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { createIdGenerator, fixedClockAt, type UnitOfWork } from "@pangolin/app";
+import { fakeAttachmentStore } from "@pangolin/app/testing/attachment-store";
 import {
   createSystemHealthRepo,
   createUnitOfWork,
@@ -61,6 +62,7 @@ function makeDeps(db: Db): AppDeps {
     newId: createIdGenerator(),
     tokens: nodeTokens,
     codes: recoveryCodeHasher("test-secret"),
+    attachments: fakeAttachmentStore(),
     publicUrl: ORIGIN,
     authn,
     healthz: { expectedSchemaVersion: MIGRATIONS, runner: () => ticking },

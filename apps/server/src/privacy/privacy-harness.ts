@@ -2,6 +2,7 @@
 // same ids and the same clock, differing only in partner A's private delta, which is applied last
 // through the use cases. Partner B is signed in through the real HTTP app, so every route runs
 // under its real middleware. Test support only.
+
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -64,6 +65,7 @@ import {
   type VisibleTransaction,
   write,
 } from "@pangolin/app";
+import { fakeAttachmentStore } from "@pangolin/app/testing/attachment-store";
 import {
   createSystemHealthRepo,
   createUnitOfWork,
@@ -311,9 +313,16 @@ function collectPrivateIds(db: Db, a: string): PrivateIds {
     alias: column(db, "SELECT id FROM payee_alias WHERE scope_person_id = ? ORDER BY id", a),
     activity: column(db, "SELECT id FROM activity WHERE scope_person_id = ? ORDER BY id", a),
     transferGroup: [...groups].filter(([, allPrivate]) => allPrivate).map(([g]) => g),
+    // Review items B must not reach: A's person-scoped ones and those of A's private accounts.
     notice: column(
       db,
-      "SELECT id FROM review_item WHERE person_id = ? AND resolved_at IS NULL ORDER BY id",
+      `SELECT id FROM review_item
+        WHERE resolved_at IS NULL
+          AND (person_id = ?
+            OR account_id IN (SELECT a.id FROM account a WHERE a.is_private = 1
+                AND EXISTS (SELECT 1 FROM account_owner o WHERE o.account_id = a.id AND o.person_id = ?)))
+        ORDER BY id`,
+      a,
       a,
     ),
   };
@@ -368,6 +377,7 @@ export function buildWorld(
     newId,
     tokens: nodeTokens,
     codes: recoveryCodeHasher("privacy-suite-secret"),
+    attachments: fakeAttachmentStore(),
     publicUrl: ORIGIN,
     authn: {
       kind: "live",

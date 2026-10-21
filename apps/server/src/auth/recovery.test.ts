@@ -68,6 +68,21 @@ async function signInWithTotp(who: typeof alex, secret: string): Promise<Browser
   return b;
 }
 
+/** The viewer's own notices, as cards on the Needs review page. */
+async function noticesOf(b: Browser) {
+  const { body } = await b.json<{
+    items: { id: string; kind: string; createdAt: string; detail: { issuedBy?: string | null } }[];
+  }>("/api/review");
+  return body.items
+    .filter((item) => item.kind.startsWith("identity."))
+    .map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      createdAt: item.createdAt,
+      issuedBy: item.detail.issuedBy ?? null,
+    }));
+}
+
 function auditText(): string {
   return JSON.stringify(h.db.prepare("SELECT * FROM audit_log").all());
 }
@@ -272,23 +287,18 @@ describe("partner re-enrolment", () => {
     const open = h.db
       .prepare("SELECT id, created_at FROM review_item WHERE resolved_at IS NULL AND person_id = ?")
       .get(samId) as { id: string; created_at: string };
-    const samNotices = await s.b.json<{ notices: { id: string; kind: string }[] }>(
-      "/api/identity/notices",
-    );
-    expect(samNotices.body).toEqual({
-      notices: [
-        {
-          id: open.id,
-          kind: "identity.partner-reset",
-          createdAt: open.created_at,
-          issuedBy: "Alex",
-        },
-      ],
-    });
-    const noticeId = samNotices.body.notices[0]?.id ?? "";
-    const alexNotices = await a.b.json<{ notices: unknown[] }>("/api/identity/notices");
-    expect(alexNotices.body.notices).toEqual([]);
-    const dismiss = await a.b.request(`/api/identity/notices/${noticeId}/dismiss`, {
+    const samNotices = await noticesOf(s.b);
+    expect(samNotices).toEqual([
+      {
+        id: open.id,
+        kind: "identity.partner-reset",
+        createdAt: open.created_at,
+        issuedBy: "Alex",
+      },
+    ]);
+    const noticeId = samNotices[0]?.id ?? "";
+    expect(await noticesOf(a.b)).toEqual([]);
+    const dismiss = await a.b.request(`/api/review/${noticeId}/dismiss-notice`, {
       method: "POST",
     });
     expect(dismiss.status).toBe(404);
@@ -319,7 +329,7 @@ describe("partner re-enrolment", () => {
       needs: ["passkey", "totp"],
       recoveryCodes: { issued: false, remaining: 0 },
     });
-    expect((await r.request("/api/identity/notices")).status).toBe(401);
+    expect((await r.request("/api/review")).status).toBe(401);
     // Sam's old session and credentials are gone; Alex's are not.
     expect((await s.b.request("/api/identity/me")).status).toBe(401);
     expect((await a.b.request("/api/identity/me")).status).toBe(200);
@@ -336,14 +346,11 @@ describe("partner re-enrolment", () => {
       body: { code: totp(secretOf(enabled.body.totpURI)) },
     });
     h.addPasskey(sam.email);
-    const after = await r.json<{ notices: { id: string }[] }>("/api/identity/notices");
-    expect(after.body.notices.map((n) => n.id)).toEqual([noticeId]);
+    expect((await noticesOf(r)).map((n) => n.id)).toEqual([noticeId]);
     expect(
-      (await r.request(`/api/identity/notices/${noticeId}/dismiss`, { method: "POST" })).status,
+      (await r.request(`/api/review/${noticeId}/dismiss-notice`, { method: "POST" })).status,
     ).toBe(204);
-    expect((await r.json<{ notices: unknown[] }>("/api/identity/notices")).body.notices).toEqual(
-      [],
-    );
+    expect(await noticesOf(r)).toEqual([]);
 
     // The old password no longer works; the new one does.
     const old = await new Browser(h.app).request("/api/auth/sign-in/email", { body: sam });
@@ -430,7 +437,7 @@ describe("partner re-enrolment", () => {
     expect(
       (await b.request("/api/identity/re-enrolment-links", { body: { personId: "x" } })).status,
     ).toBe(401);
-    expect((await b.request("/api/identity/notices")).status).toBe(401);
+    expect((await b.request("/api/review")).status).toBe(401);
     expect((await b.request("/api/identity/recovery-codes", { method: "POST" })).status).toBe(401);
   });
 
@@ -474,14 +481,10 @@ describe("recovery hardening", () => {
       (await r.request("/api/identity/recover", { body: { ...alex, code: codes[0] } })).status,
     ).toBe(200);
     h.addPasskey(alex.email);
-    const mine = await r.json<{ notices: { kind: string; issuedBy: unknown }[] }>(
-      "/api/identity/notices",
-    );
-    expect(mine.body.notices).toEqual([
+    expect(await noticesOf(r)).toEqual([
       expect.objectContaining({ kind: "identity.recovery-code-used", issuedBy: null }),
     ]);
-    const theirs = await s.b.json<{ notices: unknown[] }>("/api/identity/notices");
-    expect(theirs.body.notices).toEqual([]);
+    expect(await noticesOf(s.b)).toEqual([]);
   });
 
   it("a successful recovery records one success: 4 failures, success, 1 failure → not locked", async () => {
@@ -598,9 +601,7 @@ describe("the affected person revokes a link", () => {
     const revoked = await s.b.json("/api/identity/re-enrolment-links/revoke", { body: {} });
     expect(revoked.status).toBe(200);
     expect(revoked.body).toEqual({ revoked: 1 });
-    expect((await s.b.json<{ notices: unknown[] }>("/api/identity/notices")).body.notices).toEqual(
-      [],
-    );
+    expect(await noticesOf(s.b)).toEqual([]);
     expect(
       h.db.prepare("SELECT resolution FROM review_item WHERE person_id = ?").pluck().get(samId),
     ).toBe("revoked");

@@ -177,6 +177,41 @@ test.describe("WCAG 2.2 AA accessibility audit", () => {
       }
     });
 
+    test(`/review in ${mode} mode passes WCAG 2.2 AA audit`, async ({ browser, cspViolations }) => {
+      const storageState = await alexSession(browser);
+      const context = await browser.newContext({
+        colorScheme: mode,
+        ...(storageState ? { storageState } : {}),
+      });
+      try {
+        await watchCsp(context, cspViolations);
+        await context.addInitScript(
+          ({ m }: { m: string }) => {
+            try {
+              localStorage.setItem("pangolin_mode", m);
+            } catch {}
+          },
+          { m: mode },
+        );
+        const page = await context.newPage();
+        await page.goto("/review");
+        await page.waitForLoadState("domcontentloaded");
+        await expect(
+          page.getByRole("heading", { level: 2, name: /Needs review|needs? you/ }),
+        ).toBeVisible();
+
+        await setMode(page, mode);
+
+        const violations = await auditPage(page);
+        expect(
+          violations,
+          `Violations on /review (${mode}): ${JSON.stringify(violations, null, 2)}`,
+        ).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
     test(`/accounts in ${mode} mode passes WCAG 2.2 AA audit`, async ({
       browser,
       cspViolations,

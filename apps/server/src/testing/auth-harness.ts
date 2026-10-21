@@ -1,5 +1,6 @@
 // Test support only: the real HTTP app with real better-auth on a fresh SQLite database, driven
 // in-process, with a cookie jar per "browser" and a clock our use cases read that tests can move.
+
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,6 +12,7 @@ import {
   type IdentityContext,
   systemClock,
 } from "@pangolin/app";
+import { fakeAttachmentStore } from "@pangolin/app/testing/attachment-store";
 import {
   createSystemHealthRepo,
   createUnitOfWork,
@@ -90,6 +92,7 @@ export function createHarness(
     ...deps,
     systemHealth: createSystemHealthRepo(db),
     codes,
+    attachments: fakeAttachmentStore(),
     publicUrl: origin,
     authn: { kind: "live", gateway },
     trustedProxies,

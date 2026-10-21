@@ -10,17 +10,29 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type AuditView,
+  CLASSIFY_UNCLASSIFIED_REVIEW,
+  createHandoff,
+  createTransaction,
+  getTransaction,
   hiddenLabel,
+  IMPORT_PROBABLE_DUPLICATE_REVIEW,
+  issueReEnrolmentLink,
   listAccounts,
   listAudit,
+  listCategories,
   listReviewItems,
   listTransactions,
+  raiseReviewItem,
   redact,
+  setSplitField,
+  transactionEntityRef,
   type Viewer,
+  write,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { generateSeedFile } from "../../scripts/demo-seed.ts";
+import { nodeTokens } from "../auth/secret.ts";
 import {
   A_NAMES,
   buildWorld,
@@ -782,6 +794,39 @@ describe("partner B against partner A's private data", () => {
     );
   });
 
+  it("gives B the same review cards, count and partner chip in both worlds, and the chip the same number for either partner", async () => {
+    const read = async (w: World, who: "a" | "b", path: string) => {
+      const res = await w.request(who, "GET", path);
+      expect(res.status).toBe(200);
+      return normaliseRequestIds(res.text);
+    };
+    for (const path of ["/api/review", "/api/review/count"]) {
+      expect(await read(w1, "b", path), path).toBe(await read(w2, "b", path));
+    }
+    const countOf = async (w: World, who: "a" | "b") =>
+      JSON.parse(await read(w, who, "/api/review/count")) as {
+        open: number;
+        partner: { displayName: string; pending: number } | null;
+      };
+    const b = await countOf(w2, "b");
+    const a = await countOf(w2, "a");
+    // B's four: the household item, the joint account's, and B's own two.
+    expect(b.open).toBe(4);
+    expect(b.partner?.pending).toBe(2);
+    // A holds more (private and person items), yet the number of what both see is the same.
+    expect(a.open).toBeGreaterThan(b.open);
+    expect(a.partner?.pending).toBe(b.partner?.pending);
+    expect((await countOf(w1, "b")).partner?.pending).toBe(2);
+    // No card of B's list names A's private items or kinds.
+    const cards = JSON.parse(await read(w2, "b", "/api/review")) as {
+      items: { id: string; kind: string }[];
+    };
+    for (const id of w2.privateIds.notice) {
+      expect(cards.items.map((item) => item.id)).not.toContain(id);
+    }
+    expect(cards.items.map((item) => item.kind)).not.toContain("accounts.closing-balance");
+  });
+
   it("keeps a private account closed with a balance to A: B's accounts, reviews and responses are unchanged", async () => {
     // A's delta closes a private account holding -100: a warning on its view and an open item.
     const aItems = listReviewItems(w2.ctx("a")).filter(
@@ -947,6 +992,117 @@ describe("partner B against partner A's private data", () => {
     for (const item of sharedHousehold) {
       expect(bAudit.some((bItem) => bItem.id === item.id)).toBe(true);
     }
+  });
+});
+
+describe("the Needs review routes", () => {
+  it("resolves an item through its use case, once, for the viewer who may see it", async () => {
+    const w = world("base");
+    const b = w.ctx("b");
+    const account = w.ok("account");
+    const flagged = createTransaction(b, {
+      accountId: account,
+      postedOn: "2026-07-11",
+      amountCents: -123,
+      description: "Flagged probe",
+    });
+    const item = write(b, (tx, audit) =>
+      raiseReviewItem(tx, audit, b, {
+        kind: IMPORT_PROBABLE_DUPLICATE_REVIEW,
+        entityRef: transactionEntityRef(flagged),
+        dedupeKey: `import.probable_duplicate:${flagged}`,
+        accountId: account,
+      }),
+    ).id;
+    const list = async (who: "a" | "b") =>
+      (JSON.parse((await w.request(who, "GET", "/api/review")).text) as { items: { id: string }[] })
+        .items;
+    expect((await list("a")).map((i) => i.id)).toContain(item);
+    expect(
+      (await w.request("b", "POST", `/api/review/${item}/keep-duplicate`, undefined)).status,
+    ).toBe(204);
+    expect((await list("b")).map((i) => i.id)).not.toContain(item);
+    expect((await list("a")).map((i) => i.id)).not.toContain(item);
+    expect((await w.request("b", "POST", `/api/review/${item}/keep-duplicate`)).status).toBe(404);
+  });
+
+  it("accepts a rule offer with no body (204), and revokes a real re-enrolment link (revoked: 1)", async () => {
+    const w = world("base");
+    const b = w.ctx("b");
+    const account = w.ok("account");
+    const id = createTransaction(b, {
+      accountId: account,
+      postedOn: "2026-07-12",
+      amountCents: -321,
+      description: "Rule probe",
+    });
+    write(b, (tx, audit) =>
+      raiseReviewItem(tx, audit, b, {
+        kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+        entityRef: transactionEntityRef(id),
+        dedupeKey: `classify.unclassified:${id}`,
+        accountId: account,
+      }),
+    );
+    setSplitField(b, {
+      transactionId: id,
+      splitId: (getTransaction(b, { id }).splits[0] as { id: string }).id,
+      field: "category",
+      value: listCategories(b)[0]?.id as string,
+    });
+    const items = async () =>
+      (
+        JSON.parse((await w.request("b", "GET", "/api/review")).text) as {
+          items: { id: string; kind: string }[];
+        }
+      ).items;
+    const offer = (await items()).find((i) => i.kind === "classify.rule_offer");
+    expect(offer).toBeDefined();
+    expect((await w.request("b", "POST", `/api/review/${offer?.id}/accept-rule`)).status).toBe(204);
+    expect((await items()).some((i) => i.id === offer?.id)).toBe(false);
+
+    issueReEnrolmentLink({ ...w.ctx("a"), tokens: nodeTokens }, { personId: w.people.b });
+    const notice = (await items()).find((i) => i.kind === "identity.partner-reset");
+    const revoked = await w.request("b", "POST", `/api/review/${notice?.id}/revoke-links`);
+    expect(revoked.status).toBe(200);
+    expect(JSON.parse(revoked.text)).toEqual({ revoked: 1 });
+    expect((await items()).some((i) => i.id === notice?.id)).toBe(false);
+  });
+
+  it("imports a hand-off from the stored file into the recipient's account", async () => {
+    const w = world("base");
+    const sent = createHandoff(
+      { ...w.ctx("a"), attachments: w.deps.attachments },
+      {
+        recipientId: w.people.b,
+        filename: "september.csv",
+        format: "commbank_csv",
+        content: 'Date,Amount,Description,Balance\n01/09/2026,-50.00,"GROCER",1000.00',
+      },
+    ).id;
+    const cards = JSON.parse((await w.request("b", "GET", "/api/review")).text) as {
+      items: { id: string; kind: string; detail: { filename?: string } }[];
+    };
+    const card = cards.items.find((i) => i.kind === "imports.handoff");
+    expect(card?.detail.filename).toBe("september.csv");
+    // The sender sees no card, and cannot act on it.
+    expect(
+      JSON.parse((await w.request("a", "GET", "/api/review")).text).items.some(
+        (i: { kind: string }) => i.kind === "imports.handoff",
+      ),
+    ).toBe(false);
+    const account = w.ok("account", 2);
+    const body = { accountId: account };
+    expect(
+      (await w.request("a", "POST", `/api/review/${card?.id}/accept-handoff`, body)).status,
+    ).toBe(404);
+    expect(
+      (await w.request("b", "POST", `/api/review/${card?.id}/accept-handoff`, body)).status,
+    ).toBe(204);
+    expect(
+      (await w.request("b", "POST", `/api/review/${card?.id}/accept-handoff`, body)).status,
+    ).toBe(404);
+    expect(sent).toBeTruthy();
   });
 });
 

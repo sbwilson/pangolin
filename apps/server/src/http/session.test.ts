@@ -19,7 +19,7 @@ describe("isPublicApiPath", () => {
       "/api/identity/setup-links",
       "/api/identity/re-enrolment-links",
       "/api/identity/recovery-codes",
-      "/api/identity/notices",
+      "/api/review",
       "/api/authx",
       "/api/identity/sign-up/x",
       "/api/system/health/x",

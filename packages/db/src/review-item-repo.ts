@@ -1,7 +1,7 @@
 import type { ReviewItemRepo, ReviewItemRow, Viewer } from "@pangolin/app";
 import { and, asc, count, eq, isNull, or, type SQL, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { visibleAccountId } from "./privacy.ts";
+import { publicAccountId, visibleAccountId } from "./privacy.ts";
 import { reviewItem } from "./schema/review-item.ts";
 
 type Orm = BetterSQLite3Database;
@@ -98,6 +98,27 @@ export function createReviewItemRepo(orm: Orm, check: () => void): ReviewItemRep
         .where(and(OPEN, visible))
         .orderBy(asc(reviewItem.createdAt), asc(reviewItem.id))
         .all() as ReviewItemRow[];
+    },
+
+    countSharedVisibleOpen: (viewer) => {
+      if (viewer === undefined || viewer === null) {
+        throw new TypeError("countSharedVisibleOpen: a viewer is required");
+      }
+      check();
+      // No person scope, and no account that is private: what both partners see (AD-3).
+      return (
+        orm
+          .select({ n: count() })
+          .from(reviewItem)
+          .where(
+            and(
+              OPEN,
+              isNull(reviewItem.personId),
+              or(isNull(reviewItem.accountId), publicAccountId(reviewItem.accountId)),
+            ),
+          )
+          .get()?.n ?? 0
+      );
     },
 
     deleteForAccount: (accountId) => {

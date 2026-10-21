@@ -23,6 +23,7 @@ import {
   type UseCaseContext,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
+import { fakeAttachmentStore } from "@pangolin/app/testing/attachment-store";
 import {
   createSystemHealthRepo,
   createUnitOfWork,
@@ -83,6 +84,7 @@ function deps(db: Db, authn: Authn = { kind: "live", gateway: fakeGateway() }): 
     newId: createIdGenerator(),
     tokens: nodeTokens,
     codes: recoveryCodeHasher("test-secret"),
+    attachments: fakeAttachmentStore(),
     publicUrl: ORIGIN,
     authn,
     healthz: { expectedSchemaVersion: MIGRATIONS, runner: () => ticking },
@@ -2283,7 +2285,8 @@ describe("Cache-Control on every /api response", () => {
     ["person data", "/api/ledger/transactions", 200],
     ["person data", "/api/accounts", 200],
     ["person data", "/api/classify/payees", 200],
-    ["person data", "/api/identity/notices", 200],
+    ["person data", "/api/review", 200],
+    ["person data", "/api/review/count", 200],
     ["an error (404)", "/api/ledger/transactions/missing", 404],
     ["an unknown route (404)", "/api/nothing-here", 404],
     ["better-auth's passthrough", "/api/auth/get-session", 200],

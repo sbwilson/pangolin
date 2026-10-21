@@ -315,7 +315,7 @@ test("desktop sidebar is visible >= 768px and mobile tab bar is hidden; mobile t
     await expect(mobileNav).toBeVisible();
     await expect(mobileNav.getByRole("link", { name: "Cash flow" })).toBeVisible();
     await expect(mobileNav.getByRole("link", { name: "Transactions" })).toBeVisible();
-    await expect(mobileNav.getByRole("button", { name: "Needs review" })).toBeVisible();
+    await expect(mobileNav.getByRole("link", { name: /Needs review/ })).toBeVisible();
     await expect(mobileNav.getByRole("button", { name: "Planning" })).toBeVisible();
     await expect(mobileNav.getByRole("button", { name: "More" })).toBeVisible();
   } finally {

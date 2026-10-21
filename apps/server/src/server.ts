@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { serve } from "@hono/node-server";
 import {
+  type AttachmentStore,
   type Clock,
   type JobRegistration,
   newId,
@@ -32,13 +33,28 @@ import {
   seedClassifyDefaults,
   writeFirstSetupLink,
 } from "./admin/index.ts";
+import { createFileAttachmentStore } from "./attachments/file-store.ts";
 import { createAuth } from "./auth/auth.ts";
 import { loadOrCreateAuthSecret, nodeTokens, recoveryCodeHasher } from "./auth/secret.ts";
+import { backupPaths } from "./backup/paths.ts";
 import type { Config } from "./config.ts";
 import { openDemoDatabase } from "./demo.ts";
 import { createApp } from "./http/app.ts";
 import type { Authn } from "./http/session.ts";
 import { createJobs, createRunner, type Runner } from "./jobs/index.ts";
+
+/** The attachment store of a read-only demo: any use of it is a bug. */
+const refusingAttachments: AttachmentStore = {
+  put: () => {
+    throw new Error("Demo mode stores no files");
+  },
+  get: () => {
+    throw new Error("Demo mode stores no files");
+  },
+  remove: () => {
+    throw new Error("Demo mode stores no files");
+  },
+};
 
 export interface StartOptions {
   readonly config: Config;
@@ -168,6 +184,8 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     let authn: Authn;
     // Demo mode never writes, so its recovery-code key is a throwaway.
     let codes = recoveryCodeHasher(randomBytes(32).toString("base64url"));
+    // Demo mode never writes, so it never stores a file either.
+    let attachments: AttachmentStore = refusingAttachments;
     if (demo) {
       // Demo mode: no sign-in; every request is the first seeded person, and writes still fail.
       authn = { kind: "demo" };
@@ -175,6 +193,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       const identity = { uow, clock, newId, tokens: nodeTokens };
       const secret = loadOrCreateAuthSecret(config.auth.secretFile);
       codes = recoveryCodeHasher(secret);
+      attachments = createFileAttachmentStore(backupPaths(config.dataDir).attachmentsDir, secret);
       authn = {
         kind: "live",
         gateway: createAuth({ ...identity, db, config: config.auth, secret }),
@@ -195,6 +214,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       newId,
       tokens: nodeTokens,
       codes,
+      attachments,
       publicUrl: config.auth.publicUrl,
       authn,
       trustedProxies: config.trustedProxies,

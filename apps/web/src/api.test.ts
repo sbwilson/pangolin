@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
-  dismissNotice,
   exportTransactions,
   fetchAccounts,
   fetchBackupStatus,
@@ -9,8 +8,9 @@ import {
   fetchDeadJobs,
   fetchHealth,
   fetchMe,
-  fetchNotices,
   fetchRecoveryBundle,
+  fetchReviewCounts,
+  fetchReviewItems,
   fetchTags,
   fetchTransactions,
   hideName,
@@ -20,6 +20,7 @@ import {
   reEnrol,
   regenerateRecoveryCodes,
   reopenAccount,
+  reviewAction,
   setSplitField,
   setSplits,
   setSplitTags,
@@ -164,17 +165,33 @@ describe("recovery", () => {
     expect(await regenerateRecoveryCodes()).toEqual({ codes: ["AAAAA-BBBBB"] });
   });
 
-  it("lists and dismisses notices", async () => {
-    const notices = [{ id: "n", kind: "identity.partner-reset", createdAt: "t", issuedBy: "Alex" }];
-    stubFetch(200, { notices });
-    expect(await fetchNotices()).toEqual(notices);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(null, { status: 204 })),
-    );
-    await expect(dismissNotice("n")).resolves.toBeUndefined();
-    stubFetch(404, { error: { code: "NotFound", message: "No such notice" } });
-    await expect(dismissNotice("n")).rejects.toMatchObject({ code: "NotFound" });
+  it("lists review items and counts, and runs an action on one", async () => {
+    const items = [
+      {
+        id: "n",
+        kind: "identity.partner-reset",
+        createdAt: "t",
+        accountId: null,
+        detail: { type: "notice", issuedBy: "Alex" },
+      },
+    ];
+    stubFetch(200, { items });
+    expect(await fetchReviewItems()).toEqual(items);
+    const counts = { open: 1, partner: { displayName: "Alex", pending: 2 } };
+    stubFetch(200, counts);
+    expect(await fetchReviewCounts()).toEqual(counts);
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(reviewAction("n", "dismiss-notice")).resolves.toBeUndefined();
+    await expect(
+      reviewAction("n/x", "accept-handoff", { accountId: "a" }),
+    ).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      "/api/review/n/dismiss-notice",
+      "/api/review/n%2Fx/accept-handoff",
+    ]);
+    stubFetch(404, { error: { code: "NotFound", message: "Review item not found" } });
+    await expect(reviewAction("n", "dismiss-notice")).rejects.toMatchObject({ code: "NotFound" });
   });
 });
 

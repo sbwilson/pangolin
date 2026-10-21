@@ -1,7 +1,8 @@
-// In-app notices (story 1.6): the signed-in person's own open, person-scoped review items
-// (AD-17), such as `identity.partner-reset` (a re-enrolment link was issued against them) and
-// `identity.recovery-code-used`. Household and account items belong to the review inbox, not
-// here. A person may dismiss only their own notice; anything else is `NotFound`.
+// In-app notices (story 1.6): the signed-in person's own open `identity.partner-reset` (a
+// re-enrolment link was issued against them) and `identity.recovery-code-used` review items
+// (AD-17). Since the Needs review inbox (ticket 8) they are ordinary cards on `/review`: this
+// file is their projection (`listNotices`, `issuerOf`) and the dismiss action. A person may
+// dismiss only their own notice; anything else is `NotFound`.
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
@@ -10,6 +11,13 @@ import { resolveReviewItem } from "../system/review-items.ts";
 import type { PersonViewer } from "../viewer.ts";
 import { write } from "../write.ts";
 import { PARTNER_RESET_REVIEW } from "./re-enrolment.ts";
+import { RECOVERY_CODE_USED_REVIEW } from "./recovery-codes.ts";
+
+/** The review kinds that are notices to the person they are scoped to. */
+export const NOTICE_KINDS: readonly string[] = [
+  PARTNER_RESET_REVIEW.kind,
+  RECOVERY_CODE_USED_REVIEW.kind,
+];
 
 /** A notice as the web app shows it. */
 export interface Notice {
@@ -28,12 +36,18 @@ function signedIn(ctx: UseCaseContext): PersonViewer {
   return ctx.viewer;
 }
 
-/** The viewer's own open person-scoped items. */
+/** The viewer's own open notices. */
 function own(repos: Pick<ReadRepos, "reviewItems">, viewer: PersonViewer): ReviewItemRow[] {
-  return repos.reviewItems.listOpenFor(viewer).filter((row) => row.personId === viewer.personId);
+  return repos.reviewItems
+    .listOpenFor(viewer)
+    .filter((row) => row.personId === viewer.personId && NOTICE_KINDS.includes(row.kind));
 }
 
-function issuerOf(repos: ReadRepos, row: ReviewItemRow): string | null {
+/** Who issued a `identity.partner-reset` link: the partner's name or the server console. */
+export function issuerOf(
+  repos: Pick<ReadRepos, "reEnrolmentLinks" | "person">,
+  row: ReviewItemRow,
+): string | null {
   if (row.kind !== PARTNER_RESET_REVIEW.kind) return null;
   const linkId = row.entityRef.replace(/^re_enrolment_link:/, "");
   const issuedBy = repos.reEnrolmentLinks.findById(linkId)?.issuedBy;
@@ -46,7 +60,7 @@ function issuerOf(repos: ReadRepos, row: ReviewItemRow): string | null {
 export const listNoticesInput = z.object({}).strict();
 export type ListNoticesInput = z.input<typeof listNoticesInput>;
 
-/** `identity.listNotices`: the viewer's own open person-scoped items, oldest first. */
+/** `identity.listNotices`: the viewer's own open notices, oldest first. */
 export function listNotices(ctx: UseCaseContext, input: ListNoticesInput = {}): Notice[] {
   parseInput(listNoticesInput, input);
   const viewer = signedIn(ctx);

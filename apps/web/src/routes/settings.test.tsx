@@ -5,7 +5,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../api.ts";
 import { authClient } from "../auth-client.ts";
-import { Notices } from "../components/Notices.tsx";
 import { type Session, SessionContext } from "../session.tsx";
 import { ThemeProvider } from "../theme.tsx";
 import { SettingsPage } from "./settings.tsx";
@@ -21,9 +20,6 @@ vi.mock("../api.ts", async (importOriginal) => ({
   invitePartner: vi.fn(),
   resetPartner: vi.fn(),
   regenerateRecoveryCodes: vi.fn(),
-  fetchNotices: vi.fn().mockResolvedValue([]),
-  revokeMyRecoveryLinks: vi.fn().mockResolvedValue({ revoked: 0 }),
-  dismissNotice: vi.fn().mockResolvedValue(undefined),
   listAccounts: vi.fn().mockResolvedValue([]),
   fetchInstitutions: vi.fn().mockResolvedValue([]),
   reopenAccount: vi.fn(),
@@ -1096,7 +1092,7 @@ describe("SettingsPage", () => {
 
       await waitFor(() => {
         expect(api.reopenAccount).toHaveBeenCalledWith("acc-1");
-        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["notices"] });
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["review"] });
       });
     });
 
@@ -1231,93 +1227,5 @@ describe("SettingsPage", () => {
         expect(mockSignOut).toHaveBeenCalled();
       });
     });
-  });
-});
-
-describe("Notices", () => {
-  let queryClient: QueryClient;
-
-  beforeEach(() => {
-    vi.resetAllMocks();
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
-    });
-  });
-
-  afterEach(() => {
-    cleanup();
-  });
-
-  it("calls revokeMyRecoveryLinks when revoking a partner-reset notice", async () => {
-    const user = userEvent.setup();
-    vi.mocked(api.fetchNotices).mockResolvedValue([
-      {
-        id: "notice-1",
-        kind: "identity.partner-reset",
-        createdAt: "2026-10-18T10:00:00Z",
-        issuedBy: "Carissa",
-      },
-    ]);
-    vi.mocked(api.revokeMyRecoveryLinks).mockResolvedValue({ revoked: 1 });
-
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-
-    render(
-      <QueryClientProvider client={queryClient}>
-        <Notices />
-      </QueryClientProvider>,
-    );
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(
-          /A one-time recovery link for your account was issued on 2026-10-18 by Carissa./,
-        ),
-      ).toBeTruthy();
-    });
-
-    const revokeBtn = screen.getByRole("button", { name: "Revoke the recovery link" });
-    await user.click(revokeBtn);
-
-    expect(api.revokeMyRecoveryLinks).toHaveBeenCalled();
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["identity", "notices"] });
-  });
-
-  it("calls dismissNotice when dismissing a notice", async () => {
-    const user = userEvent.setup();
-    vi.mocked(api.fetchNotices).mockResolvedValue([
-      {
-        id: "notice-2",
-        kind: "identity.recovery-code-used",
-        createdAt: "2026-10-18T11:00:00Z",
-        issuedBy: null,
-      },
-    ]);
-    vi.mocked(api.dismissNotice).mockResolvedValue(undefined);
-
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
-
-    render(
-      <QueryClientProvider client={queryClient}>
-        <Notices />
-      </QueryClientProvider>,
-    );
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(
-          /One of your recovery codes was used to sign in on 2026-10-18, and your passkeys were removed./,
-        ),
-      ).toBeTruthy();
-    });
-
-    const dismissBtn = screen.getByRole("button", { name: "Dismiss" });
-    await user.click(dismissBtn);
-
-    expect(api.dismissNotice).toHaveBeenCalledWith("notice-2");
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["identity", "notices"] });
   });
 });

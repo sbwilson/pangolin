@@ -8,7 +8,6 @@ import { AppSidebar } from "./components/AppSidebar.tsx";
 import { HealthStatus } from "./components/HealthStatus.tsx";
 import { MascotIcon } from "./components/MascotLogo.tsx";
 import { MobileNav } from "./components/MobileNav.tsx";
-import { Notices } from "./components/Notices.tsx";
 import { EnrolView } from "./EnrolView.tsx";
 import { InitialRecoveryCodes } from "./RecoveryViews.tsx";
 import { normalizePath, oneTimeLink } from "./routes/search.ts";
@@ -217,7 +216,6 @@ export function RootLayout() {
                 {signOutError}
               </p>
             )}
-            {shell && person ? <Notices /> : null}
             {body}
           </main>
         </div>

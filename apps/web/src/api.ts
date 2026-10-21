@@ -1,5 +1,5 @@
 import type { AppType } from "@pangolin/server";
-import { hc } from "hono/client";
+import { hc, type InferResponseType } from "hono/client";
 import type { TransactionsSearch } from "./routes/search.ts";
 
 export const api = hc<AppType>("/");
@@ -217,34 +217,63 @@ export async function reEnrol(form: {
   return { signedIn };
 }
 
-/** Ends every unused recovery link issued against the signed-in person. */
-export async function revokeMyRecoveryLinks(): Promise<{ revoked: number }> {
-  return postJson("/api/identity/re-enrolment-links/revoke", {});
-}
-
 /** Issues a one-time re-enrolment link for the partner. Needs a sign-in in the last 5 minutes. */
 export async function resetPartner(personId: string): Promise<{ url: string; expiresAt: string }> {
   return postJson("/api/identity/re-enrolment-links", { personId });
 }
 
-/** An in-app notice: one of the signed-in person's open review items. */
-export interface Notice {
-  readonly id: string;
-  readonly kind: string;
-  readonly createdAt: string;
-  /** Who issued a recovery link (`identity.partner-reset`); null for other kinds. */
-  readonly issuedBy: string | null;
-}
+/** The Needs review list: one card per open item the signed-in person may see, oldest first. */
+type ReviewListResponse = InferResponseType<typeof api.api.review.$get, 200>;
+export type ReviewCard = ReviewListResponse["items"][number];
+export type ReviewDetail = ReviewCard["detail"];
+export type ReviewTransaction = Extract<
+  ReviewDetail,
+  { type: "transaction" }
+>["candidates"][number];
+export type ReviewSetAsideRow = Extract<ReviewDetail, { type: "batch" }>["rows"][number];
 
-export async function fetchNotices(): Promise<Notice[]> {
-  const res = await api.api.identity.notices.$get();
+/** The nav badge and partner chip: numbers only. */
+export type ReviewCounts = InferResponseType<typeof api.api.review.count.$get, 200>;
+
+export async function fetchReviewItems(): Promise<ReviewCard[]> {
+  const res = await api.api.review.$get();
   if (!res.ok) throw await apiError(res);
-  return (await res.json()).notices;
+  return (await res.json()).items;
 }
 
-/** Dismisses one of the signed-in person's own notices. */
-export async function dismissNotice(id: string): Promise<void> {
-  const res = await api.api.identity.notices[":id"].dismiss.$post({ param: { id } });
+export async function fetchReviewCounts(): Promise<ReviewCounts> {
+  const res = await api.api.review.count.$get();
+  if (!res.ok) throw await apiError(res);
+  return await res.json();
+}
+
+/** The actions on a review item, one route each (`POST /api/review/:id/<action>`). */
+export type ReviewAction =
+  | "accept-rule"
+  | "dismiss-rule"
+  | "keep-duplicate"
+  | "remove-duplicate"
+  | "dismiss-transfer"
+  | "link-transfer"
+  | "accept-handoff"
+  | "dismiss-handoff"
+  | "fix-row"
+  | "discard-row"
+  | "dismiss-notice"
+  | "revoke-links";
+
+/** Runs one action on review item `id`; throws `ApiError` (an item already resolved is `NotFound`). */
+export async function reviewAction(
+  id: string,
+  action: ReviewAction,
+  body?: Readonly<Record<string, unknown>>,
+): Promise<void> {
+  const res = await fetch(`/api/review/${encodeURIComponent(id)}/${action}`, {
+    method: "POST",
+    ...(body === undefined
+      ? {}
+      : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  });
   if (!res.ok) throw await apiError(res);
 }
 

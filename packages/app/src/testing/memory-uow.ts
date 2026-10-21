@@ -962,6 +962,18 @@ function reviewItemRepo(working: MemoryState, check: () => void): ReviewItemRepo
         .filter((row) => row.resolvedAt === null && visible(working, viewer, row))
         .sort((a, b) => (`${a.createdAt}|${a.id}` < `${b.createdAt}|${b.id}` ? -1 : 1));
     },
+    countSharedVisibleOpen: (viewer) => {
+      if (viewer === undefined || viewer === null) {
+        throw new TypeError("countSharedVisibleOpen: a viewer is required");
+      }
+      check();
+      return working.reviewItems.filter((row) => {
+        if (row.resolvedAt !== null || row.personId !== null) return false;
+        if (row.accountId === null) return true;
+        const account = working.accounts.find((a) => a.id === row.accountId);
+        return account !== undefined && !account.isPrivate && !working.deleted.has(account.id);
+      }).length;
+    },
     deleteForAccount: (accountId) => {
       check();
       const before = working.reviewItems.length;
@@ -2897,7 +2909,10 @@ export function memoryUnitOfWork(
           listVisible: auditRepo(uow.state, check, () => false).listVisible,
           ownerChanges: auditRepo(uow.state, check, () => false).ownerChanges,
         },
-        reviewItems: { listOpenFor: reviewItemRepo(uow.state, check).listOpenFor },
+        reviewItems: {
+          listOpenFor: reviewItemRepo(uow.state, check).listOpenFor,
+          countSharedVisibleOpen: reviewItemRepo(uow.state, check).countSharedVisibleOpen,
+        },
         accounts: {
           findVisible: accountRepo(uow.state, check).findVisible,
           list: accountRepo(uow.state, check).list,
@@ -2915,6 +2930,7 @@ export function memoryUnitOfWork(
           listForDedupe: transactionRepo(uow.state, check).listForDedupe,
           findByExternalId: transactionRepo(uow.state, check).findByExternalId,
           findByFingerprint: transactionRepo(uow.state, check).findByFingerprint,
+          listTransferCandidates: transactionRepo(uow.state, check).listTransferCandidates,
         },
         institutions: {
           find: institutionRepo(uow.state, check).find,

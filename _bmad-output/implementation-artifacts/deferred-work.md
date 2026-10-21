@@ -436,3 +436,17 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-encrypted-attachment-storage-and-partner-hand-off-plan.md`
   summary: Handle `import_handoff.batch_id` when a batch is deleted or undone.
   evidence: The FK and the status/batch CHECK would block deleting an imported hand-off's batch (unverified; entry 7).
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-needs-review-inbox-framework-and-ui-plan.md`
+  summary: Wire the Needs review chip and the "N need review" summary link on /transactions to review data (epic IMP-8 boundary).
+  evidence: Split from entry 3.8 to keep the plan to one goal; the ledger already derives `needs_review` from open items.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-needs-review-inbox-framework-and-ui-plan.md`
+  summary: Bulk-accept card for AI suggestions at 90%+ with one Undo toast, plus the toast component and "undo batch" from Needs review.
+  evidence: Split from entry 3.8; no AI-suggestion kind exists until epic-llm-categorisation-pdf and the web app has no toast component.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-needs-review-inbox-framework-and-ui-plan.md`
+  summary: Add a non-demo `startServer` test that accepts a hand-off through `/api/review/:id/accept-handoff` using the real file store.
+  evidence: Every test uses `fakeAttachmentStore`; the live branch of `server.ts` (directory, secret) is unexercised, so a wrong path or secret would break hand-off accept in production with the suite green.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-needs-review-inbox-framework-and-ui-plan.md`
+  summary: Give the e2e clear-an-item test its own seeded review item instead of relying on `recovery.spec` leaving a recovery-code notice.
+  evidence: `e2e/review.spec.ts` skips the clear step when no notice exists; the seeded ledger raises no items and no route creates one. The Playwright specs were also never run in this session.

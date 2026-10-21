@@ -19,6 +19,7 @@ import {
   type AccountView,
   balanceAsOf as accountBalanceAsOf,
   closeAccount,
+  countReviewItems,
   createAccount,
   createActivity,
   createIdGenerator,
@@ -40,6 +41,7 @@ import {
   listAudit,
   listPayeeAliases,
   listPayees,
+  listReviewCards,
   listReviewItems,
   listTags,
   listTransactions,
@@ -997,6 +999,92 @@ describe("leaving the household (story 26)", () => {
         (out.afterSystem as { audit: string[] }).audit.some((row) => /:priv:|:closed:/.test(row)),
         who,
       ).toBe(false);
+    }
+  });
+});
+
+/** The Needs review counts and cards (ticket 8) on one adapter. */
+function reviewInbox(ctxs: Ctxs) {
+  const { sys } = ctxs;
+  const pa = createPerson(sys, { displayName: "A", colour: "#000000" });
+  const pb = createPerson(sys, { displayName: "B", colour: "#ffffff" });
+  const A = ctxs.as(pa);
+  const B = ctxs.as(pb);
+  const joint = createAccount(sys, {
+    name: "Joint",
+    type: "savings",
+    currency: "AUD",
+    isPrivate: false,
+    owners: [
+      { personId: pa, shareBp: 5000 },
+      { personId: pb, shareBp: 5000 },
+    ],
+  });
+  const solo = createAccount(sys, {
+    name: "Solo",
+    type: "savings",
+    currency: "AUD",
+    isPrivate: false,
+    owners: own(pa),
+  });
+  const mine = createAccount(sys, {
+    name: "Mine",
+    type: "savings",
+    currency: "AUD",
+    isPrivate: true,
+    owners: own(pa),
+  });
+  const kind = (name: string, scope: "account" | "person" | "household") =>
+    defineReviewKind({ kind: `parity.${name}`, module: "system", scope });
+  const raise = (input: Parameters<typeof raiseReviewItem>[3]) =>
+    write(sys, (tx, audit) => raiseReviewItem(tx, audit, sys, input));
+  const out: Record<string, unknown> = {};
+  const seen = (label: string) => {
+    out[label] = {
+      a: countReviewItems(A),
+      b: countReviewItems(B),
+      cardsA: listReviewCards(A).map((card) => card.kind),
+      cardsB: listReviewCards(B).map((card) => card.kind),
+      sharedBySystem: sys.uow.read((repos) => repos.reviewItems.countSharedVisibleOpen(sys.viewer)),
+    };
+  };
+  seen("empty");
+  raise({ kind: kind("household", "household"), entityRef: "p:1", dedupeKey: "p1" });
+  raise({ kind: kind("joint", "account"), entityRef: "p:2", dedupeKey: "p2", accountId: joint });
+  raise({ kind: kind("solo", "account"), entityRef: "p:5", dedupeKey: "p5", accountId: solo });
+  raise({ kind: kind("mine", "account"), entityRef: "p:3", dedupeKey: "p3", accountId: mine });
+  raise({ kind: kind("person-a", "person"), entityRef: "p:4", dedupeKey: "p4", personId: pa });
+  seen("raised");
+  out.noViewer = outcome(() =>
+    sys.uow.read((repos) =>
+      repos.reviewItems.countSharedVisibleOpen(undefined as unknown as typeof sys.viewer),
+    ),
+  );
+  // Making a public account private takes its item out of the shared count.
+  setPrivacy(A, { id: solo, isPrivate: true });
+  seen("private");
+  return out;
+}
+
+describe("the Needs review counts (ticket 8)", () => {
+  it("is the same on SQLite and the memory mirror, and counts only what both see", () => {
+    migrate(db, loadMigrations(packageMigrationsDir));
+    const sqlite = reviewInbox(sqliteCtxs(db));
+    const memory = reviewInbox(memoryCtxs());
+    expect(memory).toEqual(sqlite);
+    for (const [who, out] of [
+      ["sqlite", sqlite],
+      ["memory", memory],
+    ] as const) {
+      const raised = out.raised as { a: unknown; b: unknown; sharedBySystem: number };
+      expect(raised.sharedBySystem, who).toBe(3);
+      expect(raised.b, who).toEqual({ open: 3, partner: { displayName: "A", pending: 3 } });
+      expect(raised.a, who).toEqual({ open: 5, partner: { displayName: "B", pending: 3 } });
+      const private_ = out.private as { b: unknown; a: unknown; sharedBySystem: number };
+      expect(private_.sharedBySystem, who).toBe(2);
+      expect(private_.b, who).toEqual({ open: 2, partner: { displayName: "A", pending: 2 } });
+      expect(private_.a, who).toEqual({ open: 5, partner: { displayName: "B", pending: 2 } });
+      expect(out.noViewer, who).not.toBe("ok");
     }
   });
 });

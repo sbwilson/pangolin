@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils.ts";
 import type { Me } from "../api.ts";
 import { MascotLogo } from "./MascotLogo.tsx";
+import { NeedsReviewBadge } from "./review/index.ts";
 
 export interface AppSidebarProps {
   readonly me: Me;
@@ -71,9 +72,13 @@ export function AppSidebar({ me, signOut, className }: AppSidebarProps) {
             <span>Transactions</span>
           </Link>
 
-          <span
-            aria-disabled="true"
-            className="flex cursor-default items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground"
+          <Link
+            to="/review"
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            activeProps={{
+              className: "bg-accent font-semibold text-primary",
+              "aria-current": "page",
+            }}
           >
             <svg
               width="16"
@@ -88,8 +93,9 @@ export function AppSidebar({ me, signOut, className }: AppSidebarProps) {
             >
               <path d="M3 13h5l2 3h4l2-3h5M5.5 5h13L21 13v6H3v-6z" />
             </svg>
-            <span>Needs review</span>
-          </span>
+            <span className="flex-1">Needs review</span>
+            <NeedsReviewBadge />
+          </Link>
 
           <Link
             to="/accounts"

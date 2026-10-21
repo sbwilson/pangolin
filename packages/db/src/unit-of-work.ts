@@ -329,7 +329,10 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               listVisible: repos.audit.listVisible,
               ownerChanges: repos.audit.ownerChanges,
             },
-            reviewItems: { listOpenFor: repos.reviewItems.listOpenFor },
+            reviewItems: {
+              listOpenFor: repos.reviewItems.listOpenFor,
+              countSharedVisibleOpen: repos.reviewItems.countSharedVisibleOpen,
+            },
             accounts: {
               findVisible: repos.accounts.findVisible,
               list: repos.accounts.list,
@@ -347,6 +350,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               listForDedupe: repos.transactions.listForDedupe,
               findByExternalId: repos.transactions.findByExternalId,
               findByFingerprint: repos.transactions.findByFingerprint,
+              listTransferCandidates: repos.transactions.listTransferCandidates,
             },
             institutions: { find: repos.institutions.find, list: repos.institutions.list },
             balanceSnapshots: {

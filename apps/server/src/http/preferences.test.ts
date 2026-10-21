@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createIdGenerator, fixedClockAt, type UnitOfWork } from "@pangolin/app";
+import { fakeAttachmentStore } from "@pangolin/app/testing/attachment-store";
 import {
   createSystemHealthRepo,
   createUnitOfWork,
@@ -65,6 +66,7 @@ function deps(db: Db, authn: Authn = { kind: "live", gateway: fakeGateway() }): 
     newId: createIdGenerator(),
     tokens: nodeTokens,
     codes: recoveryCodeHasher("test-secret"),
+    attachments: fakeAttachmentStore(),
     publicUrl: ORIGIN,
     authn,
     healthz: { expectedSchemaVersion: MIGRATIONS, runner: () => ticking },

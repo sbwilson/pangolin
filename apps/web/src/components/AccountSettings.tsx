@@ -68,7 +68,7 @@ export function AccountSettings() {
       await reopenAccount(accountId);
       await queryClient.invalidateQueries({ queryKey: ["accounts"] });
       await queryClient.invalidateQueries({ queryKey: ["ledger", "accounts"] });
-      await queryClient.invalidateQueries({ queryKey: ["notices"] });
+      await queryClient.invalidateQueries({ queryKey: ["review"] });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to reopen account");
     } finally {

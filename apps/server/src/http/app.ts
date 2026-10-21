@@ -4,12 +4,17 @@ import { getConnInfo } from "@hono/node-server/conninfo";
 import { serveStatic } from "@hono/node-server/serve-static";
 import {
   AppError,
+  type AttachmentContext,
+  type AttachmentStore,
+  acceptHandoffItem,
+  acceptRuleOfferItem,
   backupStatus,
   balanceAsOf,
   type Clock,
   type CodeHasher,
   checkSignUp,
   closeAccount,
+  countReviewItems,
   createAccount,
   createActivity,
   createCategory,
@@ -29,11 +34,16 @@ import {
   deleteTag,
   deleteTransaction,
   deleteTransferGroup,
-  dismissNotice,
+  discardSetAsideRowItem,
+  dismissHandoffItem,
+  dismissNoticeItem,
+  dismissRuleOfferItem,
+  dismissTransferItem,
   ERROR_CODES,
   type ErrorCode,
   enrolmentNeeds,
   exportTransactionsCsv,
+  fixSetAsideRowItem,
   getAccount,
   getActivity,
   getPayee,
@@ -47,7 +57,9 @@ import {
   issueInitialRecoveryCodes,
   issueReEnrolmentLink,
   issueSetupLink,
+  keepDuplicateItem,
   leaveHousehold,
+  linkTransferItem,
   listAccounts,
   listActivities,
   listAudit,
@@ -55,9 +67,9 @@ import {
   listCategories,
   listCategoryGroups,
   listInstitutions,
-  listNotices,
   listPayeeAliases,
   listPayees,
+  listReviewCards,
   listTags,
   listTaxCategories,
   listTransactions,
@@ -74,6 +86,8 @@ import {
   regenerateRecoveryCodes,
   registerTransactionNeedsReviewSync,
   rejoinAccount,
+  removeDuplicateItem,
+  revokeLinksItem,
   revokeMyReEnrolmentLinks,
   type SetSplitFieldInput,
   type SystemHealthPort,
@@ -133,6 +147,8 @@ export interface ApiDeps {
    * page warn until it is confirmed. Undefined (dev, CI, demo): nothing to confirm.
    */
   readonly bundleId?: string;
+  /** The encrypted attachment store (AD-21): hand-off files and the household leave. */
+  readonly attachments: AttachmentStore;
 }
 
 export interface AppDeps extends ApiDeps {
@@ -231,6 +247,11 @@ export function createApi(deps: ApiDeps) {
     ...ctx(c),
     tokens: deps.tokens,
     codes: deps.codes,
+    attachments: deps.attachments,
+  });
+  const withAttachments = (c: Context<SessionEnv>): AttachmentContext => ({
+    ...ctx(c),
+    attachments: deps.attachments,
   });
   /** The answer to a redemption: signed in (with what must still be enrolled), or not. */
   const redeemed = (c: Context, session: IssuedSession) => {
@@ -668,12 +689,77 @@ export function createApi(deps: ApiDeps) {
       const body = reEnrolBody.parse(await c.req.json().catch(() => undefined));
       return redeemed(c, await gateway.reEnrol(body, c.req.raw.headers));
     })
-    .get("/api/identity/notices", (c) => {
-      return c.json({ notices: listNotices(ctx(c), {}) }, 200);
+    .get("/api/review", (c) => {
+      // Per viewer (AD-3): the open items they may see, each with its card's detail. Never cached.
+      return c.json({ items: listReviewCards(ctx(c), {}) }, 200);
     })
-    .post("/api/identity/notices/:id/dismiss", (c) => {
-      dismissNotice(ctx(c), { id: c.req.param("id") });
+    .get("/api/review/count", (c) => {
+      // Numbers only: the viewer's open count, and how many items both partners see.
+      return c.json(countReviewItems(ctx(c), {}), 200);
+    })
+    .post("/api/review/:id/accept-rule", async (c) => {
+      writable();
+      const id = c.req.param("id");
+      acceptRuleOfferItem(ctx(c), await objectBody(c, { id }, true));
       return c.body(null, 204);
+    })
+    .post("/api/review/:id/dismiss-rule", (c) => {
+      writable();
+      dismissRuleOfferItem(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/keep-duplicate", (c) => {
+      writable();
+      keepDuplicateItem(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/remove-duplicate", (c) => {
+      writable();
+      removeDuplicateItem(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/dismiss-transfer", (c) => {
+      writable();
+      dismissTransferItem(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/link-transfer", async (c) => {
+      writable();
+      const id = c.req.param("id");
+      linkTransferItem(ctx(c), await objectBody(c, { id }));
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/accept-handoff", async (c) => {
+      writable();
+      const id = c.req.param("id");
+      acceptHandoffItem(withAttachments(c), await objectBody(c, { id }));
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/dismiss-handoff", (c) => {
+      writable();
+      dismissHandoffItem(withAttachments(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/fix-row", async (c) => {
+      writable();
+      const id = c.req.param("id");
+      fixSetAsideRowItem(ctx(c), await objectBody(c, { id }));
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/discard-row", async (c) => {
+      writable();
+      const id = c.req.param("id");
+      discardSetAsideRowItem(ctx(c), await objectBody(c, { id }));
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/dismiss-notice", (c) => {
+      writable();
+      dismissNoticeItem(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/revoke-links", (c) => {
+      writable();
+      return c.json(revokeLinksItem(ctx(c), { id: c.req.param("id") }), 200);
     });
 }
 
