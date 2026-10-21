@@ -1,5 +1,5 @@
 import type { ImportBatchRepo, ImportBatchRow, ImportRowRepo, ImportRowRow } from "@pangolin/app";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { visibleAccountId } from "../privacy.ts";
 import { importBatch } from "../schema/import-batch.ts";
@@ -118,7 +118,11 @@ export function createImportBatchRepo(
       return (
         orm
           .update(importBatch)
-          .set({ undoneAt: at, updatedAt: at })
+          .set({
+            fileSha256: sql`'undone:' || ${importBatch.id} || ':' || ${importBatch.fileSha256}`,
+            undoneAt: at,
+            updatedAt: at,
+          })
           .where(and(eq(importBatch.id, id), isNull(importBatch.undoneAt)))
           .run().changes > 0
       );

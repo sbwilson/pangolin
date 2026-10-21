@@ -259,4 +259,24 @@ describe("opening balance from an imported statement", () => {
     expect(account?.holes).toEqual([{ from: "2024-07-01", to: "2024-07-06", days: 6 }]);
     expect(account?.startsFrom).toBeNull();
   });
+
+  it("re-imports the same file after an undo and records the statement snapshot again", () => {
+    const { uow, ctx, sysCtx, accountId } = setup();
+    const content = csv(
+      [
+        ["05/07/2024", -100],
+        ["06/07/2024", -100],
+      ],
+      1000,
+    );
+    const first = importStatement(ctx, { accountId, format: "commbank_csv", content });
+    undoImportBatch(ctx, { batchId: first.batchId });
+    expect(uow.state.balanceSnapshots).toEqual([]);
+    const again = importStatement(ctx, { accountId, format: "commbank_csv", content });
+    expect(again.batchId).not.toBe(first.batchId);
+    expect(again.newCount).toBe(2);
+    expect(uow.state.balanceSnapshots).toHaveLength(1);
+    expect(uow.state.balanceSnapshots[0]?.importBatchId).toBe(again.batchId);
+    expect(m1GateReport(sysCtx).accounts[0]?.holes).toEqual([]);
+  });
 });

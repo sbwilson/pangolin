@@ -69,6 +69,8 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
     "links and unlinks every member of a group, also ones the viewer cannot see (decision 81)",
   "TransactionRepo.hasLiveBefore":
     "a yes/no on an account the importing use case found with findVisible; reveals no row",
+  "TransactionRepo.tombstoneTransactionKeys":
+    "write-only: frees the keys of rows the use case read through the viewer",
   "BalanceSnapshotRepo.insert": "a new row; the use case checked the account with findVisible",
   "BalanceSnapshotRepo.deleteByImportBatch":
     "write-only: undoes the snapshots of a batch the use case found with the viewer",

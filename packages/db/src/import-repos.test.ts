@@ -104,16 +104,69 @@ describe("SQLite Import Repositories & Dedupe", () => {
     expect(undone?.undoneAt).toBe("2026-10-20T12:00:00.000Z");
     expect(listTransactions(ctx).transactions).toHaveLength(0);
     expect(view()?.lastImport).toBeNull();
-    // The same file stays blocked.
-    expect(
-      importStatement(ctx, {
-        accountId: sharedAccountId,
-        format: "commbank_csv",
-        content: 'Date,Amount,Description,Balance\n01/09/2026,-5.00,"COFFEE",0.00',
-      }).newCount,
-    ).toBe(0);
+    // The undo freed the file hash and the fingerprint: the same file imports again.
+    const file = 'Date,Amount,Description,Balance\n01/09/2026,-5.00,"COFFEE",0.00';
+    const sha = uow.read((r) => r.importBatches.find(alexViewer, res.batchId)?.fileSha256);
+    expect(sha).toBe(`undone:${res.batchId}:${stored?.fileSha256}`);
+    const again = importStatement(ctx, {
+      accountId: sharedAccountId,
+      format: "commbank_csv",
+      content: file,
+    });
+    expect(again.batchId).not.toBe(res.batchId);
+    expect(again.newCount).toBe(1);
+    expect(listTransactions(ctx).transactions).toHaveLength(1);
+    // Undo it again, then import an overlapping corrected file: every row commits.
+    expect(undoImportBatch(ctx, { batchId: again.batchId }).undoneCount).toBe(1);
+    const corrected = importStatement(ctx, {
+      accountId: sharedAccountId,
+      format: "commbank_csv",
+      content: `${file}\n02/09/2026,-6.00,"TEA",0.00`,
+    });
+    expect(corrected.newCount).toBe(2);
+    expect(listTransactions(ctx).transactions).toHaveLength(2);
+    // The tombstones are unique and are not real fingerprints.
+    const prints = uow.read((r) =>
+      r.transactions.listForDedupe(sharedAccountId, ["2026-09-01", "2026-09-02"]),
+    );
+    expect(prints).toHaveLength(4);
+    expect(new Set(prints.map((p) => p.fingerprint)).size).toBe(4);
+    expect(prints.filter((p) => p.fingerprint.startsWith("undone:"))).toHaveLength(2);
     const audited = uow.read((r) => r.audit.listVisible(alexViewer, "2026-10-20"));
     expect(audited.some((e) => e.entity === "import_batch" && e.action === "update")).toBe(true);
+  });
+
+  it("re-imports an OFX after undo and keeps a hand-deleted line blocked, on the real indexes", () => {
+    const clock = {
+      now: () => now,
+      today: () => now.toZonedDateTimeISO("UTC").toPlainDate(),
+    };
+    const ctx = { viewer: alexViewer, clock, newId, uow };
+    const ofx = `<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKTRANLIST>
+<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260301120000</DTPOSTED><TRNAMT>-5.00</TRNAMT><FITID>F-1</FITID><NAME>ONE</NAME></STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260302120000</DTPOSTED><TRNAMT>-6.00</TRNAMT><FITID>F-2</FITID><NAME>TWO</NAME></STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260303120000</DTPOSTED><TRNAMT>-7.00</TRNAMT><FITID>F-3</FITID><NAME>THREE</NAME></STMTTRN>
+</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`;
+    const imp = () =>
+      importStatement(ctx, { accountId: sharedAccountId, format: "commbank_ofx", content: ofx });
+    const first = imp();
+    expect(first.newCount).toBe(3);
+    const gone = first.transactionIds[0];
+    if (!gone) throw new Error("no transaction");
+    uow.transaction((tx) => {
+      tx.transactions.softDelete(alexViewer, gone, now.toString());
+    });
+    expect(undoImportBatch(ctx, { batchId: first.batchId }).undoneCount).toBe(2);
+    const again = imp();
+    expect(again.newCount).toBe(2);
+    expect(again.dupCount).toBe(1);
+    expect(listTransactions(ctx).transactions).toHaveLength(2);
+    const ext = uow.read((r) =>
+      r.transactions
+        .listForDedupe(sharedAccountId, ["2026-03-01", "2026-03-02", "2026-03-03"])
+        .map((t) => t.externalId),
+    );
+    expect(ext.filter((e) => e?.startsWith("undone:"))).toHaveLength(2);
   });
 
   it("manages import batches with privacy enforcement", () => {

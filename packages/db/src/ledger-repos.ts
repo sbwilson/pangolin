@@ -563,6 +563,20 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
       );
     },
 
+    tombstoneTransactionKeys: (ids) => {
+      check();
+      for (let i = 0; i < ids.length; i += 400) {
+        orm
+          .update(transaction)
+          .set({
+            fingerprint: sql`'undone:' || ${transaction.id} || ':' || ${transaction.fingerprint}`,
+            externalId: sql`case when ${transaction.externalId} is null then null else 'undone:' || ${transaction.id} || ':' || ${transaction.externalId} end`,
+          })
+          .where(inArray(transaction.id, ids.slice(i, i + 400)))
+          .run();
+      }
+    },
+
     hasLiveBefore: (accountId, date, exceptImportId) => {
       check();
       return (

@@ -447,7 +447,12 @@ function importBatchRepo(working: MemoryState, check: () => void): ImportBatchRe
       const index = working.importBatches.findIndex((b) => b.id === id);
       const b = working.importBatches[index];
       if (index === -1 || !b || b.undoneAt !== null) return false;
-      working.importBatches[index] = { ...b, undoneAt: at, updatedAt: at };
+      working.importBatches[index] = {
+        ...b,
+        fileSha256: `undone:${b.id}:${b.fileSha256}`,
+        undoneAt: at,
+        updatedAt: at,
+      };
       return true;
     },
     listLiveTransactionIds: (batchId) => {
@@ -1597,6 +1602,19 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       working.splits = working.splits.filter((s) => !gone.has(s.transactionId));
       working.transactions = working.transactions.filter((t) => !gone.has(t.id));
       for (const id of gone) working.deleted.delete(id);
+    },
+    tombstoneTransactionKeys: (ids) => {
+      check();
+      const wanted = new Set<string>(ids);
+      working.transactions = working.transactions.map((t) =>
+        wanted.has(t.id)
+          ? {
+              ...t,
+              fingerprint: `undone:${t.id}:${t.fingerprint}`,
+              externalId: t.externalId === null ? null : `undone:${t.id}:${t.externalId}`,
+            }
+          : t,
+      );
     },
     hasLiveBefore: (accountId, date, exceptImportId) => {
       check();

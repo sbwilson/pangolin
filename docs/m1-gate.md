@@ -81,7 +81,9 @@ CommBank accounts has to come from NetBank (the exports on hand start in FY2026)
    duplicates are skipped and re-importing a file changes nothing.
 2. Open Needs review and clear each "Balance gap" item: find the missing or edited row, then undo
    the batch and import the corrected file (importing a corrected file alone leaves the broken
-   batch listed). A file with rows set aside records `unavailable`, not a gap: clear its "Rows set
+   batch listed). Re-importing after an undo works: the undone batch's rows and its file are
+   freed, so the same or a corrected file imports in full (lines you deleted by hand stay
+   skipped). A file with rows set aside records `unavailable`, not a gap: clear its "Rows set
    aside" item instead.
 3. Run the report on the host:
 

@@ -28,8 +28,9 @@ export interface UndoImportBatchResult {
  * the batch is soft-deleted exactly as `deleteTransaction` does (open review items resolved,
  * transfer groups unlinked, audited), the batch's set-aside review item is resolved, and the
  * batch gets `undoneAt`. A row dated after its closed account's `closedOn` refuses the whole
- * undo (`Conflict`). The batch row, its file hash and the deleted rows' fingerprints stay, so
- * importing the same file again stays blocked (AD-20).
+ * undo (`Conflict`). The rows stay soft-deleted for audit, but their fingerprints and external ids and the
+ * batch's file hash are tombstoned (`undone:<id>:<old>`), so the same file or a corrected one can
+ * be imported again. Rows a user deleted by hand beforehand are not tombstoned and stay blocked (AD-20).
  */
 export function undoImportBatch(
   ctx: UseCaseContext,
@@ -76,6 +77,9 @@ export function undoImportBatch(
       resolution: "import undone",
     });
     const at = formatInstant(ctx.clock.now());
+    // Free the fingerprints and external ids of the rows that were live (hand-deleted rows stay
+    // blocked), and (in markUndone) the file hash.
+    tx.transactions.tombstoneTransactionKeys(rows);
     if (!tx.importBatches.markUndone(batch.id, at)) {
       throw new AppError("Conflict", "This import was already undone");
     }

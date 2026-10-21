@@ -228,14 +228,80 @@ describe("undoImportBatch", () => {
     }
   });
 
-  it("keeps re-importing the same file blocked", () => {
+  it("lets the same file be imported again after an undo, and again after a second undo", () => {
+    const { uow, ctx, a, load, live } = setup();
+    const first = load(ctx, a, FIVE);
+    undoImportBatch(ctx, { batchId: first.batchId });
+    const again = load(ctx, a, FIVE);
+    expect(again.batchId).not.toBe(first.batchId);
+    expect(again.newCount).toBe(5);
+    expect(live(a)).toHaveLength(5);
+    undoImportBatch(ctx, { batchId: again.batchId });
+    const third = load(ctx, a, FIVE);
+    expect(third.newCount).toBe(5);
+    expect(live(a)).toHaveLength(5);
+    const prints = uow.state.transactions.map((t) => t.fingerprint);
+    expect(new Set(prints).size).toBe(prints.length);
+    expect(prints.filter((p) => p.startsWith("undone:"))).toHaveLength(10);
+    const shas = uow.state.importBatches.map((b) => b.fileSha256);
+    expect(new Set(shas).size).toBe(3);
+    expect(shas.filter((s) => s.startsWith("undone:"))).toHaveLength(2);
+  });
+
+  it("commits every row of a corrected, overlapping file after an undo", () => {
     const { ctx, a, load, live } = setup();
     const res = load(ctx, a, FIVE);
     undoImportBatch(ctx, { batchId: res.batchId });
+    const corrected = load(ctx, a, [...FIVE.slice(1), ["06/03/2026", "-6.00", "SIX"]]);
+    expect(corrected.newCount).toBe(5);
+    expect(corrected.dupCount).toBe(0);
+    expect(live(a)).toHaveLength(5);
+  });
+
+  it("re-imports an OFX with FITIDs in full after an undo", () => {
+    const { uow, ctx, a, live } = setup();
+    const ofx = `<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKTRANLIST>
+<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260301120000</DTPOSTED><TRNAMT>-5.00</TRNAMT><FITID>F-1</FITID><NAME>ONE</NAME></STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260302120000</DTPOSTED><TRNAMT>-6.00</TRNAMT><FITID>F-2</FITID><NAME>TWO</NAME></STMTTRN>
+</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`;
+    const imp = () => importStatement(ctx, { accountId: a, format: "commbank_ofx", content: ofx });
+    const first = imp();
+    expect(first.newCount).toBe(2);
+    undoImportBatch(ctx, { batchId: first.batchId });
+    const ids = uow.state.transactions.map((t) => t.externalId);
+    expect(ids.every((e) => e?.startsWith("undone:"))).toBe(true);
+    const again = imp();
+    expect(again.newCount).toBe(2);
+    expect(live(a)).toHaveLength(2);
+  });
+
+  it("keeps a line hand-deleted before the undo blocked while the rest come back", () => {
+    const { uow, ctx, a, load, live } = setup();
+    const res = load(ctx, a, FIVE);
+    const gone = res.transactionIds[0];
+    if (!gone) throw new Error("no transaction");
+    uow.transaction((tx) => {
+      tx.transactions.softDelete(ctx.viewer, gone, "2026-10-20T12:00:00.000Z");
+    });
+    expect(undoImportBatch(ctx, { batchId: res.batchId }).undoneCount).toBe(4);
     const again = load(ctx, a, FIVE);
-    expect(again.newCount).toBe(0);
-    expect(again.transactionIds).toEqual([]);
-    expect(live(a)).toHaveLength(0);
+    expect(again.newCount).toBe(4);
+    expect(again.dupCount).toBe(1);
+    expect(live(a)).toHaveLength(4);
+  });
+
+  it("keeps a line the user deleted blocked", () => {
+    const { uow, ctx, a, load, live } = setup();
+    const res = load(ctx, a, FIVE);
+    const gone = res.transactionIds[0];
+    if (!gone) throw new Error("no transaction");
+    uow.transaction((tx) => {
+      tx.transactions.softDelete(ctx.viewer, gone, "2026-10-20T12:00:00.000Z");
+    });
+    const again = load(ctx, a, [...FIVE, ["06/03/2026", "-6.00", "SIX"]]);
+    expect(again.newCount).toBe(1);
+    expect(again.dupCount).toBe(5);
+    expect(live(a)).toHaveLength(5);
   });
 });
 

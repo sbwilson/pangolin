@@ -3,12 +3,13 @@ title: 'Overlap-safe dedupe and re-import after undo'
 type: 'bugfix'
 ticket: ''
 created: '2026-10-22'
-status: 'draft'
+baseline_revision: '0fa5efcd6afeebf544a6cc90ebb7a17fee5e513c'
+status: 'built'
 route: 'full'
 route_source: 'auto'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'thorough'
+review_source: 'auto'
+lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/epic-import-dedupe-transfers-retrospective.md'
@@ -74,11 +75,21 @@ context:
 
 ## Implementation Notes
 
+Trade-off accepted: with the occurrence numbered by file position only, a later non-overlapping export that holds one genuine second identical same-day line is skipped as a duplicate. Bank exports cover whole days, so a day's lines appear in full in every file that includes that day; the case needs a mid-day split that dated exports do not produce.
+
 Rows already duplicated by the old seeding (an overlapping CSV imported before this fix) are not repaired. The four statements imported on pang-dev were single files and are unaffected.
 
 ## Plan Change Log
 
 ## Review Triage Log
+
+- Tombstone rewrites every row of the batch, so a line the user hand-deleted inside the batch is freed and returns after undo + re-import; plan, comment and docs say hand-deleted lines stay blocked (blind, edge, gap) -- verdict: high -- route: patch -- tombstone only the transactions that were live when the undo began (ids captured before the soft-delete loop); test delete, undo, re-import: stays blocked.
+- External-id tombstone never exercised with a non-null external id (gap) -- verdict: medium -- route: patch -- OFX with FITIDs: import, undo, re-import (memory and SQLite) and a parity row with an external id.
+- `fixSetAsideRow` still seeds its occurrence from the ledger, so two commit paths number occurrences differently (edge, gap) -- verdict: medium -- route: defer -- the plan excludes the set-aside path and which rule is right for a row that was never committed is a product decision; logged.
+- Spine AD-20 text ("same file stays blocked") now differs from the code (blind) -- verdict: low -- route: defer -- spec reconciliation for the human; logged.
+- A later non-overlapping export holding one genuine second same-day identical line is skipped as a duplicate (blind) -- verdict: low -- route: accept -- bank exports cover whole days, so a day's lines appear in full in every file that includes it; recorded in Implementation Notes.
+- Batches undone before this change stay blocked (blind, gap) -- verdict: false -- undo has no route, CLI command or UI, so no production database holds an undone batch.
+- Tombstone before `markUndone`, no `updatedAt` or audit on the key rewrite, parity scenario order, unused import, front-matter oddities (blind, edge, gap) -- verdict: false/low -- route: reject -- the write rolls back on `Conflict`, the undo audits each row and the batch, lint is clean.
 
 ## Verification
 

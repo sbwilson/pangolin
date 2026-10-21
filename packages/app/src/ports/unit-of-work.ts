@@ -535,6 +535,12 @@ export interface TransactionRepo {
    */
   hasLiveBefore(accountId: string, date: string, exceptImportId: string): boolean;
   /**
+   * Frees what the given transactions claimed for dedupe: `fingerprint` and a non-null
+   * `externalId` become `undone:<transaction id>:<old value>`, so the same lines can be imported
+   * again. Unique per row and never a real fingerprint. Write-only.
+   */
+  tombstoneTransactionKeys(ids: readonly string[]): void;
+  /**
    * Inserts the transaction and its splits. A second line with the same `(accountId,
    * externalId)` or `(accountId, fingerprint)` is rejected, deleted lines included.
    */
@@ -1486,7 +1492,11 @@ export interface ImportBatchRepo {
    * is not visible to `viewer`.
    */
   listCommittedForAccount(viewer: Viewer, accountId: string): ImportBatchRow[];
-  /** Marks a batch undone; false when it does not exist or is already undone. */
+  /**
+   * Marks a batch undone and tombstones its file hash (`file_sha256` becomes
+   * `undone:<batch id>:<old value>`), so the file can be imported again; false when it does not
+   * exist or is already undone.
+   */
   markUndone(id: string, at: string): boolean;
   /** The IDs of the live (not soft-deleted) transactions with `importId` = `batchId`, by ID. */
   listLiveTransactionIds(batchId: string): string[];

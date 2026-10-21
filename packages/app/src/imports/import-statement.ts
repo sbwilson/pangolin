@@ -282,15 +282,13 @@ export function importStatement(
 
     const existingExternalIds = new Set<string>();
     const existingFingerprints = new Set<string>();
-    // Track occurrences among same-day identical transactions, seeded from existing transactions
+    // Occurrence = index of an identical line within this file; never seeded from the ledger, so a
+    // file that overlaps an earlier one matches it line for line.
     const occurrenceMap = new Map<string, number>();
 
     for (const t of existingInDates) {
       if (t.externalId) existingExternalIds.add(t.externalId);
       existingFingerprints.add(t.fingerprint);
-      const normDesc = normaliseCommBankDescription(t.descriptionRaw);
-      const dayKey = `${t.postedOn}\n${t.amountCents}\n${normDesc}`;
-      occurrenceMap.set(dayKey, (occurrenceMap.get(dayKey) ?? 0) + 1);
     }
 
     // Existing rows an exact duplicate in this file accounts for are not probable duplicates.

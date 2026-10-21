@@ -476,3 +476,10 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/implementation-artifacts/plan-parser-consolidation.md`
   summary: Decide whether to remove `importStatement`'s optional `options.parser` injection (and the `StatementParser` port) or give it a test.
   evidence: After the parser consolidation nothing supplies or tests the seam; production uses the built-in parsers only.
+
+- source_plan: `_bmad-output/implementation-artifacts/plan-overlap-dedupe-and-reimport.md`
+  summary: Decide which occurrence rule `fixSetAsideRow` should use now that `importStatement` numbers a repeated line by file position only (it still counts existing ledger rows).
+  evidence: `set-aside.ts` computes occurrence from the ledger; the two commit paths now number identical same-day lines differently. A fixed row's fingerprint may not match a later overlapping file.
+- source_plan: `_bmad-output/implementation-artifacts/plan-overlap-dedupe-and-reimport.md`
+  summary: Reconcile spine AD-20 ("soft-deleted transactions still count for dedupe", "same file stays blocked") with undo now freeing an undone batch's keys.
+  evidence: Rows soft-deleted by an undo are tombstoned and no longer count; rows the user deleted still do. Proposed spec change for the human to apply.

@@ -1588,10 +1588,33 @@ function scenario(
     r.importBatches.markUndone(freshNew, T2),
     r.importBatches.markUndone("nobody", T2),
     r.importBatches.find(system, freshNew)?.undoneAt,
+    r.importBatches.find(system, freshNew)?.fileSha256 === `undone:${freshNew}:fresh-new`,
     r.importBatches.latestImportFor(system, freshAcct),
     r.importBatches.markUndone(freshOld, T2),
     r.importBatches.latestImportFor(system, freshAcct),
   ]);
+  // Undo frees the batch's keys: fingerprint and external id become undone:<id>:<old>.
+  out["fresh.tombstone"] = tx((r) => {
+    const keys = () =>
+      r.transactions
+        .listForDedupe(freshAcct, ["2026-09-05", "2026-09-20", "2026-09-29"])
+        .map((t) => [t.fingerprint, t.externalId])
+        .sort();
+    const withExt = { ...freshLine(freshNew, "2026-09-20", "ext"), externalId: "EXT-1" };
+    r.transactions.insert(withExt, []);
+    const before = keys();
+    // Only the ids given: the soft-deleted "gone" row keeps its keys.
+    r.transactions.tombstoneTransactionKeys(r.importBatches.listLiveTransactionIds(freshNew));
+    const after = keys();
+    return [
+      before,
+      after,
+      r.transactions.findByFingerprint(freshAcct, fingerprint(freshAcct, "fresh-new")) ===
+        undefined,
+      r.transactions.findByExternalId(freshAcct, `undone:${withExt.id}:EXT-1`)?.id === withExt.id,
+      r.transactions.findByExternalId(freshAcct, "EXT-1") === undefined,
+    ];
+  });
 
   // Opening-balance reads: the batch's snapshot and the history check.
   const openSnap = (batch: Id<"ImportBatch"> | null, asOf: string) => ({

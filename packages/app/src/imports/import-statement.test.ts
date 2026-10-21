@@ -309,33 +309,70 @@ describe("importStatement use case", () => {
     expect(committed).toHaveLength(2);
   });
 
-  it("imports an identical same-day transaction into an account that already contains that transaction with newCount: 1", () => {
+  it("adds only the excess when a later file has one more identical same-day line than the ledger", () => {
     const { ctx, sharedAccountId, uow } = setup();
+    const head = "Date,Amount,Description,Balance";
+    const line = '01/09/2024,-15.00,"WOOLWORTHS",0.00';
+    const imp = (content: string) =>
+      importStatement(ctx, { accountId: sharedAccountId, format: "commbank_csv", content });
 
-    const file1 = `Date,Amount,Description,Balance
-01/09/2024,-15.00,"WOOLWORTHS",100.00`;
-
-    const res1 = importStatement(ctx, {
-      accountId: sharedAccountId,
-      format: "commbank_csv",
-      content: file1,
-    });
-    expect(res1.newCount).toBe(1);
-    expect(res1.dupCount).toBe(0);
-    expect(uow.state.transactions).toHaveLength(1);
-
-    const file2 = `Date,Amount,Description,Balance
-01/09/2024,-15.00,"WOOLWORTHS",85.00`;
-
-    const res2 = importStatement(ctx, {
-      accountId: sharedAccountId,
-      format: "commbank_csv",
-      content: file2,
-    });
+    expect(imp(`${head}\n${line}`).newCount).toBe(1);
+    const res2 = imp(`${head}\n${line}\n${line}`);
     expect(res2.newCount).toBe(1);
-    expect(res2.dupCount).toBe(0);
+    expect(res2.dupCount).toBe(1);
     expect(uow.state.transactions).toHaveLength(2);
     expect(uow.state.transactions[0]?.fingerprint).not.toBe(uow.state.transactions[1]?.fingerprint);
+  });
+
+  it("adds zero when a file repeats same-day twins the ledger already has", () => {
+    const { ctx, sharedAccountId, uow } = setup();
+    const head = "Date,Amount,Description,Balance";
+    const twins = `${head}\n01/09/2024,-4.50,"CAFE",0.00\n01/09/2024,-4.50,"CAFE",0.00`;
+    const imp = (content: string) =>
+      importStatement(ctx, { accountId: sharedAccountId, format: "commbank_csv", content });
+    expect(imp(twins).newCount).toBe(2);
+    const again = imp(`${twins}\n02/09/2024,-1.00,"OTHER",0.00`);
+    expect(again.newCount).toBe(1);
+    expect(again.dupCount).toBe(2);
+    expect(uow.state.transactions).toHaveLength(3);
+  });
+
+  it("dedupes overlapping CSV files without ids, so each shared line exists once", () => {
+    const { ctx, sharedAccountId, uow } = setup();
+    const head = "Date,Amount,Description,Balance";
+    const row = (n: number) => `0${n}/09/2024,-${n}.00,"LINE ${n}",0.00`;
+    const imp = (rows: number[]) =>
+      importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: [head, ...rows.map(row)].join("\n"),
+      });
+    expect(imp([1, 2, 3]).newCount).toBe(3);
+    const b = imp([2, 3, 4]);
+    expect(b.newCount).toBe(1);
+    expect(b.dupCount).toBe(2);
+    expect(uow.state.transactions).toHaveLength(4);
+  });
+
+  it("treats lines an OFX import already holds as duplicates in a later CSV", () => {
+    const { ctx, sharedAccountId, uow } = setup();
+    const ofx = `<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKTRANLIST>
+<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20240901120000</DTPOSTED><TRNAMT>-50.00</TRNAMT><NAME>GYM MEMBERSHIP</NAME></STMTTRN>
+</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`;
+    const r1 = importStatement(ctx, {
+      accountId: sharedAccountId,
+      format: "commbank_ofx",
+      content: ofx,
+    });
+    expect(r1.newCount).toBe(1);
+    const r2 = importStatement(ctx, {
+      accountId: sharedAccountId,
+      format: "commbank_csv",
+      content: `Date,Amount,Description,Balance\n01/09/2024,-50.00,"GYM MEMBERSHIP",0.00\n02/09/2024,-5.00,"NEW",0.00`,
+    });
+    expect(r2.newCount).toBe(1);
+    expect(r2.dupCount).toBe(1);
+    expect(uow.state.transactions).toHaveLength(2);
   });
 
   it("keeps two identical same-day transactions distinct by occurrence index", () => {
