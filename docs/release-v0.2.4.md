@@ -328,7 +328,7 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | CI on the tag commit (step 1): run URL, conclusion | Run https://github.com/sbwilson/pangolin/actions/runs/39576002990: **success**, 2026-10-21 (`Secret scan`, `Lint, types, tests, STRICT`, `Container and end-to-end`) |
 | Real-data check (step 2): `pnpm check:upgrade` output | `migrated 20 -> 21; integrity, manifest, schema ok (/Users/sim/dev/pangolin/pang-dev-copy.sqlite)`, run on a copy of pang-dev's real database. **Deviation:** pang-dev was already at schema 20 (see step 3), so this proves migration 0020 only; migrations 0015 to 0019 had been applied earlier by the develop build |
 | Starting build (step 3): `pangolin status` output | `Pangolin Money db68f5d`, `Schema: 20 (this build expects 20)`, `Readiness: ok`, 2026-10-21. **Deviation:** not `v0.2.3` / schema 15. pang-dev ran a develop build (image `pangolin:local`, per the upgrade output) so the epic's M1 data could be imported ahead of the release |
-| Manual backup snapshot ID (step 4) | (human to paste: step 4 was done, the ID was not supplied) |
+| Manual backup snapshot ID (step 4) | **Lost:** the snapshot ID of the manual pre-upgrade backup was not recorded, so the gate (record the ID before upgrading) was not evidenced. Recovery point actually held: the pre-upgrade copy below. The ID can still be found with `restic snapshots` (the snapshot taken just before 2026-10-21T09:59Z); the last backup `pangolin status` showed before the upgrade was `1013949b1ba0ebfa3ff172481bdab5f63f8ac28746c306cae18b52dc3e3d777d` at 2026-10-21T07:14:32Z |
 | **Release** | |
 | Tag and commit (step 5) | `v0.2.4` on `f49587983ef8fc36eae8e5d51f5cdb91b3d4d395` |
 | Release run URL (step 6) | https://github.com/sbwilson/pangolin/actions/runs/39579069460 (`success`, 2026-10-21) |
@@ -342,12 +342,12 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | **Upgrade on pang-dev** | |
 | Date and `PANGOLIN_UPGRADE_TIMEOUT` used | 2026-10-21, `PANGOLIN_UPGRADE_TIMEOUT=180` |
 | `pangolin upgrade` output (step 8) | `Pulling ghcr.io/sbwilson/pangolin:v0.2.4... Verifying ghcr.io/sbwilson/pangolin@sha256:d152daa95f50da90df51c9ad04b96d1ff5805bdbd490b95c249e41ee550d544f... Stopping stack for upgrade... [+] stop 1/1 Container pangolin-pangolin-1 Stopped 0.4s Starting upgraded stack... [+] up 1/1 Container pangolin-pangolin-1 Started 0.9s Upgrade to v0.2.4 successful. Old image was pangolin:local.` |
-| Pre-upgrade copy path (from step 8 output) | (not shown in the output; see `/srv/pangolin/upgrade-copies/`) |
+| Pre-upgrade copy path (from step 8 output) | `/srv/pangolin/upgrade-copies/pre-upgrade-20261021205946` (host local time; 2026-10-21T09:59:46Z). Earlier directories `pre-upgrade-20261021203558` and `rolled-back-20261021203558` belong to a previous attempt on the develop build |
 | Image digest `pangolin upgrade` verified (step 8) | `sha256:d152daa95f50da90df51c9ad04b96d1ff5805bdbd490b95c249e41ee550d544f` |
-| `/healthz` (step 9) | |
-| `pangolin status` showing tag and schema 21 of 21 (step 10) | |
+| `/healthz` (step 9) | `{"ok":true,"warnings":["recovery-bundle-unconfirmed"]}` |
+| `pangolin status` showing tag and schema 21 of 21 (step 10) | `Pangolin Money v0.2.4`, `Schema: 21 (this build expects 21)`, `Readiness: ok`; warning: recovery bundle not confirmed stored safely; `Jobs: 4 pending, 0 running, 1 dead` (the dead `backup-push` is from 2026-10-02) |
 | **After the upgrade** | |
-| First backup: snapshot ID (step 11) | |
+| First backup: snapshot ID (step 11) | `5c076085b379aef2819329fcc37e49df8df7b51ffecf2b69fc6c38df172425bd` (backup `01M5EZV3E79QCZY5ZEJJ8VX8C5`, done 2026-10-21T10:24:24.234Z) |
 | First backup: manifest `format` and `schemaVersion` | |
 | First backup: `balanceDate` and accounts count | |
 | **Decision** | |
