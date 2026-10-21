@@ -6,6 +6,7 @@ import { fetchMe, type Me } from "./api.ts";
 import { authClient, authMessage } from "./auth-client.ts";
 import { AppSidebar } from "./components/AppSidebar.tsx";
 import { HealthStatus } from "./components/HealthStatus.tsx";
+import { ImportButton, ImportProvider } from "./components/import/index.ts";
 import { MascotIcon } from "./components/MascotLogo.tsx";
 import { MobileNav } from "./components/MobileNav.tsx";
 import { EnrolView } from "./EnrolView.tsx";
@@ -176,51 +177,53 @@ export function RootLayout() {
       break;
   }
 
-  return (
-    <SessionContext.Provider value={session}>
-      <div className="min-h-screen md:flex">
-        {shell && person ? <AppSidebar me={person} signOut={signOut} /> : null}
-        <div className={cn("flex min-w-0 flex-1 flex-col", shell && "pb-16 md:pb-0")}>
+  const layout = (
+    <div className="min-h-screen md:flex">
+      {shell && person ? <AppSidebar me={person} signOut={signOut} /> : null}
+      <div className={cn("flex min-w-0 flex-1 flex-col", shell && "pb-16 md:pb-0")}>
+        {shell && person ? (
+          <header className="border-b bg-card px-4 py-3 md:hidden">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <MascotIcon size="sm" />
+              <svg width="8" height="8" viewBox="0 0 8 8" className="shrink-0" aria-hidden="true">
+                <circle cx="4" cy="4" r="4" fill={person.colour || "currentColor"} />
+              </svg>
+              <span>G&apos;day, {person.displayName}</span>
+            </div>
+          </header>
+        ) : null}
+        <main className={cn("mx-auto w-full", shell ? "max-w-5xl p-4" : "p-4")}>
           {shell && person ? (
-            <header className="border-b bg-card px-4 py-3 md:hidden">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <header className="mb-4">
+              <div className="hidden items-center gap-2 text-sm text-muted-foreground md:flex">
                 <MascotIcon size="sm" />
                 <svg width="8" height="8" viewBox="0 0 8 8" className="shrink-0" aria-hidden="true">
                   <circle cx="4" cy="4" r="4" fill={person.colour || "currentColor"} />
                 </svg>
                 <span>G&apos;day, {person.displayName}</span>
               </div>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <h1 className="text-xl font-bold">Pangolin Money</h1>
+                <ImportButton className="hidden md:inline-flex" />
+                <ImportButton compact className="md:hidden" />
+              </div>
             </header>
           ) : null}
-          <main className={cn("mx-auto w-full", shell ? "max-w-5xl p-4" : "p-4")}>
-            {shell && person ? (
-              <header className="mb-4">
-                <div className="hidden items-center gap-2 text-sm text-muted-foreground md:flex">
-                  <MascotIcon size="sm" />
-                  <svg
-                    width="8"
-                    height="8"
-                    viewBox="0 0 8 8"
-                    className="shrink-0"
-                    aria-hidden="true"
-                  >
-                    <circle cx="4" cy="4" r="4" fill={person.colour || "currentColor"} />
-                  </svg>
-                  <span>G&apos;day, {person.displayName}</span>
-                </div>
-                <h1 className="mt-1 text-xl font-bold">Pangolin Money</h1>
-              </header>
-            ) : null}
-            {signOutError === null ? null : (
-              <p role="alert" className="mb-4 text-sm text-destructive">
-                {signOutError}
-              </p>
-            )}
-            {body}
-          </main>
-        </div>
-        {shell && person ? <MobileNav me={person} signOut={signOut} /> : null}
+          {signOutError === null ? null : (
+            <p role="alert" className="mb-4 text-sm text-destructive">
+              {signOutError}
+            </p>
+          )}
+          {body}
+        </main>
       </div>
+      {shell && person ? <MobileNav me={person} signOut={signOut} /> : null}
+    </div>
+  );
+
+  return (
+    <SessionContext.Provider value={session}>
+      {shell && person ? <ImportProvider>{layout}</ImportProvider> : layout}
     </SessionContext.Provider>
   );
 }

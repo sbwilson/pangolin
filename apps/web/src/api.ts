@@ -699,3 +699,47 @@ export async function fetchPreferences(): Promise<Preferences> {
 export async function updatePreferences(patch: Partial<Preferences>): Promise<Preferences> {
   return await sendJson<Preferences>("PUT", "/api/identity/preferences", patch);
 }
+
+/** The statement formats the import route reads (the popover offers all but generic CSV). */
+export type ImportFormat =
+  | "commbank_ofx"
+  | "commbank_csv"
+  | "commbank_qif"
+  | "qif"
+  | "ubank_csv"
+  | "up_csv"
+  | "fy2025_multibank_csv";
+
+/** What an import reports: counts only, for the account the viewer picked. */
+export interface ImportResult {
+  readonly batchId: string;
+  readonly status: string;
+  readonly rowCount: number;
+  readonly newCount: number;
+  readonly dupCount: number;
+  readonly setAsideCount: number;
+  /** Review items the batch raised that are still open (items, not transactions). */
+  readonly needReviewCount: number;
+}
+
+/**
+ * Imports statement text into one of the viewer's accounts. Safe to repeat: the same file changes
+ * nothing. Throws `ApiError` (`Validation` carries the parser's reason, `NotFound` a hidden account).
+ */
+export async function importFile(input: {
+  readonly accountId: string;
+  readonly format: ImportFormat;
+  readonly content: string;
+}): Promise<ImportResult> {
+  return await postJson<ImportResult>("/api/import", input);
+}
+
+/** Hands statement text to the partner, who picks the account. The reply names no account or batch. */
+export async function handOffFile(input: {
+  readonly recipientId: string;
+  readonly filename: string;
+  readonly format: ImportFormat;
+  readonly content: string;
+}): Promise<void> {
+  await postJson<{ handedOff: true }>("/api/handoffs", input);
+}

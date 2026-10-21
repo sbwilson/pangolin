@@ -199,6 +199,26 @@ export const MANIFEST: readonly ManifestEntry[] = [
   write("POST", "/api/review/:id/dismiss-notice", { params: { id: "notice" } }),
   write("POST", "/api/review/:id/revoke-links", { params: { id: "notice" } }),
 
+  // Import (ticket 9). The account in the body is the slot aimed at A's private account: B
+  // importing into it must answer the same 404 as an account that never existed. A hand-off
+  // names a person, not an entity, and answers with no account or batch.
+  write("POST", "/api/import", {
+    bodyEntities: ["account"],
+    body: (id) => ({
+      accountId: id("account"),
+      format: "commbank_csv",
+      content: "Date,Amount,Description,Balance\n01/07/2026,-1.00,PRIVACY PROBE,10.00",
+    }),
+  }),
+  write("POST", "/api/handoffs", {
+    body: () => ({
+      recipientId: "01J0000000000000000000PRSN",
+      filename: "probe.csv",
+      format: "commbank_csv",
+      content: "Date,Amount,Description,Balance\n01/07/2026,-1.00,PRIVACY PROBE,10.00",
+    }),
+  }),
+
   read("/api/ledger/transactions"),
   // Search: the list filtered by `q` through the FTS5 index; the hidden-name and scoped-name
   // exclusion is applied on the viewer's projection at query time, never stored in the index.

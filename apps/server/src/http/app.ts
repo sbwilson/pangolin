@@ -12,13 +12,16 @@ import {
   balanceAsOf,
   type Clock,
   type CodeHasher,
+  type CreateHandoffInput,
   checkSignUp,
   closeAccount,
+  countBatchReviewItems,
   countReviewItems,
   createAccount,
   createActivity,
   createCategory,
   createCategoryGroup,
+  createHandoff,
   createInstitution,
   createPayee,
   createPayeeAlias,
@@ -54,6 +57,8 @@ import {
   health,
   hideTransactionName,
   type IdGenerator,
+  type ImportStatementInput,
+  importStatement,
   issueInitialRecoveryCodes,
   issueReEnrolmentLink,
   issueSetupLink,
@@ -73,6 +78,7 @@ import {
   listTags,
   listTaxCategories,
   listTransactions,
+  MAX_HANDOFF_BYTES,
   me,
   parseTransactionQuery,
   type ReadinessOutput,
@@ -113,6 +119,7 @@ import {
   updateTransaction,
 } from "@pangolin/app";
 import { type Context, Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { clearedSessionCookies } from "../auth/cookie.ts";
 import { cspOnHtml, serveIndex } from "./csp.ts";
@@ -760,7 +767,46 @@ export function createApi(deps: ApiDeps) {
     .post("/api/review/:id/revoke-links", (c) => {
       writable();
       return c.json(revokeLinksItem(ctx(c), { id: c.req.param("id") }), 200);
+    })
+    .post("/api/import", importBodyLimit, async (c) => {
+      // Runs as the signed-in viewer: an account they cannot see is a 404 inside the use case.
+      writable();
+      const input = await objectBody<ImportStatementInput>(c);
+      assertStatementSize(input.content);
+      const result = importStatement(ctx(c), input);
+      // Items the batch raised that are still open, not skipped duplicates.
+      const needReviewCount = countBatchReviewItems(ctx(c), result.batchId);
+      return c.json({ ...result, needReviewCount }, 200);
+    })
+    .post("/api/handoffs", importBodyLimit, async (c) => {
+      // A file imported "for" the partner: stored encrypted; the reply carries no account or batch.
+      writable();
+      const input = await objectBody<CreateHandoffInput>(c);
+      assertStatementSize(input.content);
+      createHandoff(withAttachments(c), input);
+      return c.json({ handedOff: true as const }, 201);
     });
+}
+
+/** The most statement text an import or hand-off accepts, in bytes. */
+const MAX_STATEMENT_BYTES = MAX_HANDOFF_BYTES;
+
+/** The request body cap, sized for worst typical JSON escaping, answered as 413. */
+const importBodyLimit = bodyLimit({
+  // JSON escaping can triple a quote- or CRLF-heavy file; `assertStatementSize` is the exact check.
+  maxSize: MAX_STATEMENT_BYTES * 3,
+  onError: (c) =>
+    c.json(
+      { error: { code: "Validation", message: "The file is too large. The limit is 10 MiB." } },
+      413,
+    ),
+});
+
+/** A statement over 10 MiB is a `Validation` before it reaches the use case. */
+function assertStatementSize(content: unknown): void {
+  if (typeof content === "string" && Buffer.byteLength(content, "utf8") > MAX_STATEMENT_BYTES) {
+    throw new AppError("Validation", "The file is too large. The limit is 10 MiB.");
+  }
 }
 
 export type AppType = ReturnType<typeof createApi>;

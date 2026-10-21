@@ -330,6 +330,7 @@ export {
   type IdentityContext,
 } from "./identity/sign-up.ts";
 export { createIdGenerator, type IdGenerator, type IdSources, newId } from "./ids.ts";
+export { countBatchReviewItems } from "./imports/batch-review-count.ts";
 export {
   type AcceptHandoffInput,
   acceptHandoff,

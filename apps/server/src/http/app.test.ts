@@ -2854,3 +2854,120 @@ describe("GET /api/ledger/export", () => {
     expect(csv).not.toContain("July line");
   });
 });
+
+describe("POST /api/import and /api/handoffs", () => {
+  const alex = "01J0000000000000000000000A";
+  const json = { Origin: ORIGIN, "Content-Type": "application/json", Cookie: SESSION_COOKIE };
+  const csv = 'Date,Amount,Description,Balance\n01/09/2026,-50.00,"GROCER",1000.00';
+
+  function seed(db: Db) {
+    addPerson(db);
+    const d = deps(db);
+    const sys: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const sam = createPerson(sys, { displayName: "Sam", colour: "#000000" });
+    const make = (name: string, owner: string) =>
+      createAccount(sys, {
+        name,
+        type: "transaction",
+        currency: "AUD",
+        isPrivate: true,
+        owners: [{ personId: owner, shareBp: 10000 }],
+      });
+    return { sam, mine: make("Alex private", alex), theirs: make("Sam private", sam) };
+  }
+
+  const post = (db: Db, path: string, body: unknown) =>
+    createApp(deps(db)).request(path, {
+      method: "POST",
+      headers: json,
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+
+  it("imports into the viewer's account, once", async () => {
+    const db = openDb();
+    const { mine } = seed(db);
+    const body = { accountId: mine, format: "commbank_csv", content: csv };
+    const first = await post(db, "/api/import", body);
+    expect(first.status).toBe(200);
+    const firstBody = (await first.json()) as { needReviewCount: number };
+    expect(firstBody).toMatchObject({ newCount: 1, dupCount: 0, setAsideCount: 0 });
+    expect(firstBody.needReviewCount).toBe(1);
+    const again = await post(db, "/api/import", body);
+    expect(again.status).toBe(200);
+    // A repeat skips every row, but the first import's open item is still waiting.
+    expect(await again.json()).toMatchObject({ newCount: 0, needReviewCount: 1 });
+  });
+
+  it("sets aside rows it cannot read and imports the rest", async () => {
+    const db = openDb();
+    const { mine } = seed(db);
+    const res = await post(db, "/api/import", {
+      accountId: mine,
+      format: "commbank_csv",
+      content: `${csv}\n31/09/2026,abc,BAD ROW,1.00`,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ newCount: 1, setAsideCount: 1, needReviewCount: 2 });
+  });
+
+  it("imports a quote-heavy file under 10 MiB that JSON-escapes past 12 MiB", async () => {
+    const db = openDb();
+    const { mine } = seed(db);
+    const content = `Date,Amount,Description,Balance\n01/09/2026,-50.00,"${'""'.repeat(4.5 * 1024 * 1024)}",1000.00`;
+    expect(Buffer.byteLength(content)).toBeLessThan(10 * 1024 * 1024);
+    const res = await post(db, "/api/import", {
+      accountId: mine,
+      format: "commbank_csv",
+      content,
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("answers 404 for another person's private account and writes nothing", async () => {
+    const db = openDb();
+    const { theirs } = seed(db);
+    const res = await post(db, "/api/import", {
+      accountId: theirs,
+      format: "commbank_csv",
+      content: csv,
+    });
+    expect(res.status).toBe(404);
+    expect(db.prepare("SELECT COUNT(*) FROM import_batch").pluck().get()).toBe(0);
+  });
+
+  it("rejects a file over 10 MiB, by size and by body", async () => {
+    const db = openDb();
+    const { mine } = seed(db);
+    const over = "x".repeat(10 * 1024 * 1024 + 1);
+    const res = await post(db, "/api/import", { accountId: mine, format: "qif", content: over });
+    expect(res.status).toBe(400);
+    const huge = "x".repeat(31 * 1024 * 1024);
+    const big = await post(db, "/api/import", { accountId: mine, format: "qif", content: huge });
+    expect(big.status).toBe(413);
+  });
+
+  it("hands a file to the partner and answers with no account or batch", async () => {
+    const db = openDb();
+    const { sam } = seed(db);
+    const res = await post(db, "/api/handoffs", {
+      recipientId: sam,
+      filename: "september.csv",
+      format: "commbank_csv",
+      content: csv,
+    });
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual({ handedOff: true });
+    const self = await post(db, "/api/handoffs", {
+      recipientId: alex,
+      filename: "september.csv",
+      format: "commbank_csv",
+      content: csv,
+    });
+    expect(self.status).toBe(400);
+  });
+});

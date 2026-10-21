@@ -212,6 +212,44 @@ test.describe("WCAG 2.2 AA accessibility audit", () => {
       }
     });
 
+    test(`the open Import popover in ${mode} mode passes WCAG 2.2 AA audit`, async ({
+      browser,
+      cspViolations,
+    }) => {
+      const storageState = await alexSession(browser);
+      const context = await browser.newContext({
+        colorScheme: mode,
+        ...(storageState ? { storageState } : {}),
+      });
+      try {
+        await watchCsp(context, cspViolations);
+        await context.addInitScript(
+          ({ m }: { m: string }) => {
+            try {
+              localStorage.setItem("pangolin_mode", m);
+            } catch {}
+          },
+          { m: mode },
+        );
+        const page = await context.newPage();
+        await page.goto("/transactions");
+        await page.waitForLoadState("domcontentloaded");
+        await expect(page.getByRole("heading", { name: "Transactions" })).toBeVisible();
+
+        await setMode(page, mode);
+        await page.getByRole("button", { name: "Import" }).first().click();
+        await expect(page.getByRole("dialog", { name: "Import a bank file" })).toBeVisible();
+
+        const violations = await auditPage(page);
+        expect(
+          violations,
+          `Violations on the Import popover (${mode}): ${JSON.stringify(violations, null, 2)}`,
+        ).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
     test(`/accounts in ${mode} mode passes WCAG 2.2 AA audit`, async ({
       browser,
       cspViolations,

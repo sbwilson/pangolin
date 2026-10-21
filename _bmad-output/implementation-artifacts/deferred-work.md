@@ -450,3 +450,11 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-needs-review-inbox-framework-and-ui-plan.md`
   summary: Give the e2e clear-an-item test its own seeded review item instead of relying on `recovery.spec` leaving a recovery-code notice.
   evidence: `e2e/review.spec.ts` skips the clear step when no notice exists; the seeded ledger raises no items and no route creates one. The Playwright specs were also never run in this session.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-import-popover-component-and-shell-header-integration-plan.md`
+  summary: Add the Import button beside the Transactions search and the stale Accounts row's Import shortcut, both opening the popover via `openImport({ accountId })`.
+  evidence: In the epic's boundaries but split from entry 3.9 to keep one goal; the provider added there exposes the open mechanism.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-import-popover-component-and-shell-header-integration-plan.md`
+  summary: Handle non-UTF-8 statement files (Windows-1252, UTF-16 with BOM) in the Import popover and the server size check.
+  evidence: `file.text()` always decodes UTF-8, so bank exports in other encodings arrive garbled or fail to parse with no hint; found in review of entry 3.9.

@@ -1104,6 +1104,25 @@ describe("the Needs review routes", () => {
     ).toBe(404);
     expect(sent).toBeTruthy();
   });
+
+  it("refuses B an import into A's private account with the 404 of an account that never existed", async () => {
+    const w = world("base");
+    const content = 'Date,Amount,Description,Balance\n01/09/2026,-50.00,"GROCER",1000.00';
+    const attempt = (accountId: string) =>
+      w.request("b", "POST", "/api/import", { accountId, format: "commbank_csv", content });
+    const before = w.dump();
+    const hidden = await attempt(w.privateIds.account[0] as string);
+    const missing = await attempt(nonexistentId());
+    expect(hidden.status).toBe(404);
+    expect(hidden.text).toBe(missing.text);
+    expect(w.dump()).toBe(before);
+    const own = await w.request("b", "POST", "/api/import", {
+      accountId: w.ok("account"),
+      format: "commbank_csv",
+      content,
+    });
+    expect(own.status).toBe(200);
+  });
 });
 
 describe("hidden names", () => {
