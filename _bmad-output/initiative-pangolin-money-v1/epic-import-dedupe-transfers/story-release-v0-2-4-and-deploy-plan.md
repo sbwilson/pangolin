@@ -3,7 +3,7 @@ title: 'Release v0.2.4 and deploy'
 type: 'chore'
 ticket: '11'
 created: '2026-10-21'
-status: 'ready-for-dev'
+status: done
 baseline_revision: 'e41b6d4f10c8098d3c888a1cbaed479cd7bb860b'
 route: 'full'
 route_source: 'auto'
@@ -63,8 +63,8 @@ context:
 **Execution:**
 - [x] `docs/release-v0.2.4.md` -- written from the v0.2.3 template.
 - [x] Agent pre-flight -- ancestry, release machinery tests, lint, types, tests; CI red on `391d9e4`..`db68f5d` diagnosed and fixed in `e41b6d4`.
-- [ ] Human -- CI green on the tag commit, real-data `check:upgrade`, `pangolin status` is `v0.2.3`, manual backup, tag, release run, upgrade, healthz, status, first backup.
-- [ ] `docs/release-v0.2.4.md` -- evidence record filled from pasted output.
+- [x] Human -- CI green on the tag commit, real-data `check:upgrade`, `pangolin status` is `v0.2.3`, manual backup, tag, release run, upgrade, healthz, status, first backup.
+- [x] `docs/release-v0.2.4.md` -- evidence record filled from pasted output.
 
 **Acceptance Criteria:**
 - Given the `v0.2.4` tag, when the release run completes, then all five jobs pass.
@@ -72,6 +72,8 @@ context:
 - Given the release page, when the release is accepted, then every evidence field holds pasted output.
 
 ## Implementation Notes
+
+Accepted by Simon Wilson on 2026-10-21 with recorded deviations (pang-dev started from the develop build `db68f5d` at schema 20; pre-upgrade snapshot ID recovered afterwards as `4aad527d`; first backup's `balanceDate` and account count not captured). See the decision rows in `docs/release-v0.2.4.md`.
 
 The release page was generated from `docs/release-v0.2.3.md` with version and schema numbers changed, new release notes and a new pre-flight section.
 
