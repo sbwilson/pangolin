@@ -35,7 +35,7 @@ describe("summaryText", () => {
       "1 imported · 1 set aside · 2 duplicates skipped",
     ],
     [{ dupCount: 145 }, "Nothing new. You've already imported all of this."],
-    [{ dupCount: 145, needReviewCount: 2 }, "0 new · 145 duplicates skipped"],
+    [{ dupCount: 145, needReviewCount: 2 }, "Nothing new. You've already imported all of this."],
     [{}, "Nothing to import. That file had no transactions."],
   ] as [Partial<ImportResult>, string][])("%j reads %s", (over, text) => {
     expect(summaryText(result(over))).toBe(text);

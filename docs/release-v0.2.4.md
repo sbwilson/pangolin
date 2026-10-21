@@ -85,7 +85,12 @@ The version is the tag. `package.json` stays `0.0.0` and there is no CHANGELOG f
    has been already registered`: each called `watchCsp` on a context the `test` fixture already
    watches. Fixed in `e41b6d4` by removing the duplicate call. The 62 other specs passed. These
    specs and the new axe entries had never run before, so a first green run is the evidence, not a
-   formality.
+   formality. The next run (`1f62e5d`, run 39567388023) failed on two more things, fixed afterwards:
+   `import.spec.ts` asserted "Nothing new" on a repeat import that had open review items while the
+   popover counted them (the summary now says "Nothing new" whenever every row was already
+   imported and shows the review link separately), and the same spec left an account and
+   transactions in the shared ledger before `ledger.spec.ts` seeds its empty ledger (it now runs in
+   the `accounts` project, after `accounts.spec.ts`).
 5. **Schema migrations:** 0015 to 0020 exist in `packages/db/migrations/` with snapshots; schema
    version 21. Migration 0019 ends with a backfill `UPDATE`, which the real-data dry run (step 2) exercises.
 

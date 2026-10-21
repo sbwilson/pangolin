@@ -32,15 +32,22 @@ export default defineConfig({
         {
           name: "chromium",
           testMatch: "**/*.spec.ts",
-          testIgnore: ["auth.spec.ts", "restored.spec.ts", "accounts.spec.ts", "axe.spec.ts"],
+          testIgnore: [
+            "auth.spec.ts",
+            "restored.spec.ts",
+            "accounts.spec.ts",
+            "axe.spec.ts",
+            "import.spec.ts",
+          ],
           dependencies: ["auth"],
           use: chrome,
         },
         // Reads the ledger that ledger.spec seeds (once, into an empty ledger), so it runs after
-        // the rest of the suite rather than in file order.
+        // the rest of the suite rather than in file order. import.spec runs here too, after
+        // accounts.spec: it creates an account and imports into it, which would make the seed refuse.
         {
           name: "accounts",
-          testMatch: "accounts.spec.ts",
+          testMatch: ["accounts.spec.ts", "import.spec.ts"],
           dependencies: ["chromium"],
           use: chrome,
         },

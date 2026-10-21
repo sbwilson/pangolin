@@ -3,9 +3,8 @@ import type { ImportResult } from "../../api.ts";
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
-/** Whether the import skipped rows and nothing is waiting: every row was already imported. */
-const nothingNew = (r: ImportResult) =>
-  r.newCount === 0 && r.dupCount > 0 && r.setAsideCount === 0 && r.needReviewCount === 0;
+/** Whether every row was already imported: open review items are shown by the link, not here. */
+const nothingNew = (r: ImportResult) => r.newCount === 0 && r.dupCount > 0 && r.setAsideCount === 0;
 
 /** The result line for a finished import, from counts only. */
 export function summaryText(result: ImportResult): string {
