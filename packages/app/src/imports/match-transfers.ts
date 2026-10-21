@@ -14,7 +14,7 @@ import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { idInput } from "../inputs.ts";
 import { deleteTransaction } from "../ledger/delete-transaction.ts";
-import { transactionEntityRef } from "../ledger/needs-review.ts";
+import { transactionEntityRef, transferCandidateEntityRef } from "../ledger/needs-review.ts";
 import { auditSnapshot, storedTransaction } from "../ledger/transaction-view.ts";
 import type { TransferCandidateRow, TxRepos } from "../ports/unit-of-work.ts";
 import { defineReviewKind, raiseReviewItem, resolveReviewItem } from "../system/review-items.ts";
@@ -27,6 +27,17 @@ export const IMPORT_TRANSFER_AMBIGUOUS_REVIEW = defineReviewKind({
   scope: "account",
 });
 
+/**
+ * As `import.transfer_ambiguous`, but a candidate sits in a private account and the new
+ * transaction does not: raised for the importer alone (person scope) on `transfer_candidate:<id>`,
+ * so no other viewer sees it and `transaction.needs_review` does not move.
+ */
+export const IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW = defineReviewKind({
+  kind: "import.transfer_ambiguous_private",
+  module: "imports",
+  scope: "person",
+});
+
 /** A new transaction looks like an existing one dated a few days apart. Entity `transaction:<id>`. */
 export const IMPORT_PROBABLE_DUPLICATE_REVIEW = defineReviewKind({
   kind: "import.probable_duplicate",
@@ -36,6 +47,8 @@ export const IMPORT_PROBABLE_DUPLICATE_REVIEW = defineReviewKind({
 
 export const transferAmbiguousKey = (transactionId: string) =>
   `import.transfer_ambiguous:${transactionId}`;
+export const transferAmbiguousPrivateKey = (transactionId: string) =>
+  `import.transfer_ambiguous_private:${transactionId}`;
 export const probableDuplicateKey = (transactionId: string) =>
   `import.probable_duplicate:${transactionId}`;
 
@@ -102,7 +115,9 @@ export function raiseProbableDuplicate(
 /**
  * Links each new transaction to its unique opposite-amount partner in another visible account
  * (within three days, both ends unique) as an `auto` transfer group, and raises an
- * `import.transfer_ambiguous` item on each one with several possible partners. Run once, after
+ * `import.transfer_ambiguous` item on each one with several possible partners (or, when a private
+ * account's transaction is among them and the new one is shared, an importer-only
+ * `import.transfer_ambiguous_private` item). Run once, after
  * every row of the batch is committed, so siblings count. A candidate in an account closed
  * before its date is ignored; the import never aborts over a link.
  */
@@ -137,18 +152,39 @@ export function matchTransfersForBatch(
       })
       .filter(usable);
 
+  const isPrivate = (accountId: string): boolean =>
+    tx.accounts.findVisible(ctx.viewer, accountId)?.isPrivate === true;
+  // Whether an ambiguity on a shared leg involves a private account: any candidate in the leg's
+  // pool, or in the counterpart pool of its single candidate. Over-inclusive on purpose.
+  const privateInvolved = (leg: TransferLeg, pool: readonly TransferCandidateRow[]): boolean => {
+    if (isPrivate(leg.accountId)) return false;
+    const only = pool.length === 1 ? pool[0] : undefined;
+    const considered = only === undefined ? pool : [...pool, ...poolFor(only)];
+    return considered.some((c) => isPrivate(c.accountId));
+  };
+
   const linked = new Set<string>();
   for (const leg of newTxns) {
     if (linked.has(leg.id) || leg.amountCents === 0 || !usable(leg)) continue;
-    const result = findTransferMatch(leg, poolFor(leg), poolFor);
+    const pool = poolFor(leg);
+    const result = findTransferMatch(leg, pool, poolFor);
     if (result.kind === "none") continue;
     if (result.kind === "ambiguous") {
-      raiseReviewItem(tx, audit, ctx, {
-        kind: IMPORT_TRANSFER_AMBIGUOUS_REVIEW,
-        entityRef: transactionEntityRef(leg.id),
-        dedupeKey: transferAmbiguousKey(leg.id),
-        accountId: leg.accountId,
-      });
+      if (ctx.viewer.kind === "person" && privateInvolved(leg, pool)) {
+        raiseReviewItem(tx, audit, ctx, {
+          kind: IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW,
+          entityRef: transferCandidateEntityRef(leg.id),
+          dedupeKey: transferAmbiguousPrivateKey(leg.id),
+          personId: ctx.viewer.personId,
+        });
+      } else {
+        raiseReviewItem(tx, audit, ctx, {
+          kind: IMPORT_TRANSFER_AMBIGUOUS_REVIEW,
+          entityRef: transactionEntityRef(leg.id),
+          dedupeKey: transferAmbiguousKey(leg.id),
+          accountId: leg.accountId,
+        });
+      }
       continue;
     }
     linkAuto(tx, audit, ctx, [leg, result.candidate]);
@@ -216,9 +252,32 @@ export function keepProbableDuplicate(ctx: UseCaseContext, input: ResolveImportF
   resolveFlag(ctx, input, probableDuplicateKey, "kept");
 }
 
-/** Resolves the `import.transfer_ambiguous` item: the person leaves the transaction unlinked. */
+/**
+ * Resolves the `import.transfer_ambiguous` (or `_private`) item: the person leaves the
+ * transaction unlinked.
+ */
 export function dismissTransferAmbiguity(ctx: UseCaseContext, input: ResolveImportFlagInput): void {
-  resolveFlag(ctx, input, transferAmbiguousKey, "dismissed");
+  const { transactionId } = parseInput(resolveImportFlagInput, input);
+  write(ctx, (tx, audit) => {
+    if (
+      tx.transactions.findVisible(ctx.viewer, transactionId, ctx.clock.today().toString()) ===
+      undefined
+    ) {
+      throw new AppError("NotFound", "Transaction not found");
+    }
+    // A person-scoped item resolves only for a viewer who can see it; anyone else gets the same
+    // answer as for no item.
+    const visible = new Set(tx.reviewItems.listOpenFor(ctx.viewer).map((i) => i.dedupeKey));
+    const resolved = [transferAmbiguousKey, transferAmbiguousPrivateKey]
+      .filter((key) => visible.has(key(transactionId)))
+      .map((key) =>
+        resolveReviewItem(tx, audit, ctx, {
+          dedupeKey: key(transactionId),
+          resolution: "dismissed",
+        }),
+      );
+    if (!resolved.some(Boolean)) throw new AppError("NotFound", "Review item not found");
+  });
 }
 
 /**

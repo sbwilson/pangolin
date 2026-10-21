@@ -9,6 +9,7 @@ import { AppError } from "../errors.ts";
 import { createIdGenerator } from "../ids.ts";
 import { registerTransactionNeedsReviewSync } from "../ledger/needs-review.ts";
 import type { StatementParseResult } from "../ports/statement-parser.ts";
+import { systemViewer } from "../system-viewer.ts";
 import { manualClock } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import type { Viewer } from "../viewer.ts";
@@ -1500,6 +1501,78 @@ MMemo Only
       // Alex's private rule must NOT apply to the shared account!
       expect(split?.categoryId).toBeNull();
       expect(split?.categorySource).toBeNull();
+    });
+  });
+  describe("Closed-account lock", () => {
+    const close = (uow: ReturnType<typeof setup>["uow"], id: string, closedOn: string) => {
+      uow.state.accounts = uow.state.accounts.map((a) => (a.id === id ? { ...a, closedOn } : a));
+    };
+
+    it("sets aside rows dated after closedOn with a reason and imports the rest", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      close(uow, sharedAccountId, "2026-06-30");
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: "29/06/2026,-10.00,EARLY\n30/06/2026,-5.00,ON THE DAY\n02/07/2026,-20.00,LATE",
+      });
+      expect(res).toMatchObject({ rowCount: 3, newCount: 2, dupCount: 0, setAsideCount: 1 });
+      expect(uow.state.transactions.map((t) => t.descriptionRaw)).toEqual(["EARLY", "ON THE DAY"]);
+      const aside = uow.state.importRows.filter((r) => r.status === "set_aside");
+      expect(aside).toHaveLength(1);
+      expect(aside[0]?.rowNumber).toBe(3);
+      expect(aside[0]?.reason).toBe("Dated after this account closed on 2026-06-30");
+      const batch = uow.state.importBatches.find((b) => b.id === res.batchId);
+      expect(batch).toMatchObject({
+        lastPostedOn: "2026-06-30",
+        firstPostedOn: "2026-06-29",
+        reconcileStatus: "unavailable",
+      });
+      expect(
+        uow.state.reviewItems.filter((i) => i.kind === "import.set_aside" && i.resolvedAt === null),
+      ).toHaveLength(1);
+    });
+
+    it("commits nothing and records no snapshot when every row is after closedOn", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      close(uow, sharedAccountId, "2026-06-30");
+      const res = importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: "01/07/2026,-10.00,ONE,90.00\n02/07/2026,-5.00,TWO,85.00",
+      });
+      expect(res).toMatchObject({ newCount: 0, setAsideCount: 2, transactionIds: [] });
+      expect(uow.state.transactions).toHaveLength(0);
+      expect(uow.state.balanceSnapshots).toHaveLength(0);
+      const batch = uow.state.importBatches.find((b) => b.id === res.batchId);
+      expect(batch).toMatchObject({ firstPostedOn: null, lastPostedOn: null });
+    });
+
+    it("derives the opening snapshot from committed rows, never after closedOn", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      close(uow, sharedAccountId, "2026-06-30");
+      importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: "28/06/2026,-10.00,ONE,90.00\n29/06/2026,-5.00,TWO,85.00",
+      });
+      expect(uow.state.balanceSnapshots.map((s) => [s.asOf, s.balanceCents])).toEqual([
+        ["2026-06-27", 10_000],
+      ]);
+    });
+
+    it("does not lock the system viewer", () => {
+      const { ctx, sharedAccountId, uow } = setup();
+      close(uow, sharedAccountId, "2026-06-30");
+      const res = importStatement(
+        { ...ctx, viewer: systemViewer("cli:test") },
+        {
+          accountId: sharedAccountId,
+          format: "commbank_csv",
+          content: "02/07/2026,-20.00,LATE",
+        },
+      );
+      expect(res).toMatchObject({ newCount: 1, setAsideCount: 0 });
     });
   });
 });

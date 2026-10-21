@@ -14,6 +14,7 @@ import { RECOVERY_CODE_USED_REVIEW } from "../identity/recovery-codes.ts";
 import { IMPORT_HANDOFF_REVIEW } from "../imports/handoff.ts";
 import {
   IMPORT_PROBABLE_DUPLICATE_REVIEW,
+  IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW,
   IMPORT_TRANSFER_AMBIGUOUS_REVIEW,
 } from "../imports/match-transfers.ts";
 import { IMPORT_SET_ASIDE_REVIEW, listSetAsideRowsForBatch } from "../imports/set-aside.ts";
@@ -133,14 +134,17 @@ const TRANSACTION_KINDS: readonly string[] = [
   CLASSIFY_RULE_OFFER_REVIEW.kind,
   IMPORT_PROBABLE_DUPLICATE_REVIEW.kind,
   IMPORT_TRANSFER_AMBIGUOUS_REVIEW.kind,
+  IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW.kind,
 ];
 
 function detailOf(repos: ReadRepos, ctx: UseCaseContext, row: ReviewItemRow): ReviewDetail {
   if (TRANSACTION_KINDS.includes(row.kind)) {
-    const id = refId(row.entityRef, "transaction");
+    const id = refId(row.entityRef, "transaction") ?? refId(row.entityRef, "transfer_candidate");
     const transaction = id === undefined ? null : transactionBrief(repos, ctx, id);
     const candidates =
-      transaction !== null && row.kind === IMPORT_TRANSFER_AMBIGUOUS_REVIEW.kind
+      transaction !== null &&
+      (row.kind === IMPORT_TRANSFER_AMBIGUOUS_REVIEW.kind ||
+        row.kind === IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW.kind)
         ? candidatesFor(repos, ctx, transaction)
         : [];
     return { type: "transaction", transaction, candidates };

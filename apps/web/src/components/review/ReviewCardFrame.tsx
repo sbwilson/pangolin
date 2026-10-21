@@ -14,6 +14,7 @@ const KIND_LABEL: Readonly<Record<string, string>> = {
   "classify.rule_offer": "Rule offer",
   "import.probable_duplicate": "Possible duplicate",
   "import.transfer_ambiguous": "Possible transfer",
+  "import.transfer_ambiguous_private": "Possible transfer",
   "import.set_aside": "Rows set aside",
   "import.balance_gap": "Balance gap",
   "imports.handoff": "File from your partner",

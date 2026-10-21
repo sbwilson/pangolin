@@ -368,6 +368,7 @@ export {
 export {
   dismissTransferAmbiguity,
   IMPORT_PROBABLE_DUPLICATE_REVIEW,
+  IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW,
   IMPORT_TRANSFER_AMBIGUOUS_REVIEW,
   keepProbableDuplicate,
   type ResolveImportFlagInput,

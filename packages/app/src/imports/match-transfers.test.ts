@@ -2,7 +2,9 @@ import { Temporal } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.ts";
 import { createIdGenerator } from "../ids.ts";
+import { deleteTransaction } from "../ledger/delete-transaction.ts";
 import { registerTransactionNeedsReviewSync } from "../ledger/needs-review.ts";
+import { linkTransferItem } from "../system/review-actions.ts";
 import { manualClock } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import type { Viewer } from "../viewer.ts";
@@ -68,6 +70,7 @@ function setup() {
   const b = account("B", false, alexId);
   const c = account("C", false, alexId);
   const samPrivate = account("Sam private", true, samId);
+  const alexPrivate = account("Alex private", true, alexId);
   const alexViewer: Viewer = { kind: "person", personId: alexId, authAt: now };
   const samViewer: Viewer = { kind: "person", personId: samId, authAt: now };
   const ctx = { viewer: alexViewer, clock, newId, uow };
@@ -86,7 +89,7 @@ function setup() {
     });
   const open = (kind: string) =>
     uow.state.reviewItems.filter((i) => i.kind === kind && i.resolvedAt === null);
-  return { uow, ctx, samCtx, a, b, c, samPrivate, load, open };
+  return { uow, ctx, samCtx, a, b, c, samPrivate, alexPrivate, load, open };
 }
 
 describe("transfer matching", () => {
@@ -172,6 +175,128 @@ describe("transfer matching", () => {
     load(ctx, a, [["03/03/2026", "-500.00", "PAY OUT"]]);
     expect(uow.state.transferGroups).toHaveLength(0);
     expect(open("import.transfer_ambiguous")).toHaveLength(0);
+  });
+});
+
+describe("ambiguity involving a private account", () => {
+  it("raises an importer-only item and leaves the shared transaction unflagged", () => {
+    const { uow, ctx, a, b, alexPrivate, load, open } = setup();
+    load(ctx, b, [["01/03/2026", "500.00", "PAY IN B"]]);
+    load(ctx, alexPrivate, [["02/03/2026", "500.00", "PAY IN P"]]);
+    const res = load(ctx, a, [["03/03/2026", "-500.00", "PAY OUT"]]);
+    const id = res.transactionIds[0] as string;
+    expect(open("import.transfer_ambiguous")).toHaveLength(0);
+    const items = open("import.transfer_ambiguous_private");
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      entityRef: `transfer_candidate:${id}`,
+      dedupeKey: `import.transfer_ambiguous_private:${id}`,
+      personId: ctx.viewer.kind === "person" ? ctx.viewer.personId : null,
+      accountId: null,
+    });
+    expect(uow.state.transferGroups).toHaveLength(0);
+    // Only the unclassified item flags it; the ambiguity does not.
+    uow.state.reviewItems = uow.state.reviewItems.map((i) =>
+      i.kind === "classify.unclassified"
+        ? { ...i, resolvedAt: now.toString(), resolution: "x" }
+        : i,
+    );
+    expect(uow.state.transactions.find((t) => t.id === id)?.needsReview).toBe(true);
+  });
+
+  it("keeps the account-scoped item when every candidate is shared", () => {
+    const { ctx, a, b, c, load, open } = setup();
+    load(ctx, b, [["01/03/2026", "500.00", "PAY IN B"]]);
+    load(ctx, c, [["02/03/2026", "500.00", "PAY IN C"]]);
+    load(ctx, a, [["03/03/2026", "-500.00", "PAY OUT"]]);
+    expect(open("import.transfer_ambiguous")).toHaveLength(1);
+    expect(open("import.transfer_ambiguous_private")).toHaveLength(0);
+  });
+
+  it("keeps the account-scoped item when the new leg is in the private account", () => {
+    const { ctx, b, c, alexPrivate, load, open } = setup();
+    load(ctx, b, [["01/03/2026", "500.00", "PAY IN B"]]);
+    load(ctx, c, [["02/03/2026", "500.00", "PAY IN C"]]);
+    load(ctx, alexPrivate, [["03/03/2026", "-500.00", "PAY OUT"]]);
+    expect(open("import.transfer_ambiguous")).toHaveLength(1);
+    expect(open("import.transfer_ambiguous_private")).toHaveLength(0);
+  });
+
+  it("is private when the single shared candidate's counterpart pool holds the private row", () => {
+    const { ctx, a, b, c, alexPrivate, load, open } = setup();
+    load(ctx, b, [["13/03/2026", "500.00", "PAY IN B"]]);
+    load(ctx, c, [["19/03/2026", "500.00", "PAY IN C"]]);
+    // Within three days of both shared rows, so it does not link to either.
+    load(ctx, alexPrivate, [["16/03/2026", "-500.00", "PRIVATE OUT"]]);
+    // Within three days of B only: B is its single candidate, and B's counterparts are two.
+    const res = load(ctx, a, [["10/03/2026", "-500.00", "PAY OUT"]]);
+    const id = res.transactionIds[0] as string;
+    expect(open("import.transfer_ambiguous_private").map((i) => i.entityRef)).toEqual([
+      `transfer_candidate:${id}`,
+    ]);
+    expect(open("import.transfer_ambiguous").map((i) => i.entityRef)).not.toContain(
+      `transaction:${id}`,
+    );
+  });
+
+  it("does not let the partner resolve or detect the importer's private item", () => {
+    const { ctx, samCtx, a, b, alexPrivate, load, open } = setup();
+    load(ctx, b, [["01/03/2026", "500.00", "PAY IN B"]]);
+    load(ctx, alexPrivate, [["02/03/2026", "500.00", "PAY IN P"]]);
+    const res = load(ctx, a, [["03/03/2026", "-500.00", "PAY OUT"]]);
+    const transactionId = res.transactionIds[0] as string;
+    const code = (who: typeof ctx) => {
+      try {
+        dismissTransferAmbiguity(who, { transactionId });
+      } catch (e) {
+        return e instanceof AppError ? e.code : "other";
+      }
+      return "ok";
+    };
+    // The partner owns no share of A here, so use a transaction with no item as the baseline.
+    const other = load(ctx, a, [["20/03/2026", "-7.00", "NO ITEM"]]).transactionIds[0] as string;
+    let baseline = "ok";
+    try {
+      dismissTransferAmbiguity(samCtx, { transactionId: other });
+    } catch (e) {
+      baseline = e instanceof AppError ? e.code : "other";
+    }
+    expect(code(samCtx)).toBe(baseline);
+    expect(open("import.transfer_ambiguous_private")).toHaveLength(1);
+    expect(code(ctx)).toBe("ok");
+    expect(open("import.transfer_ambiguous_private")).toHaveLength(0);
+  });
+
+  it("dismissing resolves the private item", () => {
+    const { ctx, a, b, alexPrivate, load, open } = setup();
+    load(ctx, b, [["01/03/2026", "500.00", "PAY IN B"]]);
+    load(ctx, alexPrivate, [["02/03/2026", "500.00", "PAY IN P"]]);
+    const res = load(ctx, a, [["03/03/2026", "-500.00", "PAY OUT"]]);
+    dismissTransferAmbiguity(ctx, { transactionId: res.transactionIds[0] as string });
+    expect(open("import.transfer_ambiguous_private")).toHaveLength(0);
+  });
+
+  it("linking a candidate resolves the private item", () => {
+    const { uow, ctx, a, b, alexPrivate, load, open } = setup();
+    load(ctx, b, [["01/03/2026", "500.00", "PAY IN B"]]);
+    const priv = load(ctx, alexPrivate, [["02/03/2026", "500.00", "PAY IN P"]]);
+    load(ctx, a, [["03/03/2026", "-500.00", "PAY OUT"]]);
+    const item = open("import.transfer_ambiguous_private")[0];
+    linkTransferItem(ctx, {
+      id: item?.id as string,
+      candidateId: priv.transactionIds[0] as string,
+    });
+    expect(open("import.transfer_ambiguous_private")).toHaveLength(0);
+    expect(uow.state.transferGroups).toHaveLength(1);
+  });
+
+  it("deleting the transaction resolves the private item", () => {
+    const { ctx, a, b, alexPrivate, load, open } = setup();
+    load(ctx, b, [["01/03/2026", "500.00", "PAY IN B"]]);
+    load(ctx, alexPrivate, [["02/03/2026", "500.00", "PAY IN P"]]);
+    const res = load(ctx, a, [["03/03/2026", "-500.00", "PAY OUT"]]);
+    deleteTransaction(ctx, { id: res.transactionIds[0] as string });
+    expect(open("import.transfer_ambiguous_private")).toHaveLength(0);
   });
 });
 

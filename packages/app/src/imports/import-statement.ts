@@ -175,8 +175,8 @@ export function importStatement(
     );
   }
 
-  const parsedRows = parseResult?.rows ?? [];
-  const setAsideRows = parseResult?.setAside ?? [];
+  const fileRows = parseResult?.rows ?? [];
+  const fileSetAside = parseResult?.setAside ?? [];
 
   // 2. Compute file SHA-256
   const fileSha256 = sha256Hex(parsed.content);
@@ -205,6 +205,21 @@ export function importStatement(
         transactionIds: [],
       };
     }
+
+    // A person's import never commits a row dated after the account closed (the closed-account
+    // lock, as `requireOpenOn`); such rows are set aside so the person fixes or discards them in
+    // Needs review. The system viewer is exempt.
+    const closedOn = ctx.viewer.kind === "system" ? null : account.closedOn;
+    const isLocked = (r: ParsedStatementRow) => closedOn !== null && r.postedOn > closedOn;
+    const parsedRows = fileRows.filter((r) => !isLocked(r));
+    const setAsideRows: readonly SetAsideStatementRow[] = [
+      ...fileSetAside,
+      ...fileRows.filter(isLocked).map((r) => ({
+        rowNumber: r.rowNumber,
+        rawLine: r.rawLine,
+        reason: `Dated after this account closed on ${closedOn}`,
+      })),
+    ];
 
     const at = formatInstant(ctx.clock.now());
     const batchId = ctx.newId<"ImportBatch">();

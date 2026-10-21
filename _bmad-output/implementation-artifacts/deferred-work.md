@@ -483,3 +483,7 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/implementation-artifacts/plan-overlap-dedupe-and-reimport.md`
   summary: Reconcile spine AD-20 ("soft-deleted transactions still count for dedupe", "same file stays blocked") with undo now freeing an undone batch's keys.
   evidence: Rows soft-deleted by an undo are tombstoned and no longer count; rows the user deleted still do. Proposed spec change for the human to apply.
+
+- source_plan: `_bmad-output/implementation-artifacts/plan-import-closed-lock-and-ambiguity-privacy.md`
+  summary: Count the importer's person-scoped `import.transfer_ambiguous_private` item in the Import popover's "need review" number.
+  evidence: `batch-review-count.ts` counts items by `transaction:<id>` refs only, and the private item uses `transfer_candidate:<id>` by design, so the popover summary omits it; the importer still sees it in Needs review.

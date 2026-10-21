@@ -17,9 +17,11 @@ import { createHandoff } from "../imports/handoff.ts";
 import { importStatement } from "../imports/import-statement.ts";
 import {
   IMPORT_PROBABLE_DUPLICATE_REVIEW,
+  IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW,
   IMPORT_TRANSFER_AMBIGUOUS_REVIEW,
   probableDuplicateKey,
   transferAmbiguousKey,
+  transferAmbiguousPrivateKey,
 } from "../imports/match-transfers.ts";
 import { createTransaction } from "../ledger/create-transaction.ts";
 import { getTransaction } from "../ledger/get-transaction.ts";
@@ -27,6 +29,7 @@ import { hideTransactionName } from "../ledger/hide-name.ts";
 import {
   registerTransactionNeedsReviewSync,
   transactionEntityRef,
+  transferCandidateEntityRef,
 } from "../ledger/needs-review.ts";
 import { setSplitField } from "../ledger/set-split-field.ts";
 import { systemViewer } from "../system-viewer.ts";
@@ -348,6 +351,44 @@ describe("review actions", () => {
       getTransaction(w.B, { id: two }).transferGroupId,
     );
     expect(getTransaction(w.B, { id: one }).transferGroupId).toBeNull();
+  });
+
+  it("shows, links and dismisses a private transfer ambiguity for its owner only", () => {
+    const w = setup();
+    const out = w.txn(w.A, w.joint, -10000, "Move out");
+    const priv = w.txn(w.A, w.aPrivate, 10000, "Private in");
+    const other = w.txn(w.A, w.savings, 10000, "Savings in");
+    const id = w.raise({
+      kind: IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW,
+      entityRef: transferCandidateEntityRef(out),
+      dedupeKey: transferAmbiguousPrivateKey(out),
+      personId: w.a,
+    });
+    expect(openIds(w.B)).toEqual([]);
+    expect(countReviewItems(w.B)).toMatchObject({ open: 0 });
+    const [card] = listReviewCards(w.A);
+    expect(card?.kind).toBe("import.transfer_ambiguous_private");
+    expect(card?.detail).toMatchObject({
+      type: "transaction",
+      transaction: { id: out, description: "Move out" },
+    });
+    expect(card?.detail.type === "transaction" && card.detail.candidates).toHaveLength(2);
+    expect(code(() => dismissTransferItem(w.B, { id }))).toBe("NotFound");
+    expect(code(() => linkTransferItem(w.A, { id, candidateId: "nope" }))).toBe("Validation");
+    linkTransferItem(w.A, { id, candidateId: priv });
+    expect(openIds(w.A)).toEqual([]);
+    expect(getTransaction(w.A, { id: out }).transferGroupId).not.toBeNull();
+    void other;
+
+    const again = w.txn(w.A, w.joint, -5000, "Another");
+    const id2 = w.raise({
+      kind: IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW,
+      entityRef: transferCandidateEntityRef(again),
+      dedupeKey: transferAmbiguousPrivateKey(again),
+      personId: w.a,
+    });
+    dismissTransferItem(w.A, { id: id2 });
+    expect(openIds(w.A)).toEqual([]);
   });
 
   it("dismisses a transfer ambiguity and a rule offer", () => {

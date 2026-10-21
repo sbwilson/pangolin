@@ -18,10 +18,12 @@ import { acceptHandoff, dismissHandoff, IMPORT_HANDOFF_REVIEW } from "../imports
 import {
   dismissTransferAmbiguity,
   IMPORT_PROBABLE_DUPLICATE_REVIEW,
+  IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW,
   IMPORT_TRANSFER_AMBIGUOUS_REVIEW,
   keepProbableDuplicate,
   removeProbableDuplicate,
   transferAmbiguousKey,
+  transferAmbiguousPrivateKey,
 } from "../imports/match-transfers.ts";
 import {
   type DiscardSetAsideRowInput,
@@ -61,6 +63,17 @@ function entityId(item: ReviewItemRow, prefix: string): string {
 }
 
 const transactionOf = (item: ReviewItemRow) => entityId(item, "transaction");
+
+const TRANSFER_KINDS = [
+  IMPORT_TRANSFER_AMBIGUOUS_REVIEW.kind,
+  IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW.kind,
+];
+
+/** The transaction an ambiguous-transfer item (either kind) is about. */
+const transferSubjectOf = (item: ReviewItemRow) =>
+  item.kind === IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW.kind
+    ? entityId(item, "transfer_candidate")
+    : transactionOf(item);
 
 /** A unit of work whose every transaction is the one already open. */
 function insideOpen(tx: TxRepos): UnitOfWork {
@@ -105,8 +118,8 @@ export function removeDuplicateItem(ctx: UseCaseContext, input: { readonly id: s
 
 /** Leaves an ambiguous transfer unlinked (`imports.dismissTransferAmbiguity`). */
 export function dismissTransferItem(ctx: UseCaseContext, input: { readonly id: string }): void {
-  const item = openItem(ctx, input.id, [IMPORT_TRANSFER_AMBIGUOUS_REVIEW.kind]);
-  dismissTransferAmbiguity(ctx, { transactionId: transactionOf(item) });
+  const item = openItem(ctx, input.id, TRANSFER_KINDS);
+  dismissTransferAmbiguity(ctx, { transactionId: transferSubjectOf(item) });
 }
 
 const linkInput = z.object({ id: idInput, candidateId: idInput }).strict();
@@ -119,8 +132,8 @@ export type LinkTransferItemInput = z.input<typeof linkInput>;
  */
 export function linkTransferItem(ctx: UseCaseContext, input: LinkTransferItemInput): void {
   const { id, candidateId } = parseInput(linkInput, input);
-  const item = openItem(ctx, id, [IMPORT_TRANSFER_AMBIGUOUS_REVIEW.kind]);
-  const transactionId = transactionOf(item);
+  const item = openItem(ctx, id, TRANSFER_KINDS);
+  const transactionId = transferSubjectOf(item);
   write(ctx, (tx, audit) => {
     const today = ctx.clock.today().toString();
     const flagged = tx.transactions.findVisible(ctx.viewer, transactionId, today);
@@ -139,7 +152,10 @@ export function linkTransferItem(ctx: UseCaseContext, input: LinkTransferItemInp
       { transactionIds: [transactionId, candidateId] },
     );
     resolveReviewItem(tx, audit, ctx, {
-      dedupeKey: transferAmbiguousKey(transactionId),
+      dedupeKey:
+        item.kind === IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW.kind
+          ? transferAmbiguousPrivateKey(transactionId)
+          : transferAmbiguousKey(transactionId),
       resolution: "linked",
     });
   });

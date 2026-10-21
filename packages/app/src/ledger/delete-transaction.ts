@@ -9,7 +9,7 @@ import type { TxRepos } from "../ports/unit-of-work.ts";
 import { resolveReviewItemsForEntity } from "../system/review-items.ts";
 import { type Audit, write } from "../write.ts";
 import { requireEntryOpen } from "./closed-lock.ts";
-import { transactionEntityRef } from "./needs-review.ts";
+import { transactionEntityRef, transferCandidateEntityRef } from "./needs-review.ts";
 import { auditSnapshot, storedTransaction } from "./transaction-view.ts";
 
 export const deleteTransactionInput = z.object({ id: idInput }).strict();
@@ -60,6 +60,10 @@ export function softDeleteTransactionRow(
   }
   resolveReviewItemsForEntity(tx, audit, ctx, {
     entityRef: transactionEntityRef(before.id),
+    resolution: "transaction deleted",
+  });
+  resolveReviewItemsForEntity(tx, audit, ctx, {
+    entityRef: transferCandidateEntityRef(before.id),
     resolution: "transaction deleted",
   });
   const groupId = before.transferGroupId;

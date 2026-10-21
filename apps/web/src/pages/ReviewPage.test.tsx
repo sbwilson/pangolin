@@ -61,6 +61,9 @@ const ALL: ReviewCard[] = [
     txn({ id: "c1", description: "From joint", amountCents: 2500, accountName: "Savings" }),
     txn({ id: "c2", description: "From joint again", amountCents: 2500, accountName: "Savings" }),
   ]),
+  inTransaction("import.transfer_ambiguous_private", [
+    txn({ id: "p1", description: "From private", amountCents: 2500, accountName: "Mine" }),
+  ]),
   card({
     kind: "import.set_aside",
     detail: {
@@ -113,12 +116,13 @@ describe("ReviewPage", () => {
   it("renders a card with its actions for every registered kind, and a generic one for the rest", async () => {
     vi.mocked(api.fetchReviewItems).mockResolvedValue(ALL);
     renderPage();
-    expect(await screen.findByRole("heading", { name: "14 things need you" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "15 things need you" })).toBeTruthy();
     const actions: Record<string, string[]> = {
       "classify.unclassified": [],
       "classify.rule_offer": ["Make it a rule", "Not now"],
       "import.probable_duplicate": ["Keep both", "Remove this one"],
       "import.transfer_ambiguous": ["Yes, it's a transfer", "No, leave them"],
+      "import.transfer_ambiguous_private": ["Yes, it's a transfer", "No, leave them"],
       "import.set_aside": ["Save row 3", "Discard row 3"],
       "imports.handoff": ["Import", "Discard file"],
       "identity.partner-reset": ["Got it", "Revoke the link"],
@@ -130,7 +134,7 @@ describe("ReviewPage", () => {
       "job.dead": [],
       "some.future-kind": [],
     };
-    expect(document.querySelectorAll("[data-kind]")).toHaveLength(14);
+    expect(document.querySelectorAll("[data-kind]")).toHaveLength(15);
     for (const [kind, names] of Object.entries(actions)) {
       const el = await cardOf(kind);
       const buttons = within(el)

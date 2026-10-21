@@ -24,6 +24,7 @@ export function ReviewCardView({ card }: { readonly card: ReviewCard }) {
       if (detail.type === "transaction") return <DuplicateCard card={card} detail={detail} />;
       break;
     case "import.transfer_ambiguous":
+    case "import.transfer_ambiguous_private":
       if (detail.type === "transaction") return <TransferCard card={card} detail={detail} />;
       break;
     case "import.set_aside":

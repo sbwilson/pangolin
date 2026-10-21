@@ -3,12 +3,13 @@ title: 'Import respects the closed-account lock; private transfer candidates sta
 type: 'bugfix'
 ticket: ''
 created: '2026-10-22'
-status: 'draft'
+baseline_revision: '4246e744398810e9dfcec744061bbaf22863681e'
+status: 'built'
 route: 'full'
 route_source: 'auto'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'thorough'
+review_source: 'auto'
+lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/epic-import-dedupe-transfers-retrospective.md'
@@ -73,6 +74,15 @@ context:
 ## Plan Change Log
 
 ## Review Triage Log
+
+- `dismissTransferAmbiguity` resolves the private item by dedupe key after only checking the transaction is visible, so a partner calling it directly on the shared transaction could resolve the importer's item and tell, by success versus NotFound, that it exists (edge, blind, gap) -- verdict: medium -- route: patch -- require the private item to be visible to the viewer before resolving it (same NotFound as no item); partner-side test.
+- The counterpart-pool half of `privateInvolved` has no test: replacing `considered` with `pool` passes everything and reopens the leak (gap) -- verdict: medium -- route: patch -- add the case (shared candidate within the window of both the new leg and a private row, the private row outside the new leg's window).
+- A system-viewer import with a private candidate gets the account-scoped item (blind, edge) -- verdict: low -- route: accept -- imports reach `importStatement` only through person routes; the system path exists for seeds and tests; recorded here.
+- Partner's delete leaves the importer's private item open (edge) -- verdict: false -- `resolveOpenForEntity` has no viewer, so `softDeleteTransactionRow` resolves it whoever deletes.
+- A locked set-aside row saved from the UI re-commits (blind) -- verdict: false -- `fixSetAsideRow` calls `requireOpenOn`, so it is refused until the account is reopened.
+- A manual link of the shared transaction does not resolve the private item; stale item after the candidate changes (edge) -- verdict: low -- route: reject -- same as the account-scoped kind today, the link action handles a stale candidate.
+- Closed-lock comparison duplicates `requireOpenOn`, re-import of the same file after reopening, set-aside ordering, privacy-test id renaming and unused return value, one test packing three behaviours, no hint why an item is private (blind, edge) -- verdict: low/false -- route: reject -- `allStagedRows` is sorted by row number, the rest is polish.
+- `needReviewCount` for the importer's popover omits the person-scoped item (verification-gap) -- verdict: low -- route: defer -- deliberate (it must not touch `transaction:` refs); the importer still sees it in Needs review; logged.
 
 ## Verification
 

@@ -11,11 +11,13 @@ import { join } from "node:path";
 import {
   type AuditView,
   CLASSIFY_UNCLASSIFIED_REVIEW,
+  createAccount,
   createHandoff,
   createTransaction,
   getTransaction,
   hiddenLabel,
   IMPORT_PROBABLE_DUPLICATE_REVIEW,
+  importStatement,
   issueReEnrolmentLink,
   listAccounts,
   listAudit,
@@ -2242,5 +2244,109 @@ describe("a deliberate leak in the leave worlds", () => {
     expect(problems).toContain("world 1: B still sees the placeholder");
     expect(problems).toContain("world 1: a hiding is still stored");
     expect(problems).toContain("world 2: B still sees the placeholder");
+  });
+});
+
+// ------------------------------------------------------ a private transfer candidate (import)
+
+interface AmbiguityRun {
+  readonly shared: readonly string[];
+  readonly aOpen: number;
+}
+
+/**
+ * A imports two identical shared outflows; A's private account holds one opposite-amount row.
+ * Flavour "one": it fits the transfer window (three-way ambiguity, which must stay private to A).
+ * Flavour "two": it is out of range, so nothing is ambiguous. B must read the same in both.
+ */
+async function privateCandidateScenario(
+  world: World,
+  flavour: Flavour,
+  observe: Observe,
+): Promise<AmbiguityRun> {
+  const a = world.ctx("a");
+  const A = world.people.a;
+  const B = world.people.b;
+  const account = (
+    name: string,
+    isPrivate: boolean,
+    owners: { personId: string; shareBp: number }[],
+  ) => createAccount(a, { name, type: "transaction", currency: "AUD", isPrivate, owners });
+  const joint = account("Ambiguity probe joint", false, [
+    { personId: A, shareBp: 5000 },
+    { personId: B, shareBp: 5000 },
+  ]);
+  const mine = account("Ambiguity probe private", true, [{ personId: A, shareBp: 10_000 }]);
+  const row = (date: string, amount: string, description: string) =>
+    `${date},${amount},"${description}"`;
+  importStatement(a, {
+    accountId: mine,
+    format: "commbank_csv",
+    content: row(flavour === "one" ? "12/07/2026" : "30/07/2026", "500.00", "Ambiguity probe in"),
+  });
+  const res = importStatement(a, {
+    accountId: joint,
+    format: "commbank_csv",
+    content: [
+      row("11/07/2026", "-500.00", "Ambiguity probe out"),
+      row("11/07/2026", "-500.00", "Ambiguity probe out"),
+    ].join("\n"),
+  });
+  const shared: string[] = [...res.transactionIds];
+  await observe("after the import", {
+    paths: [
+      "/api/review",
+      "/api/review/count",
+      "/api/accounts",
+      "/api/ledger/transactions",
+      ...shared.map((id) => `/api/ledger/transactions/${id}`),
+    ],
+    transactionIds: shared,
+  });
+  return { shared, aOpen: listReviewItems(a).length };
+}
+
+describe("a private transfer candidate that makes a shared import ambiguous", () => {
+  let pair: Pair<AmbiguityRun>;
+  beforeAll(async () => {
+    pair = await runPair(privateCandidateScenario);
+  });
+
+  it("gives B the same review list, count, flags and transactions with and without it", () => {
+    // A's private item takes two ids (item and audit row), so later ids shift by a constant: an
+    // id-allocation artefact of the test generator (production ids are random). Ids are named by
+    // order of appearance, so every other byte must still match.
+    const named = (text: string): string => {
+      const names = new Map<string, string>();
+      return text.replace(/[0-9A-HJKMNP-TV-Z]{26}/g, (id) => {
+        const known = names.get(id) ?? `id-${names.size + 1}`;
+        names.set(id, known);
+        return known;
+      });
+    };
+    const renamed = pair.seen.map(
+      (seen) =>
+        new Map(
+          [...seen].map(([label, reads]) => [
+            label,
+            new Map([...reads].map(([key, text]) => [key, named(text)])),
+          ]),
+        ),
+    ) as [Seen, Seen];
+    expect(checkpointProblems(renamed)).toEqual([]);
+  });
+
+  it("raises the item for A alone, and B's count and flags do not move", () => {
+    const [withIt, without] = pair.worlds;
+    const kinds = (w: World, who: "a" | "b") => listReviewItems(w.ctx(who)).map((i) => i.kind);
+    expect(
+      kinds(withIt, "a").filter((k) => k === "import.transfer_ambiguous_private"),
+    ).toHaveLength(2);
+    expect(kinds(withIt, "a")).not.toContain("import.transfer_ambiguous");
+    expect(kinds(without, "a")).not.toContain("import.transfer_ambiguous_private");
+    expect(kinds(withIt, "b")).toEqual(kinds(without, "b"));
+    const flags = (w: World, ids: readonly string[]) =>
+      ids.map((id) => getTransaction(w.ctx("b"), { id }).needsReview);
+    expect(flags(withIt, pair.runs[0].shared)).toEqual(flags(without, pair.runs[1].shared));
   });
 });
