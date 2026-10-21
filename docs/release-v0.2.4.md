@@ -351,5 +351,5 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | First backup: manifest `format` and `schemaVersion` | `"format": 2`, `"schemaVersion": 21` (`restic dump 5c076085 …/manifest.json`, 2026-10-21) |
 | First backup: `balanceDate` and accounts count | (not captured: the 400-character excerpt ended in the migration list; read with `grep` or `jq` if needed) |
 | **Decision** | |
-| Outcome (accepted / failed) and reason | |
-| Accepted by the human (name, date) | |
+| Outcome (accepted / failed) and reason | **Accepted**: all release jobs green on `v0.2.4`, signature and digest verified, upgrade completed, `pangolin status` reports `v0.2.4` with schema 21 of 21 and readiness ok, `/healthz` ok, post-upgrade backup manifest `format 2` / `schemaVersion 21`. Accepted with the recorded deviations: pang-dev started from the develop build `db68f5d` at schema 20, not `v0.2.3` / 15; the pre-upgrade snapshot ID was recovered afterwards; the first backup's `balanceDate` and account count were not captured |
+| Accepted by the human (name, date) | Simon Wilson, 2026-10-21 |
