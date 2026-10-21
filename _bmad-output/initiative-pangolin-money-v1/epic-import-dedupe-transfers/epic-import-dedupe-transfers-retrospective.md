@@ -150,3 +150,18 @@ Still open (the user found the question unclear; clarified in the conversation):
 
 4. **A1.** Which parser copy survives. Recommendation: keep the copy in `packages/app/src/imports/parsers/` (the one production runs), delete the parsers in `packages/importers`, keep its generators and fixtures, and port its parser unit tests to the app copy.
 5. **M1 gate record.** What the repo's gate record should say and who signs it. Recommendation: fill `docs/m1-gate.md` from the `m1-report` output and the user's decisions: accounts begin at their first CSV statement with an opening balance because bank CSV exports reach back only so far, the Mastercard opening of $0.00 is the user's own assertion, the later PDF statements may extend history; the decision row is signed by the user.
+
+## Follow-up since the retrospective (2026-10-22)
+
+The user held the epic until the blocking findings were fixed. What landed, each with its own plan, four-lens review and green suite, on `develop` (local commits, not yet pushed at the time of writing):
+
+| Finding | Fix | Commit |
+| --- | --- | --- |
+| A1 duplicate parsers | One copy kept (`packages/app/src/imports/parsers/`), importers parsers deleted, 49 parser tests ported | `0fa5efc` |
+| F1 overlapping CSV re-commits rows; F2 re-import after undo | Occurrence numbered by file position only; undo tombstones the keys of the rows it undoes (hand-deleted lines stay blocked); probe reproduced and fixed; SQLite and OFX covered | `faabe17` |
+| F3 closed-account lock; F4 private transfer candidates | Rows after `closedOn` set aside with a reason; private-involved ambiguities raise a person-scoped item with its own entity ref; paired-world privacy test | `5f9d281` |
+| F7 operator commands | `m1-report` and `opening-balance` require `--as <name>` and run as that person's viewer | `7053571` |
+
+Still open (deferred, in `deferred-work.md` or this document): F5 (set-aside fix path), F6 (sign convention and liability accounts), F8 (hand-off status over HTTP), the set-aside occurrence rule, the AD-20 spec reconciliation, the importer popover's count omitting the private ambiguity item, ticket status (3.1 to 3.10 still `built`), and the M1 gate decision row, which the user signs. Done when 2 (overlapping range adds zero rows) is now met in tests; Done when 1 remains an accepted exception pending the user's sign-off; Done when 5 is met in substance but not over HTTP.
+
+The verdict above is unchanged (**rejected**, machine) because only the user may override it. Its blocking cause (F1) is fixed.
