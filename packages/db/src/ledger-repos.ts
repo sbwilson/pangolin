@@ -30,6 +30,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  lt,
   lte,
   ne,
   or,
@@ -562,6 +563,25 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
       );
     },
 
+    hasLiveBefore: (accountId, date, exceptImportId) => {
+      check();
+      return (
+        orm
+          .select({ id: transaction.id })
+          .from(transaction)
+          .where(
+            and(
+              eq(transaction.accountId, accountId),
+              isNull(transaction.deletedAt),
+              lt(transaction.postedOn, date),
+              or(isNull(transaction.importId), ne(transaction.importId, exceptImportId)),
+            ),
+          )
+          .limit(1)
+          .get() !== undefined
+      );
+    },
+
     latestPostedOn: (viewer, accountId) => {
       const visible = liveVisibleTxn(viewer);
       check();
@@ -941,6 +961,7 @@ export function createBalanceSnapshotRepo(
           asOf: balanceSnapshot.asOf,
           balanceCents: balanceSnapshot.balanceCents,
           source: balanceSnapshot.source,
+          importBatchId: balanceSnapshot.importBatchId,
           createdAt: balanceSnapshot.createdAt,
           updatedAt: balanceSnapshot.updatedAt,
         })
@@ -969,6 +990,14 @@ export function createBalanceSnapshotRepo(
         .where(and(eq(account.id, accountId), visible))
         .get();
       return seen === undefined ? undefined : balanceAsOf(orm.$client, accountId, date);
+    },
+    deleteByImportBatch: (batchId) => {
+      check();
+      return orm
+        .delete(balanceSnapshot)
+        .where(eq(balanceSnapshot.importBatchId, batchId))
+        .returning()
+        .all() as BalanceSnapshotRow[];
     },
     deleteForAccount: (accountId) => {
       check();

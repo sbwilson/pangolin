@@ -359,6 +359,8 @@ export {
   type DaySpan,
   type M1AccountReport,
   type M1BrokenBatch,
+  type M1JoinBreak,
+  type M1OpeningStart,
   type M1Report,
   m1GateReport,
 } from "./imports/m1-report.ts";

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { account } from "./account.ts";
+import { importBatch } from "./import-batch.ts";
 
 /** A balance of an account on one day, from a statement, a connector or typed in. */
 export const balanceSnapshot = sqliteTable(
@@ -13,11 +14,14 @@ export const balanceSnapshot = sqliteTable(
     asOf: text("as_of").notNull(),
     balanceCents: integer("balance_cents").notNull(),
     source: text("source").notNull(),
+    /** The import batch a `statement` opening snapshot came from; undoing the batch deletes it. */
+    importBatchId: text("import_batch_id").references(() => importBatch.id),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
   (t) => [
     index("balance_snapshot_account_as_of_idx").on(t.accountId, t.asOf),
+    index("balance_snapshot_import_batch_idx").on(t.importBatchId),
     check("balance_snapshot_source", sql`${t.source} IN ('statement', 'api', 'manual')`),
     check(
       "balance_snapshot_as_of",

@@ -458,3 +458,17 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/story-import-popover-component-and-shell-header-integration-plan.md`
   summary: Handle non-UTF-8 statement files (Windows-1252, UTF-16 with BOM) in the Import popover and the server size check.
   evidence: `file.text()` always decodes UTF-8, so bank exports in other encodings arrive garbled or fail to parse with no hint; found in review of entry 3.9.
+
+- source_plan: `_bmad-output/implementation-artifacts/plan-m1-opening-balance.md`
+  summary: Add `account.credit_limit_cents` and a prompt for credit-card limits (and opening balances) when a card is created or its first statement is imported.
+  evidence: data-model.md and home-buying.md list `credit_limit_cents` on shared-visible cards, but the account schema has no such column and no UI; raised by the user during the M1 gate follow-up.
+- source_plan: `_bmad-output/implementation-artifacts/plan-m1-opening-balance.md`
+  summary: Prompt for an opening balance in the Import popover when a file prints no running balances and the account has no history.
+  evidence: Split from the opening-balance change; until then the `opening-balance` admin command covers credit cards and existing batches.
+
+- source_plan: `_bmad-output/implementation-artifacts/plan-m1-opening-balance.md`
+  summary: Add a SQLite-backed test that imports a balanced file, undoes it, and checks the snapshot is deleted with a `balance_snapshot` delete audit row.
+  evidence: Only the memory unit of work runs the full flow; the SQLite repos are covered by parity tests only.
+- source_plan: `_bmad-output/implementation-artifacts/plan-m1-opening-balance.md`
+  summary: Decide how batches imported before migration 0020 get opening/closing values and join checks (re-import after undo is blocked by the file hash).
+  evidence: The `opening-balance` command covers the leading span for them, but their joins stay unchecked and `m1-report` reports them under "joins not checked".

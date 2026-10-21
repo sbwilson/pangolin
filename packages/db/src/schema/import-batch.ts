@@ -30,6 +30,10 @@ export const importBatch = sqliteTable(
     undoneAt: text("undone_at"),
     reconcileStatus: text("reconcile_status").$type<ReconcileStatus>(),
     reconcileGapCents: integer("reconcile_gap_cents"),
+    /** The balance before the file's oldest balanced row, when the file is `ok`; null otherwise. */
+    openingBalanceCents: integer("opening_balance_cents"),
+    /** The printed balance of the file's newest balanced row, when the file is `ok`; null otherwise. */
+    closingBalanceCents: integer("closing_balance_cents"),
     firstPostedOn: text("first_posted_on"),
     lastPostedOn: text("last_posted_on"),
     createdAt: text("created_at").notNull(),

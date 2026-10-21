@@ -35,7 +35,9 @@ import {
   callAdmin,
   type DataDirLock,
   DataDirLocked,
+  isRealDay,
   type LoginChoice,
+  type OpeningBalanceResult,
   type ResetUserOutput,
   resetUserCommand,
   restoreStopped,
@@ -77,6 +79,13 @@ Commands:
                                 coverage from 2024-07-01, the spans with no statement and the
                                 batches whose printed balances do not chain; needs the server
                                 running (exits 3 when it is not)
+  opening-balance <account-id> <YYYY-MM-DD> <amount>
+                                record an account's opening balance by hand: its balance at the
+                                end of that day (the day before its first transaction), signed,
+                                so a credit card owing 500 is -500.00. For accounts whose
+                                statements print no balances and for batches imported before
+                                openings were derived; m1-report prints each account's id;
+                                needs the server running (exits 3 when it is not)
   restore [snapshot|latest]     on a stopped stack: fetch the snapshot (default latest), verify
     [--restore-credentials |    it, ask whether to restore the snapshot's sign-in details (sessions,
      --keep-credentials]        passkeys, authenticator, recovery codes) or keep the current ones
@@ -457,7 +466,7 @@ async function seedCli(config: Config, io: CliIo): Promise<number> {
 }
 
 function dollars(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+  return `${cents < 0 ? "-" : ""}$${(Math.abs(cents) / 100).toFixed(2)}`;
 }
 
 function printM1Report(io: CliIo, report: M1Report): void {
@@ -466,18 +475,30 @@ function printM1Report(io: CliIo, report: M1Report): void {
     `${n} ${n === 1 ? word : word.endsWith("ch") ? `${word}es` : `${word}s`}`;
   for (const a of report.accounts) {
     if (a.batches === 0) {
-      io.out(`${a.name}: no statements imported`);
+      io.out(`${a.name}: no statements imported (account ${a.accountId})`);
       continue;
     }
     io.out(
-      `${a.name}: ${plural(a.batches, "batch")}, ${plural(a.monthsCovered, "month")} covered, ${plural(a.holes.length, "hole")}, ${plural(a.brokenBatches.length, "broken batch")}` +
+      `${a.name}: ${plural(a.batches, "batch")}, ${plural(a.monthsCovered, "month")} covered, ${plural(a.holes.length, "hole")}, ${plural(a.brokenBatches.length, "broken batch")}, ${plural(a.joinBreaks.length, "join break")}` +
+        (a.joinsUnchecked > 0 ? ` (${plural(a.joinsUnchecked, "join")} not checked)` : "") +
         (a.unchecked > 0 ? ` (${a.unchecked} not balance-checked)` : ""),
     );
+    if (a.startsFrom !== null) {
+      io.out(
+        `  starts from opening balance ${dollars(a.startsFrom.balanceCents)} on ${a.startsFrom.asOf}`,
+      );
+    }
+    io.out(`  account  ${a.accountId}`);
     for (const s of a.covered) io.out(`  covered  ${s.from} to ${s.to}`);
     for (const h of a.holes) io.out(`  HOLE     ${h.from} to ${h.to} (${plural(h.days, "day")})`);
     for (const b of a.brokenBatches) {
       io.out(
         `  BROKEN   batch ${b.batchId} (${b.source}, ${b.firstPostedOn ?? "?"} to ${b.lastPostedOn ?? "?"}): ${dollars(b.gapCents)} unexplained`,
+      );
+    }
+    for (const j of a.joinBreaks) {
+      io.out(
+        `  JOIN     batch ${j.previousBatchId} closes at ${dollars(j.closingCents)} on ${j.previousLastPostedOn}, next batch ${j.nextBatchId} opens at ${dollars(j.openingCents)} on ${j.nextFirstPostedOn}`,
       );
     }
   }
@@ -487,8 +508,40 @@ function printM1Report(io: CliIo, report: M1Report): void {
     );
   }
   io.out(
-    `Total: ${plural(report.totals.holes, "hole")}, ${plural(report.totals.brokenBatches, "broken batch")} (the gate's machine check is zero of each)`,
+    `Total: ${plural(report.totals.holes, "hole")}, ${plural(report.totals.brokenBatches, "broken batch")}, ${plural(report.totals.joinBreaks, "join break")}${report.totals.joinsUnchecked > 0 ? `, ${plural(report.totals.joinsUnchecked, "join")} not checked` : ""} (the gate's machine check is zero of each)`,
   );
+}
+
+/** Dollars and cents (`-500.00`, `12`, `0.5`) to signed cents; undefined when malformed. */
+function parseAmountCents(text: string): number | undefined {
+  const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(text);
+  if (match === null) return undefined;
+  const cents = Number(match[2]) * 100 + Number((match[3] ?? "").padEnd(2, "0"));
+  if (!Number.isSafeInteger(cents)) return undefined;
+  return match[1] === "-" ? -cents : cents;
+}
+
+/** `opening-balance`: over the admin socket only. Exit 1 for an unknown account. */
+async function openingBalanceCli(
+  config: Config,
+  io: CliIo,
+  args: { accountId: string; asOf: string; balanceCents: number },
+): Promise<number> {
+  if (config.adminSocket === null) {
+    io.err("pangolin: the admin socket is disabled (PANGOLIN_ADMIN_SOCKET is empty)");
+    return EXIT_FAILED;
+  }
+  const response = await viaSocket(config, "opening-balance", args);
+  if (response === undefined) return notAnswering(config, io);
+  if (!response.ok) {
+    printError(io, response.error);
+    return EXIT_FAILED;
+  }
+  const result = response.result as OpeningBalanceResult;
+  io.out(
+    `Recorded opening balance ${dollars(result.balanceCents)} for account ${result.accountId} on ${result.asOf}`,
+  );
+  return EXIT_OK;
 }
 
 /** `m1-report`: over the admin socket only. Exit 0 whatever it finds; the human reads it. */
@@ -613,9 +666,16 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
   };
   if (command === undefined) return usage("name a command");
   if (
-    !["status", "reset-user", "backup", "restore", "confirm-bundle", "seed", "m1-report"].includes(
-      command,
-    )
+    ![
+      "status",
+      "reset-user",
+      "backup",
+      "restore",
+      "confirm-bundle",
+      "seed",
+      "m1-report",
+      "opening-balance",
+    ].includes(command)
   ) {
     return usage(`unknown command ${JSON.stringify(command)}`);
   }
@@ -627,6 +687,21 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
   }
   if (command === "seed" && rest.length > 0) return usage("seed takes no arguments");
   if (command === "m1-report" && rest.length > 0) return usage("m1-report takes no arguments");
+  let openingArgs: { accountId: string; asOf: string; balanceCents: number } | undefined;
+  if (command === "opening-balance") {
+    const [accountId, asOf, amount, ...extra] = rest;
+    if (accountId === undefined || asOf === undefined || amount === undefined || extra.length > 0) {
+      return usage("opening-balance takes an account ID, a date (YYYY-MM-DD) and an amount");
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf) || !isRealDay(asOf)) {
+      return usage("the date must be a real day, YYYY-MM-DD");
+    }
+    const balanceCents = parseAmountCents(amount);
+    if (balanceCents === undefined) {
+      return usage("the amount must be dollars and cents, like -500.00");
+    }
+    openingArgs = { accountId, asOf, balanceCents };
+  }
   const flags = rest.filter((arg) => arg.startsWith("--"));
   const operands = rest.filter((arg) => !arg.startsWith("--"));
   if (command === "restore") {
@@ -679,6 +754,8 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
         return await seedCli(config, io);
       case "m1-report":
         return await m1ReportCli(config, io);
+      case "opening-balance":
+        return await openingBalanceCli(config, io, openingArgs as NonNullable<typeof openingArgs>);
       default:
         return await resetUserCli(config, options, rest[0]);
     }

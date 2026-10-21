@@ -17,6 +17,7 @@ import {
   type IdGenerator,
   type JobCounts,
   jobCounts,
+  listBalanceSnapshots,
   listLogins,
   type M1Report,
   m1GateReport,
@@ -26,6 +27,7 @@ import {
   type RunnerLiveness,
   type RunningJob,
   readiness,
+  recordBalanceSnapshot,
   recoveryBundleConfirmed,
   reEnrolmentUrl,
   requestBackup,
@@ -48,6 +50,7 @@ export const ADMIN_COMMANDS = [
   "confirm-bundle",
   "seed",
   "m1-report",
+  "opening-balance",
 ] as const;
 export type AdminCommand = (typeof ADMIN_COMMANDS)[number];
 
@@ -290,6 +293,64 @@ export function m1ReportCommand(deps: AdminDeps, args: unknown = {}): M1Report {
   return m1GateReport(context(deps, "m1-report"));
 }
 
+/** Whether `YYYY-MM-DD` names a day that exists (not 2026-02-30). */
+export function isRealDay(day: string): boolean {
+  const d = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === day;
+}
+
+const openingBalanceArgs = z
+  .object({
+    accountId: z.string().min(1),
+    asOf: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
+      .refine(isRealDay, "Not a real calendar date"),
+    /** Signed: liabilities (credit cards, loans) are negative. */
+    balanceCents: z.int(),
+  })
+  .strict();
+
+/** What `opening-balance` answers: the snapshot it recorded. */
+export interface OpeningBalanceResult {
+  readonly snapshotId: string;
+  readonly accountId: string;
+  readonly asOf: string;
+  readonly balanceCents: number;
+}
+
+/**
+ * `opening-balance`: records a `manual` balance snapshot (`accounts.recordBalanceSnapshot`, as
+ * the system viewer, audited as `cli:opening-balance`) as an account's opening balance on a
+ * day, for accounts whose statements print no balances and batches imported before openings
+ * were derived. The balance is the end of that day, so give the day before the first
+ * transaction. An unknown account is `NotFound`.
+ */
+export function openingBalanceCommand(deps: AdminDeps, args: unknown = {}): OpeningBalanceResult {
+  const parsed = parseArgs(openingBalanceArgs, args);
+  const ctx = context(deps, "opening-balance");
+  if (
+    listBalanceSnapshots(ctx, { accountId: parsed.accountId }).some((x) => x.asOf === parsed.asOf)
+  ) {
+    throw new AppError(
+      "Conflict",
+      `The account already has a balance snapshot dated ${parsed.asOf}; pick another day`,
+    );
+  }
+  const row = recordBalanceSnapshot(ctx, {
+    accountId: parsed.accountId,
+    asOf: parsed.asOf,
+    balanceCents: parsed.balanceCents,
+    source: "manual",
+  });
+  return {
+    snapshotId: row.id,
+    accountId: row.accountId,
+    asOf: row.asOf,
+    balanceCents: row.balanceCents,
+  };
+}
+
 export function isAdminCommand(command: string): command is AdminCommand {
   return (ADMIN_COMMANDS as readonly string[]).includes(command);
 }
@@ -312,5 +373,7 @@ export function runAdminCommand(deps: AdminDeps, command: string, args: unknown)
       return seedCommand(deps, args);
     case "m1-report":
       return m1ReportCommand(deps, args);
+    case "opening-balance":
+      return openingBalanceCommand(deps, args);
   }
 }

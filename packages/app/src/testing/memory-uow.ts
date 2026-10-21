@@ -411,6 +411,12 @@ function importBatchRepo(working: MemoryState, check: () => void): ImportBatchRe
         ...(changes.reconcileGapCents !== undefined
           ? { reconcileGapCents: changes.reconcileGapCents }
           : {}),
+        ...(changes.openingBalanceCents !== undefined
+          ? { openingBalanceCents: changes.openingBalanceCents }
+          : {}),
+        ...(changes.closingBalanceCents !== undefined
+          ? { closingBalanceCents: changes.closingBalanceCents }
+          : {}),
         ...(changes.firstPostedOn !== undefined ? { firstPostedOn: changes.firstPostedOn } : {}),
         ...(changes.lastPostedOn !== undefined ? { lastPostedOn: changes.lastPostedOn } : {}),
         status: changes.status,
@@ -1592,6 +1598,16 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       working.transactions = working.transactions.filter((t) => !gone.has(t.id));
       for (const id of gone) working.deleted.delete(id);
     },
+    hasLiveBefore: (accountId, date, exceptImportId) => {
+      check();
+      return working.transactions.some(
+        (t) =>
+          t.accountId === accountId &&
+          !working.deleted.has(t.id) &&
+          t.postedOn < date &&
+          t.importId !== exceptImportId,
+      );
+    },
     latestPostedOn: (viewer, accountId) => {
       requireViewer(viewer);
       check();
@@ -2053,6 +2069,9 @@ function balanceSnapshotRepo(working: MemoryState, check: () => void): BalanceSn
       checked(oneOf(BALANCE_SOURCES, row.source), "balance_snapshot_source");
       checked(isDayFormat(row.asOf), "balance_snapshot_as_of");
       references(working.accounts, row.accountId, "balance_snapshot.account_id");
+      if (row.importBatchId !== null) {
+        references(working.importBatches, row.importBatchId, "balance_snapshot.import_batch_id");
+      }
       working.balanceSnapshots.push(row);
     },
     listVisible: (viewer, accountId) => {
@@ -2063,6 +2082,14 @@ function balanceSnapshotRepo(working: MemoryState, check: () => void): BalanceSn
       return working.balanceSnapshots
         .filter((row) => row.accountId === accountId)
         .sort((a, b) => byText(`${b.asOf}|${b.id}`, `${a.asOf}|${a.id}`));
+    },
+    deleteByImportBatch: (batchId) => {
+      check();
+      const gone = working.balanceSnapshots.filter((s) => s.importBatchId === batchId);
+      working.balanceSnapshots = working.balanceSnapshots.filter(
+        (s) => s.importBatchId !== batchId,
+      );
+      return gone;
     },
     deleteForAccount: (accountId) => {
       check();

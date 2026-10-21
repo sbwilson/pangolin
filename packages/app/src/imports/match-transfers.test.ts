@@ -277,6 +277,8 @@ describe("fixSetAsideRow", () => {
       undoneAt: null,
       reconcileStatus: null,
       reconcileGapCents: null,
+      openingBalanceCents: null,
+      closingBalanceCents: null,
       firstPostedOn: null,
       lastPostedOn: null,
       createdAt: stamp,

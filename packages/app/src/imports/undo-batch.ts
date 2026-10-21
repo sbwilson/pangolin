@@ -79,6 +79,16 @@ export function undoImportBatch(
     if (!tx.importBatches.markUndone(batch.id, at)) {
       throw new AppError("Conflict", "This import was already undone");
     }
+    for (const snapshot of tx.balanceSnapshots.deleteByImportBatch(batch.id)) {
+      audit({
+        entity: "balance_snapshot",
+        entityId: snapshot.id,
+        accountId: snapshot.accountId,
+        action: "delete",
+        before: snapshot,
+        after: null,
+      });
+    }
     audit({
       entity: "import_batch",
       entityId: batch.id,

@@ -530,6 +530,11 @@ export interface TransactionSummary {
 
 export interface TransactionRepo {
   /**
+   * Whether the account has a live transaction dated before `date` (`YYYY-MM-DD`) that does not
+   * belong to import batch `exceptImportId`. No visibility check: the caller has the account.
+   */
+  hasLiveBefore(accountId: string, date: string, exceptImportId: string): boolean;
+  /**
    * Inserts the transaction and its splits. A second line with the same `(accountId,
    * externalId)` or `(accountId, fingerprint)` is rejected, deleted lines included.
    */
@@ -788,12 +793,19 @@ export interface BalanceSnapshotRow {
   readonly asOf: string;
   readonly balanceCents: number;
   readonly source: BalanceSource;
+  /** The import batch a `statement` opening snapshot was derived from; null otherwise. */
+  readonly importBatchId: Id<"ImportBatch"> | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
 
 export interface BalanceSnapshotRepo {
   insert(row: BalanceSnapshotRow): void;
+  /**
+   * Hard-deletes the snapshots derived from `batchId` (`importBatchId`) and returns them, for
+   * the audit. Only `undoImportBatch`.
+   */
+  deleteByImportBatch(batchId: string): BalanceSnapshotRow[];
   /** Snapshots of an account `viewer` may see, newest day first; empty for any other account. */
   listVisible(viewer: Viewer, accountId: string): BalanceSnapshotRow[];
   /**
@@ -1408,6 +1420,13 @@ export interface ImportBatchRow {
   readonly reconcileStatus: ReconcileStatus | null;
   /** The size of a broken balance chain in cents; 0 unless `reconcileStatus` is `gap`; null before 0019. */
   readonly reconcileGapCents: number | null;
+  /**
+   * The balance before the file's oldest balanced row, and the printed balance of its newest;
+   * set only when `reconcileStatus` is `ok` (null for `gap`, `unavailable`, and batches from
+   * before migration 0020).
+   */
+  readonly openingBalanceCents: number | null;
+  readonly closingBalanceCents: number | null;
   /** The earliest and latest `postedOn` of the file's rows; null with no rows, or before 0019. */
   readonly firstPostedOn: string | null;
   readonly lastPostedOn: string | null;
@@ -1454,6 +1473,8 @@ export interface ImportBatchRepo {
       readonly status: ImportBatchStatus;
       readonly reconcileStatus?: ReconcileStatus | null;
       readonly reconcileGapCents?: number | null;
+      readonly openingBalanceCents?: number | null;
+      readonly closingBalanceCents?: number | null;
       readonly firstPostedOn?: string | null;
       readonly lastPostedOn?: string | null;
     },

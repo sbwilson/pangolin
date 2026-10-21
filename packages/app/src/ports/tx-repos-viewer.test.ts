@@ -67,7 +67,11 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
     "a derived flag kept from open review items, set whatever the viewer",
   "TransactionRepo.setTransferGroup":
     "links and unlinks every member of a group, also ones the viewer cannot see (decision 81)",
+  "TransactionRepo.hasLiveBefore":
+    "a yes/no on an account the importing use case found with findVisible; reveals no row",
   "BalanceSnapshotRepo.insert": "a new row; the use case checked the account with findVisible",
+  "BalanceSnapshotRepo.deleteByImportBatch":
+    "write-only: undoes the snapshots of a batch the use case found with the viewer",
   "TransferGroupRepo.insert": "a new group; the use case checked the members with the viewer",
   "TransferGroupRepo.delete":
     "the use case checked every member through members(viewer) before it deletes the group",

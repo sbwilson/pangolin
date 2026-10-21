@@ -66,6 +66,12 @@ export function createImportBatchRepo(
           ...(changes.reconcileGapCents !== undefined
             ? { reconcileGapCents: changes.reconcileGapCents }
             : {}),
+          ...(changes.openingBalanceCents !== undefined
+            ? { openingBalanceCents: changes.openingBalanceCents }
+            : {}),
+          ...(changes.closingBalanceCents !== undefined
+            ? { closingBalanceCents: changes.closingBalanceCents }
+            : {}),
           ...(changes.firstPostedOn !== undefined ? { firstPostedOn: changes.firstPostedOn } : {}),
           ...(changes.lastPostedOn !== undefined ? { lastPostedOn: changes.lastPostedOn } : {}),
           status: changes.status,

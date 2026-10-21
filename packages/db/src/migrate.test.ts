@@ -66,10 +66,11 @@ describe("committed migrations", () => {
       "0017_attachment_and_handoff",
       "0018_batch_undo_and_importer",
       "0019_batch_reconcile",
+      "0020_batch_opening_balance",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 20 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 20 });
-    expect(schemaVersion(db)).toBe(20);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 21 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 21 });
+    expect(schemaVersion(db)).toBe(21);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });
@@ -120,6 +121,28 @@ describe("committed migrations", () => {
       "reconcile_status",
     ]);
     expect(cols.every((c) => c.notnull === 0)).toBe(true);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+
+  it("adds the opening balance columns when 0019 upgrades to 0020", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 20));
+    expect(schemaVersion(db)).toBe(20);
+    expect(migrate(db, migrations.slice(0, 21)).applied).toEqual(["0020_batch_opening_balance"]);
+    expect(schemaVersion(db)).toBe(21);
+    const batchCols = (
+      db.pragma("table_info(import_batch)") as { name: string; notnull: number }[]
+    ).filter((c) => c.name.endsWith("_balance_cents"));
+    expect(batchCols.map((c) => c.name).sort()).toEqual([
+      "closing_balance_cents",
+      "opening_balance_cents",
+    ]);
+    expect(batchCols.every((c) => c.notnull === 0)).toBe(true);
+    const snapCols = db.pragma("table_info(balance_snapshot)") as {
+      name: string;
+      notnull: number;
+    }[];
+    expect(snapCols.find((c) => c.name === "import_batch_id")?.notnull).toBe(0);
     expect(db.pragma("foreign_key_check")).toEqual([]);
   });
 

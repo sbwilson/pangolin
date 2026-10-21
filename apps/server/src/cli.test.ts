@@ -912,6 +912,119 @@ describe("pangolin m1-report (the M1 gate's machine check)", () => {
     expect(result.out).toContain("1 account with no statements (not counted below)");
   });
 
+  it("accepts a leading span that starts from an opening balance, prints account ids and lists a join break", async () => {
+    await boot();
+    let accountId = "";
+    arrange(({ ctx, accountId: id }) => {
+      accountId = id;
+      const file = (rows: readonly (readonly [string, string, string])[]) =>
+        rows
+          .map(([date, amount, balance]) => `${date},${amount},"ROW ${date}",${balance}`)
+          .join("\n");
+      importStatement(ctx, {
+        accountId: id,
+        format: "commbank_csv",
+        content: file([
+          ["05/07/2024", "-10.00", "990.00"],
+          ["06/07/2024", "-10.00", "980.00"],
+        ]),
+      });
+      // Opens at 900.00 but the previous file closed at 980.00.
+      importStatement(ctx, {
+        accountId: id,
+        format: "commbank_csv",
+        content: file([
+          ["07/07/2024", "-10.00", "890.00"],
+          ["08/07/2024", "-10.00", "880.00"],
+        ]),
+      });
+    });
+    const result = await cli(["m1-report"]);
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.out).toContain(
+      "Everyday: 2 batches, 1 month covered, 0 holes, 0 broken batches, 1 join break",
+    );
+    expect(result.out).toContain("starts from opening balance $1000.00 on 2024-07-04");
+    expect(result.out).toContain(`account  ${accountId}`);
+    expect(result.out).toMatch(
+      /JOIN {5}batch \S+ closes at \$980\.00 on 2024-07-06, next batch \S+ opens at \$900\.00 on 2024-07-07/,
+    );
+    expect(result.out).toContain("Total: 0 holes, 0 broken batches, 1 join break");
+  });
+
+  it("opening-balance records a manual snapshot the report then accepts, and refuses an unknown account", async () => {
+    await boot();
+    let accountId = "";
+    arrange(({ ctx, accountId: id }) => {
+      accountId = id;
+      importStatement(ctx, {
+        accountId: id,
+        format: "up_csv",
+        content:
+          "Time,Settled Date,Description,Amount,Status\n2026-01-13T00:00:00Z,2026-01-13,A,-10.00,SETTLED\n2026-01-20T00:00:00Z,2026-01-20,B,-5.00,SETTLED",
+      });
+    });
+    expect(await cli(["m1-report"])).toMatchObject({ out: /HOLE {5}2024-07-01 to 2026-01-12/ });
+    const done = await cli(["opening-balance", accountId, "2026-01-12", "-500.00"]);
+    expect(done).toMatchObject({ code: EXIT_OK, err: "" });
+    expect(done.out).toContain(
+      `Recorded opening balance -$500.00 for account ${accountId} on 2026-01-12`,
+    );
+    withDb((db) => {
+      expect(
+        db
+          .prepare("SELECT as_of, balance_cents, source, import_batch_id FROM balance_snapshot")
+          .all(),
+      ).toEqual([
+        { as_of: "2026-01-12", balance_cents: -50000, source: "manual", import_batch_id: null },
+      ]);
+      expect(
+        db
+          .prepare(
+            "SELECT actor FROM audit_log WHERE entity = 'balance_snapshot' AND action = 'create'",
+          )
+          .all(),
+      ).toEqual([{ actor: "cli:opening-balance" }]);
+    });
+    // A second run for the same account and day is refused, and writes nothing.
+    const again = await cli(["opening-balance", accountId, "2026-01-12", "-400.00"]);
+    expect(again.code).toBe(EXIT_FAILED);
+    expect(again.err).toMatch(/already has a balance snapshot dated 2026-01-12/);
+    withDb((db) => {
+      expect(db.prepare("SELECT count(*) FROM balance_snapshot").pluck().get()).toBe(1);
+    });
+    const after = await cli(["m1-report"]);
+    expect(after.out).toContain("starts from opening balance -$500.00 on 2026-01-12");
+    expect(after.out).not.toContain("HOLE");
+    const unknown = await cli(["opening-balance", "no-such-account", "2026-01-12", "10"]);
+    expect(unknown.code).toBe(EXIT_FAILED);
+    expect(unknown.err).toMatch(/not found/i);
+  });
+
+  it("opening-balance checks its arguments and needs the server", async () => {
+    expect(await cli(["opening-balance"])).toMatchObject({ code: EXIT_USAGE });
+    expect(await cli(["opening-balance", "a", "2026-01-12"])).toMatchObject({ code: EXIT_USAGE });
+    expect(await cli(["opening-balance", "a", "12/01/2026", "1"])).toMatchObject({
+      code: EXIT_USAGE,
+      err: /YYYY-MM-DD/,
+    });
+    expect(await cli(["opening-balance", "a", "2026-02-30", "1"])).toMatchObject({
+      code: EXIT_USAGE,
+      err: /real day/,
+    });
+    expect(await cli(["opening-balance", "a", "2026-01-12", "ten"])).toMatchObject({
+      code: EXIT_USAGE,
+      err: /dollars and cents/,
+    });
+    expect(await cli(["opening-balance", "a", "2026-01-12", "1", "2"])).toMatchObject({
+      code: EXIT_USAGE,
+    });
+    expect(await cli(["--help"])).toMatchObject({ out: /opening-balance <account-id>/ });
+    expect(await cli(["opening-balance", "a", "2026-01-12", "-1.5"])).toMatchObject({
+      code: EXIT_NOT_RUNNING,
+    });
+  });
+
   it("says so when the server is not running, exit 3", async () => {
     expect(await cli(["m1-report"])).toMatchObject({ code: EXIT_NOT_RUNNING });
   });

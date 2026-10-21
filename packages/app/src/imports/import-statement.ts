@@ -5,6 +5,7 @@ import {
   type ReconcileResult,
   reconcileStatement,
   sha256Hex,
+  shiftDay,
 } from "@pangolin/domain";
 import type { Id } from "@pangolin/shared";
 import { formatInstant } from "@pangolin/shared/temporal";
@@ -27,6 +28,7 @@ import type {
   StatementParser,
 } from "../ports/statement-parser.ts";
 import type {
+  BalanceSnapshotRow,
   ImportBatchRow,
   ImportBatchStatus,
   ImportRowRow,
@@ -222,6 +224,8 @@ export function importStatement(
       undoneAt: null,
       reconcileStatus: null,
       reconcileGapCents: null,
+      openingBalanceCents: null,
+      closingBalanceCents: null,
       firstPostedOn: null,
       lastPostedOn: null,
       createdAt: at,
@@ -454,7 +458,7 @@ export function importStatement(
     // verified; the set-aside review item already flags it.
     const reconcile: ReconcileResult =
       setAsideRows.length > 0
-        ? { status: "unavailable", gapCents: 0 }
+        ? { status: "unavailable", gapCents: 0, openingCents: null, closingCents: null }
         : reconcileStatement(parsedRows);
     let firstPostedOn: string | null = null;
     let lastPostedOn: string | null = null;
@@ -481,11 +485,48 @@ export function importStatement(
         status: "committed",
         reconcileStatus: reconcile.status,
         reconcileGapCents: reconcile.gapCents,
+        openingBalanceCents: reconcile.openingCents,
+        closingBalanceCents: reconcile.closingCents,
         firstPostedOn,
         lastPostedOn,
       },
       at,
     );
+
+    // The statement's own opening balance, when this file starts the account's history: the
+    // snapshot is the balance at the end of the day before the first row.
+    if (
+      reconcile.status === "ok" &&
+      reconcile.openingCents !== null &&
+      firstPostedOn !== null &&
+      !tx.transactions.hasLiveBefore(account.id, firstPostedOn, batchId)
+    ) {
+      const asOf = shiftDay(firstPostedOn, -1);
+      const earlier = tx.balanceSnapshots
+        .listVisible(ctx.viewer, account.id)
+        .some((s) => s.asOf <= asOf);
+      if (!earlier) {
+        const snapshot: BalanceSnapshotRow = {
+          id: ctx.newId<"BalanceSnapshot">(),
+          accountId: account.id,
+          asOf,
+          balanceCents: reconcile.openingCents,
+          source: "statement",
+          importBatchId: batchId,
+          createdAt: at,
+          updatedAt: at,
+        };
+        tx.balanceSnapshots.insert(snapshot);
+        audit({
+          entity: "balance_snapshot",
+          entityId: snapshot.id,
+          accountId: account.id,
+          action: "create",
+          before: null,
+          after: snapshot,
+        });
+      }
+    }
 
     audit({
       entity: "import_batch",
@@ -501,6 +542,8 @@ export function importStatement(
         status: "committed",
         reconcileStatus: reconcile.status,
         reconcileGapCents: reconcile.gapCents,
+        openingBalanceCents: reconcile.openingCents,
+        closingBalanceCents: reconcile.closingCents,
         firstPostedOn,
         lastPostedOn,
       },

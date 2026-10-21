@@ -298,6 +298,7 @@ function scenario(
       asOf: "2026-09-01",
       balanceCents: 100,
       source: "manual",
+      importBatchId: null,
       createdAt: T,
       updatedAt: T,
     }),
@@ -1383,6 +1384,7 @@ function scenario(
     asOf,
     balanceCents,
     source: source as "manual",
+    importBatchId: null,
     createdAt,
     updatedAt: createdAt,
   });
@@ -1515,6 +1517,8 @@ function scenario(
     undoneAt: null,
     reconcileStatus: null,
     reconcileGapCents: null,
+    openingBalanceCents: null,
+    closingBalanceCents: null,
     firstPostedOn: null,
     lastPostedOn: null,
     createdAt,
@@ -1561,6 +1565,8 @@ function scenario(
         status: "committed",
         reconcileStatus: "gap",
         reconcileGapCents: 250,
+        openingBalanceCents: null,
+        closingBalanceCents: null,
         firstPostedOn: "2026-09-01",
         lastPostedOn: "2026-09-30",
       },
@@ -1585,6 +1591,51 @@ function scenario(
     r.importBatches.latestImportFor(system, freshAcct),
     r.importBatches.markUndone(freshOld, T2),
     r.importBatches.latestImportFor(system, freshAcct),
+  ]);
+
+  // Opening-balance reads: the batch's snapshot and the history check.
+  const openSnap = (batch: Id<"ImportBatch"> | null, asOf: string) => ({
+    id: newId<"BalanceSnapshot">(),
+    accountId: freshAcct,
+    asOf,
+    balanceCents: 500,
+    source: "statement" as const,
+    importBatchId: batch,
+    createdAt: T,
+    updatedAt: T,
+  });
+  step("snapshot.badBatch", (r) =>
+    r.balanceSnapshots.insert(openSnap("nobody" as never, "2026-08-31")),
+  );
+  tx((r) => {
+    r.balanceSnapshots.insert(openSnap(freshOld, "2026-08-31"));
+    r.balanceSnapshots.insert(openSnap(null, "2026-08-01"));
+    r.importBatches.updateCountsAndStatus(
+      freshOld,
+      { status: "committed", openingBalanceCents: 500, closingBalanceCents: -20 },
+      T2,
+    );
+  });
+  out["opening.reads"] = tx((r) => [
+    r.transactions.hasLiveBefore(freshAcct, "2026-09-05", freshOld),
+    r.transactions.hasLiveBefore(freshAcct, "2026-09-06", freshOld),
+    r.transactions.hasLiveBefore(freshAcct, "2026-09-20", freshNew),
+    r.transactions.hasLiveBefore(freshAcct, "2026-09-21", freshOld),
+    r.transactions.hasLiveBefore(freshAcct, "2026-09-30", "nobody"),
+    r.transactions.hasLiveBefore("nobody", "2026-12-31", freshOld),
+    (() => {
+      const b = r.importBatches.find(system, freshOld);
+      return [b?.openingBalanceCents, b?.closingBalanceCents];
+    })(),
+    r.balanceSnapshots
+      .listVisible(system, freshAcct)
+      .map((x) => [x.asOf, x.importBatchId === freshOld]),
+  ]);
+  out["opening.delete"] = tx((r) => [
+    r.balanceSnapshots.deleteByImportBatch("nobody").length,
+    r.balanceSnapshots.deleteByImportBatch(freshOld).map((x) => [x.asOf, x.balanceCents, x.source]),
+    r.balanceSnapshots.deleteByImportBatch(freshOld).length,
+    r.balanceSnapshots.listVisible(system, freshAcct).map((x) => [x.asOf, x.importBatchId]),
   ]);
 
   // Review item foreign key.
@@ -1665,6 +1716,7 @@ function scenario(
       asOf: "2026-09-01",
       balanceCents: 1,
       source: "manual",
+      importBatchId: null,
       createdAt: T,
       updatedAt: T,
     });
@@ -1821,6 +1873,8 @@ function scenario(
       undoneAt: null,
       reconcileStatus: null,
       reconcileGapCents: null,
+      openingBalanceCents: null,
+      closingBalanceCents: null,
       firstPostedOn: null,
       lastPostedOn: null,
       createdAt: T,

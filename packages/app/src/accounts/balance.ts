@@ -44,6 +44,7 @@ export function recordBalanceSnapshot(
       asOf: parsed.asOf,
       balanceCents: parsed.balanceCents,
       source: parsed.source ?? "manual",
+      importBatchId: null,
       createdAt: at,
       updatedAt: at,
     };

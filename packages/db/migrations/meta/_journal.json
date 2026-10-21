@@ -141,6 +141,13 @@
       "when": 1792560801788,
       "tag": "0019_batch_reconcile",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1792568463960,
+      "tag": "0020_batch_opening_balance",
+      "breakpoints": true
     }
   ]
 }

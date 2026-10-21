@@ -5,6 +5,13 @@ export interface ReconcileResult {
   readonly status: ReconcileStatus;
   /** The sum of the absolute mismatches between adjacent printed balances, in cents; 0 unless `gap`. */
   readonly gapCents: number;
+  /**
+   * The balance before the oldest balanced row (its balance minus its amount), in cents; null
+   * unless `ok`.
+   */
+  readonly openingCents: number | null;
+  /** The printed balance of the newest balanced row, in cents; null unless `ok`. */
+  readonly closingCents: number | null;
 }
 
 /** The two fields of a parsed row that reconciling reads. */
@@ -22,6 +29,10 @@ export interface ReconcileRow {
  * pairs where both rows print a balance are tested. With no such pair (no balances, or a single
  * balanced row) the result is `unavailable`, never a failure. Otherwise `gap` when any pair
  * breaks in the chosen orientation, with the absolute mismatches summed.
+ *
+ * When `ok`, also returns the statement's opening and closing balances. The orientation decides
+ * which end of the file is oldest, so same-day rows keep their file order: the opening is the
+ * oldest balanced row's balance minus its amount, the closing the newest balanced row's balance.
  */
 export function reconcileStatement(rows: readonly ReconcileRow[]): ReconcileResult {
   let pairs = 0;
@@ -48,9 +59,33 @@ export function reconcileStatement(rows: readonly ReconcileRow[]): ReconcileResu
       descMismatch += desc;
     }
   }
-  if (pairs === 0) return { status: "unavailable", gapCents: 0 };
+  if (pairs === 0) {
+    return { status: "unavailable", gapCents: 0, openingCents: null, closingCents: null };
+  }
   const useAsc = ascBroken !== descBroken ? ascBroken < descBroken : ascMismatch <= descMismatch;
   const broken = useAsc ? ascBroken : descBroken;
   const gapCents = useAsc ? ascMismatch : descMismatch;
-  return broken === 0 ? { status: "ok", gapCents: 0 } : { status: "gap", gapCents };
+  if (broken !== 0) return { status: "gap", gapCents, openingCents: null, closingCents: null };
+  // Opening and closing are only trustworthy when the orientation is unambiguous (the other
+  // one does not chain too) and the oldest row itself prints a balance.
+  const ambiguous = ascBroken === 0 && descBroken === 0;
+  const oldest = useAsc ? rows[0] : rows[rows.length - 1];
+  const balanced = rows.filter((r) => r.balanceCents !== null && r.balanceCents !== undefined);
+  const newest = useAsc ? balanced[balanced.length - 1] : balanced[0];
+  const oldestBalance = oldest?.balanceCents;
+  if (
+    ambiguous ||
+    oldest === undefined ||
+    newest === undefined ||
+    oldestBalance === null ||
+    oldestBalance === undefined
+  ) {
+    return { status: "ok", gapCents: 0, openingCents: null, closingCents: null };
+  }
+  return {
+    status: "ok",
+    gapCents: 0,
+    openingCents: oldestBalance - oldest.amountCents,
+    closingCents: newest.balanceCents as number,
+  };
 }

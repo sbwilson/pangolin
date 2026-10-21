@@ -105,6 +105,8 @@ describe("import reconcile (pipeline step 7)", () => {
         status: "committed",
         reconcileStatus: "ok",
         reconcileGapCents: 0,
+        openingBalanceCents: 100_000,
+        closingBalanceCents: 101_700,
         firstPostedOn: "2026-03-01",
         lastPostedOn: "2026-03-04",
       });
@@ -156,6 +158,8 @@ describe("import reconcile (pipeline step 7)", () => {
       status: "committed",
       reconcileStatus: "unavailable",
       reconcileGapCents: 0,
+      openingBalanceCents: null,
+      closingBalanceCents: null,
     });
     expect(uow.state.reviewItems.filter((i) => i.kind === "import.balance_gap")).toHaveLength(0);
     expect(uow.state.reviewItems.filter((i) => i.kind === "import.set_aside")).toHaveLength(1);
@@ -180,6 +184,8 @@ describe("import reconcile (pipeline step 7)", () => {
       ).toMatchObject({
         reconcileStatus: "unavailable",
         reconcileGapCents: 0,
+        openingBalanceCents: null,
+        closingBalanceCents: null,
         firstPostedOn: "2026-03-01",
         lastPostedOn: "2026-03-02",
       });
@@ -215,11 +221,11 @@ describe("m1GateReport", () => {
           ["01/11/2024", -100],
           ["30/06/2025", -100],
         ],
-        50_000,
+        99_800,
       ),
     );
     const report = m1GateReport(sysCtx);
-    expect(report.totals).toEqual({ holes: 1, brokenBatches: 0 });
+    expect(report.totals).toEqual({ holes: 1, brokenBatches: 0, joinBreaks: 0, joinsUnchecked: 0 });
     const acct = report.accounts[0];
     expect(acct?.holes).toEqual([{ from: "2024-10-01", to: "2024-10-31", days: 31 }]);
     expect(acct?.monthsCovered).toBe(11);
@@ -229,25 +235,23 @@ describe("m1GateReport", () => {
     ]);
   });
 
-  it("counts a weekend between files as a two-day hole, and a leading hole from 1 July 2024", () => {
+  it("counts a weekend between files as a two-day hole, and a leading span with no opening balance as a hole", () => {
     const { ctx, sysCtx, account } = setup();
     const a = account("Everyday");
     const load = (content: string) =>
       importStatement(ctx, { accountId: a, format: "commbank_csv", content });
+    // Up exports print no balances, so no opening balance is derived for the first file.
+    importStatement(ctx, {
+      accountId: a,
+      format: "up_csv",
+      content:
+        "Time,Settled Date,Description,Amount,Status\n2024-07-05T00:00:00Z,2024-07-05,A,-1.00,SETTLED\n2024-07-12T00:00:00Z,2024-07-12,B,-1.00,SETTLED",
+    });
     load(
       csv([
-        ["05/07/2024", -100],
-        ["12/07/2024", -100],
+        ["15/07/2024", -100],
+        ["31/07/2024", -100],
       ]),
-    );
-    load(
-      csv(
-        [
-          ["15/07/2024", -100],
-          ["31/07/2024", -100],
-        ],
-        90_000,
-      ),
     );
     const [acct] = m1GateReport(sysCtx).accounts;
     expect(acct?.holes).toEqual([
@@ -277,15 +281,78 @@ describe("m1GateReport", () => {
     });
     let report = m1GateReport(sysCtx);
     expect(report.accountsWithoutStatements).toBe(1);
-    expect(report.totals).toEqual({ holes: 0, brokenBatches: 1 });
+    expect(report.totals).toEqual({ holes: 0, brokenBatches: 1, joinBreaks: 0, joinsUnchecked: 1 });
     expect(report.accounts.find((x) => x.accountId === a)?.brokenBatches).toEqual([
       expect.objectContaining({ batchId: broken.batchId, gapCents: 200 }),
     ]);
     undoImportBatch(ctx, { batchId: broken.batchId });
     report = m1GateReport(sysCtx);
-    expect(report.totals).toEqual({ holes: 0, brokenBatches: 0 });
+    expect(report.totals).toEqual({ holes: 0, brokenBatches: 0, joinBreaks: 0, joinsUnchecked: 0 });
     expect(report.accounts.find((x) => x.accountId === a)?.batches).toBe(1);
     expect(good.status).toBe("committed");
+  });
+
+  it("accepts a leading span that starts from an opening balance, and still counts interior holes", () => {
+    const { ctx, sysCtx, account } = setup();
+    const a = account("Everyday");
+    const load = (content: string) =>
+      importStatement(ctx, { accountId: a, format: "commbank_csv", content });
+    load(
+      csv([
+        ["05/07/2024", -100],
+        ["12/07/2024", -100],
+      ]),
+    );
+    load(
+      csv(
+        [
+          ["15/07/2024", -100],
+          ["31/07/2024", -100],
+        ],
+        99_800,
+      ),
+    );
+    const [acct] = m1GateReport(sysCtx).accounts;
+    expect(acct?.startsFrom).toEqual({ asOf: "2024-07-04", balanceCents: 100_000 });
+    expect(acct?.holes).toEqual([{ from: "2024-07-13", to: "2024-07-14", days: 2 }]);
+    expect(acct?.joinBreaks).toEqual([]);
+  });
+
+  it("lists a join break where one file closes at a different balance than the next opens", () => {
+    const { ctx, sysCtx, account } = setup();
+    const a = account("Everyday");
+    const load = (content: string) =>
+      importStatement(ctx, { accountId: a, format: "commbank_csv", content });
+    const first = load(
+      csv([
+        ["01/07/2024", -100],
+        ["15/07/2024", -100],
+      ]),
+    );
+    // Closes at 99_800; the next file opens at 90_000.
+    const second = load(
+      csv(
+        [
+          ["16/07/2024", -100],
+          ["31/07/2024", -100],
+        ],
+        90_000,
+      ),
+    );
+    // An overlapping file is never join-checked.
+    load(csv([["20/07/2024", -100]], 12_345));
+    const report = m1GateReport(sysCtx);
+    expect(report.accounts[0]?.joinBreaks).toEqual([
+      {
+        previousBatchId: first.batchId,
+        nextBatchId: second.batchId,
+        previousLastPostedOn: "2024-07-15",
+        closingCents: 99_800,
+        nextFirstPostedOn: "2024-07-16",
+        openingCents: 90_000,
+      },
+    ]);
+    expect(report.totals.joinBreaks).toBe(1);
   });
 
   it("is read-only", () => {
@@ -312,6 +379,8 @@ describe("accountReport", () => {
     undoneAt: null,
     reconcileStatus: null,
     reconcileGapCents: null,
+    openingBalanceCents: null,
+    closingBalanceCents: null,
     firstPostedOn: first,
     lastPostedOn: last,
     createdAt: "t",
@@ -329,5 +398,93 @@ describe("accountReport", () => {
     expect(r.holes).toEqual([]);
     expect(r.unchecked).toBe(4);
     expect(r.monthsCovered).toBe(2);
+  });
+});
+
+describe("accountReport joins and accepted start", () => {
+  const batch = (
+    id: string,
+    first: string,
+    last: string,
+    opening: number | null,
+    closing: number | null,
+  ): ImportBatchRow => ({
+    id: id as never,
+    accountId: "a" as never,
+    source: "commbank_csv",
+    fileSha256: id,
+    rowCount: 0,
+    newCount: 0,
+    dupCount: 0,
+    status: "committed",
+    importedByPersonId: null,
+    undoneAt: null,
+    reconcileStatus: "ok",
+    reconcileGapCents: 0,
+    openingBalanceCents: opening,
+    closingBalanceCents: closing,
+    firstPostedOn: first,
+    lastPostedOn: last,
+    createdAt: "t",
+    updatedAt: "t",
+  });
+  const snap = (asOf: string, balanceCents: number) => ({
+    id: "s" as never,
+    accountId: "a" as never,
+    asOf,
+    balanceCents,
+    source: "manual" as const,
+    importBatchId: null,
+    createdAt: "t",
+    updatedAt: "t",
+  });
+  const acct = { id: "a", name: "A" };
+
+  it("compares a batch with the furthest-reaching predecessor, not a nested neighbour", () => {
+    const r = accountReport(acct, [
+      batch("outer", "2024-07-01", "2024-07-31", 100, 500),
+      batch("nested", "2024-07-10", "2024-07-12", 300, 350),
+      batch("next", "2024-08-01", "2024-08-31", 500, 600),
+    ]);
+    expect(r.joinBreaks).toEqual([]);
+    expect(r.joinsUnchecked).toBe(0);
+    const bad = accountReport(acct, [
+      batch("outer", "2024-07-01", "2024-07-31", 100, 500),
+      batch("nested", "2024-07-10", "2024-07-12", 300, 350),
+      batch("next", "2024-08-01", "2024-08-31", 400, 600),
+    ]);
+    expect(bad.joinBreaks).toEqual([
+      expect.objectContaining({ previousBatchId: "outer", nextBatchId: "next" }),
+    ]);
+  });
+
+  it("counts a pair as unchecked, not as ok, when a balance is not recorded", () => {
+    const r = accountReport(acct, [
+      batch("a", "2024-07-01", "2024-07-31", 100, null),
+      batch("b", "2024-08-01", "2024-08-31", 500, 600),
+    ]);
+    expect(r.joinBreaks).toEqual([]);
+    expect(r.joinsUnchecked).toBe(1);
+  });
+
+  it("does not accept a snapshot that disagrees with the first batch's own opening", () => {
+    const batches = [batch("a", "2024-07-05", "2024-07-31", 1000, 900)];
+    const wrong = accountReport(acct, batches, "2024-07-01", [snap("2024-07-04", 777)]);
+    expect(wrong.startsFrom).toBeNull();
+    expect(wrong.holes).toEqual([{ from: "2024-07-01", to: "2024-07-04", days: 4 }]);
+    const right = accountReport(acct, batches, "2024-07-01", [
+      snap("2024-07-04", 1000),
+      snap("2024-07-03", 777),
+    ]);
+    expect(right.startsFrom).toEqual({ asOf: "2024-07-04", balanceCents: 1000 });
+    expect(right.holes).toEqual([]);
+    // With no derived opening on the batch, any earlier snapshot is accepted.
+    const manual = accountReport(
+      acct,
+      [batch("a", "2024-07-05", "2024-07-31", null, null)],
+      "2024-07-01",
+      [snap("2024-07-04", 777)],
+    );
+    expect(manual.startsFrom).toEqual({ asOf: "2024-07-04", balanceCents: 777 });
   });
 });

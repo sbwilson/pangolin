@@ -10,7 +10,7 @@ pasted output. The agent never closes the gate, and no real statement is committ
 
 ## What counts as an unexplained gap
 
-The report (`m1-report`) lists two kinds of finding for each account. The gate's machine check is
+The report (`m1-report`) lists three kinds of finding for each account. The gate's machine check is
 zero of each.
 
 1. **A broken balance chain.** Every import with printed running balances (CommBank CSV, ubank
@@ -23,9 +23,45 @@ zero of each.
    covered date that no statement reaches. An account's covered days are the union of the first to
    last posted dates of its imported batches (undone batches do not count).
 
+   **Accepted start.** Bank exports only reach back so far, so an account's first statement
+   starts mid-life with a non-zero balance. The leading span (from 1 July 2024 to the first
+   covered date) is accepted, and not counted as a hole, when the account has a balance snapshot
+   dated before its first covered date. The report then prints `starts from opening balance
+   <amount> on <date>`. Without such a snapshot the leading span stays a hole. When the first batch derived an opening of its own, only a snapshot with that same balance
+   counts. Interior holes and broken batches always count.
+3. **A join break.** For batches ordered by first date, where the next starts after the previous
+   ends, the previous closing balance must equal the next opening balance, when both are recorded.
+   A mismatch is a `JOIN` line and counts in the total. Overlapping batches are not join-checked.
+
 The report only measures. A weekend between two files shows as a two-day hole, and an account
-opened after July 2024 shows a leading hole; the human reads each span and records why it is
-explained (or goes and gets the missing statement).
+opened after July 2024 shows a leading hole unless it starts from an opening balance; the human
+reads each span and records why it is explained (or goes and gets the missing statement).
+
+### Opening balances
+
+On import, a statement whose printed balances chain (`ok`) gets its opening balance (the balance
+before its oldest balanced row) and closing balance (the newest balanced row's balance) recorded
+on the batch. When the account has no live transaction before the file's first date and no
+snapshot dated on or before the day before it, the opening is also recorded as a `statement`
+balance snapshot dated the day before the first row, linked to the batch. Undoing the batch
+deletes that snapshot. A `gap` or `unavailable` file records neither.
+
+Accounts whose statements print no balances (credit cards, Up, OFX, QIF), and batches imported
+before this change, have no opening yet. Set one by hand, on the host with the server running:
+
+```sh
+sudo pangolin m1-report                                      # prints each account's id
+sudo pangolin opening-balance <account-id> <YYYY-MM-DD> <amount>
+```
+
+The date is the day before the account's first transaction; the balance is at the end of that
+day, signed (a credit card owing 500 is `-500.00`). It records a `manual` snapshot, audited, and
+the report then accepts the leading span. Only batches imported after this change get derived
+opening and closing values and join checks; batches imported before it (and files with no
+printed balances) rely on the `opening-balance` command, and their joins are not checked. The
+report counts such pairs as `N joins not checked`, so "0 join breaks" is only as strong as the
+joins that were compared. The command refuses when the account already has a snapshot on that
+day.
 
 ## Steps
 
@@ -47,9 +83,10 @@ CommBank accounts has to come from NetBank (the exports on hand start in FY2026)
    ```
 
    Expected: for each account a line `<name>: N batches, M months covered, H holes, B broken
-   batches`, then `covered`, `HOLE` and `BROKEN` lines, and a last line `Total: 0 holes, 0 broken
-   batches`. An account with no statement is listed apart and not counted.
-4. For each `HOLE` and `BROKEN` line left, record the span and why it is explained (for example "no
+   batches, J join breaks`, then its `account` id, `starts from opening balance`, `covered`,
+   `HOLE`, `BROKEN` and `JOIN` lines, and a last line `Total: 0 holes, 0 broken batches, 0 join
+   breaks`. An account with no statement is listed apart and not counted.
+4. For each `HOLE`, `BROKEN` and `JOIN` line left, record the span and why it is explained (for example "no
    transactions: account opened 14 Mar 2025") in the table below.
 5. The human fills the decision row.
 
@@ -59,7 +96,7 @@ The report is read-only: it writes nothing and takes no audit entry.
 
 CI runs the same report on twelve generated monthly statements
 (`generateTwelveMonthStatements`, `apps/server/src/cli.test.ts`): every batch is `ok`, and the
-report shows 0 holes and 12 months. A statement with a dropped row is `gap` with the size of the
+report shows 0 holes, 0 join breaks and 12 months. A statement with a dropped row is `gap` with the size of the
 break, and a missing month shows as a hole. This shows the check works; it says nothing about the
 real statements.
 
@@ -73,11 +110,11 @@ real statements.
 
 ### Findings per account
 
-One row per account that has statements. Findings are the `HOLE` and `BROKEN` lines left after step 3.
+One row per account that has statements. Findings are the `HOLE`, `BROKEN` and `JOIN` lines left after step 3.
 
-| Account | Source files (bank, period) | Months covered | Holes (spans) | Broken batches | Explained? (why) |
-| --- | --- | --- | --- | --- | --- |
-| | | | | | |
+| Account | Source files (bank, period) | Months covered | Holes (spans) | Broken batches | Join breaks | Explained? (why) |
+| --- | --- | --- | --- | --- | --- | --- |
+| | | | | | | |
 
 ### Evidence
 
