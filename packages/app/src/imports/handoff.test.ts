@@ -91,7 +91,9 @@ describe("partner hand-off", () => {
     expect(code(() => send(w.a))).toBe("Validation");
     expect(code(() => send("01JNOBODY"))).toBe("Validation");
     const gone = w.uow.state.people.findIndex((p) => p.id === w.c);
-    w.uow.state.people[gone] = { ...w.uow.state.people[gone]!, deletedAt: "2026-10-01T00:00:00Z" };
+    const person = w.uow.state.people[gone];
+    if (person === undefined) throw new Error("no such person");
+    w.uow.state.people[gone] = { ...person, deletedAt: "2026-10-01T00:00:00Z" };
     expect(code(() => send(w.c))).toBe("Validation");
     // A failed hand-off leaves no file behind.
     expect(w.attachments.files.size).toBe(0);
@@ -100,7 +102,7 @@ describe("partner hand-off", () => {
   it("shows the sender only id, recipient, filename and status", () => {
     const w = setup();
     handoff(w);
-    acceptHandoff(w.B, { handoffId: listMyHandoffs(w.A)[0]!.id, accountId: w.bPrivate });
+    acceptHandoff(w.B, { handoffId: listMyHandoffs(w.A)[0]?.id ?? "", accountId: w.bPrivate });
     const [view] = listMyHandoffs(w.A);
     expect(Object.keys(view as object).sort()).toEqual(["filename", "id", "recipient", "status"]);
     expect(view?.status).toBe("imported");
@@ -112,8 +114,8 @@ describe("partner hand-off", () => {
     acceptHandoff(w.B, { handoffId: id, accountId: w.bPrivate });
     const [batch] = w.uow.state.importBatches;
     expect(batch?.importedByPersonId).toBe(w.b);
-    expect(code(() => undoImportBatch(w.A, { batchId: batch!.id }))).toBe("NotFound");
-    expect(code(() => undoImportBatch(w.B, { batchId: batch!.id }))).toBe("ok");
+    expect(code(() => undoImportBatch(w.A, { batchId: batch?.id ?? "" }))).toBe("NotFound");
+    expect(code(() => undoImportBatch(w.B, { batchId: batch?.id ?? "" }))).toBe("ok");
     expect(listTransactions(w.B).transactions).toHaveLength(0);
     expect(listMyHandoffs(w.A)[0]?.status).toBe("imported");
   });
@@ -288,7 +290,9 @@ describe("partner hand-off", () => {
     const w = setup();
     const first = handoff(w);
     const gone = w.uow.state.people.findIndex((p) => p.id === w.c);
-    w.uow.state.people[gone] = { ...w.uow.state.people[gone]!, deletedAt: "2026-10-01T00:00:00Z" };
+    const person = w.uow.state.people[gone];
+    if (person === undefined) throw new Error("no such person");
+    w.uow.state.people[gone] = { ...person, deletedAt: "2026-10-01T00:00:00Z" };
     expect(
       code(() =>
         createHandoff(w.A, {

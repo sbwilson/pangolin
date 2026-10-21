@@ -224,3 +224,50 @@ export function generateMockStatement(
       throw new Error(`Unsupported statement format: ${format}`);
   }
 }
+
+/** One generated monthly statement: its month (`YYYY-MM`), rows with running balances, and CSV. */
+export interface MonthlyStatement {
+  readonly month: string;
+  readonly txns: readonly MockTxn[];
+  /** CommBank CSV text (`Date,Amount,Description,Balance`), oldest row first. */
+  readonly csv: string;
+}
+
+/**
+ * Twelve contiguous monthly statements with a running balance that carries from one month to the
+ * next, for testing the M1 gate on generated data. Each month has a pay on the 1st, a rent
+ * payment on the 2nd and a shop on the 15th and the last day, so the files abut with no day
+ * between them. Amounts and descriptions are synthetic.
+ */
+export function generateTwelveMonthStatements(options?: {
+  /** First month, `YYYY-MM`. Defaults to `2024-07` (the start of FY2025). */
+  readonly startMonth?: string | undefined;
+  /** Balance before the first row, in cents. */
+  readonly openingBalanceCents?: number | undefined;
+}): MonthlyStatement[] {
+  const [startYear, startMonth] = (options?.startMonth ?? "2024-07").split("-").map(Number) as [
+    number,
+    number,
+  ];
+  let balance = options?.openingBalanceCents ?? 100_000;
+  const statements: MonthlyStatement[] = [];
+  for (let i = 0; i < 12; i++) {
+    const index = startMonth - 1 + i;
+    const year = startYear + Math.floor(index / 12);
+    const mm = String((index % 12) + 1).padStart(2, "0");
+    const lastDay = new Date(Date.UTC(year, (index % 12) + 1, 0)).getUTCDate();
+    const day = (d: number) => `${year}-${mm}-${String(d).padStart(2, "0")}`;
+    const plan: readonly [number, number, string][] = [
+      [1, 450_000, "SALARY ACME PTY LTD"],
+      [2, -180_000, "RENT PAYMENT"],
+      [15, -(12_345 + i * 100), "WOOLWORTHS 1234 SYDNEY"],
+      [lastDay, -(6_789 + i * 50), "COLES 5678 SYDNEY"],
+    ];
+    const txns: MockTxn[] = plan.map(([d, amountCents, description]) => {
+      balance += amountCents;
+      return { postedOn: day(d), amountCents, description, balanceCents: balance };
+    });
+    statements.push({ month: `${year}-${mm}`, txns, csv: generateCommBankCsv(txns) });
+  }
+  return statements;
+}

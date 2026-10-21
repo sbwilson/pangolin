@@ -264,11 +264,6 @@ describe("applySeed", () => {
 });
 
 describe("parseSeed references", () => {
-  const first = <T extends SeedEventShape>(type: string): T => {
-    const found = seed.events.find((e) => e.type === type);
-    if (found === undefined) throw new Error(`no ${type}`);
-    return structuredClone(found) as T;
-  };
   /** The seed with `change` applied to a copy of its events. */
   const changed = (change: (events: SeedEventShape[]) => void): string => {
     const events = structuredClone(seed.events);

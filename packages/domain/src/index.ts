@@ -21,6 +21,12 @@ export {
 } from "./dedupe/fingerprint.ts";
 export { normaliseCommBankDescription } from "./normalise/commbank.ts";
 export {
+  type ReconcileResult,
+  type ReconcileRow,
+  type ReconcileStatus,
+  reconcileStatement,
+} from "./reconcile/reconcile-statement.ts";
+export {
   type DuplicateSubject,
   daysApart,
   findTransferMatch,

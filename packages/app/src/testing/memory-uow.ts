@@ -405,6 +405,14 @@ function importBatchRepo(working: MemoryState, check: () => void): ImportBatchRe
         ...(changes.rowCount !== undefined ? { rowCount: changes.rowCount } : {}),
         ...(changes.newCount !== undefined ? { newCount: changes.newCount } : {}),
         ...(changes.dupCount !== undefined ? { dupCount: changes.dupCount } : {}),
+        ...(changes.reconcileStatus !== undefined
+          ? { reconcileStatus: changes.reconcileStatus }
+          : {}),
+        ...(changes.reconcileGapCents !== undefined
+          ? { reconcileGapCents: changes.reconcileGapCents }
+          : {}),
+        ...(changes.firstPostedOn !== undefined ? { firstPostedOn: changes.firstPostedOn } : {}),
+        ...(changes.lastPostedOn !== undefined ? { lastPostedOn: changes.lastPostedOn } : {}),
         status: changes.status,
         updatedAt: at,
       };
@@ -418,6 +426,15 @@ function importBatchRepo(working: MemoryState, check: () => void): ImportBatchRe
       return working.importBatches
         .filter((b) => b.accountId === accountId)
         .sort((a, b) => byText(b.createdAt, a.createdAt));
+    },
+    listCommittedForAccount: (viewer, accountId) => {
+      requireViewer(viewer);
+      check();
+      const account = working.accounts.find((a) => a.id === accountId);
+      if (account === undefined || !accountVisible(working, viewer, account)) return [];
+      return working.importBatches
+        .filter((b) => b.accountId === accountId && b.status === "committed" && b.undoneAt === null)
+        .sort((a, b) => byText(a.createdAt, b.createdAt) || byText(a.id, b.id));
     },
     markUndone: (id, at) => {
       check();
@@ -2991,6 +3008,7 @@ export function memoryUnitOfWork(
           findByAccountAndFileSha: importBatchRepo(uow.state, check).findByAccountAndFileSha,
           listVisible: importBatchRepo(uow.state, check).listVisible,
           latestImportFor: importBatchRepo(uow.state, check).latestImportFor,
+          listCommittedForAccount: importBatchRepo(uow.state, check).listCommittedForAccount,
         },
         importRows: {
           listForBatch: importRowRepo(uow.state, check).listForBatch,

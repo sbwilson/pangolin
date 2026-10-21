@@ -275,6 +275,10 @@ describe("fixSetAsideRow", () => {
       status: "committed",
       importedByPersonId: null,
       undoneAt: null,
+      reconcileStatus: null,
+      reconcileGapCents: null,
+      firstPostedOn: null,
+      lastPostedOn: null,
       createdAt: stamp,
       updatedAt: stamp,
     } as never);

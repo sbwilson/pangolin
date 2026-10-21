@@ -14,6 +14,7 @@ import {
   BACKUP_TIME,
   type BackupProgress,
   type BackupVerification,
+  type M1Report,
   newId,
   systemClock,
 } from "@pangolin/app";
@@ -72,6 +73,10 @@ Commands:
                                 and the end-to-end run; refused unless the stack sets
                                 PANGOLIN_ENABLE_SEED=true; needs both partners signed up and an
                                 empty ledger, and the server running (exits 3 when it is not)
+  m1-report                     the M1 gate's machine check, read-only: per account, the statement
+                                coverage from 2024-07-01, the spans with no statement and the
+                                batches whose printed balances do not chain; needs the server
+                                running (exits 3 when it is not)
   restore [snapshot|latest]     on a stopped stack: fetch the snapshot (default latest), verify
     [--restore-credentials |    it, ask whether to restore the snapshot's sign-in details (sessions,
      --keep-credentials]        passkeys, authenticator, recovery codes) or keep the current ones
@@ -451,6 +456,57 @@ async function seedCli(config: Config, io: CliIo): Promise<number> {
   return EXIT_OK;
 }
 
+function dollars(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+function printM1Report(io: CliIo, report: M1Report): void {
+  io.out(`M1 gate report: statements from ${report.from}`);
+  const plural = (n: number, word: string) =>
+    `${n} ${n === 1 ? word : word.endsWith("ch") ? `${word}es` : `${word}s`}`;
+  for (const a of report.accounts) {
+    if (a.batches === 0) {
+      io.out(`${a.name}: no statements imported`);
+      continue;
+    }
+    io.out(
+      `${a.name}: ${plural(a.batches, "batch")}, ${plural(a.monthsCovered, "month")} covered, ${plural(a.holes.length, "hole")}, ${plural(a.brokenBatches.length, "broken batch")}` +
+        (a.unchecked > 0 ? ` (${a.unchecked} not balance-checked)` : ""),
+    );
+    for (const s of a.covered) io.out(`  covered  ${s.from} to ${s.to}`);
+    for (const h of a.holes) io.out(`  HOLE     ${h.from} to ${h.to} (${plural(h.days, "day")})`);
+    for (const b of a.brokenBatches) {
+      io.out(
+        `  BROKEN   batch ${b.batchId} (${b.source}, ${b.firstPostedOn ?? "?"} to ${b.lastPostedOn ?? "?"}): ${dollars(b.gapCents)} unexplained`,
+      );
+    }
+  }
+  if (report.accountsWithoutStatements > 0) {
+    io.out(
+      `${plural(report.accountsWithoutStatements, "account")} with no statements (not counted below)`,
+    );
+  }
+  io.out(
+    `Total: ${plural(report.totals.holes, "hole")}, ${plural(report.totals.brokenBatches, "broken batch")} (the gate's machine check is zero of each)`,
+  );
+}
+
+/** `m1-report`: over the admin socket only. Exit 0 whatever it finds; the human reads it. */
+async function m1ReportCli(config: Config, io: CliIo): Promise<number> {
+  if (config.adminSocket === null) {
+    io.err("pangolin: the admin socket is disabled (PANGOLIN_ADMIN_SOCKET is empty)");
+    return EXIT_FAILED;
+  }
+  const response = await viaSocket(config, "m1-report", {});
+  if (response === undefined) return notAnswering(config, io);
+  if (!response.ok) {
+    printError(io, response.error);
+    return EXIT_FAILED;
+  }
+  printM1Report(io, response.result as M1Report);
+  return EXIT_OK;
+}
+
 const VERIFY_CHECKS = new Set(["integrity", "manifest", "schema"]);
 
 /** One line from the terminal; undefined when the input ends or Ctrl-C closes it. */
@@ -556,7 +612,11 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
     return EXIT_USAGE;
   };
   if (command === undefined) return usage("name a command");
-  if (!["status", "reset-user", "backup", "restore", "confirm-bundle", "seed"].includes(command)) {
+  if (
+    !["status", "reset-user", "backup", "restore", "confirm-bundle", "seed", "m1-report"].includes(
+      command,
+    )
+  ) {
     return usage(`unknown command ${JSON.stringify(command)}`);
   }
   if (command === "status" && rest.length > 0) return usage("status takes no arguments");
@@ -566,6 +626,7 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
     return usage("confirm-bundle takes no arguments");
   }
   if (command === "seed" && rest.length > 0) return usage("seed takes no arguments");
+  if (command === "m1-report" && rest.length > 0) return usage("m1-report takes no arguments");
   const flags = rest.filter((arg) => arg.startsWith("--"));
   const operands = rest.filter((arg) => !arg.startsWith("--"));
   if (command === "restore") {
@@ -616,6 +677,8 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
         return await confirmBundleCli(config, io);
       case "seed":
         return await seedCli(config, io);
+      case "m1-report":
+        return await m1ReportCli(config, io);
       default:
         return await resetUserCli(config, options, rest[0]);
     }

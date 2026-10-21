@@ -148,6 +148,16 @@ describe("ReviewPage", () => {
     expect(within(await cardOf("imports.handoff")).getByText(/Alex/)).toBeTruthy();
   });
 
+  it("explains a balance gap in words, with no action", async () => {
+    vi.mocked(api.fetchReviewItems).mockResolvedValue([
+      card({ kind: "import.balance_gap", detail: { type: "none" } }),
+    ]);
+    renderPage();
+    const el = await cardOf("import.balance_gap");
+    expect(within(el).getByText(/printed balances do not chain/)).toBeTruthy();
+    expect(within(el).queryAllByRole("button")).toHaveLength(0);
+  });
+
   it("says so when nothing needs you, and shows no partner chip", async () => {
     vi.mocked(api.fetchReviewItems).mockResolvedValue([]);
     renderPage();

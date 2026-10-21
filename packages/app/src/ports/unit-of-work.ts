@@ -1389,6 +1389,8 @@ export type ImportBatchStatus = (typeof IMPORT_BATCH_STATUSES)[number];
 export const IMPORT_ROW_STATUSES = ["staged", "committed", "set_aside", "discarded"] as const;
 export type ImportRowStatus = (typeof IMPORT_ROW_STATUSES)[number];
 
+export type ReconcileStatus = "ok" | "gap" | "unavailable";
+
 export interface ImportBatchRow {
   readonly id: Id<"ImportBatch">;
   readonly accountId: Id<"Account">;
@@ -1402,6 +1404,13 @@ export interface ImportBatchRow {
   readonly importedByPersonId: Id<"Person"> | null;
   /** When the batch was undone (`undoImportBatch`); null while it stands. */
   readonly undoneAt: string | null;
+  /** The balance check of the file (`reconcileStatement`); null on a batch from before migration 0019. */
+  readonly reconcileStatus: ReconcileStatus | null;
+  /** The size of a broken balance chain in cents; 0 unless `reconcileStatus` is `gap`; null before 0019. */
+  readonly reconcileGapCents: number | null;
+  /** The earliest and latest `postedOn` of the file's rows; null with no rows, or before 0019. */
+  readonly firstPostedOn: string | null;
+  readonly lastPostedOn: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -1443,10 +1452,19 @@ export interface ImportBatchRepo {
       readonly newCount?: number;
       readonly dupCount?: number;
       readonly status: ImportBatchStatus;
+      readonly reconcileStatus?: ReconcileStatus | null;
+      readonly reconcileGapCents?: number | null;
+      readonly firstPostedOn?: string | null;
+      readonly lastPostedOn?: string | null;
     },
     at: string,
   ): boolean;
   listVisible(viewer: Viewer, accountId: string): ImportBatchRow[];
+  /**
+   * The account's committed, non-undone batches, oldest `createdAt` first; empty when the account
+   * is not visible to `viewer`.
+   */
+  listCommittedForAccount(viewer: Viewer, accountId: string): ImportBatchRow[];
   /** Marks a batch undone; false when it does not exist or is already undone. */
   markUndone(id: string, at: string): boolean;
   /** The IDs of the live (not soft-deleted) transactions with `importId` = `batchId`, by ID. */
@@ -1618,7 +1636,11 @@ export interface ReadRepos {
   readonly recoveryBundle: Pick<RecoveryBundleRepo, "get">;
   readonly importBatches: Pick<
     ImportBatchRepo,
-    "find" | "findByAccountAndFileSha" | "listVisible" | "latestImportFor"
+    | "find"
+    | "findByAccountAndFileSha"
+    | "listVisible"
+    | "latestImportFor"
+    | "listCommittedForAccount"
   >;
   readonly importRows: Pick<ImportRowRepo, "listForBatch" | "find">;
   readonly importHandoffs: Pick<ImportHandoffRepo, "findForRecipient" | "listForSender">;

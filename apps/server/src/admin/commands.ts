@@ -18,6 +18,8 @@ import {
   type JobCounts,
   jobCounts,
   listLogins,
+  type M1Report,
+  m1GateReport,
   type PendingJob,
   pendingJobs,
   type ReadinessOutput,
@@ -45,6 +47,7 @@ export const ADMIN_COMMANDS = [
   "backup-status",
   "confirm-bundle",
   "seed",
+  "m1-report",
 ] as const;
 export type AdminCommand = (typeof ADMIN_COMMANDS)[number];
 
@@ -275,6 +278,18 @@ export function seedCommand(deps: AdminDeps, args: unknown = {}): SeedResult {
   return { accounts, transactions, events };
 }
 
+const m1ReportArgs = z.object({}).strict();
+
+/**
+ * `m1-report`: the M1 gate's machine check (`imports.m1GateReport`), read-only: per account, the
+ * statement coverage from 1 July 2024 with its holes, and the batches whose printed balances do
+ * not chain. A read: it writes no audit row.
+ */
+export function m1ReportCommand(deps: AdminDeps, args: unknown = {}): M1Report {
+  parseArgs(m1ReportArgs, args);
+  return m1GateReport(context(deps, "m1-report"));
+}
+
 export function isAdminCommand(command: string): command is AdminCommand {
   return (ADMIN_COMMANDS as readonly string[]).includes(command);
 }
@@ -295,5 +310,7 @@ export function runAdminCommand(deps: AdminDeps, command: string, args: unknown)
       return confirmBundleCommand(deps, args);
     case "seed":
       return seedCommand(deps, args);
+    case "m1-report":
+      return m1ReportCommand(deps, args);
   }
 }

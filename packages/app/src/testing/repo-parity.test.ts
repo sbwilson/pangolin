@@ -1513,6 +1513,10 @@ function scenario(
     status,
     importedByPersonId: a,
     undoneAt: null,
+    reconcileStatus: null,
+    reconcileGapCents: null,
+    firstPostedOn: null,
+    lastPostedOn: null,
     createdAt,
     updatedAt: createdAt,
   });
@@ -1544,6 +1548,34 @@ function scenario(
     r.importBatches.listLiveTransactionIds(freshOld).length,
     r.importBatches.listLiveTransactionIds("nobody"),
     throws(() => r.importBatches.latestImportFor(undefined as never, freshAcct)),
+  ]);
+  // The M1 report's reads: committed, non-undone batches in order, and the reconcile columns.
+  out["fresh.reconcile"] = tx((r) => [
+    r.importBatches.listCommittedForAccount(system, freshAcct).map((b) => b.id === freshOld),
+    r.importBatches.listCommittedForAccount(asA, freshAcct).length,
+    r.importBatches.listCommittedForAccount(asB, freshAcct).length,
+    r.importBatches.listCommittedForAccount(system, "nobody"),
+    r.importBatches.updateCountsAndStatus(
+      freshOld,
+      {
+        status: "committed",
+        reconcileStatus: "gap",
+        reconcileGapCents: 250,
+        firstPostedOn: "2026-09-01",
+        lastPostedOn: "2026-09-30",
+      },
+      T2,
+    ),
+    r.importBatches.updateCountsAndStatus(freshNew, { status: "committed", newCount: 3 }, T2),
+    (() => {
+      const b = r.importBatches.find(system, freshOld);
+      return [b?.reconcileStatus, b?.reconcileGapCents, b?.firstPostedOn, b?.lastPostedOn];
+    })(),
+    (() => {
+      const b = r.importBatches.find(system, freshNew);
+      return [b?.reconcileStatus, b?.reconcileGapCents, b?.firstPostedOn, b?.lastPostedOn];
+    })(),
+    throws(() => r.importBatches.listCommittedForAccount(undefined as never, freshAcct)),
   ]);
   out["fresh.undone"] = tx((r) => [
     r.importBatches.markUndone(freshNew, T2),
@@ -1787,6 +1819,10 @@ function scenario(
       status: "committed",
       importedByPersonId: null,
       undoneAt: null,
+      reconcileStatus: null,
+      reconcileGapCents: null,
+      firstPostedOn: null,
+      lastPostedOn: null,
       createdAt: T,
       updatedAt: T,
     });

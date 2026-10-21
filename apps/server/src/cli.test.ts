@@ -10,7 +10,22 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Db, loadMigrations, openDatabase, packageMigrationsDir } from "@pangolin/db";
+import {
+  createAccount,
+  createIdGenerator,
+  importStatement,
+  personViewer,
+  systemClock,
+  undoImportBatch,
+} from "@pangolin/app";
+import {
+  createUnitOfWork,
+  type Db,
+  loadMigrations,
+  openDatabase,
+  packageMigrationsDir,
+} from "@pangolin/db";
+import { generateCommBankCsv, generateTwelveMonthStatements } from "@pangolin/importers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { acquireDataDirLock } from "./admin/lock.ts";
 import {
@@ -145,6 +160,11 @@ describe("pangolin (the admin CLI)", () => {
       code: EXIT_USAGE,
       err: /seed takes no arguments/,
     });
+    expect(await cli(["m1-report", "now"])).toMatchObject({
+      code: EXIT_USAGE,
+      err: /m1-report takes no arguments/,
+    });
+    expect(await cli(["--help"])).toMatchObject({ out: /m1-report/ });
     expect(await cli(["--help"])).toMatchObject({ out: /confirm-bundle/ });
     expect(await cli(["--help"])).toMatchObject({ out: /seed {26}load the demo seed/ });
   });
@@ -752,5 +772,147 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
       expect(alexState().password).toBe("reset-hash");
       expect(readdirSync(dataDir()).filter((name) => name.includes("restore-"))).toHaveLength(1);
     }
+  });
+});
+
+describe("pangolin m1-report (the M1 gate's machine check)", () => {
+  /** Imports into a new account through the app use cases, on a connection beside the server's. */
+  function arrange(
+    run: (api: {
+      ctx: Parameters<typeof importStatement>[0];
+      accountId: Parameters<typeof importStatement>[1]["accountId"];
+    }) => void,
+  ) {
+    withDb((db) => {
+      const existing = db.prepare("SELECT id FROM person LIMIT 1").get() as
+        | { id: string }
+        | undefined;
+      const personId = existing?.id ?? addLogin(db, "alex@example.com", "Alex");
+      const clock = systemClock("UTC");
+      let ms = Date.now();
+      const newId = createIdGenerator({ now: () => ++ms, random: Math.random });
+      const ctx = {
+        viewer: personViewer(personId as never, clock.now()),
+        clock,
+        newId,
+        uow: createUnitOfWork(db),
+      };
+      const found = db.prepare("SELECT id FROM account LIMIT 1").get() as
+        | { id: string }
+        | undefined;
+      const accountId =
+        (found?.id as never) ??
+        createAccount(ctx, {
+          name: "Everyday",
+          type: "transaction",
+          currency: "AUD",
+          isPrivate: false,
+          owners: [{ personId: personId as never, shareBp: 10000 }],
+        });
+      run({ ctx, accountId });
+    });
+  }
+
+  it("reports zero gaps and twelve months for twelve generated monthly statements", async () => {
+    await boot();
+    const statements = generateTwelveMonthStatements();
+    expect(statements).toHaveLength(12);
+    arrange(({ ctx, accountId }) => {
+      for (const statement of statements) {
+        const res = importStatement(ctx, {
+          accountId,
+          format: "commbank_csv",
+          content: statement.csv,
+        });
+        expect(res.newCount).toBe(statement.txns.length);
+      }
+      // Importing a file again adds no batch.
+      const again = importStatement(ctx, {
+        accountId,
+        format: "commbank_csv",
+        content: statements[0]?.csv ?? "",
+      });
+      expect(again.newCount).toBe(0);
+      const rows = ctx.uow.read((r) =>
+        r.importBatches.listCommittedForAccount(ctx.viewer, accountId),
+      );
+      expect(rows).toHaveLength(12);
+      expect(rows.every((b) => b.reconcileStatus === "ok" && b.reconcileGapCents === 0)).toBe(true);
+    });
+    const result = await cli(["m1-report"]);
+    expect(result.err).toBe("");
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.out).toContain(
+      "Everyday: 12 batches, 12 months covered, 0 holes, 0 broken batches",
+    );
+    expect(result.out).toContain("covered  2024-07-01 to 2025-06-30");
+    expect(result.out).toContain("Total: 0 holes, 0 broken batches");
+  });
+
+  it("lists a missing month and a statement with a dropped row; an undone batch no longer counts", async () => {
+    await boot();
+    const statements = generateTwelveMonthStatements();
+    arrange(({ ctx, accountId }) => {
+      for (const [i, statement] of statements.entries()) {
+        if (i === 3) continue; // October 2024 never imported
+        const txns = i === 5 ? statement.txns.filter((_, j) => j !== 1) : statement.txns;
+        importStatement(ctx, {
+          accountId,
+          format: "commbank_csv",
+          content: generateCommBankCsv(txns),
+        });
+      }
+    });
+    const result = await cli(["m1-report"]);
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.out).toContain("1 hole, 1 broken batch");
+    expect(result.out).toContain("HOLE     2024-10-01 to 2024-10-31 (31 days)");
+    expect(result.out).toMatch(
+      /BROKEN {3}batch \S+ \(commbank_csv, 2024-12-01 to 2024-12-31\): \$1800\.00 unexplained/,
+    );
+    expect(result.out).toContain("Total: 1 hole, 1 broken batch");
+    arrange(({ ctx }) => {
+      const batch = ctx.uow
+        .read((r) => r.accounts.list(ctx.viewer))
+        .flatMap((a) =>
+          ctx.uow.read((r) => r.importBatches.listCommittedForAccount(ctx.viewer, a.id)),
+        )
+        .find((b) => b.reconcileStatus === "gap");
+      undoImportBatch(ctx, { batchId: batch?.id ?? "" });
+    });
+    // The undone batch's month is now uncovered too, and its break no longer counts.
+    const after = (await cli(["m1-report"])).out;
+    expect(after).toContain("HOLE     2024-12-01 to 2024-12-31 (31 days)");
+    expect(after).toContain("Total: 2 holes, 0 broken batches");
+  });
+
+  it("says so for an account with no statements and for batches that are not balance-checked", async () => {
+    await boot();
+    arrange(({ ctx, accountId }) => {
+      importStatement(ctx, {
+        accountId,
+        format: "up_csv",
+        content:
+          "Time,Settled Date,Description,Amount,Status\n2024-07-01T00:00:00Z,2024-07-01,A,-10.00,SETTLED\n2024-07-31T00:00:00Z,2024-07-31,B,-5.00,SETTLED",
+      });
+      createAccount(ctx, {
+        name: "Empty",
+        type: "transaction",
+        currency: "AUD",
+        isPrivate: false,
+        owners: [
+          { personId: (ctx.viewer as unknown as { personId: never }).personId, shareBp: 10000 },
+        ],
+      });
+    });
+    const result = await cli(["m1-report"]);
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.out).toContain("Empty: no statements imported");
+    expect(result.out).toContain("(1 not balance-checked)");
+    expect(result.out).toContain("1 account with no statements (not counted below)");
+  });
+
+  it("says so when the server is not running, exit 3", async () => {
+    expect(await cli(["m1-report"])).toMatchObject({ code: EXIT_NOT_RUNNING });
   });
 });

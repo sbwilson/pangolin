@@ -15,6 +15,7 @@ const KIND_LABEL: Readonly<Record<string, string>> = {
   "import.probable_duplicate": "Possible duplicate",
   "import.transfer_ambiguous": "Possible transfer",
   "import.set_aside": "Rows set aside",
+  "import.balance_gap": "Balance gap",
   "imports.handoff": "File from your partner",
   "identity.partner-reset": "Account recovery",
   "identity.recovery-code-used": "Recovery code used",

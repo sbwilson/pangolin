@@ -71,6 +71,10 @@ export function undoImportBatch(
       dedupeKey: `import.set_aside:${batch.id}`,
       resolution: "import undone",
     });
+    resolveReviewItem(tx, audit, ctx, {
+      dedupeKey: `import.balance_gap:${batch.id}`,
+      resolution: "import undone",
+    });
     const at = formatInstant(ctx.clock.now());
     if (!tx.importBatches.markUndone(batch.id, at)) {
       throw new AppError("Conflict", "This import was already undone");

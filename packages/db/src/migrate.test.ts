@@ -43,7 +43,7 @@ describe("committed migrations", () => {
     expect(loadMigrations(packageMigrationsDir)[0]?.name).toBe("0000_baseline");
   });
 
-  it("migrates a fresh database to version 19, then re-applies nothing", () => {
+  it("migrates a fresh database to version 20, then re-applies nothing", () => {
     const migrations = loadMigrations(packageMigrationsDir);
     const names = [
       "0000_baseline",
@@ -65,10 +65,11 @@ describe("committed migrations", () => {
       "0016_rule_schema",
       "0017_attachment_and_handoff",
       "0018_batch_undo_and_importer",
+      "0019_batch_reconcile",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 19 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 19 });
-    expect(schemaVersion(db)).toBe(19);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 20 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 20 });
+    expect(schemaVersion(db)).toBe(20);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });
@@ -101,6 +102,46 @@ describe("committed migrations", () => {
     expect(cols).toContain("imported_by_person_id");
     expect(cols).toContain("undone_at");
     expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+
+  it("adds the reconcile columns to import_batch when 0018 upgrades to 0019", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 19));
+    expect(schemaVersion(db)).toBe(19);
+    expect(migrate(db, migrations.slice(0, 20)).applied).toEqual(["0019_batch_reconcile"]);
+    expect(schemaVersion(db)).toBe(20);
+    const cols = (
+      db.pragma("table_info(import_batch)") as { name: string; notnull: number }[]
+    ).filter((c) => c.name.startsWith("reconcile_") || c.name.endsWith("_posted_on"));
+    expect(cols.map((c) => c.name).sort()).toEqual([
+      "first_posted_on",
+      "last_posted_on",
+      "reconcile_gap_cents",
+      "reconcile_status",
+    ]);
+    expect(cols.every((c) => c.notnull === 0)).toBe(true);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+
+  it("backfills the posted-date span of existing batches, leaving reconcile_status null", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 19));
+    db.exec(`
+      INSERT INTO account (id, name, type, currency, is_private, created_at, updated_at) VALUES ('A1','Joint','transaction','AUD',0,'t','t');
+      INSERT INTO import_batch (id, account_id, source, file_sha256, status, created_at, updated_at) VALUES ('B1','A1','commbank_csv','s1','committed','t','t');
+      INSERT INTO import_batch (id, account_id, source, file_sha256, status, created_at, updated_at) VALUES ('B2','A1','commbank_csv','s2','committed','t','t');
+      INSERT INTO "transaction" (id, account_id, posted_on, amount_cents, description_raw, status, fingerprint, fingerprint_version, import_id, created_at, updated_at) VALUES ('T1','A1','2026-09-05',-100,'x','posted','f1',1,'B1','t','t');
+      INSERT INTO "transaction" (id, account_id, posted_on, amount_cents, description_raw, status, fingerprint, fingerprint_version, import_id, created_at, updated_at) VALUES ('T2','A1','2026-09-20',-100,'y','posted','f2',1,'B1','t','t');
+    `);
+    migrate(db, migrations.slice(0, 20));
+    const batch = (id: string) =>
+      db
+        .prepare(
+          "SELECT first_posted_on AS first, last_posted_on AS last, reconcile_status AS status FROM import_batch WHERE id = ?",
+        )
+        .get(id);
+    expect(batch("B1")).toEqual({ first: "2026-09-05", last: "2026-09-20", status: null });
+    expect(batch("B2")).toEqual({ first: null, last: null, status: null });
   });
 
   it("creates import_batch and import_row tables when 0014 upgrades to 0015", () => {

@@ -348,12 +348,20 @@ export {
   MAX_HANDOFF_BYTES,
 } from "./imports/handoff.ts";
 export {
+  IMPORT_BALANCE_GAP_REVIEW,
   type ImportStatementInput,
   type ImportStatementOptions,
   type ImportStatementResult,
   importStatement,
   importStatementInput,
 } from "./imports/import-statement.ts";
+export {
+  type DaySpan,
+  type M1AccountReport,
+  type M1BrokenBatch,
+  type M1Report,
+  m1GateReport,
+} from "./imports/m1-report.ts";
 export {
   dismissTransferAmbiguity,
   IMPORT_PROBABLE_DUPLICATE_REVIEW,
@@ -628,6 +636,7 @@ export {
   type PayeeAliasRow,
   type PayeeRepo,
   type PayeeRow,
+  type ReconcileStatus,
   type ScopedReference,
   type ScopedReferences,
   type ScopedRows,

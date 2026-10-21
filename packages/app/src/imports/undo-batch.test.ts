@@ -194,6 +194,10 @@ describe("undoImportBatch", () => {
       ...x,
       importedByPersonId: null,
       undoneAt: null,
+      reconcileStatus: null,
+      reconcileGapCents: null,
+      firstPostedOn: null,
+      lastPostedOn: null,
     }));
     expect(code(() => undoImportBatch(ctx, { batchId: res.batchId }))).toBe("Conflict");
   });

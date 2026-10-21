@@ -3,6 +3,9 @@ import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-o
 import { account } from "./account.ts";
 import { person } from "./person.ts";
 
+/** `ok | gap | unavailable`; null on a batch from before migration 0019. */
+export type ReconcileStatus = "ok" | "gap" | "unavailable";
+
 export const IMPORT_BATCH_STATUSES = ["staged", "ready", "committed", "failed"] as const;
 export type ImportBatchStatus = (typeof IMPORT_BATCH_STATUSES)[number];
 
@@ -25,6 +28,10 @@ export const importBatch = sqliteTable(
     status: text("status").notNull(),
     importedByPersonId: text("imported_by_person_id").references(() => person.id),
     undoneAt: text("undone_at"),
+    reconcileStatus: text("reconcile_status").$type<ReconcileStatus>(),
+    reconcileGapCents: integer("reconcile_gap_cents"),
+    firstPostedOn: text("first_posted_on"),
+    lastPostedOn: text("last_posted_on"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

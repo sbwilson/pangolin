@@ -74,15 +74,15 @@ function dockerStubLines(): string[] {
     "    ;;",
     // Health status — pre-upgrade uses STUB_HEALTH; post-upgrade (after .env.bak exists) uses STUB_HEALTH_AFTER
     '  "inspect --format {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} container-id")',
-    '    if [ -f "${HOME_DIR}/.env.bak" ]; then',
-    '      echo "${STUB_HEALTH_AFTER:-healthy}"',
+    `    if [ -f "\${HOME_DIR}/.env.bak" ]; then`,
+    `      echo "\${STUB_HEALTH_AFTER:-healthy}"`,
     "    else",
-    '      echo "${STUB_HEALTH:-healthy}"',
+    `      echo "\${STUB_HEALTH:-healthy}"`,
     "    fi",
     "    ;;",
     // New-container health check (after up -d)
     '  "inspect --format {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} "*)',
-    '    echo "${STUB_HEALTH_AFTER:-healthy}"',
+    `    echo "\${STUB_HEALTH_AFTER:-healthy}"`,
     "    ;;",
     // Current image from running container
     '  "inspect --format {{.Config.Image}} container-id")',
@@ -103,14 +103,14 @@ function dockerStubLines(): string[] {
     "    ;;",
     // compose stop
     '  "compose "*stop*pangolin*)',
-    '    [ -f "${HOME_DIR}/.env.bak" ] && [ "$STUB_ROLLBACK_FAIL" = 1 ] && { echo "stop failed" >&2; exit 1; }',
+    `    [ -f "\${HOME_DIR}/.env.bak" ] && [ "$STUB_ROLLBACK_FAIL" = 1 ] && { echo "stop failed" >&2; exit 1; }`,
     "    ;;",
     // compose up
     '  "compose "*up*pangolin*)',
     "    ;;",
     // DB backup/restore (one-off sh -c in the running image)
     "  *entrypoint*sh*-c*sqlite*|*entrypoint*sh*-c*cp*backup*|*entrypoint*sh*-c*rm*sqlite*|*entrypoint*sh*-c*upgrade-failed*)",
-    '    [ "$STUB_BACKUP_FAIL" = 1 ] && [ ! -f "${HOME_DIR}/.env.bak" ] && exit 1',
+    `    [ "$STUB_BACKUP_FAIL" = 1 ] && [ ! -f "\${HOME_DIR}/.env.bak" ] && exit 1`,
     '    [ "$STUB_BACKUP_FAIL" = 1 ] && case "$*" in *"cp -a /data"*) exit 1 ;; esac',
     '    case "$*" in *sha256sum*) [ "$STUB_COPY_MISMATCH" = 1 ] && exit 1 ;; esac',
     // The rollback restore: the guard may be made to fail; otherwise it records that it ran.
@@ -119,7 +119,7 @@ function dockerStubLines(): string[] {
     `      echo restore-ran >> "${at("cmd.log")}" ;; esac`,
     // A real copy lands in the host directory mounted at /backup (empty when STUB_BACKUP_EMPTY=1).
     '    case "$*" in *"cp -a /data"*)',
-    '      a="$*"; d=${a#*-v }; d=${d#*-v }; d=${d%%:/backup*}',
+    `      a="$*"; d=\${a#*-v }; d=\${d#*-v }; d=\${d%%:/backup*}`,
     '      if [ "$STUB_BACKUP_EMPTY" = 1 ]; then : > "$d/pangolin.sqlite"; else echo db > "$d/pangolin.sqlite"; fi ;; esac',
     "    ;;",
     // Extract files from new image into staging

@@ -103,10 +103,10 @@ describe("identity.preferences", () => {
     it("rejects invalid theme with Validation error", () => {
       const { ctx, alexViewer } = setup();
       expect(() =>
-        updatePreferences({ ...ctx, viewer: alexViewer }, { theme: "neon-pink" as any }),
+        updatePreferences({ ...ctx, viewer: alexViewer }, { theme: "neon-pink" as never }),
       ).toThrow(AppError);
       try {
-        updatePreferences({ ...ctx, viewer: alexViewer }, { theme: "neon-pink" as any });
+        updatePreferences({ ...ctx, viewer: alexViewer }, { theme: "neon-pink" as never });
       } catch (err) {
         expect((err as AppError).code).toBe("Validation");
       }
@@ -115,10 +115,10 @@ describe("identity.preferences", () => {
     it("rejects invalid mode with Validation error", () => {
       const { ctx, alexViewer } = setup();
       expect(() =>
-        updatePreferences({ ...ctx, viewer: alexViewer }, { mode: "sunset" as any }),
+        updatePreferences({ ...ctx, viewer: alexViewer }, { mode: "sunset" as never }),
       ).toThrow(AppError);
       try {
-        updatePreferences({ ...ctx, viewer: alexViewer }, { mode: "sunset" as any });
+        updatePreferences({ ...ctx, viewer: alexViewer }, { mode: "sunset" as never });
       } catch (err) {
         expect((err as AppError).code).toBe("Validation");
       }

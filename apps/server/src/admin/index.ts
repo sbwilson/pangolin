@@ -13,6 +13,7 @@ export {
   confirmBundleCommand,
   isAdminCommand,
   type LoginChoice,
+  m1ReportCommand,
   type ResetUserDeps,
   type ResetUserOutput,
   resetUserCommand,

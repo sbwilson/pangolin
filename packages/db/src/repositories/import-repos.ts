@@ -60,6 +60,14 @@ export function createImportBatchRepo(
           ...(changes.rowCount !== undefined ? { rowCount: changes.rowCount } : {}),
           ...(changes.newCount !== undefined ? { newCount: changes.newCount } : {}),
           ...(changes.dupCount !== undefined ? { dupCount: changes.dupCount } : {}),
+          ...(changes.reconcileStatus !== undefined
+            ? { reconcileStatus: changes.reconcileStatus }
+            : {}),
+          ...(changes.reconcileGapCents !== undefined
+            ? { reconcileGapCents: changes.reconcileGapCents }
+            : {}),
+          ...(changes.firstPostedOn !== undefined ? { firstPostedOn: changes.firstPostedOn } : {}),
+          ...(changes.lastPostedOn !== undefined ? { lastPostedOn: changes.lastPostedOn } : {}),
           status: changes.status,
           updatedAt: at,
         })
@@ -76,6 +84,25 @@ export function createImportBatchRepo(
         .from(importBatch)
         .where(and(eq(importBatch.accountId, accountId), visible))
         .orderBy(desc(importBatch.createdAt))
+        .all();
+      return rows as ImportBatchRow[];
+    },
+
+    listCommittedForAccount: (viewer, accountId) => {
+      check();
+      const visible = visibleAccountId(importBatch.accountId, viewer);
+      const rows = orm
+        .select()
+        .from(importBatch)
+        .where(
+          and(
+            eq(importBatch.accountId, accountId),
+            eq(importBatch.status, "committed"),
+            isNull(importBatch.undoneAt),
+            visible,
+          ),
+        )
+        .orderBy(asc(importBatch.createdAt), asc(importBatch.id))
         .all();
       return rows as ImportBatchRow[];
     },

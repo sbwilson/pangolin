@@ -133,6 +133,10 @@ describe("SQLite Import Repositories & Dedupe", () => {
         status: "staged",
         importedByPersonId: null,
         undoneAt: null,
+        reconcileStatus: null,
+        reconcileGapCents: null,
+        firstPostedOn: null,
+        lastPostedOn: null,
         createdAt: at,
         updatedAt: at,
       });
@@ -148,6 +152,10 @@ describe("SQLite Import Repositories & Dedupe", () => {
         status: "committed",
         importedByPersonId: null,
         undoneAt: null,
+        reconcileStatus: null,
+        reconcileGapCents: null,
+        firstPostedOn: null,
+        lastPostedOn: null,
         createdAt: at,
         updatedAt: at,
       });
@@ -222,6 +230,10 @@ describe("SQLite Import Repositories & Dedupe", () => {
         status: "staged",
         importedByPersonId: null,
         undoneAt: null,
+        reconcileStatus: null,
+        reconcileGapCents: null,
+        firstPostedOn: null,
+        lastPostedOn: null,
         createdAt: at,
         updatedAt: at,
       });

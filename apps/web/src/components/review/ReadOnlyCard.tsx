@@ -8,6 +8,8 @@ function readOnlyText(card: ReviewCard, detail: ReviewDetail): string {
       const name = detail.type === "account" ? detail.accountName : null;
       return `${name ?? "A closed account"} closed with a balance. It clears when the balance reaches zero or the account is reopened.`;
     }
+    case "import.balance_gap":
+      return "This statement's printed balances do not chain, so a row may be missing or changed. Undo the import, then import a corrected file.";
     case "system.upgrade-failed":
       return "The last upgrade did not finish. The server rolled back; check the system status.";
     case "system.restored":
