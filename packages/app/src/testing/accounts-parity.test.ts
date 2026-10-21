@@ -33,6 +33,7 @@ import {
   getAccount,
   getTransaction,
   hideTransactionName,
+  importStatement,
   leaveHousehold,
   listAccounts,
   listActivities,
@@ -51,6 +52,7 @@ import {
   setSplitTags,
   syncClosingBalances,
   type UseCaseContext,
+  undoImportBatch,
   unhideTransactionName,
   updateAccount,
   updateTransaction,
@@ -143,15 +145,35 @@ describe("memory mirror parity", () => {
       const edited = outcome(() => updateAccount(ctxs.as(pb), { id: acct, owners: own(pa) }));
       const pooled = getAccount(A, { id: acct }).pool;
       const madePrivate = outcome(() => setPrivacy(A, { id: acct, isPrivate: true }));
+      // Freshness and provenance follow the newest batch that is not undone.
+      const csv = (day: string) => `Date,Amount,Description,Balance\n${day},-1.00,"X ${day}",0.00`;
+      const first = importStatement(A, {
+        accountId: acct,
+        format: "commbank_csv",
+        content: csv("03/09/2026"),
+      });
+      const second = importStatement(A, {
+        accountId: acct,
+        format: "commbank_csv",
+        content: csv("20/09/2026"),
+      });
+      const imported = getAccount(A, { id: acct }).lastImport;
+      undoImportBatch(A, { batchId: second.batchId });
+      const fallback = getAccount(A, { id: acct }).lastImport;
+      undoImportBatch(A, { batchId: first.batchId });
+      const cleared = getAccount(A, { id: acct }).lastImport;
       return {
         balances,
         pool: view.pool,
         owners: view.owners,
-        newestPostedOn: view.newestPostedOn,
+        lastImport: view.lastImport,
         removedOther,
         edited,
         pooled,
         madePrivate,
+        imported,
+        fallback,
+        cleared,
       };
     };
     const sqlite = run({ sys, as }, a, b);
@@ -182,8 +204,20 @@ describe("memory mirror parity", () => {
     ] as const) {
       expect(result.balances, who).toEqual([0, 5000, 4800, 4100, 4125]);
       expect(result.pool, who).toBe("shared");
-      // The newest live line; the soft-deleted 14 Sep does not count.
-      expect(result.newestPostedOn, who).toBe("2026-09-12");
+      // Manual entries only: no import, so no freshness.
+      expect(result.lastImport, who).toBeNull();
+      const importedAt = "2026-09-27T00:00:00.000Z";
+      expect(result.imported, who).toEqual({
+        through: "2026-09-20",
+        source: "commbank_csv",
+        importedAt,
+      });
+      expect(result.fallback, who).toEqual({
+        through: "2026-09-03",
+        source: "commbank_csv",
+        importedAt,
+      });
+      expect(result.cleared, who).toBeNull();
       expect(result.removedOther, who).toBe("ok");
       expect(result.edited, who).toBe("Validation");
       expect(result.pooled, who).not.toBe("shared");

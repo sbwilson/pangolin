@@ -27,7 +27,7 @@ export function listAccounts(ctx: UseCaseContext, input: ListAccountsInput = {})
 /** The view of one account the viewer can see, with the removal marker for a removed person. */
 function viewOf(
   ctx: UseCaseContext,
-  repos: Pick<ReadRepos, "accounts" | "audit" | "balanceSnapshots" | "transactions">,
+  repos: Pick<ReadRepos, "accounts" | "audit" | "balanceSnapshots" | "importBatches">,
   row: AccountRow,
   today: string,
 ): AccountView {
@@ -42,7 +42,7 @@ function viewOf(
     owners,
     removal,
     closingBalanceWarning(repos, viewer, row, today),
-    repos.transactions.latestPostedOn(viewer, row.id) ?? null,
+    repos.importBatches.latestImportFor(viewer, row.id) ?? null,
   );
 }
 

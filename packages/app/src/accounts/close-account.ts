@@ -63,7 +63,7 @@ export function closeAccount(ctx: UseCaseContext, input: CloseAccountInput): Acc
       owners,
       undefined,
       closingBalanceWarning(tx, ctx.viewer, after, today),
-      tx.transactions.latestPostedOn(ctx.viewer, after.id) ?? null,
+      tx.importBatches.latestImportFor(ctx.viewer, after.id) ?? null,
     );
   });
 }

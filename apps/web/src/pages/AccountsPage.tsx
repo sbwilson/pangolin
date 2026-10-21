@@ -36,15 +36,15 @@ export function LockIcon() {
   );
 }
 
-/** "to 30 Sep", in the warning colour (with the word "stale") when the newest line is old. */
+/** "imported up to 30 Sep from ofx, 14:05", in the warning colour (with the word "stale") when that day is old. */
 export function Freshness({ account, today }: { account: AccountView; today: string }) {
-  const stale = isStale(account.newestPostedOn, today);
+  const stale = isStale(account.lastImport?.through ?? null, today);
   return (
     <span
       data-stale={stale ? "true" : undefined}
       className={cn("text-xs", stale ? "text-warning" : "text-muted-foreground")}
     >
-      {freshnessLabel(account.newestPostedOn)}
+      {freshnessLabel(account.lastImport)}
       {stale ? " (stale)" : ""}
     </span>
   );

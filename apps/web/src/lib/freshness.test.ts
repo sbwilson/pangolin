@@ -8,14 +8,17 @@ describe("isStale", () => {
     expect(isStale("2026-10-07", "2026-10-07")).toBe(false);
   });
 
-  it("is never stale without a transaction", () => {
+  it("is never stale without an import", () => {
     expect(isStale(null, "2026-10-07")).toBe(false);
   });
 });
 
 describe("freshnessLabel", () => {
-  it("names the day the data runs to", () => {
-    expect(freshnessLabel("2026-09-30")).toBe("to 30 Sep");
-    expect(freshnessLabel(null)).toBe("No transactions yet");
+  it("names the day, source and time of the last import", () => {
+    const importedAt = new Date(2026, 9, 7, 14, 5).toISOString(); // 14:05 in the local zone
+    expect(freshnessLabel({ through: "2026-09-30", source: "ofx", importedAt })).toBe(
+      "imported up to 30 Sep from ofx, 14:05",
+    );
+    expect(freshnessLabel(null)).toBe("No imports yet");
   });
 });

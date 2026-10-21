@@ -984,6 +984,8 @@ export function importStatement(
       newCount: 0,
       dupCount: 0,
       status: "staged",
+      importedByPersonId: ctx.viewer.kind === "person" ? ctx.viewer.personId : null,
+      undoneAt: null,
       createdAt: at,
       updatedAt: at,
     };

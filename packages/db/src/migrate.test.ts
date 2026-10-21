@@ -43,7 +43,7 @@ describe("committed migrations", () => {
     expect(loadMigrations(packageMigrationsDir)[0]?.name).toBe("0000_baseline");
   });
 
-  it("migrates a fresh database to version 18, then re-applies nothing", () => {
+  it("migrates a fresh database to version 19, then re-applies nothing", () => {
     const migrations = loadMigrations(packageMigrationsDir);
     const names = [
       "0000_baseline",
@@ -64,10 +64,11 @@ describe("committed migrations", () => {
       "0015_import_batch_and_row",
       "0016_rule_schema",
       "0017_attachment_and_handoff",
+      "0018_batch_undo_and_importer",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 18 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 18 });
-    expect(schemaVersion(db)).toBe(18);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 19 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 19 });
+    expect(schemaVersion(db)).toBe(19);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });
@@ -87,6 +88,18 @@ describe("committed migrations", () => {
     expect(schemaVersion(db)).toBe(17);
     expect(migrate(db, migrations.slice(0, 18)).applied).toEqual(["0017_attachment_and_handoff"]);
     expect(schemaVersion(db)).toBe(18);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+
+  it("adds importer and undone_at to import_batch when 0017 upgrades to 0018", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 18));
+    expect(schemaVersion(db)).toBe(18);
+    expect(migrate(db, migrations.slice(0, 19)).applied).toEqual(["0018_batch_undo_and_importer"]);
+    expect(schemaVersion(db)).toBe(19);
+    const cols = (db.pragma("table_info(import_batch)") as { name: string }[]).map((c) => c.name);
+    expect(cols).toContain("imported_by_person_id");
+    expect(cols).toContain("undone_at");
     expect(db.pragma("foreign_key_check")).toEqual([]);
   });
 

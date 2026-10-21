@@ -36,6 +36,7 @@ import { createJobRepo } from "./job-repo.ts";
 import {
   createAccountRepo,
   createBalanceSnapshotRepo,
+  createBatchTransactionReads,
   createInstitutionRepo,
   createTransactionRepo,
   createTransferGroupRepo,
@@ -257,7 +258,11 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     backups: createBackupSnapshotRepo(orm, () => guard(scope)),
     backupVerifications: createBackupVerificationRepo(orm, () => guard(scope)),
     recoveryBundle: createRecoveryBundleRepo(orm, () => guard(scope)),
-    importBatches: createImportBatchRepo(orm, () => guard(scope)),
+    importBatches: createImportBatchRepo(
+      orm,
+      () => guard(scope),
+      createBatchTransactionReads(orm, () => guard(scope)),
+    ),
     importRows: createImportRowRepo(orm, () => guard(scope)),
     attachments: createAttachmentRepo(orm, () => guard(scope)),
     importHandoffs: createImportHandoffRepo(orm, () => guard(scope)),
@@ -369,6 +374,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               find: repos.importBatches.find,
               findByAccountAndFileSha: repos.importBatches.findByAccountAndFileSha,
               listVisible: repos.importBatches.listVisible,
+              latestImportFor: repos.importBatches.latestImportFor,
             },
             importRows: {
               listForBatch: repos.importRows.listForBatch,

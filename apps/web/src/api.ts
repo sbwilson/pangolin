@@ -499,6 +499,14 @@ export interface AccountWarning {
   readonly balanceCents: number;
 }
 
+/** How fresh an account's imported data is and where it came from. */
+export interface LastImport {
+  readonly through: string;
+  readonly source: string;
+  /** UTC ISO-8601 instant the import ran. */
+  readonly importedAt: string;
+}
+
 /** An account as the accounts API returns it: the row, its owners and shares, and its pool. */
 export interface AccountView {
   readonly id: string;
@@ -514,8 +522,11 @@ export interface AccountView {
   readonly owners: readonly { readonly personId: string; readonly shareBp: number }[];
   /** `shared`, or the sole owner's person ID. */
   readonly pool: string;
-  /** The newest `postedOn` among the account's live transactions; null when it has none. */
-  readonly newestPostedOn: string | null;
+  /**
+   * The newest `postedOn` (`through`) among the live transactions of the account's non-undone
+   * imports, with the newest such import's source and time; null when it has none.
+   */
+  readonly lastImport: LastImport | null;
   /** Present when a closed cash account closed with a non-zero balance. */
   readonly warning?: AccountWarning;
 }

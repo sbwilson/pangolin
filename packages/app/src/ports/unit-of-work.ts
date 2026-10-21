@@ -1392,8 +1392,22 @@ export interface ImportBatchRow {
   readonly newCount: number;
   readonly dupCount: number;
   readonly status: ImportBatchStatus;
+  /** Who imported the batch (the viewer; a hand-off's recipient); null for the system or a batch from before migration 0018. */
+  readonly importedByPersonId: Id<"Person"> | null;
+  /** When the batch was undone (`undoImportBatch`); null while it stands. */
+  readonly undoneAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+/** An account's import freshness and provenance, derived from its non-undone committed batches. */
+export interface LatestImport {
+  /** The newest `postedOn` among the live transactions of those batches. */
+  readonly through: string;
+  /** The newest such batch's `source`. */
+  readonly source: string;
+  /** The newest such batch's `createdAt`. */
+  readonly importedAt: string;
 }
 
 export interface ImportRowRow {
@@ -1427,6 +1441,16 @@ export interface ImportBatchRepo {
     at: string,
   ): boolean;
   listVisible(viewer: Viewer, accountId: string): ImportBatchRow[];
+  /** Marks a batch undone; false when it does not exist or is already undone. */
+  markUndone(id: string, at: string): boolean;
+  /** The IDs of the live (not soft-deleted) transactions with `importId` = `batchId`, by ID. */
+  listLiveTransactionIds(batchId: string): string[];
+  /**
+   * The newest live `postedOn` across the account's non-undone committed batches, with the
+   * newest such batch's source and creation time; undefined when the account is not visible to
+   * `viewer` or no such batch has a live transaction.
+   */
+  latestImportFor(viewer: Viewer, accountId: string): LatestImport | undefined;
 }
 
 export interface ImportRowRepo {
@@ -1585,7 +1609,10 @@ export interface ReadRepos {
   readonly backups: Pick<BackupSnapshotRepo, "find" | "latestPushed">;
   readonly backupVerifications: Pick<BackupVerificationRepo, "latest">;
   readonly recoveryBundle: Pick<RecoveryBundleRepo, "get">;
-  readonly importBatches: Pick<ImportBatchRepo, "find" | "findByAccountAndFileSha" | "listVisible">;
+  readonly importBatches: Pick<
+    ImportBatchRepo,
+    "find" | "findByAccountAndFileSha" | "listVisible" | "latestImportFor"
+  >;
   readonly importRows: Pick<ImportRowRepo, "listForBatch" | "find">;
   readonly importHandoffs: Pick<ImportHandoffRepo, "findForRecipient" | "listForSender">;
 }

@@ -9,7 +9,7 @@ interface ApiAccount {
   id: string;
   name: string;
   type: string;
-  newestPostedOn: string | null;
+  lastImport: { through: string; source: string; importedAt: string } | null;
 }
 
 interface ApiTransactions {
@@ -47,10 +47,10 @@ function isStale(newest: string | null): boolean {
   return newest !== null && (utcMs(localToday()) - utcMs(newest)) / 86_400_000 > STALE_AFTER_DAYS;
 }
 
-const freshness = (newest: string | null) =>
-  newest === null
-    ? "No transactions yet"
-    : `to ${Number(newest.slice(8))} ${MONTHS[Number(newest.slice(5, 7)) - 1]}`;
+const freshness = (last: ApiAccount["lastImport"]) =>
+  last === null
+    ? "No imports yet"
+    : `imported up to ${Number(last.through.slice(8))} ${MONTHS[Number(last.through.slice(5, 7)) - 1]} from ${last.source}`;
 
 const shiftDay = (day: string, days: number) =>
   new Date(utcMs(day) + days * 86_400_000).toISOString().slice(0, 10);
@@ -83,9 +83,9 @@ test("the Accounts page groups each account, shows the Properties placeholder an
         has: page.getByRole("link", { name: account.name, exact: true }),
       });
       await expect(row).toHaveCount(1);
-      const caption = row.getByText(new RegExp(`^${freshness(account.newestPostedOn)}`));
+      const caption = row.getByText(new RegExp(`^${freshness(account.lastImport)}`));
       await expect(caption).toBeVisible();
-      if (isStale(account.newestPostedOn)) {
+      if (isStale(account.lastImport?.through ?? null)) {
         await expect(caption).toContainText("(stale)");
         // The warning colour is #8A5600 in the light theme.
         await expect(caption).toHaveClass(/text-warning/);
@@ -113,11 +113,19 @@ test("an account's page shows its balance, freshness and only its transactions i
   await signInWithPassword(page, loadAccount());
   const list = await page.request.get("/api/accounts");
   const accounts = ((await list.json()) as { accounts: ApiAccount[] }).accounts;
-  const account = accounts.find(
-    (a) => a.type === "transaction" && a.newestPostedOn !== null,
-  ) as ApiAccount;
-  expect(account).toBeDefined();
-  const newest = account.newestPostedOn as string;
+  // Freshness now follows imports, so the range comes from the account's own newest line.
+  let account: ApiAccount | undefined;
+  let newest = "";
+  for (const candidate of accounts.filter((a) => a.type === "transaction")) {
+    const listed = await page.request.get(`/api/ledger/transactions?account=${candidate.id}`);
+    const days = ((await listed.json()) as ApiTransactions).transactions.map((t) => t.postedOn);
+    if (days.length === 0) continue;
+    account = candidate;
+    newest = days.reduce((a, b) => (a > b ? a : b));
+    break;
+  }
+  expect(account, "a transaction account with transactions").toBeDefined();
+  if (account === undefined) return;
   const from = shiftDay(newest, -60);
   const range = `account=${account.id}&from=${from}&to=${newest}`;
   const inRange = await page.request.get(`/api/ledger/transactions?${range}`);
@@ -132,7 +140,7 @@ test("an account's page shows its balance, freshness and only its transactions i
   const balance = await page.request.get(`/api/accounts/${account.id}/balance`);
   const { balanceCents } = (await balance.json()) as { balanceCents: number };
   await expect(page.getByText(MONEY.format(balanceCents / 100), { exact: true })).toBeVisible();
-  await expect(page.getByText(new RegExp(`^${freshness(account.newestPostedOn)}`))).toBeVisible();
+  await expect(page.getByText(new RegExp(`^${freshness(account.lastImport)}`))).toBeVisible();
 
   const noun = expected.summary.count === 1 ? "transaction" : "transactions";
   await expect(page.getByText(new RegExp(`^${expected.summary.count} ${noun} ·`))).toBeVisible();

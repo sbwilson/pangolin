@@ -419,6 +419,39 @@ function importBatchRepo(working: MemoryState, check: () => void): ImportBatchRe
         .filter((b) => b.accountId === accountId)
         .sort((a, b) => byText(b.createdAt, a.createdAt));
     },
+    markUndone: (id, at) => {
+      check();
+      const index = working.importBatches.findIndex((b) => b.id === id);
+      const b = working.importBatches[index];
+      if (index === -1 || !b || b.undoneAt !== null) return false;
+      working.importBatches[index] = { ...b, undoneAt: at, updatedAt: at };
+      return true;
+    },
+    listLiveTransactionIds: (batchId) => {
+      check();
+      return working.transactions
+        .filter((t) => t.importId === batchId && !working.deleted.has(t.id))
+        .map((t) => t.id)
+        .sort(byText);
+    },
+    latestImportFor: (viewer, accountId) => {
+      requireViewer(viewer);
+      check();
+      const account = working.accounts.find((a) => a.id === accountId);
+      if (account === undefined || !accountVisible(working, viewer, account)) return undefined;
+      const batches = working.importBatches
+        .filter((b) => b.accountId === accountId && b.status === "committed" && b.undoneAt === null)
+        .sort((a, b) => byText(b.createdAt, a.createdAt) || byText(b.id, a.id));
+      const ids = new Set<string>(batches.map((b) => b.id));
+      let through: string | undefined;
+      for (const t of working.transactions) {
+        if (t.importId === null || !ids.has(t.importId) || working.deleted.has(t.id)) continue;
+        if (through === undefined || t.postedOn > through) through = t.postedOn;
+      }
+      const newest = batches[0];
+      if (through === undefined || newest === undefined) return undefined;
+      return { through, source: newest.source, importedAt: newest.createdAt };
+    },
   };
 }
 
@@ -2941,6 +2974,7 @@ export function memoryUnitOfWork(
           find: importBatchRepo(uow.state, check).find,
           findByAccountAndFileSha: importBatchRepo(uow.state, check).findByAccountAndFileSha,
           listVisible: importBatchRepo(uow.state, check).listVisible,
+          latestImportFor: importBatchRepo(uow.state, check).latestImportFor,
         },
         importRows: {
           listForBatch: importRowRepo(uow.state, check).listForBatch,

@@ -70,7 +70,7 @@ const account = (over: Partial<AccountView> = {}): AccountView => ({
   isSavings: false,
   owners: both,
   pool: "shared",
-  newestPostedOn: daysAgo(2),
+  lastImport: { through: daysAgo(2), source: "ofx", importedAt: "2026-10-05T04:05:00.000Z" },
   ...over,
 });
 
@@ -140,14 +140,23 @@ describe("AccountsPage", () => {
 
   it("marks a stale account in the warning colour and a private one with a lock", async () => {
     vi.mocked(api.listAccounts).mockResolvedValue([
-      account({ id: "a1", name: "Old", newestPostedOn: daysAgo(46) }),
-      account({ id: "a2", name: "Fresh", newestPostedOn: daysAgo(45) }),
+      account({
+        id: "a1",
+        name: "Old",
+        lastImport: { through: daysAgo(46), source: "csv", importedAt: "2026-10-05T04:05:00.000Z" },
+      }),
+      account({
+        id: "a2",
+        name: "Fresh",
+        lastImport: { through: daysAgo(45), source: "csv", importedAt: "2026-10-05T04:05:00.000Z" },
+      }),
       account({
         id: "a3",
         name: "Mine",
         isPrivate: true,
         owners: [{ personId: "p-alex", shareBp: 10000 }],
         pool: "p-alex",
+        lastImport: null,
       }),
     ]);
     renderPage();
@@ -156,6 +165,10 @@ describe("AccountsPage", () => {
     expect(caption.className).toContain("text-warning");
     const fresh = screen.getByRole("link", { name: "Fresh" }).closest("li") as HTMLElement;
     expect(within(fresh).queryByText(/stale/)).toBeNull();
+    expect(within(fresh).getByText(/^imported up to \d+ \w{3} from csv, \d\d:\d\d$/)).toBeTruthy();
+    // No import at all reads as such and is never stale.
+    const none = screen.getByRole("link", { name: "Mine" }).closest("li") as HTMLElement;
+    expect(within(none).getByText("No imports yet")).toBeTruthy();
     const mine = screen.getByRole("link", { name: "Mine" }).closest("li") as HTMLElement;
     expect(within(mine).getByRole("img", { name: "Private" })).toBeTruthy();
     expect(within(old).queryByRole("img", { name: "Private" })).toBeNull();

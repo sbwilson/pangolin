@@ -983,7 +983,7 @@ describe("SettingsPage", () => {
           isSavings: false,
           owners: [{ personId: "p1", shareBp: 10000 }],
           pool: "p1",
-          newestPostedOn: null,
+          lastImport: null,
         },
       ]);
       renderSettings();
@@ -1015,7 +1015,7 @@ describe("SettingsPage", () => {
           isSavings: false,
           owners: [{ personId: "p1", shareBp: 10000 }],
           pool: "p1",
-          newestPostedOn: null,
+          lastImport: null,
         },
       ]);
 
@@ -1044,7 +1044,7 @@ describe("SettingsPage", () => {
           isSavings: true,
           owners: [{ personId: "p1", shareBp: 10000 }],
           pool: "p1",
-          newestPostedOn: null,
+          lastImport: null,
           warning: { kind: "closing-balance", balanceCents: 1500 },
         },
       ]);
@@ -1071,7 +1071,7 @@ describe("SettingsPage", () => {
           isSavings: false,
           owners: [{ personId: "p1", shareBp: 10000 }],
           pool: "p1",
-          newestPostedOn: null,
+          lastImport: null,
         },
       ]);
       vi.mocked(api.reopenAccount).mockResolvedValue({
@@ -1086,7 +1086,7 @@ describe("SettingsPage", () => {
         isSavings: false,
         owners: [{ personId: "p1", shareBp: 10000 }],
         pool: "p1",
-        newestPostedOn: null,
+        lastImport: null,
       });
 
       renderSettings();
@@ -1115,7 +1115,7 @@ describe("SettingsPage", () => {
           isSavings: false,
           owners: [{ personId: "p1", shareBp: 10000 }],
           pool: "p1",
-          newestPostedOn: null,
+          lastImport: null,
         },
       ]);
       vi.mocked(api.reopenAccount).mockRejectedValue(new Error("Cannot reopen account"));

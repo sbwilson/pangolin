@@ -16,6 +16,7 @@ import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import { fakeTokens } from "../testing/tokens.ts";
 import { personViewer } from "../viewer.ts";
 import { acceptHandoff, createHandoff, dismissHandoff, listMyHandoffs } from "./handoff.ts";
+import { undoImportBatch } from "./undo-batch.ts";
 
 const CSV = `Date,Amount,Description,Balance
 01/09/2026,-50.00,"SECRET SUPERMARKET",1000.00
@@ -103,6 +104,18 @@ describe("partner hand-off", () => {
     const [view] = listMyHandoffs(w.A);
     expect(Object.keys(view as object).sort()).toEqual(["filename", "id", "recipient", "status"]);
     expect(view?.status).toBe("imported");
+  });
+
+  it("attributes the batch to the recipient, who alone can undo it", () => {
+    const w = setup();
+    const id = handoff(w);
+    acceptHandoff(w.B, { handoffId: id, accountId: w.bPrivate });
+    const [batch] = w.uow.state.importBatches;
+    expect(batch?.importedByPersonId).toBe(w.b);
+    expect(code(() => undoImportBatch(w.A, { batchId: batch!.id }))).toBe("NotFound");
+    expect(code(() => undoImportBatch(w.B, { batchId: batch!.id }))).toBe("ok");
+    expect(listTransactions(w.B).transactions).toHaveLength(0);
+    expect(listMyHandoffs(w.A)[0]?.status).toBe("imported");
   });
 
   it("accepts into the recipient's private account without touching anything the sender reads", () => {

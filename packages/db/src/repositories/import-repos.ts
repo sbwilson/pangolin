@@ -1,5 +1,5 @@
 import type { ImportBatchRepo, ImportBatchRow, ImportRowRepo, ImportRowRow } from "@pangolin/app";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { visibleAccountId } from "../privacy.ts";
 import { importBatch } from "../schema/import-batch.ts";
@@ -7,7 +7,17 @@ import { importRow } from "../schema/import-row.ts";
 
 type Orm = BetterSQLite3Database;
 
-export function createImportBatchRepo(orm: Orm, check: () => void): ImportBatchRepo {
+/** The `transaction` reads the batch repo needs, kept in `ledger-repos.ts` (AD-3, AD-4). */
+export interface BatchTransactionReads {
+  liveIds(batchId: string): string[];
+  newestLivePostedOn(batchIds: readonly string[]): string | undefined;
+}
+
+export function createImportBatchRepo(
+  orm: Orm,
+  check: () => void,
+  reads: BatchTransactionReads,
+): ImportBatchRepo {
   return {
     insert: (row) => {
       check();
@@ -68,6 +78,45 @@ export function createImportBatchRepo(orm: Orm, check: () => void): ImportBatchR
         .orderBy(desc(importBatch.createdAt))
         .all();
       return rows as ImportBatchRow[];
+    },
+
+    markUndone: (id, at) => {
+      check();
+      return (
+        orm
+          .update(importBatch)
+          .set({ undoneAt: at, updatedAt: at })
+          .where(and(eq(importBatch.id, id), isNull(importBatch.undoneAt)))
+          .run().changes > 0
+      );
+    },
+
+    listLiveTransactionIds: (batchId) => {
+      check();
+      return reads.liveIds(batchId);
+    },
+
+    latestImportFor: (viewer, accountId) => {
+      check();
+      const visible = visibleAccountId(importBatch.accountId, viewer);
+      const batches = orm
+        .select()
+        .from(importBatch)
+        .where(
+          and(
+            eq(importBatch.accountId, accountId),
+            eq(importBatch.status, "committed"),
+            isNull(importBatch.undoneAt),
+            visible,
+          ),
+        )
+        .orderBy(desc(importBatch.createdAt), desc(importBatch.id))
+        .all();
+      const newest = batches[0];
+      if (newest === undefined) return undefined;
+      const through = reads.newestLivePostedOn(batches.map((b) => b.id));
+      if (through === undefined) return undefined;
+      return { through: through, source: newest.source, importedAt: newest.createdAt };
     },
   };
 }

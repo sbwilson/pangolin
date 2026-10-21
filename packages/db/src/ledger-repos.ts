@@ -47,6 +47,7 @@ import {
   visibleScope,
   visibleTxn,
 } from "./privacy.ts";
+import type { BatchTransactionReads } from "./repositories/import-repos.ts";
 import { account } from "./schema/account.ts";
 import { accountOwner } from "./schema/account-owner.ts";
 import { activity } from "./schema/activity.ts";
@@ -1047,6 +1048,33 @@ export function createTransferGroupRepo(orm: Orm, check: () => void): TransferGr
         .orderBy(asc(transaction.transferGroupId))
         .all()
         .map((row) => row.id as string);
+    },
+  };
+}
+
+/** The live-transaction reads of an import batch: its row IDs, and the newest date across batches. */
+export function createBatchTransactionReads(orm: Orm, check: () => void): BatchTransactionReads {
+  return {
+    liveIds: (batchId) => {
+      check();
+      return orm
+        .select({ id: transaction.id })
+        .from(transaction)
+        .where(and(eq(transaction.importId, batchId), isNull(transaction.deletedAt)))
+        .orderBy(asc(transaction.id))
+        .all()
+        .map((r) => r.id);
+    },
+    newestLivePostedOn: (batchIds) => {
+      check();
+      if (batchIds.length === 0) return undefined;
+      return orm
+        .select({ postedOn: transaction.postedOn })
+        .from(transaction)
+        .where(and(inArray(transaction.importId, [...batchIds]), isNull(transaction.deletedAt)))
+        .orderBy(desc(transaction.postedOn))
+        .limit(1)
+        .get()?.postedOn;
     },
   };
 }

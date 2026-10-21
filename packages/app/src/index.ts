@@ -376,6 +376,12 @@ export {
   listSetAsideRowsForBatch,
   listSetAsideRowsInput,
 } from "./imports/set-aside.ts";
+export {
+  type UndoImportBatchInput,
+  type UndoImportBatchResult,
+  undoImportBatch,
+  undoImportBatchInput,
+} from "./imports/undo-batch.ts";
 export { type EnqueueOptions, enqueueJob } from "./jobs/enqueue.ts";
 export {
   type CancelJobsForRestoreInput,
@@ -615,6 +621,7 @@ export {
   type InstitutionKind,
   type InstitutionRepo,
   type InstitutionRow,
+  type LatestImport,
   type OwnedAccount,
   type PayeeAliasRepo,
   type PayeeAliasRow,

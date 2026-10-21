@@ -1495,6 +1495,66 @@ function scenario(
     throws(() => r.transactions.listManualAfter(undefined as never, lockAcct, "2026-09-01", 1)),
   ]);
 
+  // Batch undo and freshness reads: live ids per batch, markUndone, latestImportFor.
+  const batchRow = (
+    id: Id<"ImportBatch">,
+    accountId: Id<"Account">,
+    sha: string,
+    createdAt: string,
+    status: "staged" | "committed",
+  ) => ({
+    id,
+    accountId,
+    source: sha,
+    fileSha256: sha,
+    rowCount: 0,
+    newCount: 0,
+    dupCount: 0,
+    status,
+    importedByPersonId: a,
+    undoneAt: null,
+    createdAt,
+    updatedAt: createdAt,
+  });
+  const freshOld = newId<"ImportBatch">();
+  const freshNew = newId<"ImportBatch">();
+  const freshStaged = newId<"ImportBatch">();
+  const freshAcct = newId<"Account">();
+  const freshLine = (batch: Id<"ImportBatch">, postedOn: string, tag: string) =>
+    txn(freshAcct, `fresh-${tag}`, { postedOn, importId: batch });
+  const freshGone = freshLine(freshNew, "2026-09-29", "gone");
+  tx((r) => {
+    r.accounts.insert(account(freshAcct, true), [owner(freshAcct, a, 10000)]);
+    r.importBatches.insert(batchRow(freshOld, freshAcct, "fresh-old", T, "committed"));
+    r.importBatches.insert(batchRow(freshNew, freshAcct, "fresh-new", T2, "committed"));
+    r.importBatches.insert(batchRow(freshStaged, freshAcct, "fresh-staged", T2, "staged"));
+    r.transactions.insert(freshLine(freshOld, "2026-09-05", "old"), []);
+    r.transactions.insert(freshLine(freshNew, "2026-09-20", "new"), []);
+    r.transactions.insert(freshLine(freshStaged, "2026-09-25", "staged"), []);
+    r.transactions.insert(freshGone, []);
+    r.transactions.softDelete(system, freshGone.id, T2);
+  });
+  out["fresh.reads"] = tx((r) => [
+    r.importBatches.latestImportFor(system, freshAcct),
+    r.importBatches.latestImportFor(asA, freshAcct),
+    r.importBatches.latestImportFor(asB, freshAcct),
+    r.importBatches.latestImportFor(system, "nobody"),
+    r.importBatches.latestImportFor(system, lockAcct),
+    r.importBatches.listLiveTransactionIds(freshNew).length,
+    r.importBatches.listLiveTransactionIds(freshOld).length,
+    r.importBatches.listLiveTransactionIds("nobody"),
+    throws(() => r.importBatches.latestImportFor(undefined as never, freshAcct)),
+  ]);
+  out["fresh.undone"] = tx((r) => [
+    r.importBatches.markUndone(freshNew, T2),
+    r.importBatches.markUndone(freshNew, T2),
+    r.importBatches.markUndone("nobody", T2),
+    r.importBatches.find(system, freshNew)?.undoneAt,
+    r.importBatches.latestImportFor(system, freshAcct),
+    r.importBatches.markUndone(freshOld, T2),
+    r.importBatches.latestImportFor(system, freshAcct),
+  ]);
+
   // Review item foreign key.
   const reviewItem = (accountId: string | null) => ({
     id: newId<"ReviewItem">(),
@@ -1725,6 +1785,8 @@ function scenario(
       newCount: 0,
       dupCount: 0,
       status: "committed",
+      importedByPersonId: null,
+      undoneAt: null,
       createdAt: T,
       updatedAt: T,
     });

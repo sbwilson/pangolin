@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { account } from "./account.ts";
+import { person } from "./person.ts";
 
 export const IMPORT_BATCH_STATUSES = ["staged", "ready", "committed", "failed"] as const;
 export type ImportBatchStatus = (typeof IMPORT_BATCH_STATUSES)[number];
@@ -22,6 +23,8 @@ export const importBatch = sqliteTable(
     newCount: integer("new_count").notNull().default(0),
     dupCount: integer("dup_count").notNull().default(0),
     status: text("status").notNull(),
+    importedByPersonId: text("imported_by_person_id").references(() => person.id),
+    undoneAt: text("undone_at"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

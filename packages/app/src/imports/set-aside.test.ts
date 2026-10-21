@@ -183,6 +183,8 @@ describe("set-aside rows management", () => {
         newCount: 1,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -254,6 +256,8 @@ describe("set-aside rows management", () => {
         newCount: 0,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -278,6 +282,8 @@ describe("set-aside rows management", () => {
         newCount: 1,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -351,6 +357,8 @@ describe("set-aside rows management", () => {
         newCount: 0,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -428,6 +436,8 @@ describe("set-aside rows management", () => {
         newCount: 0,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -503,6 +513,8 @@ describe("set-aside rows management", () => {
         newCount: 0,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -556,6 +568,8 @@ describe("set-aside rows management", () => {
         newCount: 0,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -596,6 +610,8 @@ describe("set-aside rows management", () => {
         newCount: 1,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -638,6 +654,8 @@ describe("set-aside rows management", () => {
         newCount: 0,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -687,6 +705,8 @@ describe("set-aside rows management", () => {
         newCount: 0,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -724,6 +744,8 @@ describe("set-aside rows management", () => {
         newCount: 0,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -757,6 +779,8 @@ describe("set-aside rows management", () => {
         newCount: 0,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -792,6 +816,8 @@ describe("set-aside rows management", () => {
         newCount: 0,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -849,6 +875,8 @@ describe("set-aside rows management", () => {
         newCount: 0,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });
@@ -901,6 +929,8 @@ describe("set-aside rows management", () => {
         newCount: 0,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: now.toString(),
         updatedAt: now.toString(),
       });

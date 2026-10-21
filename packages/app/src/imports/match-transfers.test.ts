@@ -273,6 +273,8 @@ describe("fixSetAsideRow", () => {
       newCount: 0,
       dupCount: 0,
       status: "committed",
+      importedByPersonId: null,
+      undoneAt: null,
       createdAt: stamp,
       updatedAt: stamp,
     } as never);

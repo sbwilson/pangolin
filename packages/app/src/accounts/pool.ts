@@ -4,6 +4,7 @@ import type {
   AccountRow,
   AccountType,
   AuditedOwner,
+  LatestImport,
   OwnerChange,
 } from "../ports/unit-of-work.ts";
 import type { Viewer } from "../viewer.ts";
@@ -44,10 +45,11 @@ export interface AccountView extends AccountRow {
    */
   readonly warning?: AccountWarning;
   /**
-   * The latest `postedOn` (`YYYY-MM-DD`) among the account's live transactions the viewer can
-   * see, pending or posted; null when it has none. How fresh the account's data is.
+   * How fresh the account's imported data is and where it came from: the newest `postedOn`
+   * (`through`) among the live transactions of its non-undone committed import batches, with the
+   * newest such batch's `source` and `createdAt` (`importedAt`); null when it has none.
    */
-  readonly newestPostedOn: string | null;
+  readonly lastImport: LatestImport | null;
 }
 
 /** A closed account still holds a balance. */
@@ -83,7 +85,7 @@ export function accountView(
   owners: readonly AccountOwnerRow[],
   removal: AccountRemoval | undefined,
   warning: AccountWarning | undefined,
-  newestPostedOn: string | null,
+  lastImport: LatestImport | null,
 ): AccountView {
   return {
     ...row,
@@ -91,7 +93,7 @@ export function accountView(
     pool: poolOf(owners),
     ...(removal === undefined ? {} : { removal }),
     ...(warning === undefined ? {} : { warning }),
-    newestPostedOn,
+    lastImport,
   };
 }
 

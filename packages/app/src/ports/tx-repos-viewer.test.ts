@@ -85,6 +85,9 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
   "RuleRepo.insert": "a new row; its scope is the creating person's",
   "ImportBatchRepo.insert": "a new batch; the use case checked the account with findVisible",
   "ImportBatchRepo.updateCountsAndStatus": "the use case checked the account with findVisible",
+  "ImportBatchRepo.markUndone": "the use case found the batch with find, as its importer, first",
+  "ImportBatchRepo.listLiveTransactionIds":
+    "the use case found the batch with find first; the IDs are re-read through the viewer",
   "ImportRowRepo.insertMany":
     "new rows; the use case checked the batch and account with findVisible",
   "ImportRowRepo.insert": "a new row; the use case checked the batch and account with findVisible",

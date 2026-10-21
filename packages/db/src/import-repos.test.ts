@@ -1,7 +1,16 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAccount, createIdGenerator, createPerson, personViewer } from "@pangolin/app";
+import {
+  createAccount,
+  createIdGenerator,
+  createPerson,
+  importStatement,
+  listAccounts,
+  listTransactions,
+  personViewer,
+  undoImportBatch,
+} from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import type { Id } from "@pangolin/shared";
 import { Temporal } from "@pangolin/shared/temporal";
@@ -73,6 +82,40 @@ describe("SQLite Import Repositories & Dedupe", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it("round-trips the importer and undo through SQLite, and undoes a real import", () => {
+    const clock = {
+      now: () => now,
+      today: () => now.toZonedDateTimeISO("UTC").toPlainDate(),
+    };
+    const ctx = { viewer: alexViewer, clock, newId, uow };
+    const res = importStatement(ctx, {
+      accountId: sharedAccountId,
+      format: "commbank_csv",
+      content: 'Date,Amount,Description,Balance\n01/09/2026,-5.00,"COFFEE",0.00',
+    });
+    const view = () => listAccounts(ctx).find((x) => x.id === sharedAccountId);
+    expect(view()?.lastImport?.through).toBe("2026-09-01");
+    const stored = uow.read((r) => r.importBatches.find(alexViewer, res.batchId));
+    expect(stored?.importedByPersonId).toBe(alexPersonId);
+    expect(stored?.undoneAt).toBeNull();
+
+    expect(undoImportBatch(ctx, { batchId: res.batchId }).undoneCount).toBe(1);
+    const undone = uow.read((r) => r.importBatches.find(alexViewer, res.batchId));
+    expect(undone?.undoneAt).toBe("2026-10-20T12:00:00.000Z");
+    expect(listTransactions(ctx).transactions).toHaveLength(0);
+    expect(view()?.lastImport).toBeNull();
+    // The same file stays blocked.
+    expect(
+      importStatement(ctx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: 'Date,Amount,Description,Balance\n01/09/2026,-5.00,"COFFEE",0.00',
+      }).newCount,
+    ).toBe(0);
+    const audited = uow.read((r) => r.audit.listVisible(alexViewer, "2026-10-20"));
+    expect(audited.some((e) => e.entity === "import_batch" && e.action === "update")).toBe(true);
+  });
+
   it("manages import batches with privacy enforcement", () => {
     const at = now.toString();
     const batchId1 = newId<"ImportBatch">();
@@ -88,6 +131,8 @@ describe("SQLite Import Repositories & Dedupe", () => {
         newCount: 8,
         dupCount: 2,
         status: "staged",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: at,
         updatedAt: at,
       });
@@ -101,6 +146,8 @@ describe("SQLite Import Repositories & Dedupe", () => {
         newCount: 5,
         dupCount: 0,
         status: "committed",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: at,
         updatedAt: at,
       });
@@ -173,6 +220,8 @@ describe("SQLite Import Repositories & Dedupe", () => {
         newCount: 0,
         dupCount: 0,
         status: "staged",
+        importedByPersonId: null,
+        undoneAt: null,
         createdAt: at,
         updatedAt: at,
       });
