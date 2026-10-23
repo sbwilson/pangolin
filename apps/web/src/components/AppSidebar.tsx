@@ -24,7 +24,7 @@ export function AppSidebar({ me, signOut, className }: AppSidebarProps) {
         </div>
         <nav aria-label="Main" className="flex flex-col gap-1">
           <Link
-            to="/"
+            to="/cash-flow"
             activeOptions={{ exact: true }}
             className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             activeProps={{

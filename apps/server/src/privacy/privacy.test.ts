@@ -132,6 +132,13 @@ const EXPORT_QUERIES = (world: World): string[] => [
   `category=${world.ok("category")}`,
 ];
 
+/** The ranges B's cash-flow reads are replayed with. */
+const CASH_FLOW_QUERIES = [
+  "from=2000-01-01&to=2100-01-01",
+  "from=2026-07-01&to=2026-07-31",
+  "from=2026-07-01&to=2026-09-30",
+];
+
 /** Every `GET` route that returns person data, as B sees it, keyed by route and ids. */
 async function readTranscript(world: World): Promise<Map<string, string>> {
   const out = new Map<string, string>();
@@ -161,6 +168,11 @@ async function readTranscript(world: World): Promise<Map<string, string>> {
   }
   for (const query of EXPORT_QUERIES(world)) {
     const path = `/api/ledger/export?${query}`;
+    const res = await world.request("b", "GET", path);
+    out.set(`GET ${path}`, normaliseRequestIds(`${res.status} ${res.text}`));
+  }
+  for (const query of CASH_FLOW_QUERIES) {
+    const path = `/api/reports/cash-flow?${query}`;
     const res = await world.request("b", "GET", path);
     out.set(`GET ${path}`, normaliseRequestIds(`${res.status} ${res.text}`));
   }

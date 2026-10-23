@@ -5,7 +5,7 @@ export const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/transactions", replace: true });
+    throw redirect({ to: "/cash-flow", replace: true });
   },
-  component: () => <Navigate to="/transactions" replace />,
+  component: () => <Navigate to="/cash-flow" replace />,
 });

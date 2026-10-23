@@ -219,6 +219,10 @@ export const MANIFEST: readonly ManifestEntry[] = [
     }),
   }),
 
+  // Cash flow (epic 4): money in, out and kept by flowKind (AD-23). A transfer to A's private
+  // account is a transfer for B whatever its type, so B's figures never depend on A's data. The
+  // suite also replays it as B over ranges (`CASH_FLOW_QUERIES`), since the bare route is a 400.
+  read("/api/reports/cash-flow"),
   read("/api/ledger/transactions"),
   // Search: the list filtered by `q` through the FTS5 index; the hidden-name and scoped-name
   // exclusion is applied on the viewer's projection at query time, never stored in the index.

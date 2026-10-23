@@ -3,6 +3,7 @@
 // review-item repositories mirror the SQLite adapter's semantics (partial unique keys, leased
 // claims, visibility); `packages/db` tests prove the adapter on real SQLite, and the parity tests
 // beside this file (`*-parity.test.ts`, which may import `@pangolin/db`) hold the two together.
+import { type FlowAccountType, type FlowKind, flowKind } from "@pangolin/domain";
 import type { Id } from "@pangolin/shared";
 import { parseSearch, searchMatches } from "../ledger/search-query.ts";
 import type {
@@ -1206,6 +1207,48 @@ function transferLabelFor(
   return null;
 }
 
+/**
+ * Mirror of `flowCounterpartSql`: the other live row of the transfer group (lowest id) whose
+ * account is live, as `"hidden"` when the viewer cannot see that account, else its type.
+ */
+function flowCounterpartFor(
+  working: MemoryState,
+  viewer: Viewer,
+  row: TransactionRow,
+): null | "hidden" | FlowAccountType {
+  if (row.transferGroupId === null) return null;
+  const other = working.transactions
+    .filter(
+      (t) =>
+        t.transferGroupId === row.transferGroupId && t.id !== row.id && !working.deleted.has(t.id),
+    )
+    .map((t) => ({ t, a: working.accounts.find((a) => a.id === t.accountId) }))
+    .filter((x): x is { t: TransactionRow; a: AccountRow } => {
+      return x.a !== undefined && !working.deleted.has(x.a.id);
+    })
+    .sort((x, y) => byText(x.t.id, y.t.id))[0];
+  if (other === undefined) return null;
+  return accountVisible(working, viewer, other.a) ? other.a.type : "hidden";
+}
+
+/** The domain `flowKind` of one split of `row`, as `viewer` sees its counterpart (AD-23). */
+function splitFlowKindFor(
+  working: MemoryState,
+  viewer: Viewer,
+  row: TransactionRow,
+  s: SplitRow,
+): FlowKind {
+  const cat =
+    s.categoryId === null ? undefined : working.categories.find((c) => c.id === s.categoryId);
+  const group =
+    cat === undefined ? undefined : working.categoryGroups.find((g) => g.id === cat.groupId);
+  return flowKind({
+    amountCents: s.amountCents,
+    counterpart: flowCounterpartFor(working, viewer, row),
+    groupKind: group?.kind ?? null,
+  });
+}
+
 function requireDay(today: string, what: string): void {
   if (typeof today !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(today)) {
     throw new TypeError(`${what}: today must be a YYYY-MM-DD string`);
@@ -1689,6 +1732,23 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
         else if (r.amountCents < 0) outCents -= r.amountCents;
       }
       return { count: rows.length, inCents, outCents };
+    },
+    cashFlowTotals: (viewer, today, range) => {
+      requireViewer(viewer);
+      requireDay(today, "visibleTxn");
+      check();
+      let moneyInCents = 0;
+      let moneyOutCents = 0;
+      for (const row of visibleRows(viewer)) {
+        if (row.postedOn < range.from || row.postedOn > range.to) continue;
+        for (const s of working.splits.filter((x) => x.transactionId === row.id)) {
+          const kind = splitFlowKindFor(working, viewer, row, s);
+          if (kind === "income") moneyInCents += s.amountCents;
+          else if (kind === "expense") moneyOutCents -= s.amountCents;
+        }
+      }
+      moneyOutCents = moneyOutCents || 0;
+      return { moneyInCents, moneyOutCents, keptCents: moneyInCents - moneyOutCents || 0 };
     },
     countBefore: (viewer, today, filter, cursor) => {
       requireViewer(viewer);
@@ -2986,6 +3046,7 @@ export function memoryUnitOfWork(
           findVisible: transactionRepo(uow.state, check).findVisible,
           listPage: transactionRepo(uow.state, check).listPage,
           summarise: transactionRepo(uow.state, check).summarise,
+          cashFlowTotals: transactionRepo(uow.state, check).cashFlowTotals,
           countBefore: transactionRepo(uow.state, check).countBefore,
           dayNets: transactionRepo(uow.state, check).dayNets,
           latestPostedOn: transactionRepo(uow.state, check).latestPostedOn,

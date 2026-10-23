@@ -528,6 +528,25 @@ export interface TransactionSummary {
   readonly outCents: number;
 }
 
+/** An inclusive range of `posted_on` days, both `YYYY-MM-DD`. */
+export interface DayRange {
+  readonly from: string;
+  readonly to: string;
+}
+
+/**
+ * Cash flow over a range by `flowKind` (AD-23), worked out in SQL (the web never sums). Transfers
+ * and investing count in neither figure.
+ */
+export interface CashFlowTotals {
+  /** The sum of the `income` split amounts. */
+  readonly moneyInCents: number;
+  /** Minus the sum of the `expense` split amounts. */
+  readonly moneyOutCents: number;
+  /** `moneyInCents - moneyOutCents`; may be negative. */
+  readonly keptCents: number;
+}
+
 export interface TransactionRepo {
   /**
    * Whether the account has a live transaction dated before `date` (`YYYY-MM-DD`) that does not
@@ -651,6 +670,12 @@ export interface TransactionRepo {
   ): VisibleTransaction[];
   /** The count and the money in and out of every row `listPage` could return for `filter`. */
   summarise(viewer: Viewer, today: string, filter: TransactionFilter): TransactionSummary;
+  /**
+   * Money in, money out and kept over the splits of every live transaction `viewer` may see
+   * posted in `range` (inclusive), pending or posted, each split classed by `flowKind` (AD-23) as
+   * this viewer sees its transfer counterpart. Throws without a viewer.
+   */
+  cashFlowTotals(viewer: Viewer, today: string, range: DayRange): CashFlowTotals;
   /** How many rows `filter` leaves that come strictly before `cursor` in list order. */
   countBefore(
     viewer: Viewer,
@@ -1643,6 +1668,7 @@ export interface ReadRepos {
     | "findVisible"
     | "listPage"
     | "summarise"
+    | "cashFlowTotals"
     | "countBefore"
     | "dayNets"
     | "latestPostedOn"

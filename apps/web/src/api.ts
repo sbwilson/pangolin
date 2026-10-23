@@ -222,6 +222,21 @@ export async function resetPartner(personId: string): Promise<{ url: string; exp
   return postJson("/api/identity/re-enrolment-links", { personId });
 }
 
+/** Money in, money out and kept over an inclusive range, summed on the server (AD-11). */
+export type CashFlowTotals = InferResponseType<(typeof api.api.reports)["cash-flow"]["$get"], 200>;
+
+/** The cash-flow figures for `from`..`to` (inclusive `YYYY-MM-DD`); throws `ApiError`. */
+export async function fetchCashFlow(range: {
+  readonly from: string;
+  readonly to: string;
+}): Promise<CashFlowTotals> {
+  const res = await api.api.reports["cash-flow"].$get({
+    query: { from: range.from, to: range.to },
+  });
+  if (!res.ok) throw await apiError(res);
+  return await res.json();
+}
+
 /** The Needs review list: one card per open item the signed-in person may see, oldest first. */
 type ReviewListResponse = InferResponseType<typeof api.api.review.$get, 200>;
 export type ReviewCard = ReviewListResponse["items"][number];

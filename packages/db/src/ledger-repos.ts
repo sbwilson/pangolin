@@ -4,6 +4,8 @@ import type {
   AccountRow,
   BalanceSnapshotRepo,
   BalanceSnapshotRow,
+  CashFlowTotals,
+  DayRange,
   InstitutionRepo,
   InstitutionRow,
   OwnedAccount,
@@ -37,10 +39,11 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { type BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
 import { balanceAsOf } from "./balance.ts";
 import type { Db } from "./open.ts";
 import {
+  flowKindSql,
   liveVisibleTxn,
   requireViewer,
   type TxnProjection,
@@ -408,6 +411,58 @@ function filterConditions(
   ];
 }
 
+/**
+ * Money in, money out and kept over the splits `viewer` may see posted in `range`, each split
+ * classed once by `flowKindSql` (AD-23) and summed in SQL.
+ */
+function cashFlowTotals(orm: Orm, viewer: Viewer, today: string, range: DayRange): CashFlowTotals {
+  const projection = visibleTxn(viewer, today);
+  const kind = flowKindSql(viewer);
+  const flows = orm
+    .select({
+      kind: sql<string>`${kind}`.as("flow_kind"),
+      amount: sql<number>`${split.amountCents}`.as("flow_amount"),
+    })
+    .from(split)
+    .innerJoin(transaction, eq(transaction.id, split.transactionId))
+    .where(
+      and(
+        projection.where,
+        gte(transaction.postedOn, range.from),
+        lte(transaction.postedOn, range.to),
+      ),
+    )
+    .as("flows");
+  const inCents = sql<number>`coalesce(sum(CASE WHEN ${flows.kind} = 'income' THEN ${flows.amount} ELSE 0 END), 0)`;
+  const outCents = sql<number>`coalesce(-sum(CASE WHEN ${flows.kind} = 'expense' THEN ${flows.amount} ELSE 0 END), 0)`;
+  const row = orm
+    .select({ inCents, outCents, keptCents: sql<number>`${inCents} - ${outCents}` })
+    .from(flows)
+    .get();
+  return {
+    moneyInCents: Number(row?.inCents ?? 0) || 0,
+    moneyOutCents: Number(row?.outCents ?? 0) || 0,
+    keptCents: Number(row?.keptCents ?? 0) || 0,
+  };
+}
+
+/**
+ * The `flowKind` (AD-23) of every split of the live transactions `viewer` may see, by split id,
+ * straight from `flowKindSql`. For the parity test that holds the SQL expression to the `domain`
+ * function; no use case reads it. Throws without a viewer.
+ */
+export function splitFlowKinds(db: Db, viewer: Viewer, today: string): Record<string, string> {
+  const orm = drizzle({ client: db });
+  const projection = visibleTxn(viewer, today);
+  const rows = orm
+    .select({ id: split.id, kind: sql<string>`${flowKindSql(viewer)}` })
+    .from(split)
+    .innerJoin(transaction, eq(transaction.id, split.transactionId))
+    .where(projection.where)
+    .all();
+  return Object.fromEntries(rows.map((r) => [r.id, r.kind]));
+}
+
 /** Rows strictly after (`older`) or before (newer than) a cursor in list order. */
 function pastCursor(cursor: TransactionCursor, direction: "after" | "before"): SQL {
   const op = direction === "after" ? sql`<` : sql`>`;
@@ -690,6 +745,12 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
         inCents: Number(row?.inCents ?? 0),
         outCents: Number(row?.outCents ?? 0),
       };
+    },
+
+    cashFlowTotals: (viewer, today, range) => {
+      requireViewer(viewer, "cashFlowTotals");
+      check();
+      return cashFlowTotals(orm, viewer, today, range);
     },
 
     countBefore: (viewer, today, filter, cursor) => {

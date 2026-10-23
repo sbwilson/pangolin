@@ -92,6 +92,7 @@ test("registers from the setup link with a passkey and TOTP (resuming after relo
   await expect(page.getByRole("button", { name: "Sign in with a passkey" })).toBeVisible();
   await page.getByRole("button", { name: "Sign in with a passkey" }).click();
   await expect(page.getByText("Signed in as Alex")).toBeVisible();
+  await expect(page).toHaveURL((url) => url.pathname === "/cash-flow");
   const [again] = (await context.cookies()).filter((c) => c.name.endsWith("session_token"));
   expect(again).toMatchObject({ httpOnly: true, secure: true, sameSite: "Strict" });
 });
@@ -99,6 +100,7 @@ test("registers from the setup link with a passkey and TOTP (resuming after relo
 test("signs in with password and a computed TOTP code", async ({ page }) => {
   await signInWithPassword(page, alexAccount);
   await expect(page.getByText("Signed in as Alex")).toBeVisible();
+  await expect(page).toHaveURL((url) => url.pathname === "/cash-flow");
 });
 
 test("invites the partner, who registers; then any further sign-up is refused", async ({

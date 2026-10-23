@@ -84,7 +84,7 @@ export function RootLayout() {
   }, [queryClient]);
   const signedIn = useCallback(async () => {
     await refresh();
-    await navigate({ to: "/transactions", replace: true });
+    await navigate({ to: "/cash-flow", replace: true });
   }, [navigate, refresh]);
   const signOut = useCallback(async () => {
     const { error } = await authClient.signOut();
@@ -131,10 +131,7 @@ export function RootLayout() {
           <button type="button" onClick={signOut}>
             Sign out and use this link
           </button>
-          <button
-            type="button"
-            onClick={() => void navigate({ to: "/transactions", replace: true })}
-          >
+          <button type="button" onClick={() => void navigate({ to: "/cash-flow", replace: true })}>
             Keep me signed in
           </button>
         </section>
@@ -166,10 +163,10 @@ export function RootLayout() {
       body = <InitialRecoveryCodes onDone={refresh} />;
       break;
     case "setup-signed-in":
-      body = <Navigate to="/transactions" replace />;
+      body = <Navigate to="/cash-flow" replace />;
       break;
     case "sign-in-signed-in":
-      body = <Navigate to="/transactions" replace />;
+      body = <Navigate to="/cash-flow" replace />;
       break;
     case "app":
       shell = true;

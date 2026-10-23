@@ -13,6 +13,7 @@ import {
   type Clock,
   type CodeHasher,
   type CreateHandoffInput,
+  cashFlowTotals,
   checkSignUp,
   closeAccount,
   countBatchReviewItems,
@@ -695,6 +696,12 @@ export function createApi(deps: ApiDeps) {
       const gateway = liveGateway();
       const body = reEnrolBody.parse(await c.req.json().catch(() => undefined));
       return redeemed(c, await gateway.reEnrol(body, c.req.raw.headers));
+    })
+    .get("/api/reports/cash-flow", (c) => {
+      // Per viewer (AD-3): money in, money out and kept over `from`..`to` (inclusive), summed in
+      // SQL by flowKind (AD-23). A missing, malformed or backwards range is 400.
+      const input = { from: c.req.query("from"), to: c.req.query("to") };
+      return c.json(cashFlowTotals(ctx(c), input as { from: string; to: string }), 200);
     })
     .get("/api/review", (c) => {
       // Per viewer (AD-3): the open items they may see, each with its card's detail. Never cached.

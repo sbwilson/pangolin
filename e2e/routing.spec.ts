@@ -83,7 +83,40 @@ test("a deep link to /transactions opens the list inside the shell, and /ledger 
     await expect(page).toHaveURL((url) => url.pathname === "/accounts");
     await expect(page.getByText("Signed in as Alex")).toBeVisible();
     await page.goto("/");
-    await expect(page).toHaveURL((url) => url.pathname === "/transactions");
+    await expect(page).toHaveURL((url) => url.pathname === "/cash-flow");
+  } finally {
+    await context.close();
+  }
+});
+
+test("/ lands on Cash flow, showing money in, money out and kept for the quarter", async ({
+  browser,
+  cspViolations,
+}) => {
+  const context = await browser.newContext({ storageState: await alexSession(browser) });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+    const answered = page.waitForResponse(
+      (res) => new URL(res.url()).pathname === "/api/reports/cash-flow",
+    );
+    await page.goto("/");
+    await expect(page).toHaveURL((url) => url.pathname === "/cash-flow");
+    await expect(page.getByRole("heading", { level: 2, name: "Cash flow" })).toBeVisible();
+    const res = await answered;
+    expect(res.status()).toBe(200);
+    // The current quarter, inclusive, from the browser's own day.
+    const query = new URL(res.url()).searchParams;
+    expect(query.get("from")).toMatch(/^\d{4}-(01|04|07|10)-01$/);
+    expect(query.get("to")).toMatch(/^\d{4}-(03-31|06-30|09-30|12-31)$/);
+    const tiles = page.getByTestId("cash-flow-tiles");
+    for (const label of ["Money in", "Money out", "Kept"]) {
+      await expect(tiles.getByText(label, { exact: true })).toBeVisible();
+    }
+    await expect(tiles.locator("dd")).toHaveCount(3);
+    await expect(
+      page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Cash flow" }),
+    ).toHaveAttribute("aria-current", "page");
   } finally {
     await context.close();
   }
@@ -349,7 +382,7 @@ test("mobile More tab opens sheet with Accounts, Settings, and Sign out, and tap
   }
 });
 
-test("unauthenticated visitor visiting /transactions or /accounts redirects to /sign-in, and signed-in visitor redirects to /transactions", async ({
+test("unauthenticated visitor visiting /transactions or /accounts redirects to /sign-in, and signed-in visitor redirects to /cash-flow", async ({
   browser,
   cspViolations,
 }) => {
@@ -372,7 +405,7 @@ test("unauthenticated visitor visiting /transactions or /accounts redirects to /
     await watchCsp(authContext, cspViolations);
     const authPage = await authContext.newPage();
     await authPage.goto("/sign-in");
-    await expect(authPage).toHaveURL((url) => url.pathname === "/transactions");
+    await expect(authPage).toHaveURL((url) => url.pathname === "/cash-flow");
   } finally {
     await authContext.close();
   }

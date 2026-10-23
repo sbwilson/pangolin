@@ -51,17 +51,25 @@ test("desktop shell navigation via AppSidebar reaches all shipped routes and red
     await watchCsp(context, cspViolations);
     const page = await context.newPage();
 
-    // Root redirects to /transactions
+    // Root redirects to the Cash flow landing page
     await page.goto("/");
-    await expect(page).toHaveURL((url) => url.pathname === "/transactions");
+    await expect(page).toHaveURL((url) => url.pathname === "/cash-flow");
 
     const sidebar = page.getByRole("navigation", { name: "Main" });
     await expect(sidebar).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeHidden();
 
-    // Verify Transactions link has aria-current="page"
+    // Verify the Cash flow link has aria-current="page", and Transactions does not
+    const cashFlowLink = sidebar.getByRole("link", { name: "Cash flow" });
     const txLink = sidebar.getByRole("link", { name: "Transactions" });
+    await expect(cashFlowLink).toHaveAttribute("aria-current", "page");
+    await expect(txLink).not.toHaveAttribute("aria-current", "page");
+
+    // Navigate to Transactions
+    await txLink.click();
+    await expect(page).toHaveURL((url) => url.pathname === "/transactions");
     await expect(txLink).toHaveAttribute("aria-current", "page");
+    await expect(cashFlowLink).not.toHaveAttribute("aria-current", "page");
 
     // Navigate to Accounts
     const accountsLink = sidebar.getByRole("link", { name: "Accounts" });
@@ -77,16 +85,16 @@ test("desktop shell navigation via AppSidebar reaches all shipped routes and red
     await expect(settingsLink).toHaveAttribute("aria-current", "page");
     await expect(accountsLink).not.toHaveAttribute("aria-current", "page");
 
-    // Click Cash flow link (which redirects / to /transactions)
-    const cashFlowLink = sidebar.getByRole("link", { name: "Cash flow" });
+    // Click the Cash flow link: it lands on /cash-flow
     await cashFlowLink.click();
-    await expect(page).toHaveURL((url) => url.pathname === "/transactions");
-    await expect(txLink).toHaveAttribute("aria-current", "page");
+    await expect(page).toHaveURL((url) => url.pathname === "/cash-flow");
+    await expect(cashFlowLink).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("heading", { level: 2, name: "Cash flow" })).toBeVisible();
 
     // Navigate back to /
     await page.goto("/");
-    await expect(page).toHaveURL((url) => url.pathname === "/transactions");
-    await expect(txLink).toHaveAttribute("aria-current", "page");
+    await expect(page).toHaveURL((url) => url.pathname === "/cash-flow");
+    await expect(cashFlowLink).toHaveAttribute("aria-current", "page");
   } finally {
     await context.close();
   }
@@ -105,7 +113,7 @@ test("mobile shell navigation via MobileNav and More sheet reaches shipped route
     const page = await context.newPage();
 
     await page.goto("/");
-    await expect(page).toHaveURL((url) => url.pathname === "/transactions");
+    await expect(page).toHaveURL((url) => url.pathname === "/cash-flow");
 
     const desktopNav = page.getByRole("navigation", { name: "Main" });
     await expect(desktopNav).toBeHidden();
@@ -113,9 +121,11 @@ test("mobile shell navigation via MobileNav and More sheet reaches shipped route
     const mobileNav = page.getByRole("navigation", { name: "Mobile navigation" });
     await expect(mobileNav).toBeVisible();
 
+    const cashFlowLink = mobileNav.getByRole("link", { name: "Cash flow" });
+    await expect(cashFlowLink).toHaveAttribute("aria-current", "page");
     const txLink = mobileNav.getByRole("link", { name: "Transactions" });
     await expect(txLink).toBeVisible();
-    await expect(txLink).toHaveAttribute("aria-current", "page");
+    await expect(txLink).not.toHaveAttribute("aria-current", "page");
 
     // Open More sheet and dismiss via close button (Done)
     await mobileNav.getByRole("button", { name: "More" }).click();
@@ -142,6 +152,11 @@ test("mobile shell navigation via MobileNav and More sheet reaches shipped route
     await mobileNav.getByRole("link", { name: "Transactions" }).click();
     await expect(page).toHaveURL((url) => url.pathname === "/transactions");
     await expect(txLink).toHaveAttribute("aria-current", "page");
+
+    // And back to Cash flow
+    await cashFlowLink.click();
+    await expect(page).toHaveURL((url) => url.pathname === "/cash-flow");
+    await expect(cashFlowLink).toHaveAttribute("aria-current", "page");
   } finally {
     await context.close();
   }
