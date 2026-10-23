@@ -123,9 +123,16 @@ real statements.
 | --- | --- |
 | Commit / release tag | `v0.2.4` (`f495879`) on pang-dev; the ledger balance line (`1253a8f`) is not yet released |
 | Date | 2026-10-21 |
+| Last backup before installing the latest release (`install.sh --build`) | Backup `01M5KSMAP79V1M6XCF07GPTX8G`, done 2026-10-23T07:12:02.811Z, restic snapshot `143ea9d8dad8526c04d2edad80f8f476a3d966d5949a23130aff0c5a8f796bb9`, taken with `sudo pangolin backup` on pang-dev |
 | Accounts imported | 4: Dollarmites, Mastercard, Netbank saver, Hawthorne St (bank CSV exports, de-identified), one batch each |
 
-### Accepted exceptions (decided by the human, 2026-10-21)
+### Accepted exceptions (decided by the human, 2026-10-21 and 2026-10-23)
+
+- **Ledger balances accepted (2026-10-23).** The human accepted each account's ledger balance without
+  a line-by-line comparison against the bank. Mastercard's closing balance is accepted on the same
+  basis. The `ledger balance` line is shown by the report from build `5e8e94c` (run below).
+- **Twelve months not required (2026-10-23).** The twelve-month requirement is dropped for this
+  test; the coverage each account has is accepted.
 
 - **Start from an opening balance, not from 1 July 2024.** The bank's CSV export reaches back only so
   far, so each account's first statement starts mid-life. The leading span is accepted when the account
@@ -155,7 +162,10 @@ One row per account that has statements. Findings are the `HOLE`, `BROKEN` and `
 | --- | --- |
 | `pangolin m1-report` output (account names may be redacted) | Run on pang-dev 2026-10-21 after the openings were entered: `Total: 0 holes, 0 broken batches, 0 join breaks`. Full output (with balances and ids) is held by the human, not in this repository |
 | Needs review "Balance gap" items open | Not recorded; check `/review` before signing |
-| Outcome | Machine check is zero after the accepted openings. Not yet compared with the bank: each account's ledger balance (`pangolin m1-report` now prints `ledger balance`, `1253a8f`, after the next release) against the bank's balance, and Mastercard's closing balance by hand |
+| `pangolin m1-report` on build `5e8e94c` | 2026-10-23: all four accounts print `starts from opening balance` and `ledger balance` lines; `Total: 0 holes, 0 broken batches, 0 join breaks`. Balances are not recorded here |
+| `pangolin m1-report --as Simon` and `--as Carissa` | 2026-10-23, build `5e8e94c`: both `Total: 0 holes, 0 broken batches, 0 join breaks`. Simon sees all 4 accounts; Carissa sees 3 (Mastercard, Netbank saver, Hawthorne St), so Dollarmites is private to Simon. The shared accounts show the same coverage for both |
+| `pangolin m1-report` re-run | 2026-10-23: `Total: 0 holes, 0 broken batches, 0 join breaks`; 4 accounts, 1 batch each, same coverage as above |
+| Outcome | Machine check is zero after the accepted openings. Ledger balances and the twelve-month requirement accepted by the human on 2026-10-23 (see Accepted exceptions). The human states no gaps remain |
 
 ### Decision
 
@@ -164,4 +174,4 @@ human marks it closed.
 
 | Gate | Decided by | Date |
 | --- | --- | --- |
-| Open | | |
+| Closed | Simon Wilson | 2026-10-23 |
