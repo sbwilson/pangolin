@@ -568,6 +568,7 @@ export type {
   CredentialRepo,
   DayRange,
   DeadJobRow,
+  FlowBreakdownRow,
   HouseholdSettingsRepo,
   HouseholdSettingsRow,
   JobLane,
@@ -683,11 +684,39 @@ export {
 } from "./ports/unit-of-work.ts";
 export { hiddenLabel, redact } from "./redact.ts";
 export {
+  REPORT_BY,
+  type ReportBy,
+  type ReportRow,
+  type ReportSection,
+} from "./reports/breakdown.ts";
+export {
   type CashFlowReport,
   type CashFlowTotalsInput,
   cashFlowTotals,
   cashFlowTotalsInput,
+  savingsRatePermille,
 } from "./reports/cash-flow-totals.ts";
+export {
+  MERCHANT_FLOWS,
+  type MerchantFlow,
+  type MerchantRow,
+  type MerchantsInput,
+  type MerchantsReport,
+  merchants,
+  merchantsInput,
+} from "./reports/merchants.ts";
+export {
+  type ProfitAndLossInput,
+  type ProfitAndLossReport,
+  profitAndLoss,
+  profitAndLossInput,
+} from "./reports/profit-and-loss.ts";
+export {
+  type SpendingInput,
+  type SpendingReport,
+  spending,
+  spendingInput,
+} from "./reports/spending.ts";
 export {
   BACKUP_CHECK_JOB,
   BACKUP_CHECK_SCHEDULE_NAME,

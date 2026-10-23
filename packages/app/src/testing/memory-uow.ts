@@ -28,6 +28,7 @@ import type {
   CategoryRepo,
   CategoryRow,
   CredentialRepo,
+  FlowBreakdownRow,
   HouseholdSettingsRow,
   ImportBatchRepo,
   ImportBatchRow,
@@ -1750,6 +1751,54 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       moneyOutCents = moneyOutCents || 0;
       return { moneyInCents, moneyOutCents, keptCents: moneyInCents - moneyOutCents || 0 };
     },
+    flowBreakdown: (viewer, today, range) => {
+      requireViewer(viewer);
+      requireDay(today, "visibleTxn");
+      check();
+      const sums = new Map<string, FlowBreakdownRow>();
+      for (const row of visibleRows(viewer)) {
+        if (row.postedOn < range.from || row.postedOn > range.to) continue;
+        // The projected payee (mirror of `visibleTxn`'s `payeeId`/`payeeName`).
+        const shown = view(viewer, row, today);
+        for (const s of working.splits.filter((x) => x.transactionId === row.id)) {
+          const kind = splitFlowKindFor(working, viewer, row, s);
+          if (kind !== "income" && kind !== "expense") continue;
+          // A 0-cent split adds nothing and would only make a 0-cent row.
+          if (s.amountCents === 0) continue;
+          const key = JSON.stringify([kind, s.categoryId, shown.payeeId]);
+          const cat =
+            s.categoryId === null
+              ? undefined
+              : working.categories.find((c) => c.id === s.categoryId);
+          const group =
+            cat === undefined
+              ? undefined
+              : working.categoryGroups.find((g) => g.id === cat.groupId);
+          const before = sums.get(key);
+          const cents = (before?.cents ?? 0) + (kind === "income" ? s.amountCents : -s.amountCents);
+          sums.set(key, {
+            kind,
+            groupId: group?.id ?? null,
+            groupName: group?.name ?? null,
+            categoryId: cat?.id ?? null,
+            categoryName: cat?.name ?? null,
+            payeeId: shown.payeeId,
+            payeeName: shown.payeeName,
+            cents,
+          });
+        }
+      }
+      const nullsFirst = (x: string | null, y: string | null) =>
+        x === y ? 0 : x === null ? -1 : y === null ? 1 : byText(x, y);
+      return [...sums.values()]
+        .map((r) => ({ ...r, cents: r.cents || 0 }))
+        .sort(
+          (x, y) =>
+            byText(x.kind, y.kind) ||
+            nullsFirst(x.categoryId, y.categoryId) ||
+            nullsFirst(x.payeeId, y.payeeId),
+        );
+    },
     countBefore: (viewer, today, filter, cursor) => {
       requireViewer(viewer);
       requireDay(today, "visibleTxn");
@@ -3047,6 +3096,7 @@ export function memoryUnitOfWork(
           listPage: transactionRepo(uow.state, check).listPage,
           summarise: transactionRepo(uow.state, check).summarise,
           cashFlowTotals: transactionRepo(uow.state, check).cashFlowTotals,
+          flowBreakdown: transactionRepo(uow.state, check).flowBreakdown,
           countBefore: transactionRepo(uow.state, check).countBefore,
           dayNets: transactionRepo(uow.state, check).dayNets,
           latestPostedOn: transactionRepo(uow.state, check).latestPostedOn,

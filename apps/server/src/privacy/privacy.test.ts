@@ -139,6 +139,16 @@ const CASH_FLOW_QUERIES = [
   "from=2026-07-01&to=2026-09-30",
 ];
 
+/** The report-core reads B's views are replayed with: each range under every `by` and `flow`. */
+const REPORT_QUERIES = CASH_FLOW_QUERIES.flatMap((range) => [
+  `/api/reports/pnl?${range}&by=group`,
+  `/api/reports/pnl?${range}&by=category`,
+  `/api/reports/spending?${range}&by=group`,
+  `/api/reports/spending?${range}&by=category`,
+  `/api/reports/merchants?${range}&flow=income`,
+  `/api/reports/merchants?${range}&flow=expense`,
+]);
+
 /** Every `GET` route that returns person data, as B sees it, keyed by route and ids. */
 async function readTranscript(world: World): Promise<Map<string, string>> {
   const out = new Map<string, string>();
@@ -173,6 +183,10 @@ async function readTranscript(world: World): Promise<Map<string, string>> {
   }
   for (const query of CASH_FLOW_QUERIES) {
     const path = `/api/reports/cash-flow?${query}`;
+    const res = await world.request("b", "GET", path);
+    out.set(`GET ${path}`, normaliseRequestIds(`${res.status} ${res.text}`));
+  }
+  for (const path of REPORT_QUERIES) {
     const res = await world.request("b", "GET", path);
     out.set(`GET ${path}`, normaliseRequestIds(`${res.status} ${res.text}`));
   }
@@ -1518,6 +1532,12 @@ describe("a hidden description and payee on a shared imported transaction", () =
     const before = pair.seen[0].get("hidden row, before B writes");
     const key = `GET /api/ledger/transactions/${pair.runs[0].ids.transactionId}`;
     expect(before?.get(key)).toContain("Hidden until");
+    // The report reads are observed, and B's merchants hold the hidden row in the null payee.
+    const merchantsKey = [...(before?.keys() ?? [])].find((k) =>
+      k.startsWith("GET /api/reports/merchants?from=2026-07-01"),
+    );
+    expect(merchantsKey).toBeDefined();
+    expect(before?.get(merchantsKey as string)).toMatch(/^200 .*"payeeId":null/);
   });
 
   it("answers B's writes on the hidden row the same way in both worlds", () => {
@@ -1542,7 +1562,11 @@ describe("a hidden description and payee on a shared imported transaction", () =
         );
         for (const [key, text] of reads) {
           // The payee list is shared, so a payee's name and id are fair game there.
-          const about = key.startsWith("GET /api/ledger") || key.startsWith("repo findVisible");
+          // A report groups merchants by the projected payee: the hidden row's must not appear.
+          const about =
+            key.startsWith("GET /api/ledger") ||
+            key.startsWith("GET /api/reports") ||
+            key.startsWith("repo findVisible");
           const secrets = [ids.description, ids.fingerprint, ids.externalId];
           if (about) secrets.push(ids.payeeId);
           if (key === "use case listAudit(B)") {

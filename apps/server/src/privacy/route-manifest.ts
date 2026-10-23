@@ -223,6 +223,13 @@ export const MANIFEST: readonly ManifestEntry[] = [
   // account is a transfer for B whatever its type, so B's figures never depend on A's data. The
   // suite also replays it as B over ranges (`CASH_FLOW_QUERIES`), since the bare route is a 400.
   read("/api/reports/cash-flow"),
+  // Report core (story 4.2): P&L, spending and merchants fold one flowKind breakdown over
+  // `visibleTxn`, grouping merchants by its projected payee, so a hidden name or A's scoped payee
+  // is B's null payee. Replayed as B over ranges and every `by`/`flow` (`REPORT_QUERIES`), and
+  // observed by `hiddenNameScenario`; the bare routes are 400s.
+  read("/api/reports/pnl"),
+  read("/api/reports/spending"),
+  read("/api/reports/merchants"),
   read("/api/ledger/transactions"),
   // Search: the list filtered by `q` through the FTS5 index; the hidden-name and scoped-name
   // exclusion is applied on the viewer's projection at query time, never stored in the index.

@@ -78,6 +78,8 @@ const sha256 = (text: string): string => createHash("sha256").update(text).diges
 const after = (world: World, days: number): string => world.clock.today().add({ days }).toString();
 
 const POSTED = "2026-07-11";
+/** The month around `POSTED` that the report reads of the hidden-name scenario cover. */
+const REPORT_RANGE = "from=2026-07-01&to=2026-07-31";
 
 // ------------------------------------------------------------------------------------ hidden
 
@@ -197,7 +199,15 @@ export async function hiddenNameScenario(
   };
   const path = `/api/ledger/transactions/${transactionId}`;
   const view: View = {
-    paths: ["/api/ledger/transactions", path, "/api/classify/payees"],
+    paths: [
+      "/api/ledger/transactions",
+      path,
+      "/api/classify/payees",
+      // The report core over the row's month: the hidden row's payee must be B's null payee.
+      `/api/reports/merchants?${REPORT_RANGE}&flow=expense`,
+      `/api/reports/pnl?${REPORT_RANGE}&by=category`,
+      `/api/reports/spending?${REPORT_RANGE}&by=group`,
+    ],
     transactionIds: [transactionId],
   };
   await observe("hidden row, before B writes", view);

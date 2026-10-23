@@ -2336,7 +2336,79 @@ describe("GET /api/reports/cash-flow", () => {
       moneyInCents: 300000,
       moneyOutCents: 4500,
       keptCents: 295500,
+      savingsRatePermille: 985,
     });
+  });
+
+  it("answers P&L, spending and merchants for the signed-in person over the range", async () => {
+    const db = openDb();
+    seedFlows(db);
+    const app = createApp(deps(db));
+    const get = async (path: string) => {
+      const res = await app.request(path, signedIn);
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      return res.json();
+    };
+    const range = "from=2026-09-01&to=2026-09-30";
+    // Every row is uncategorised and payee-less; Sam's private row and the transfer are absent.
+    for (const by of ["group", "category"]) {
+      const empty = by === "group" ? {} : { groupId: null, groupName: null };
+      expect(await get(`/api/reports/pnl?${range}&by=${by}`)).toEqual({
+        from: "2026-09-01",
+        to: "2026-09-30",
+        by,
+        income: { totalCents: 300000, rows: [{ id: null, name: null, ...empty, cents: 300000 }] },
+        expense: { totalCents: 4500, rows: [{ id: null, name: null, ...empty, cents: 4500 }] },
+        uncategorised: { inCents: 300000, outCents: 4500 },
+      });
+      expect(await get(`/api/reports/spending?${range}&by=${by}`)).toEqual({
+        from: "2026-09-01",
+        to: "2026-09-30",
+        by,
+        totalCents: 4500,
+        rows: [{ id: null, name: null, ...empty, cents: 4500 }],
+      });
+    }
+    expect(await get(`/api/reports/merchants?${range}&flow=expense`)).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-30",
+      flow: "expense",
+      totalCents: 4500,
+      rows: [{ payeeId: null, payeeName: null, cents: 4500 }],
+    });
+  });
+
+  it.each([
+    ["P&L without by", "/api/reports/pnl?from=2026-09-01&to=2026-09-30"],
+    ["P&L with a bad by", "/api/reports/pnl?from=2026-09-01&to=2026-09-30&by=payee"],
+    ["P&L without a range", "/api/reports/pnl?by=group"],
+    ["P&L backwards", "/api/reports/pnl?from=2026-09-30&to=2026-09-01&by=group"],
+    ["spending without by", "/api/reports/spending?from=2026-09-01&to=2026-09-30"],
+    ["spending with a bad day", "/api/reports/spending?from=2026-02-30&to=2026-03-31&by=group"],
+    ["merchants without flow", "/api/reports/merchants?from=2026-09-01&to=2026-09-30"],
+    [
+      "merchants with a bad flow",
+      "/api/reports/merchants?from=2026-09-01&to=2026-09-30&flow=transfer",
+    ],
+    ["merchants without a range", "/api/reports/merchants?flow=income"],
+  ])("answers 400 Validation for %s", async (_what, path) => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp(deps(db)).request(path, signedIn);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("Validation");
+  });
+
+  it.each([
+    "/api/reports/pnl?from=2026-09-01&to=2026-09-30&by=group",
+    "/api/reports/spending?from=2026-09-01&to=2026-09-30&by=category",
+    "/api/reports/merchants?from=2026-09-01&to=2026-09-30&flow=expense",
+  ])("answers 401 without a session for %s", async (path) => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp(deps(db)).request(path);
+    expect(res.status).toBe(401);
   });
 
   it.each([
@@ -2372,6 +2444,9 @@ describe("Cache-Control on every /api response", () => {
     ["person data", "/api/review", 200],
     ["person data", "/api/review/count", 200],
     ["person data", "/api/reports/cash-flow?from=2026-09-01&to=2026-09-30", 200],
+    ["person data", "/api/reports/pnl?from=2026-09-01&to=2026-09-30&by=group", 200],
+    ["person data", "/api/reports/spending?from=2026-09-01&to=2026-09-30&by=group", 200],
+    ["person data", "/api/reports/merchants?from=2026-09-01&to=2026-09-30&flow=income", 200],
     ["an error (404)", "/api/ledger/transactions/missing", 404],
     ["an unknown route (404)", "/api/nothing-here", 404],
     ["better-auth's passthrough", "/api/auth/get-session", 200],

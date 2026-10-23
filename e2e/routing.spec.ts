@@ -89,7 +89,7 @@ test("a deep link to /transactions opens the list inside the shell, and /ledger 
   }
 });
 
-test("/ lands on Cash flow, showing money in, money out and kept for the quarter", async ({
+test("/ lands on Cash flow, showing money in, money out, kept and savings rate for the quarter", async ({
   browser,
   cspViolations,
 }) => {
@@ -110,13 +110,103 @@ test("/ lands on Cash flow, showing money in, money out and kept for the quarter
     expect(query.get("from")).toMatch(/^\d{4}-(01|04|07|10)-01$/);
     expect(query.get("to")).toMatch(/^\d{4}-(03-31|06-30|09-30|12-31)$/);
     const tiles = page.getByTestId("cash-flow-tiles");
-    for (const label of ["Money in", "Money out", "Kept"]) {
+    for (const label of ["Money in", "Money out", "Kept", "Savings rate"]) {
       await expect(tiles.getByText(label, { exact: true })).toBeVisible();
     }
-    await expect(tiles.locator("dd")).toHaveCount(3);
+    await expect(tiles.locator("dd")).toHaveCount(4);
+    await expect(page.getByRole("button", { name: "Quarter", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await expect(
       page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Cash flow" }),
     ).toHaveAttribute("aria-current", "page");
+  } finally {
+    await context.close();
+  }
+});
+
+test("the Cash flow range control writes the URL and the request, and a reload keeps it", async ({
+  browser,
+  cspViolations,
+}) => {
+  const context = await browser.newContext({ storageState: await alexSession(browser) });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+    // The browser's day is pinned mid-quarter, so FY to date is never also an aligned quarter
+    // (as it is on 30 September) and every expected range follows from it.
+    const year = 2026;
+    const today = `${year}-08-14`;
+    await page.clock.setFixedTime(new Date(year, 7, 14, 12));
+    const quarter = { from: `${year}-07-01`, to: `${year}-09-30` };
+    const fy = { from: `${year}-07-01`, to: today };
+    const lastFy = { from: `${year - 1}-07-01`, to: `${year}-06-30` };
+    const custom = { from: `${year - 1}-08-15`, to: `${year}-06-30` };
+    /** The next cash-flow request's range. */
+    const nextRange = () =>
+      page
+        .waitForResponse((res) => new URL(res.url()).pathname === "/api/reports/cash-flow")
+        .then((res) => {
+          expect(res.status()).toBe(200);
+          const q = new URL(res.url()).searchParams;
+          return { from: q.get("from"), to: q.get("to") };
+        });
+    const urlRange = () => {
+      const q = new URL(page.url()).searchParams;
+      return { from: q.get("from"), to: q.get("to") };
+    };
+    let answered = nextRange();
+    await page.goto("/cash-flow");
+    expect(await answered).toEqual(quarter);
+
+    // FY to date: 1 July of the current FY to today, in the URL and the request.
+    answered = nextRange();
+    await page.getByRole("button", { name: "FY to date" }).click();
+    expect(await answered).toEqual(fy);
+    await expect(page).toHaveURL((url) => url.searchParams.get("to") === fy.to);
+    expect(urlRange()).toEqual(fy);
+    await expect(page.getByRole("button", { name: "FY to date" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByRole("button", { name: "Next year" })).toBeDisabled();
+
+    // Reload keeps the range, and asks for it again.
+    answered = nextRange();
+    await page.reload();
+    expect(await answered).toEqual(fy);
+    await expect(page.getByRole("button", { name: "FY to date" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // The previous chevron steps a whole year back.
+    answered = nextRange();
+    await page.getByRole("button", { name: "Previous year" }).click();
+    expect(await answered).toEqual(lastFy);
+    expect(urlRange()).toEqual(lastFy);
+    await expect(page.getByTestId("range-label")).toHaveText(`FY${year}`);
+
+    // Custom: From and To write the URL and the request.
+    await page.getByRole("button", { name: "Custom" }).click();
+    answered = nextRange();
+    await page.getByLabel("From").fill(custom.from);
+    expect(await answered).toEqual(custom);
+    expect(urlRange()).toEqual(custom);
+    await expect(page.getByRole("button", { name: "Custom" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // A junk range falls back to the current quarter, shown and requested.
+    answered = nextRange();
+    await page.goto("/cash-flow?from=x&to=2026-01-01");
+    expect(await answered).toEqual(quarter);
+    await expect(page.getByRole("button", { name: "Quarter", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   } finally {
     await context.close();
   }
@@ -268,7 +358,7 @@ for (const width of [375, 320]) {
       await expect(main.getByRole("combobox", { name: "Type" })).toBeVisible();
       await expect(main.getByRole("combobox", { name: "Account" })).toBeVisible();
       await expect(main.getByRole("combobox", { name: "Category" })).toBeVisible();
-      await expect(main.getByRole("button", { name: "Quarter" })).toBeVisible();
+      await expect(main.getByRole("button", { name: "Quarter", exact: true })).toBeVisible();
       await expect(
         page.getByText("30 transactions \u00b7 In $0.00 \u00b7 Out $4.65"),
       ).toBeVisible();
