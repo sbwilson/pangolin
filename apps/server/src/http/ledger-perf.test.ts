@@ -185,4 +185,27 @@ describe("50,000-row ledger performance", () => {
 
     expect(elapsed).toBeLessThanOrEqual(BUDGET_MS);
   });
+
+  it("serves cash-flow totals over the full seeded range in <= 300 ms", async () => {
+    const days = db
+      .prepare('SELECT min(posted_on) AS first, max(posted_on) AS last FROM "transaction"')
+      .get() as { first: string; last: string };
+    const start = performance.now();
+    const res = await app.request(`/api/reports/cash-flow?from=${days.first}&to=${days.last}`, {
+      headers: { Cookie: SESSION_COOKIE },
+    });
+    const elapsed = performance.now() - start;
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      moneyInCents: number;
+      moneyOutCents: number;
+      keptCents: number;
+    };
+    expect(body.moneyInCents).toBeGreaterThan(0);
+    expect(body.moneyOutCents).toBeGreaterThan(0);
+    expect(body.keptCents).toBe(body.moneyInCents - body.moneyOutCents);
+
+    expect(elapsed).toBeLessThanOrEqual(BUDGET_MS);
+  });
 });

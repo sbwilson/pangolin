@@ -19,6 +19,14 @@ export {
   type FingerprintInput,
   sha256Hex,
 } from "./dedupe/fingerprint.ts";
+export {
+  FLOW_KINDS,
+  type FlowAccountType,
+  type FlowGroupKind,
+  type FlowKind,
+  type FlowKindInput,
+  flowKind,
+} from "./flows/flow-kind.ts";
 export { normaliseCommBankDescription } from "./normalise/commbank.ts";
 export {
   type ReconcileResult,

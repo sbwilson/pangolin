@@ -344,6 +344,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               findVisible: repos.transactions.findVisible,
               listPage: repos.transactions.listPage,
               summarise: repos.transactions.summarise,
+              cashFlowTotals: repos.transactions.cashFlowTotals,
               countBefore: repos.transactions.countBefore,
               dayNets: repos.transactions.dayNets,
               latestPostedOn: repos.transactions.latestPostedOn,

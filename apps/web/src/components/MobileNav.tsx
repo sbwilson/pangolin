@@ -25,7 +25,7 @@ export function MobileNav({ signOut, className }: MobileNavProps) {
         )}
       >
         <Link
-          to="/"
+          to="/cash-flow"
           activeOptions={{ exact: true }}
           className="flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-1 text-center text-[10.5px] leading-tight text-muted-foreground transition-colors"
           activeProps={{

@@ -9,8 +9,11 @@ import { alias, type SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { account } from "./schema/account.ts";
 import { accountOwner } from "./schema/account-owner.ts";
 import { auditLog } from "./schema/audit-log.ts";
+import { category } from "./schema/category.ts";
+import { categoryGroup } from "./schema/category-group.ts";
 import { payee } from "./schema/payee.ts";
 import { person } from "./schema/person.ts";
+import { split } from "./schema/split.ts";
 import { transaction } from "./schema/transaction.ts";
 
 /**
@@ -145,6 +148,60 @@ export function visibleTxn(viewer: Viewer | undefined, today: string): TxnProjec
       WHEN ${transaction.amountCents} >= 0 THEN 'Transfer from ' || ${counterpartOwner}
       ELSE 'Transfer to ' || ${counterpartOwner} END)`,
   };
+}
+
+/**
+ * The counterpart of the current `transaction` row's transfer, as `flowKind` takes it (AD-23):
+ * NULL when the row is not linked or no other live row of its group sits in a live account;
+ * `'hidden'` when that row's account is not one the viewer may see; else the account's type.
+ * With more than one other row, the one with the lowest id. Throws without a viewer.
+ */
+export function flowCounterpartSql(viewer: Viewer | undefined): SQL {
+  const accounts = visibleAccounts(viewer);
+  const cp = alias(transaction, "fcp");
+  const ca = alias(account, "fca");
+  return sql`(SELECT CASE WHEN ${ca.id} IN (SELECT ${account.id} FROM ${account} WHERE ${accounts})
+        THEN ${ca.type} ELSE 'hidden' END
+      FROM ${transaction} ${cp}
+      JOIN ${account} ${ca} ON ${ca.id} = ${cp.accountId}
+      WHERE ${transaction.transferGroupId} IS NOT NULL
+        AND ${cp.transferGroupId} = ${transaction.transferGroupId}
+        AND ${cp.id} <> ${transaction.id}
+        AND ${cp.deletedAt} IS NULL
+        AND ${ca.deletedAt} IS NULL
+      ORDER BY ${cp.id} LIMIT 1)`;
+}
+
+/**
+ * The one SQL expression of `flowKind` (AD-23) for the current `split` row joined to its
+ * `transaction`: `'income'`, `'expense'`, `'transfer'` or `'investing'`, by the same rules in the
+ * same order as `domain`'s `flowKind` (the parity test holds them together); a home-loan
+ * counterpart is `expense` only for money out (a repayment), a redraw is `transfer`. A counterpart the
+ * viewer cannot see is a transfer whatever its type, so the partner's figures never depend on
+ * the other person's private accounts (AD-3, AD-4). Every aggregate of flows uses this.
+ * Throws without a viewer.
+ */
+export function flowKindSql(viewer: Viewer | undefined): SQL {
+  const counterpart = flowCounterpartSql(viewer);
+  const group = alias(categoryGroup, "fcg");
+  const cat = alias(category, "fcc");
+  const groupKind = sql`(SELECT ${group.kind} FROM ${category} ${cat}
+      JOIN ${categoryGroup} ${group} ON ${group.id} = ${cat.groupId}
+      WHERE ${cat.id} = ${split.categoryId})`;
+  // A simple CASE evaluates the counterpart once; NULL or any other type falls to the ELSE.
+  return sql`(CASE ${counterpart}
+      WHEN 'hidden' THEN 'transfer'
+      WHEN 'transaction' THEN 'transfer'
+      WHEN 'savings' THEN 'transfer'
+      WHEN 'offset' THEN 'transfer'
+      WHEN 'credit_card' THEN 'transfer'
+      WHEN 'home_loan' THEN (CASE WHEN ${split.amountCents} < 0 THEN 'expense' ELSE 'transfer' END)
+      WHEN 'brokerage' THEN 'investing'
+      WHEN 'super' THEN 'investing'
+      ELSE (CASE
+        WHEN ${groupKind} = 'transfer' THEN 'transfer'
+        WHEN ${split.amountCents} > 0 THEN 'income'
+        ELSE 'expense' END) END)`;
 }
 
 /**

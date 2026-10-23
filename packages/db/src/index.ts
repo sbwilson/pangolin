@@ -1,6 +1,7 @@
 export { createAuthAdapter } from "./auth-adapter.ts";
 export { BALANCE_AS_OF_SQL, balanceAsOf } from "./balance.ts";
 export { type ExclusiveLock, tryExclusiveLock } from "./exclusive-lock.ts";
+export { splitFlowKinds } from "./ledger-repos.ts";
 export {
   type AccountManifest,
   type BuildManifestOptions,

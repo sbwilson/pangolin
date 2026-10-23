@@ -564,7 +564,9 @@ export type {
   BackupVerificationKind,
   BackupVerificationRepo,
   BackupVerificationRow,
+  CashFlowTotals,
   CredentialRepo,
+  DayRange,
   DeadJobRow,
   HouseholdSettingsRepo,
   HouseholdSettingsRow,
@@ -680,6 +682,12 @@ export {
   type VisibleTransaction,
 } from "./ports/unit-of-work.ts";
 export { hiddenLabel, redact } from "./redact.ts";
+export {
+  type CashFlowReport,
+  type CashFlowTotalsInput,
+  cashFlowTotals,
+  cashFlowTotalsInput,
+} from "./reports/cash-flow-totals.ts";
 export {
   BACKUP_CHECK_JOB,
   BACKUP_CHECK_SCHEDULE_NAME,

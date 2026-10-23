@@ -2279,6 +2279,90 @@ describe("/api/auth/*", () => {
   });
 });
 
+describe("GET /api/reports/cash-flow", () => {
+  const alex = "01J0000000000000000000000A";
+
+  /** A joint account with pay, spend and a card repayment; a row in Sam's private account. */
+  function seedFlows(db: Db) {
+    addPerson(db);
+    const d = deps(db);
+    const ctx: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const sam = createPerson(ctx, { displayName: "Sam", colour: "#000000" });
+    const account = (name: string, type: "transaction" | "credit_card", isPrivate: boolean) =>
+      createAccount(ctx, {
+        name,
+        type,
+        currency: "AUD",
+        isPrivate,
+        owners: isPrivate
+          ? [{ personId: sam, shareBp: 10000 }]
+          : [
+              { personId: alex, shareBp: 5000 },
+              { personId: sam, shareBp: 5000 },
+            ],
+      });
+    const joint = account("Joint", "transaction", false);
+    const card = account("Card", "credit_card", false);
+    const theirs = account("Sam private", "transaction", true);
+    const add = (accountId: string, amountCents: number, postedOn = "2026-09-10") =>
+      createTransaction(ctx, { accountId, postedOn, amountCents, description: "row" });
+    add(joint, 300000);
+    add(joint, -4500);
+    add(theirs, -999);
+    add(joint, -100, "2026-10-01");
+    const out = add(joint, -20000);
+    const inn = add(card, 20000);
+    createTransferGroup(ctx, { transactionIds: [out, inn] });
+  }
+
+  it("answers money in, money out and kept for the signed-in person over the range", async () => {
+    const db = openDb();
+    seedFlows(db);
+    const res = await createApp(deps(db)).request(
+      "/api/reports/cash-flow?from=2026-09-01&to=2026-09-30",
+      signedIn,
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    // Sam's private row is not Alex's to see; the card repayment is a transfer.
+    expect(await res.json()).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-30",
+      moneyInCents: 300000,
+      moneyOutCents: 4500,
+      keptCents: 295500,
+    });
+  });
+
+  it.each([
+    ["no range", ""],
+    ["no to", "?from=2026-09-01"],
+    ["a backwards range", "?from=2026-09-30&to=2026-09-01"],
+    ["a malformed day", "?from=2026-9-1&to=2026-09-30"],
+    ["an impossible day", "?from=2026-02-30&to=2026-03-31"],
+  ])("answers 400 Validation for %s", async (_what, query) => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp(deps(db)).request(`/api/reports/cash-flow${query}`, signedIn);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("Validation");
+  });
+
+  it("answers 401 without a session", async () => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp(deps(db)).request(
+      "/api/reports/cash-flow?from=2026-09-01&to=2026-09-30",
+    );
+    expect(res.status).toBe(401);
+  });
+});
+
 describe("Cache-Control on every /api response", () => {
   const routes: [string, string, number][] = [
     ["person data", "/api/identity/me", 200],
@@ -2287,6 +2371,7 @@ describe("Cache-Control on every /api response", () => {
     ["person data", "/api/classify/payees", 200],
     ["person data", "/api/review", 200],
     ["person data", "/api/review/count", 200],
+    ["person data", "/api/reports/cash-flow?from=2026-09-01&to=2026-09-30", 200],
     ["an error (404)", "/api/ledger/transactions/missing", 404],
     ["an unknown route (404)", "/api/nothing-here", 404],
     ["better-auth's passthrough", "/api/auth/get-session", 200],
