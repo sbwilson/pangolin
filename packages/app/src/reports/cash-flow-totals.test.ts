@@ -26,7 +26,7 @@ import { systemViewer } from "../system-viewer.ts";
 import { manualClock, sequentialIds } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import { personViewer, type Viewer } from "../viewer.ts";
-import { cashFlowTotals } from "./cash-flow-totals.ts";
+import { cashFlowTotals, savingsRatePermille } from "./cash-flow-totals.ts";
 
 const clock = manualClock("2026-09-27T00:00:00Z");
 const SEPTEMBER = { from: "2026-09-01", to: "2026-09-30" };
@@ -117,6 +117,27 @@ function household(uow: UnitOfWork) {
   return { a, b, as, sys, everyday, privA, salary, groceries, add, categorise, link, mine };
 }
 
+describe("savingsRatePermille", () => {
+  it("is kept ÷ money in, in permille, rounded half away from zero, null without money in", () => {
+    expect(savingsRatePermille(373, 1000)).toBe(373);
+    expect(savingsRatePermille(1, 3)).toBe(333);
+    expect(savingsRatePermille(2, 3)).toBe(667);
+    // Exact halves round away from zero on both sides.
+    expect(savingsRatePermille(1, 2000)).toBe(1);
+    expect(savingsRatePermille(-1, 2000)).toBe(-1);
+    expect(savingsRatePermille(3, 2000)).toBe(2);
+    expect(savingsRatePermille(-3, 2000)).toBe(-2);
+    expect(savingsRatePermille(-1, 4000)).toBe(0);
+    expect(Object.is(savingsRatePermille(-1, 4000), -0)).toBe(false);
+    expect(savingsRatePermille(-2500, 1000)).toBe(-2500);
+    expect(savingsRatePermille(0, 1000)).toBe(0);
+    expect(savingsRatePermille(-5, 0)).toBeNull();
+    expect(savingsRatePermille(5, -10)).toBeNull();
+    // Large figures stay exact.
+    expect(savingsRatePermille(4_503_599_627_370_495, 9_007_199_254_740_991)).toBe(500);
+  });
+});
+
 describe.each([
   ["SQLite", () => createUnitOfWork(db)],
   ["memory", () => memoryUnitOfWork()],
@@ -124,7 +145,12 @@ describe.each([
   it("totals money in, money out and kept by flowKind for each partner", () => {
     const h = household(makeUow());
     // Out: groceries 12000 + uncategorised 2500 + loan 200000. Transfers count in neither.
-    const shared = { moneyInCents: 500000, moneyOutCents: 214500, keptCents: 285500 };
+    const shared = {
+      moneyInCents: 500000,
+      moneyOutCents: 214500,
+      keptCents: 285500,
+      savingsRatePermille: 571,
+    };
     expect(cashFlowTotals(h.as(h.b), SEPTEMBER)).toEqual({ ...SEPTEMBER, ...shared });
     expect(cashFlowTotals(h.as(h.a), SEPTEMBER)).toEqual({ ...SEPTEMBER, ...shared });
     // A's private spend counts for A only.
@@ -138,6 +164,7 @@ describe.each([
       moneyInCents: 0,
       moneyOutCents: 999,
       keptCents: -999,
+      savingsRatePermille: null,
     });
   });
 

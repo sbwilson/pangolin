@@ -80,8 +80,12 @@ import {
   listTaxCategories,
   listTransactions,
   MAX_HANDOFF_BYTES,
+  type MerchantsInput,
   me,
+  merchants,
+  type ProfitAndLossInput,
   parseTransactionQuery,
+  profitAndLoss,
   type ReadinessOutput,
   type RecordBalanceSnapshotInput,
   type RunnerLiveness,
@@ -97,12 +101,14 @@ import {
   revokeLinksItem,
   revokeMyReEnrolmentLinks,
   type SetSplitFieldInput,
+  type SpendingInput,
   type SystemHealthPort,
   searchTransactions,
   setPrivacy,
   setSplitField,
   setSplits,
   setSplitTags,
+  spending,
   type TokenPort,
   type UnitOfWork,
   type UseCaseContext,
@@ -702,6 +708,23 @@ export function createApi(deps: ApiDeps) {
       // SQL by flowKind (AD-23). A missing, malformed or backwards range is 400.
       const input = { from: c.req.query("from"), to: c.req.query("to") };
       return c.json(cashFlowTotals(ctx(c), input as { from: string; to: string }), 200);
+    })
+    .get("/api/reports/pnl", (c) => {
+      // Per viewer (AD-3): income and expense by category group or category over `from`..`to`,
+      // folded from the one flowKind breakdown (AD-23). A missing or bad range or `by` is 400.
+      const input = { from: c.req.query("from"), to: c.req.query("to"), by: c.req.query("by") };
+      return c.json(profitAndLoss(ctx(c), input as ProfitAndLossInput), 200);
+    })
+    .get("/api/reports/spending", (c) => {
+      // Per viewer (AD-3): the P&L expense section alone. A missing or bad range or `by` is 400.
+      const input = { from: c.req.query("from"), to: c.req.query("to"), by: c.req.query("by") };
+      return c.json(spending(ctx(c), input as SpendingInput), 200);
+    })
+    .get("/api/reports/merchants", (c) => {
+      // Per viewer (AD-3, AD-4): one flow by projected payee, so a hidden name is the null payee.
+      // A missing or bad range or `flow` is 400.
+      const input = { from: c.req.query("from"), to: c.req.query("to"), flow: c.req.query("flow") };
+      return c.json(merchants(ctx(c), input as MerchantsInput), 200);
     })
     .get("/api/review", (c) => {
       // Per viewer (AD-3): the open items they may see, each with its card's detail. Never cached.

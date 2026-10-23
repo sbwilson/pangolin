@@ -143,3 +143,20 @@ export function clearedFilters(search: TransactionsSearch): TransactionsSearch {
     ...(search.to === undefined ? {} : { to: search.to }),
   };
 }
+
+/** What `/cash-flow` keeps from the URL: an inclusive range, both ends or neither. */
+export interface CashFlowSearch {
+  readonly from?: string;
+  readonly to?: string;
+}
+
+/**
+ * Reads `/cash-flow`'s range: both `from` and `to` real days with `from ≤ to`, else neither (the
+ * page then shows and requests the current quarter). Any other name is dropped.
+ */
+export function validateCashFlowSearch(search: object): CashFlowSearch {
+  const { from, to } = search as Record<string, unknown>;
+  if (typeof from !== "string" || typeof to !== "string") return {};
+  if (!isRealDay(from) || !isRealDay(to) || from > to) return {};
+  return { from, to };
+}

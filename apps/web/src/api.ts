@@ -222,7 +222,10 @@ export async function resetPartner(personId: string): Promise<{ url: string; exp
   return postJson("/api/identity/re-enrolment-links", { personId });
 }
 
-/** Money in, money out and kept over an inclusive range, summed on the server (AD-11). */
+/**
+ * Money in, money out and kept over an inclusive range, summed on the server (AD-11), with the
+ * savings rate `savingsRatePermille` (kept ÷ money in, in thousandths; null when money in ≤ 0).
+ */
 export type CashFlowTotals = InferResponseType<(typeof api.api.reports)["cash-flow"]["$get"], 200>;
 
 /** The cash-flow figures for `from`..`to` (inclusive `YYYY-MM-DD`); throws `ApiError`. */

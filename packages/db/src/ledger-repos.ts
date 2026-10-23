@@ -6,6 +6,7 @@ import type {
   BalanceSnapshotRow,
   CashFlowTotals,
   DayRange,
+  FlowBreakdownRow,
   InstitutionRepo,
   InstitutionRow,
   OwnedAccount,
@@ -56,6 +57,8 @@ import { account } from "./schema/account.ts";
 import { accountOwner } from "./schema/account-owner.ts";
 import { activity } from "./schema/activity.ts";
 import { balanceSnapshot } from "./schema/balance-snapshot.ts";
+import { category } from "./schema/category.ts";
+import { categoryGroup } from "./schema/category-group.ts";
 import { institution } from "./schema/institution.ts";
 import { payee } from "./schema/payee.ts";
 import { split } from "./schema/split.ts";
@@ -447,6 +450,69 @@ function cashFlowTotals(orm: Orm, viewer: Viewer, today: string, range: DayRange
 }
 
 /**
+ * The non-zero `income` and `expense` splits `viewer` may see posted in `range`, classed by `flowKindSql`
+ * (AD-23) and summed in SQL per kind, category and projected payee. The payee is `visibleTxn`'s
+ * `payeeId`/`payeeName`, never the raw `payee_id`, so a hidden name or another person's scoped
+ * payee falls into the null payee. `category` and `category_group` are joined directly, so a
+ * soft-deleted category keeps its name.
+ */
+function flowBreakdown(
+  orm: Orm,
+  viewer: Viewer,
+  today: string,
+  range: DayRange,
+): FlowBreakdownRow[] {
+  const projection = visibleTxn(viewer, today);
+  const kind = flowKindSql(viewer);
+  const flows = orm
+    .select({
+      kind: sql<string>`${kind}`.as("flow_kind"),
+      amount: sql<number>`${split.amountCents}`.as("flow_amount"),
+      categoryId: sql<string | null>`${split.categoryId}`.as("flow_category_id"),
+      payeeId: sql<string | null>`${projection.payeeId}`.as("flow_payee_id"),
+      payeeName: sql<string | null>`${projection.payeeName}`.as("flow_payee_name"),
+    })
+    .from(split)
+    .innerJoin(transaction, eq(transaction.id, split.transactionId))
+    .where(
+      and(
+        projection.where,
+        gte(transaction.postedOn, range.from),
+        lte(transaction.postedOn, range.to),
+      ),
+    )
+    .as("flows");
+  const rows = orm
+    .select({
+      kind: flows.kind,
+      groupId: categoryGroup.id,
+      groupName: categoryGroup.name,
+      categoryId: flows.categoryId,
+      categoryName: category.name,
+      payeeId: flows.payeeId,
+      payeeName: sql<string | null>`max(${flows.payeeName})`,
+      cents: sql<number>`(CASE ${flows.kind} WHEN 'income' THEN sum(${flows.amount}) ELSE -sum(${flows.amount}) END)`,
+    })
+    .from(flows)
+    .leftJoin(category, eq(category.id, flows.categoryId))
+    .leftJoin(categoryGroup, eq(categoryGroup.id, category.groupId))
+    .where(sql`${flows.kind} IN ('income', 'expense') AND ${flows.amount} <> 0`)
+    .groupBy(sql`${flows.kind}`, sql`${flows.categoryId}`, sql`${flows.payeeId}`)
+    .orderBy(sql`${flows.kind}`, sql`${flows.categoryId}`, sql`${flows.payeeId}`)
+    .all();
+  return rows.map((r) => ({
+    kind: r.kind as "income" | "expense",
+    groupId: r.groupId ?? null,
+    groupName: r.groupName ?? null,
+    categoryId: r.categoryId ?? null,
+    categoryName: r.categoryName ?? null,
+    payeeId: r.payeeId ?? null,
+    payeeName: r.payeeName ?? null,
+    cents: Number(r.cents) || 0,
+  }));
+}
+
+/**
  * The `flowKind` (AD-23) of every split of the live transactions `viewer` may see, by split id,
  * straight from `flowKindSql`. For the parity test that holds the SQL expression to the `domain`
  * function; no use case reads it. Throws without a viewer.
@@ -751,6 +817,12 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
       requireViewer(viewer, "cashFlowTotals");
       check();
       return cashFlowTotals(orm, viewer, today, range);
+    },
+
+    flowBreakdown: (viewer, today, range) => {
+      requireViewer(viewer, "flowBreakdown");
+      check();
+      return flowBreakdown(orm, viewer, today, range);
     },
 
     countBefore: (viewer, today, filter, cursor) => {

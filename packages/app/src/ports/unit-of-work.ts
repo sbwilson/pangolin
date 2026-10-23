@@ -547,6 +547,24 @@ export interface CashFlowTotals {
   readonly keptCents: number;
 }
 
+/**
+ * One row of the report breakdown (AD-23): the `income` or `expense` splits a viewer may see in a
+ * range, summed per category (with its group) and per visible payee. Categories are named even
+ * when soft-deleted; an uncategorised split has every category and group field null. The payee is
+ * `visibleTxn`'s projection, so a hidden name or another person's scoped payee is the null payee.
+ */
+export interface FlowBreakdownRow {
+  readonly kind: "income" | "expense";
+  readonly groupId: string | null;
+  readonly groupName: string | null;
+  readonly categoryId: string | null;
+  readonly categoryName: string | null;
+  readonly payeeId: string | null;
+  readonly payeeName: string | null;
+  /** The sum for `income`, minus the sum for `expense`: money out is positive, as in 4.1. */
+  readonly cents: number;
+}
+
 export interface TransactionRepo {
   /**
    * Whether the account has a live transaction dated before `date` (`YYYY-MM-DD`) that does not
@@ -676,6 +694,13 @@ export interface TransactionRepo {
    * this viewer sees its transfer counterpart. Throws without a viewer.
    */
   cashFlowTotals(viewer: Viewer, today: string, range: DayRange): CashFlowTotals;
+  /**
+   * The non-zero `income` and `expense` splits of the same rows `cashFlowTotals` reads (a 0-cent
+   * split makes no row), grouped by kind,
+   * category and the viewer's projected payee, ordered by kind, category id then payee id (nulls
+   * first). The rows of a kind sum to that kind's `cashFlowTotals` figure. Throws without a viewer.
+   */
+  flowBreakdown(viewer: Viewer, today: string, range: DayRange): FlowBreakdownRow[];
   /** How many rows `filter` leaves that come strictly before `cursor` in list order. */
   countBefore(
     viewer: Viewer,
@@ -1669,6 +1694,7 @@ export interface ReadRepos {
     | "listPage"
     | "summarise"
     | "cashFlowTotals"
+    | "flowBreakdown"
     | "countBefore"
     | "dayNets"
     | "latestPostedOn"

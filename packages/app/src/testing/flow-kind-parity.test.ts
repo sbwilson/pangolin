@@ -103,6 +103,11 @@ function scenario(uow: UnitOfWork) {
   }
   /** A category in the transfer-kind group that is soft-deleted after a split uses it. */
   const deletedTransferCat = newId<"Category">();
+  /** An expense category that is soft-deleted after a split uses it: still its own named row. */
+  const deletedExpenseCat = newId<"Category">();
+  /** A shared payee, and one scoped to A (which B never sees named). */
+  const shopPayee = newId<"Payee">();
+  const scopedPayee = newId<"Payee">();
   const known: KnownSplit[] = [];
   const txnIds: Record<string, Id<"Transaction">> = {};
 
@@ -174,6 +179,26 @@ function scenario(uow: UnitOfWork) {
       createdAt: T,
       updatedAt: T,
     });
+    r.categories.insert({
+      id: deletedExpenseCat,
+      groupId: groups.expense,
+      name: "Cat deleted expense",
+      isFixedCost: false,
+      createdAt: T,
+      updatedAt: T,
+    });
+    const payeeRow = (id: Id<"Payee">, name: string, scopePersonId: Id<"Person"> | null) => ({
+      id,
+      name,
+      websiteUrl: null,
+      logoAttachmentId: null,
+      defaultCategoryId: null,
+      scopePersonId,
+      createdAt: T,
+      updatedAt: T,
+    });
+    r.payees.insert(payeeRow(shopPayee, "Shop", null), null);
+    r.payees.insert(payeeRow(scopedPayee, "A's corner shop", a), accountIds.privA as Id<"Account">);
   });
 
   let n = 0;
@@ -182,7 +207,12 @@ function scenario(uow: UnitOfWork) {
     r: Parameters<Parameters<UnitOfWork["transaction"]>[0]>[0],
     key: string,
     account: AccountKey,
-    splits: readonly { amountCents: number; group: GroupKey | null; deletedCategory?: true }[],
+    splits: readonly {
+      amountCents: number;
+      group: GroupKey | null;
+      deletedCategory?: true;
+      deletedExpense?: true;
+    }[],
     over: Partial<TransactionRow> = {},
   ) => {
     n++;
@@ -217,7 +247,13 @@ function scenario(uow: UnitOfWork) {
       transactionId: id,
       amountCents: s.amountCents,
       categoryId:
-        s.deletedCategory === true ? deletedTransferCat : s.group === null ? null : cats[s.group],
+        s.deletedCategory === true
+          ? deletedTransferCat
+          : s.deletedExpense === true
+            ? deletedExpenseCat
+            : s.group === null
+              ? null
+              : cats[s.group],
       activityId: null,
       beneficiary: "shared",
       propertyId: null,
@@ -315,7 +351,42 @@ function scenario(uow: UnitOfWork) {
       { amountCents: 1000, group: "income" },
     ]);
     single(r, "privateSpend", "privA", [{ amountCents: -4321, group: "expense" }]);
+    // Payees: a shared one, the same one on a row A hid from B, A's scoped one on a shared row
+    // (B sees no payee), and a split in an expense category that is then deleted.
+    single(r, "shopShared", "everyday", [{ amountCents: -1500, group: "expense" }], {
+      payeeId: shopPayee,
+    });
+    single(r, "shopHidden", "everyday", [{ amountCents: -1600, group: "expense" }], {
+      payeeId: shopPayee,
+      nameHiddenBy: a,
+      nameHiddenUntil: "2026-12-31",
+    });
+    single(r, "scopedPayee", "everyday", [{ amountCents: -1700, group: "expense" }], {
+      payeeId: scopedPayee,
+    });
+    single(r, "privateShop", "privA", [{ amountCents: -1900, group: "expense" }], {
+      payeeId: scopedPayee,
+    });
+    single(r, "deletedExpense", "everyday", [
+      { amountCents: -1800, group: "expense", deletedExpense: true },
+    ]);
+    // A 0-cent split alone in its (kind, category, payee): no breakdown row at all.
+    single(
+      r,
+      "zeroAlone",
+      "everyday",
+      [{ amountCents: 0, group: "expense", deletedExpense: true }],
+      {
+        payeeId: shopPayee,
+      },
+    );
+    single(r, "hiddenRefund", "everyday", [{ amountCents: 1100, group: "expense" }], {
+      payeeId: shopPayee,
+      nameHiddenBy: a,
+      nameHiddenUntil: "2026-12-31",
+    });
     r.categories.softDelete(deletedTransferCat, T);
+    r.categories.softDelete(deletedExpenseCat, T);
     // Outside the September range.
     single(r, "august", "everyday", [{ amountCents: -7777, group: null }], {
       postedOn: "2026-08-31",
@@ -330,7 +401,12 @@ function scenario(uow: UnitOfWork) {
     B: personViewer(b, now),
     system: systemViewer("cli:test"),
   };
-  return { known, viewers, txnIds };
+  return {
+    known,
+    viewers,
+    txnIds,
+    ids: { shopPayee, scopedPayee, deletedExpenseCat, expenseCat: cats.expense },
+  };
 }
 
 /** Whether `viewer` (by name) may see account `key`. */
@@ -444,12 +520,82 @@ describe("flowKind parity (AD-23)", () => {
     // Out: loan 200000 + uncategorised 2500 + deleted counterpart 6000 + the everyday side of the
     // property link 9000 + pending 1234 + the expense half of two splits 3000 + the Everyday side
     // of the per-type links to home_loan, property, vehicle and other (4 × 1100). The redraw and
-    // the deleted-category split count in neither.
+    // the deleted-category split count in neither. The payee rows add 1100 in (the hidden refund)
+    // and 6600 out (shop, hidden shop, scoped payee and the deleted expense category).
     expect(sqliteUow.read((r) => r.transactions.cashFlowTotals(b, TODAY, SEPTEMBER))).toEqual({
-      moneyInCents: 505000,
-      moneyOutCents: 226134,
-      keptCents: 505000 - 226134,
+      moneyInCents: 505000 + 1100,
+      moneyOutCents: 226134 + 6600,
+      keptCents: 505000 + 1100 - (226134 + 6600),
     });
+  });
+
+  it("breaks flows down alike on SQLite and in memory, summing to the cash-flow totals", () => {
+    const sqlite = scenario(createUnitOfWork(db));
+    const memoryUow = memoryUnitOfWork();
+    const memory = scenario(memoryUow);
+    const sqliteUow = createUnitOfWork(db);
+    for (const [who, viewer] of Object.entries(sqlite.viewers)) {
+      for (const [name, range] of Object.entries(RANGES)) {
+        const fromSql = sqliteUow.read((r) => r.transactions.flowBreakdown(viewer, TODAY, range));
+        const fromMemory = memoryUow.read((r) =>
+          r.transactions.flowBreakdown(memory.viewers[who] as Viewer, TODAY, range),
+        );
+        expect(fromSql, `${who} ${name}`).toEqual(fromMemory);
+        const totals = sqliteUow.read((r) => r.transactions.cashFlowTotals(viewer, TODAY, range));
+        const sum = (kind: string) =>
+          fromSql.filter((row) => row.kind === kind).reduce((n, row) => n + row.cents, 0);
+        expect(sum("income"), `${who} ${name}`).toBe(totals.moneyInCents);
+        expect(sum("expense"), `${who} ${name}`).toBe(totals.moneyOutCents);
+        // A 0-cent split never makes a row.
+        expect(
+          fromSql.filter((row) => row.cents === 0),
+          `${who} ${name}`,
+        ).toEqual([]);
+        // One row per kind, category and payee.
+        const keys = fromSql.map((row) => `${row.kind}|${row.categoryId}|${row.payeeId}`);
+        expect(new Set(keys).size).toBe(keys.length);
+      }
+    }
+    const { ids } = sqlite;
+    const rows = (who: string) =>
+      sqliteUow.read((r) =>
+        r.transactions.flowBreakdown(sqlite.viewers[who] as Viewer, TODAY, SEPTEMBER),
+      );
+    const find = (who: string, kind: string, categoryId: string | null, payeeId: string | null) =>
+      rows(who).find(
+        (row) => row.kind === kind && row.categoryId === categoryId && row.payeeId === payeeId,
+      );
+    // A sees the shop on the hidden rows; B sees the shared row only.
+    expect(find("A", "expense", ids.expenseCat, ids.shopPayee)?.cents).toBe(1500 + 1600);
+    expect(find("A", "income", ids.expenseCat, ids.shopPayee)?.cents).toBe(1100);
+    expect(find("B", "expense", ids.expenseCat, ids.shopPayee)?.cents).toBe(1500);
+    expect(find("B", "income", ids.expenseCat, ids.shopPayee)).toBeUndefined();
+    // B's null payee holds the hidden row, the scoped-payee row and every payee-less expense.
+    expect(find("B", "income", ids.expenseCat, null)?.cents).toBe(4000 + 1100);
+    expect(find("B", "expense", ids.expenseCat, null)?.cents).toBe(
+      // A's null payee also holds A's private spend (4321), which B never sees.
+      (find("A", "expense", ids.expenseCat, null)?.cents ?? 0) - 4321 + 1600 + 1700,
+    );
+    expect(find("A", "expense", ids.expenseCat, ids.scopedPayee)?.cents).toBe(1700 + 1900);
+    for (const row of rows("B")) {
+      expect(row.payeeId).not.toBe(ids.scopedPayee);
+      expect(row.payeeName).not.toBe("A's corner shop");
+      if (row.payeeId === null) expect(row.payeeName).toBeNull();
+    }
+    // A deleted category is still its own named row; uncategorised has no category or group.
+    expect(find("B", "expense", ids.deletedExpenseCat, null)).toMatchObject({
+      categoryName: "Cat deleted expense",
+      groupName: "Group expense",
+      cents: 1800,
+    });
+    expect(find("B", "expense", null, null)).toMatchObject({
+      groupId: null,
+      groupName: null,
+      categoryName: null,
+    });
+    expect(find("A", "expense", ids.deletedExpenseCat, ids.shopPayee)).toBeUndefined();
+    // Transfers and investing appear nowhere.
+    for (const row of rows("A")) expect(["income", "expense"]).toContain(row.kind);
   });
 
   it("throws without a viewer", () => {
@@ -460,5 +606,10 @@ describe("flowKind parity (AD-23)", () => {
       ),
     ).toThrow(/viewer/);
     expect(() => splitFlowKinds(db, undefined as unknown as Viewer, TODAY)).toThrow(/viewer/);
+    expect(() =>
+      uow.read((r) =>
+        r.transactions.flowBreakdown(undefined as unknown as Viewer, TODAY, SEPTEMBER),
+      ),
+    ).toThrow(/viewer/);
   });
 });

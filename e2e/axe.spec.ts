@@ -201,6 +201,10 @@ test.describe("WCAG 2.2 AA accessibility audit", () => {
         await page.waitForLoadState("domcontentloaded");
         await expect(page.getByRole("heading", { level: 2, name: "Cash flow" })).toBeVisible();
         await expect(page.getByText("Money in")).toBeVisible();
+        await expect(page.getByText("Savings rate")).toBeVisible();
+        // Audit the range control with Custom's From and To open too.
+        await page.getByRole("button", { name: "Custom" }).click();
+        await expect(page.getByLabel("From")).toBeVisible();
 
         await setMode(page, mode);
 
