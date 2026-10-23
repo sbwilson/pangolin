@@ -548,6 +548,15 @@ export interface CashFlowTotals {
 }
 
 /**
+ * The `My share` scope of `cashFlowTotals`: money out becomes the viewer's visible money out with
+ * the part whose split has `beneficiary = 'shared'` replaced by `shareCents`, the viewer's
+ * apportioned share of the shared total. Money in is unchanged; kept follows.
+ */
+export interface CashFlowScope {
+  readonly mineShareCents: number;
+}
+
+/**
  * The inputs of the shared apportionment (AD-7), worked out in SQL over public accounts only, so
  * they are the same whoever asks.
  */
@@ -702,9 +711,15 @@ export interface TransactionRepo {
   /**
    * Money in, money out and kept over the splits of every live transaction `viewer` may see
    * posted in `range` (inclusive), pending or posted, each split classed by `flowKind` (AD-23) as
-   * this viewer sees its transfer counterpart. Throws without a viewer.
+   * this viewer sees its transfer counterpart. With a `scope`, money out has its shared-beneficiary
+   * `expense` part replaced by the scope's share. Throws without a viewer.
    */
-  cashFlowTotals(viewer: Viewer, today: string, range: DayRange): CashFlowTotals;
+  cashFlowTotals(
+    viewer: Viewer,
+    today: string,
+    range: DayRange,
+    scope?: CashFlowScope,
+  ): CashFlowTotals;
   /**
    * The non-zero `income` and `expense` splits of the same rows `cashFlowTotals` reads (a 0-cent
    * split makes no row), grouped by kind,

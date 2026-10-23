@@ -228,16 +228,73 @@ export async function resetPartner(personId: string): Promise<{ url: string; exp
  */
 export type CashFlowTotals = InferResponseType<(typeof api.api.reports)["cash-flow"]["$get"], 200>;
 
-/** The cash-flow figures for `from`..`to` (inclusive `YYYY-MM-DD`); throws `ApiError`. */
+/**
+ * The cash-flow figures for `from`..`to` (inclusive `YYYY-MM-DD`); throws `ApiError`. `share:
+ * "mine"` replaces the shared-beneficiary part of money out with the viewer's share (the server
+ * does it); leave it out for everything the viewer can see.
+ */
 export async function fetchCashFlow(range: {
   readonly from: string;
   readonly to: string;
+  readonly share?: "mine";
 }): Promise<CashFlowTotals> {
   const res = await api.api.reports["cash-flow"].$get({
+    query: {
+      from: range.from,
+      to: range.to,
+      ...(range.share === undefined ? {} : { share: range.share }),
+    },
+  });
+  if (!res.ok) throw await apiError(res);
+  return await res.json();
+}
+
+/**
+ * The shared total over a range and the viewer's share of it, with the whole percent the server
+ * worked out (`sharePercent` is null when nothing is shared).
+ */
+export type SharedShare = InferResponseType<
+  (typeof api.api.reports)["shared-apportionment"]["$get"],
+  200
+>;
+
+/** The shared total and the viewer's share for `from`..`to`; throws `ApiError`. */
+export async function fetchSharedShare(range: {
+  readonly from: string;
+  readonly to: string;
+}): Promise<SharedShare> {
+  const res = await api.api.reports["shared-apportionment"].$get({
     query: { from: range.from, to: range.to },
   });
   if (!res.ok) throw await apiError(res);
   return await res.json();
+}
+
+/** How shared spending is split between the partners. */
+export type SharedAttribution = "contribution" | "even";
+
+/** The household-wide settings row (`fyStart` is read-only). */
+export interface HouseholdSettingsData {
+  readonly baseCurrency: string;
+  readonly fyStart: string;
+  readonly timezone: string;
+  readonly sharedAttribution: SharedAttribution;
+  readonly updatedAt: string;
+}
+
+export async function fetchHouseholdSettings(): Promise<HouseholdSettingsData> {
+  const res = await fetch("/api/system/household");
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()) as HouseholdSettingsData;
+}
+
+/** Changes the shared attribution (the one setting the screen edits); throws `ApiError`. */
+export async function updateSharedAttribution(
+  sharedAttribution: SharedAttribution,
+): Promise<HouseholdSettingsData> {
+  return await sendJson<HouseholdSettingsData>("PATCH", "/api/system/household", {
+    sharedAttribution,
+  });
 }
 
 /** The Needs review list: one card per open item the signed-in person may see, oldest first. */

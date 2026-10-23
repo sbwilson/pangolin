@@ -2279,6 +2279,61 @@ describe("/api/auth/*", () => {
   });
 });
 
+describe("/api/system/household", () => {
+  const patch = (db: Db, body: unknown, authn?: Authn) =>
+    createApp(deps(db, authn)).request("/api/system/household", {
+      method: "PATCH",
+      headers: { Cookie: SESSION_COOKIE, Origin: ORIGIN, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  it("reads the settings, and a PATCH changes the attribution with one audit row", async () => {
+    const db = openDb();
+    addPerson(db);
+    const app = createApp(deps(db));
+    const before = await app.request("/api/system/household", signedIn);
+    expect(before.status).toBe(200);
+    expect(await before.json()).toMatchObject({
+      baseCurrency: "AUD",
+      fyStart: "07-01",
+      sharedAttribution: "contribution",
+    });
+    const res = await patch(db, { sharedAttribution: "even" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ sharedAttribution: "even", fyStart: "07-01" });
+    const read = await app.request("/api/system/household", signedIn);
+    expect(await read.json()).toMatchObject({ sharedAttribution: "even" });
+    const audit = db
+      .prepare("SELECT action FROM audit_log WHERE entity = 'household_settings'")
+      .all();
+    expect(audit).toEqual([{ action: "update" }]);
+  });
+
+  it.each([
+    ["fyStart", { fyStart: "01-01" }],
+    ["an unknown key", { colour: "red" }],
+    ["a bad attribution", { sharedAttribution: "mine" }],
+  ])("answers 400 Validation for %s", async (_what, body) => {
+    const db = openDb();
+    addPerson(db);
+    const res = await patch(db, body);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("Validation");
+    const row = await createApp(deps(db)).request("/api/system/household", signedIn);
+    expect(await row.json()).toMatchObject({ sharedAttribution: "contribution", fyStart: "07-01" });
+  });
+
+  it("answers 401 without a session, and 409 for a write in demo mode", async () => {
+    const db = openDb();
+    addPerson(db);
+    expect((await createApp(deps(db)).request("/api/system/household")).status).toBe(401);
+    const demo = await patch(db, { sharedAttribution: "even" }, { kind: "demo" });
+    expect(demo.status).toBe(409);
+    const read = await createApp(deps(db)).request("/api/system/household", signedIn);
+    expect(await read.json()).toMatchObject({ sharedAttribution: "contribution" });
+  });
+});
+
 describe("GET /api/reports/cash-flow", () => {
   const alex = "01J0000000000000000000000A";
 
@@ -2338,6 +2393,52 @@ describe("GET /api/reports/cash-flow", () => {
       keptCents: 295500,
       savingsRatePermille: 985,
     });
+  });
+
+  it("scopes money out to the signed-in person's share under share=mine", async () => {
+    const db = openDb();
+    seedFlows(db);
+    const app = createApp(deps(db));
+    const get = async (query: string) => {
+      const res = await app.request(`/api/reports/cash-flow?${query}`, signedIn);
+      expect(res.status, query).toBe(200);
+      return res.json();
+    };
+    const range = "from=2026-09-01&to=2026-09-30";
+    // The 4500 of shared spend is split between Alex and Sam: half each.
+    expect(await get(`${range}&share=mine`)).toMatchObject({
+      moneyInCents: 300000,
+      moneyOutCents: 2250,
+      keptCents: 297750,
+    });
+    expect(await get(`${range}&share=everything`)).toMatchObject({ moneyOutCents: 4500 });
+    expect(await get(range)).toMatchObject({ moneyOutCents: 4500 });
+    const bad = await app.request(`/api/reports/cash-flow?${range}&share=half`, signedIn);
+    expect(bad.status).toBe(400);
+  });
+
+  it("answers the shared total and the signed-in person's share and percent", async () => {
+    const db = openDb();
+    seedFlows(db);
+    const app = createApp(deps(db));
+    const range = "from=2026-09-01&to=2026-09-30";
+    const res = await app.request(`/api/reports/shared-apportionment?${range}`, signedIn);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.json()).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-30",
+      setting: "contribution",
+      basis: "even-fallback",
+      sharedCents: 4500,
+      shareCents: 2250,
+      sharePercent: 50,
+    });
+    for (const bad of ["", "?from=2026-09-01", "?from=2026-09-30&to=2026-09-01"]) {
+      const r = await app.request(`/api/reports/shared-apportionment${bad}`, signedIn);
+      expect(r.status, bad).toBe(400);
+    }
+    expect((await app.request(`/api/reports/shared-apportionment?${range}`)).status).toBe(401);
   });
 
   it("answers P&L, spending and merchants for the signed-in person over the range", async () => {
@@ -2444,6 +2545,8 @@ describe("Cache-Control on every /api response", () => {
     ["person data", "/api/review", 200],
     ["person data", "/api/review/count", 200],
     ["person data", "/api/reports/cash-flow?from=2026-09-01&to=2026-09-30", 200],
+    ["person data", "/api/reports/shared-apportionment?from=2026-09-01&to=2026-09-30", 200],
+    ["household settings", "/api/system/household", 200],
     ["person data", "/api/reports/pnl?from=2026-09-01&to=2026-09-30&by=group", 200],
     ["person data", "/api/reports/spending?from=2026-09-01&to=2026-09-30&by=group", 200],
     ["person data", "/api/reports/merchants?from=2026-09-01&to=2026-09-30&flow=income", 200],

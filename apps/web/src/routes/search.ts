@@ -144,19 +144,24 @@ export function clearedFilters(search: TransactionsSearch): TransactionsSearch {
   };
 }
 
-/** What `/cash-flow` keeps from the URL: an inclusive range, both ends or neither. */
+/**
+ * What `/cash-flow` keeps from the URL: an inclusive range, both ends or neither, and `share=mine`
+ * when the tiles are scoped to the viewer's share (absent means everything they can see).
+ */
 export interface CashFlowSearch {
   readonly from?: string;
   readonly to?: string;
+  readonly share?: "mine";
 }
 
 /**
- * Reads `/cash-flow`'s range: both `from` and `to` real days with `from ≤ to`, else neither (the
+ * Reads `/cash-flow`'s range and share: both `from` and `to` real days with `from ≤ to`, else neither (the
  * page then shows and requests the current quarter). Any other name is dropped.
  */
 export function validateCashFlowSearch(search: object): CashFlowSearch {
-  const { from, to } = search as Record<string, unknown>;
-  if (typeof from !== "string" || typeof to !== "string") return {};
-  if (!isRealDay(from) || !isRealDay(to) || from > to) return {};
-  return { from, to };
+  const { from, to, share } = search as Record<string, unknown>;
+  const scope = share === "mine" ? ({ share } as const) : {};
+  if (typeof from !== "string" || typeof to !== "string") return scope;
+  if (!isRealDay(from) || !isRealDay(to) || from > to) return scope;
+  return { from, to, ...scope };
 }

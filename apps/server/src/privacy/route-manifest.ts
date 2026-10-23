@@ -145,6 +145,8 @@ export const MANIFEST: readonly ManifestEntry[] = [
   system("/api/system/jobs", "Job kind and failure time only, never payload or ids (AD-9)."),
   system("/api/system/backup", "Last backup and verification times; no ledger data."),
   system("/api/system/recovery-bundle", "Whether the recovery bundle is confirmed; no secrets."),
+  system("/api/system/household", "Household settings row: currency, zone, FY start, attribution."),
+  write("PATCH", "/api/system/household", { body: () => ({ sharedAttribution: "even" }) }),
 
   read("/api/identity/me"),
   read("/api/identity/preferences"),
@@ -223,6 +225,10 @@ export const MANIFEST: readonly ManifestEntry[] = [
   // account is a transfer for B whatever its type, so B's figures never depend on A's data. The
   // suite also replays it as B over ranges (`CASH_FLOW_QUERIES`), since the bare route is a 400.
   read("/api/reports/cash-flow"),
+  // Shared apportionment (story 4.4): the shared total and the viewer's share of it, summed over
+  // public accounts only (AD-7), so partner B's bytes never depend on A's private data. Replayed
+  // as B over ranges (`CASH_FLOW_QUERIES`); the bare route is a 400.
+  read("/api/reports/shared-apportionment"),
   // Report core (story 4.2): P&L, spending and merchants fold one flowKind breakdown over
   // `visibleTxn`, grouping merchants by its projected payee, so a hidden name or A's scoped payee
   // is B's null payee. Replayed as B over ranges and every `by`/`flow` (`REPORT_QUERIES`), and

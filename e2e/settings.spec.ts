@@ -194,10 +194,10 @@ test("renders sign-in & security, partner, household, and accounts cards at /set
     await expect(householdCard).toBeVisible();
     await expect(householdCard.getByRole("heading", { name: "Household" })).toBeVisible();
     await expect(
-      householdCard.getByText(
-        "Pay cycles, the household pay anchor, and split attribution will be configured here.",
-      ),
+      householdCard.getByRole("radiogroup", { name: "Shared spending attribution" }),
     ).toBeVisible();
+    await expect(householdCard.getByRole("radio", { name: /By contribution/ })).toBeVisible();
+    await expect(householdCard.getByRole("radio", { name: /50\/50/ })).toBeVisible();
 
     const accountsCard = page.locator("#accounts");
     await expect(accountsCard).toBeVisible();

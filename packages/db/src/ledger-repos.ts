@@ -4,6 +4,7 @@ import type {
   AccountRow,
   BalanceSnapshotRepo,
   BalanceSnapshotRow,
+  CashFlowScope,
   CashFlowTotals,
   DayRange,
   FlowBreakdownRow,
@@ -421,13 +422,24 @@ function filterConditions(
  * Money in, money out and kept over the splits `viewer` may see posted in `range`, each split
  * classed once by `flowKindSql` (AD-23) and summed in SQL.
  */
-function cashFlowTotals(orm: Orm, viewer: Viewer, today: string, range: DayRange): CashFlowTotals {
+function cashFlowTotals(
+  orm: Orm,
+  viewer: Viewer,
+  today: string,
+  range: DayRange,
+  scope?: CashFlowScope,
+): CashFlowTotals {
   const projection = visibleTxn(viewer, today);
   const kind = flowKindSql(viewer);
   const flows = orm
     .select({
       kind: sql<string>`${kind}`.as("flow_kind"),
       amount: sql<number>`${split.amountCents}`.as("flow_amount"),
+      beneficiary: sql<string>`${split.beneficiary}`.as("flow_beneficiary"),
+      isPublic:
+        sql<number>`(${transaction.accountId} IN (SELECT ${account.id} FROM ${account} WHERE ${account.isPrivate} = 0))`.as(
+          "flow_public",
+        ),
     })
     .from(split)
     .innerJoin(transaction, eq(transaction.id, split.transactionId))
@@ -439,17 +451,16 @@ function cashFlowTotals(orm: Orm, viewer: Viewer, today: string, range: DayRange
       ),
     )
     .as("flows");
+  const sharedOutCents = sql<number>`coalesce(-sum(CASE WHEN ${flows.kind} = 'expense' AND ${flows.beneficiary} = 'shared' AND ${flows.isPublic} = 1 THEN ${flows.amount} ELSE 0 END), 0)`;
   const inCents = sql<number>`coalesce(sum(CASE WHEN ${flows.kind} = 'income' THEN ${flows.amount} ELSE 0 END), 0)`;
   const outCents = sql<number>`coalesce(-sum(CASE WHEN ${flows.kind} = 'expense' THEN ${flows.amount} ELSE 0 END), 0)`;
-  const row = orm
-    .select({ inCents, outCents, keptCents: sql<number>`${inCents} - ${outCents}` })
-    .from(flows)
-    .get();
-  return {
-    moneyInCents: Number(row?.inCents ?? 0) || 0,
-    moneyOutCents: Number(row?.outCents ?? 0) || 0,
-    keptCents: Number(row?.keptCents ?? 0) || 0,
-  };
+  const row = orm.select({ inCents, outCents, sharedOutCents }).from(flows).get();
+  const moneyInCents = Number(row?.inCents ?? 0) || 0;
+  // `My share`: the shared-beneficiary part of money out is replaced by the viewer's share.
+  const moneyOutCents =
+    Number(row?.outCents ?? 0) -
+      (scope === undefined ? 0 : Number(row?.sharedOutCents ?? 0) - scope.mineShareCents) || 0;
+  return { moneyInCents, moneyOutCents, keptCents: moneyInCents - moneyOutCents || 0 };
 }
 
 /**
@@ -882,10 +893,10 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
       };
     },
 
-    cashFlowTotals: (viewer, today, range) => {
+    cashFlowTotals: (viewer, today, range, scope) => {
       requireViewer(viewer, "cashFlowTotals");
       check();
-      return cashFlowTotals(orm, viewer, today, range);
+      return cashFlowTotals(orm, viewer, today, range, scope);
     },
 
     flowBreakdown: (viewer, today, range) => {

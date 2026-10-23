@@ -564,6 +564,7 @@ export type {
   BackupVerificationKind,
   BackupVerificationRepo,
   BackupVerificationRow,
+  CashFlowScope,
   CashFlowTotals,
   CredentialRepo,
   DayRange,
@@ -715,8 +716,12 @@ export {
 export {
   type SharedApportionment,
   type SharedApportionmentInput,
+  type SharedShare,
+  type SharedShareInput,
   sharedApportionment,
   sharedApportionmentInput,
+  sharedShare,
+  sharedShareInput,
 } from "./reports/shared-apportionment.ts";
 export {
   type SpendingInput,

@@ -1,15 +1,28 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { fetchCashFlow } from "../api.ts";
+import { fetchCashFlow, fetchSharedShare, type SharedShare } from "../api.ts";
 import { DateRangeControl } from "../components/DateRangeControl.tsx";
 import { type DateRange, localDay, quarterRange } from "../lib/date-range.ts";
 import { formatCents } from "../lib/money.ts";
 import { validateCashFlowSearch } from "../routes/search.ts";
 
 /** The query key of the cash-flow figures for one range. */
-export const cashFlowKey = (range: { from: string; to: string }) =>
-  ["reports", "cash-flow", range.from, range.to] as const;
+export const cashFlowKey = (range: { from: string; to: string }, share?: "mine") =>
+  ["reports", "cash-flow", range.from, range.to, share ?? "everything"] as const;
+
+/** The query key of the shared total and the viewer's share for one range. */
+export const sharedShareKey = (range: { from: string; to: string }) =>
+  ["reports", "shared-apportionment", range.from, range.to] as const;
+
+/**
+ * "Your share: $X of $Y shared (N%)", every figure and the percent worked out by the server. With
+ * nothing shared there is no percentage.
+ */
+export function formatShareLine(share: SharedShare): string {
+  const line = `Your share: ${formatCents(share.shareCents)} of ${formatCents(share.sharedCents)} shared`;
+  return share.sharePercent === null ? line : `${line} (${share.sharePercent}%)`;
+}
 
 /** A savings rate the server worked out, in permille, as "37.3%" ("—%" when there is none). */
 export function formatSavingsRate(permille: number | null): string {
@@ -35,14 +48,31 @@ export function CashFlowPage() {
     search.from !== undefined && search.to !== undefined
       ? { from: search.from, to: search.to }
       : quarterRange(today);
+  const share = search.share;
   const totals = useQuery({
-    queryKey: cashFlowKey(range),
-    queryFn: () => fetchCashFlow(range),
+    queryKey: cashFlowKey(range, share),
+    queryFn: () => fetchCashFlow(share === undefined ? range : { ...range, share }),
     // Keep the last range's tiles on screen while the new range loads.
     placeholderData: keepPreviousData,
     retry: false,
   });
   const data = totals.data;
+  const shared = useQuery({
+    queryKey: sharedShareKey(range),
+    queryFn: () => fetchSharedShare(range),
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+  // The range and the share both live in the URL; changing one keeps the other.
+  const setShare = (next: "mine" | undefined) =>
+    void navigate({
+      search: {
+        ...(search.from === undefined || search.to === undefined
+          ? {}
+          : { from: search.from, to: search.to }),
+        ...(next === undefined ? {} : { share: next }),
+      },
+    });
 
   return (
     <section aria-labelledby="cash-flow">
@@ -53,7 +83,11 @@ export function CashFlowPage() {
         <DateRangeControl
           range={range}
           today={today}
-          onChange={(next) => void navigate({ search: { from: next.from, to: next.to } })}
+          onChange={(next) =>
+            void navigate({
+              search: { from: next.from, to: next.to, ...(share === undefined ? {} : { share }) },
+            })
+          }
         />
       </header>
       {totals.isPending ? <p>Loading…</p> : null}
@@ -78,6 +112,50 @@ export function CashFlowPage() {
           ))}
         </dl>
       )}
+      {
+        <div
+          className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-4 py-3"
+          data-testid="share-line"
+        >
+          {shared.data === undefined ? (
+            <span />
+          ) : (
+            <p className="m-0 text-sm tabular-nums" data-testid="share-line-text">
+              {formatShareLine(shared.data)}
+            </p>
+          )}
+          {/* biome-ignore lint/a11y/useSemanticElements: a pill toggle, not a form fieldset */}
+          <div
+            role="group"
+            aria-label="Scope of the figures"
+            className="inline-flex rounded-lg border border-border bg-muted p-1"
+          >
+            {(
+              [
+                { id: undefined, label: "Everything I can see" },
+                { id: "mine", label: "My share" },
+              ] as const
+            ).map((option) => {
+              const pressed = share === option.id;
+              return (
+                <button
+                  key={option.label}
+                  type="button"
+                  aria-pressed={pressed}
+                  onClick={() => setShare(option.id)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                    pressed
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      }
     </section>
   );
 }

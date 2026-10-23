@@ -915,3 +915,138 @@ test("end-to-end ledger journey: filter through URL, split transaction, tag spli
   await page.keyboard.press("Escape");
   await expect(sheet).toBeHidden();
 });
+
+// Story 4.4: the household attribution setting and the share line on Cash flow, on the seeded
+// ledger (so the shared total is not zero). Alex changes the setting and the share line follows;
+// Sam, on the saved session, sees the identical shared total and the other half of it.
+const EVERYTHING = "/cash-flow?from=2000-01-01&to=2100-01-01";
+const aud = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" });
+
+interface ShareBody {
+  setting: string;
+  sharedCents: number;
+  shareCents: number;
+  sharePercent: number | null;
+}
+interface TotalsBody {
+  moneyInCents: number;
+  moneyOutCents: number;
+  keptCents: number;
+}
+
+/** The share line text the server's figures make: `Your share: $X of $Y shared (N%)`. */
+function shareLine(body: ShareBody): string {
+  const line = `Your share: ${aud.format(body.shareCents / 100)} of ${aud.format(body.sharedCents / 100)} shared`;
+  return body.sharePercent === null ? line : `${line} (${body.sharePercent}%)`;
+}
+
+const shareApi = async (page: Page): Promise<ShareBody> =>
+  (await (
+    await page.request.get("/api/reports/shared-apportionment?from=2000-01-01&to=2100-01-01")
+  ).json()) as ShareBody;
+
+let evenShared: ShareBody | undefined;
+
+test("Alex switches the attribution to 50/50, the share line follows, and My share scopes the tiles", async ({
+  page,
+}) => {
+  await signInWithPassword(page, loadAccount());
+  await page.goto("/settings#household");
+  const group = page.getByRole("radiogroup", { name: "Shared spending attribution" });
+  const patched = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === "/api/system/household" && res.request().method() === "PATCH",
+  );
+  await group.getByRole("radio", { name: /50\/50/ }).click();
+  expect((await patched).status()).toBe(200);
+  await expect(group.getByRole("radio", { name: /50\/50/ })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+
+  await page.goto(EVERYTHING);
+  const body = await shareApi(page);
+  evenShared = body;
+  expect(body.setting).toBe("even");
+  expect(body.sharedCents).toBeGreaterThan(0);
+  // Even split of two: Alex's half is the shared total's half, the odd cent going to the first.
+  expect(Math.abs(body.shareCents * 2 - body.sharedCents)).toBeLessThanOrEqual(1);
+  await expect(page.getByTestId("share-line-text")).toHaveText(shareLine(body));
+  await expect(page.getByRole("button", { name: "Everything I can see" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  const everything = (await (
+    await page.request.get("/api/reports/cash-flow?from=2000-01-01&to=2100-01-01")
+  ).json()) as TotalsBody;
+
+  // My share: the URL holds it, the tiles are fetched again with it, and a reload keeps it.
+  const scoped = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === "/api/reports/cash-flow" &&
+      new URL(res.url()).searchParams.get("share") === "mine",
+  );
+  await page.getByRole("button", { name: "My share" }).click();
+  const mine = (await (await scoped).json()) as TotalsBody;
+  await expect(page).toHaveURL((url) => url.searchParams.get("share") === "mine");
+  expect(mine.moneyInCents).toBe(everything.moneyInCents);
+  expect(mine.moneyOutCents).toBeLessThan(everything.moneyOutCents);
+  expect(mine.keptCents).toBe(mine.moneyInCents - mine.moneyOutCents);
+  const tiles = page.getByTestId("cash-flow-tiles");
+  await expect(tiles.locator("dd").nth(1)).toHaveText(aud.format(mine.moneyOutCents / 100));
+  await page.reload();
+  await expect(page.getByRole("button", { name: "My share" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(tiles.locator("dd").nth(1)).toHaveText(aud.format(mine.moneyOutCents / 100));
+  await expect(page.getByTestId("share-line-text")).toHaveText(shareLine(body));
+});
+
+test("the partner sees the identical shared total and the other half under 50/50", async ({
+  browser,
+  cspViolations,
+}) => {
+  const context = await browser.newContext({ storageState: partnerSessionFile });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+    await page.goto(EVERYTHING);
+    await expect(page.getByText(`Signed in as ${SIGNED_UP_AS["person-b"]}`)).toBeVisible();
+    const alex = evenShared;
+    if (alex === undefined) throw new Error("the first test saves Alex's share line");
+    const body = await shareApi(page);
+    expect(body.setting).toBe("even");
+    expect(body.sharedCents).toBe(alex.sharedCents);
+    expect(body.shareCents + alex.shareCents).toBe(alex.sharedCents);
+    await expect(page.getByTestId("share-line-text")).toHaveText(shareLine(body));
+  } finally {
+    await context.close();
+  }
+});
+
+test("Alex sets the attribution back to contribution, and the setting is read again", async ({
+  page,
+}) => {
+  await signInWithPassword(page, loadAccount());
+  await page.goto("/settings#household");
+  const group = page.getByRole("radiogroup", { name: "Shared spending attribution" });
+  await expect(group.getByRole("radio", { name: /50\/50/ })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  const patched = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === "/api/system/household" && res.request().method() === "PATCH",
+  );
+  await group.getByRole("radio", { name: /By contribution/ }).click();
+  expect((await patched).status()).toBe(200);
+  await page.reload();
+  await expect(
+    page
+      .getByRole("radiogroup", { name: "Shared spending attribution" })
+      .getByRole("radio", { name: /By contribution/ }),
+  ).toHaveAttribute("aria-checked", "true");
+  await page.goto(EVERYTHING);
+  expect((await shareApi(page)).setting).toBe("contribution");
+});

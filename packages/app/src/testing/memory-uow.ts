@@ -1750,20 +1750,30 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       }
       return { count: rows.length, inCents, outCents };
     },
-    cashFlowTotals: (viewer, today, range) => {
+    cashFlowTotals: (viewer, today, range, scope) => {
       requireViewer(viewer);
       requireDay(today, "visibleTxn");
       check();
       let moneyInCents = 0;
       let moneyOutCents = 0;
+      let sharedOutCents = 0;
       for (const row of visibleRows(viewer)) {
         if (row.postedOn < range.from || row.postedOn > range.to) continue;
         for (const s of working.splits.filter((x) => x.transactionId === row.id)) {
           const kind = splitFlowKindFor(working, viewer, row, s);
           if (kind === "income") moneyInCents += s.amountCents;
-          else if (kind === "expense") moneyOutCents -= s.amountCents;
+          else if (kind === "expense") {
+            moneyOutCents -= s.amountCents;
+            // Only public accounts feed the shared total (AD-7), so only they are replaced.
+            if (
+              s.beneficiary === "shared" &&
+              working.accounts.find((a) => a.id === row.accountId)?.isPrivate === false
+            )
+              sharedOutCents -= s.amountCents;
+          }
         }
       }
+      if (scope !== undefined) moneyOutCents += scope.mineShareCents - sharedOutCents;
       moneyOutCents = moneyOutCents || 0;
       return { moneyInCents, moneyOutCents, keptCents: moneyInCents - moneyOutCents || 0 };
     },

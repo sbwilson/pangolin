@@ -24,6 +24,8 @@ vi.mock("../api.ts", async (importOriginal) => ({
   fetchInstitutions: vi.fn().mockResolvedValue([]),
   reopenAccount: vi.fn(),
   leaveHousehold: vi.fn(),
+  fetchHouseholdSettings: vi.fn(),
+  updateSharedAttribution: vi.fn(),
 }));
 
 vi.mock("../auth-client.ts", () => ({
@@ -76,6 +78,14 @@ describe("SettingsPage", () => {
     });
 
     mockSignOut = vi.fn().mockImplementation(() => Promise.resolve());
+
+    vi.mocked(api.fetchHouseholdSettings).mockResolvedValue({
+      baseCurrency: "AUD",
+      fyStart: "07-01",
+      timezone: "Australia/Sydney",
+      sharedAttribution: "contribution",
+      updatedAt: "2026-10-18T00:00:00Z",
+    });
 
     vi.mocked(api.fetchPreferences).mockResolvedValue({
       theme: "clay-linen",
@@ -922,18 +932,21 @@ describe("SettingsPage", () => {
     });
   });
 
-  // --- Household placeholder tests ---
-  it("renders household placeholder section with upcoming configuration copy", () => {
+  // --- Household attribution control ---
+  it("renders the household attribution control with the current choice", async () => {
     renderSettings();
 
     const householdCard = document.getElementById("household");
     expect(householdCard).toBeTruthy();
     if (!householdCard) throw new Error("Missing household card");
     expect(
-      within(householdCard).getByText(
-        "Pay cycles, the household pay anchor, and split attribution will be configured here.",
-      ),
+      await within(householdCard).findByRole("radio", { name: /By contribution/ }),
     ).toBeTruthy();
+    expect(
+      within(householdCard)
+        .getByRole("radio", { name: /By contribution/ })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
   });
 
   describe("AccountSettings and SettingsNav", () => {

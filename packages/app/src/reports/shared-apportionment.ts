@@ -70,3 +70,60 @@ export function sharedApportionment(
     })),
   };
 }
+
+/** The input of `reports.sharedShare`: the range of `sharedApportionment`. */
+export const sharedShareInput = sharedApportionmentInput;
+export type SharedShareInput = z.input<typeof sharedShareInput>;
+
+/** The shared total over a range and the viewer's own share of it. */
+export interface SharedShare {
+  readonly from: string;
+  readonly to: string;
+  readonly setting: SharedApportionment["setting"];
+  readonly basis: ApportionBasis;
+  readonly sharedCents: number;
+  /** The viewer's apportioned share; 0 when they are not an active person. */
+  readonly shareCents: number;
+  /**
+   * `shareCents` ÷ `sharedCents` as a whole percent, rounded half away from zero; null when the
+   * shared total is zero or less.
+   */
+  readonly sharePercent: number | null;
+}
+
+/** `part` ÷ `whole` as an integer percent, half away from zero; null when `whole ≤ 0`. */
+export function wholePercent(part: number, whole: number): number | null {
+  if (whole <= 0) return null;
+  const n = BigInt(part) * 100n;
+  const d = BigInt(whole);
+  const magnitude = ((n < 0n ? -n : n) * 2n + d) / (2n * d);
+  return Number(n < 0n ? -magnitude : magnitude) || 0;
+}
+
+/** The viewer's own apportioned share in cents (0 for a system viewer or a non-member). */
+export function viewerShareCents(ctx: UseCaseContext, apportionment: SharedApportionment): number {
+  if (ctx.viewer.kind !== "person") return 0;
+  const me: string = ctx.viewer.personId;
+  return apportionment.people.find((p) => p.personId === me)?.shareCents ?? 0;
+}
+
+/**
+ * `reports.sharedShare`: the viewer's share of the shared total over `from`..`to` and its whole
+ * percent, both worked out here (the web never sums or rounds money). The shared total and the
+ * apportionment are the same for both partners (AD-7); only `shareCents` and `sharePercent` are
+ * the viewer's own.
+ */
+export function sharedShare(ctx: UseCaseContext, input: SharedShareInput): SharedShare {
+  const parsed = parseInput(sharedShareInput, input);
+  const a = sharedApportionment(ctx, parsed);
+  const shareCents = viewerShareCents(ctx, a);
+  return {
+    from: a.from,
+    to: a.to,
+    setting: a.setting,
+    basis: a.basis,
+    sharedCents: a.sharedCents,
+    shareCents,
+    sharePercent: wholePercent(shareCents, a.sharedCents),
+  };
+}

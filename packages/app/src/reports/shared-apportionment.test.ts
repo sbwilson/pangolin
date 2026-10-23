@@ -23,7 +23,7 @@ import type {
 import { manualClock } from "../testing/fixtures.ts";
 import { DEFAULT_SETTINGS, memoryUnitOfWork } from "../testing/memory-uow.ts";
 import { personViewer, type Viewer } from "../viewer.ts";
-import { sharedApportionment } from "./shared-apportionment.ts";
+import { sharedApportionment, sharedShare, wholePercent } from "./shared-apportionment.ts";
 
 const clock = manualClock("2026-09-27T00:00:00Z");
 const T = "2026-09-27T00:00:00.000Z";
@@ -314,5 +314,51 @@ describe.each([
       expect(r.basis).toBe(basis);
       expect(r.sharedCents).toBe(1000);
     }
+  });
+});
+
+describe("wholePercent", () => {
+  it("is part ÷ whole as a whole percent, half away from zero, null without a whole", () => {
+    expect(wholePercent(1, 3)).toBe(33);
+    expect(wholePercent(2, 3)).toBe(67);
+    expect(wholePercent(1, 200)).toBe(1);
+    expect(wholePercent(-1, 200)).toBe(-1);
+    expect(wholePercent(5001, 10_001)).toBe(50);
+    expect(wholePercent(0, 100)).toBe(0);
+    expect(wholePercent(5, 0)).toBeNull();
+  });
+});
+
+describe.each([
+  ["SQLite", () => createUnitOfWork(db)],
+  ["memory", () => memoryUnitOfWork()],
+] as const)("reports.sharedShare on %s", (_name, makeUow) => {
+  it("gives each partner their own share and percent of the identical shared total", () => {
+    const h = build(makeUow(), "contribution");
+    h.transfer("a-in", h.acct.privA, h.acct.everyday, 600, h.a);
+    h.transfer("b-in", h.acct.privB, h.acct.everyday, 400, h.b);
+    h.txn("shop", h.acct.everyday, -10_000);
+    const asA = sharedShare(h.as(h.a), SEPTEMBER);
+    const asB = sharedShare(h.as(h.b), SEPTEMBER);
+    expect(asA).toMatchObject({ sharedCents: 10_000, shareCents: 6000, sharePercent: 60 });
+    expect(asB).toMatchObject({ sharedCents: 10_000, shareCents: 4000, sharePercent: 40 });
+    expect({ ...asA, shareCents: 0, sharePercent: 0 }).toEqual({
+      ...asB,
+      shareCents: 0,
+      sharePercent: 0,
+    });
+  });
+
+  it("follows the setting, and has no percent when nothing is shared", () => {
+    const h = build(makeUow(), "even");
+    h.transfer("a-in", h.acct.privA, h.acct.everyday, 600, h.a);
+    expect(sharedShare(h.as(h.b), SEPTEMBER)).toMatchObject({
+      setting: "even",
+      sharedCents: 0,
+      shareCents: 0,
+      sharePercent: null,
+    });
+    h.txn("shop", h.acct.everyday, -10_000);
+    expect(sharedShare(h.as(h.b), SEPTEMBER)).toMatchObject({ shareCents: 5000, sharePercent: 50 });
   });
 });

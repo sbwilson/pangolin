@@ -186,6 +186,15 @@ async function readTranscript(world: World): Promise<Map<string, string>> {
     const res = await world.request("b", "GET", path);
     out.set(`GET ${path}`, normaliseRequestIds(`${res.status} ${res.text}`));
   }
+  for (const query of CASH_FLOW_QUERIES) {
+    for (const path of [
+      `/api/reports/cash-flow?${query}&share=mine`,
+      `/api/reports/shared-apportionment?${query}`,
+    ]) {
+      const res = await world.request("b", "GET", path);
+      out.set(`GET ${path}`, normaliseRequestIds(`${res.status} ${res.text}`));
+    }
+  }
   for (const path of REPORT_QUERIES) {
     const res = await world.request("b", "GET", path);
     out.set(`GET ${path}`, normaliseRequestIds(`${res.status} ${res.text}`));

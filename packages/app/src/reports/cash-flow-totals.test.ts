@@ -24,7 +24,7 @@ import { createTransferGroup } from "../ledger/transfer-groups.ts";
 import type { UnitOfWork } from "../ports/unit-of-work.ts";
 import { systemViewer } from "../system-viewer.ts";
 import { manualClock, sequentialIds } from "../testing/fixtures.ts";
-import { memoryUnitOfWork } from "../testing/memory-uow.ts";
+import { DEFAULT_SETTINGS, memoryUnitOfWork } from "../testing/memory-uow.ts";
 import { personViewer, type Viewer } from "../viewer.ts";
 import { cashFlowTotals, savingsRatePermille } from "./cash-flow-totals.ts";
 
@@ -114,7 +114,22 @@ function household(uow: UnitOfWork) {
   link(as(a), add(as(a), everyday, -70000), add(as(a), privA, 70000));
   add(as(a), everyday, -999, "2026-08-31"); // outside the range
 
-  return { a, b, as, sys, everyday, privA, salary, groceries, add, categorise, link, mine };
+  return {
+    a,
+    b,
+    as,
+    sys,
+    uow,
+    ctxOf,
+    everyday,
+    privA,
+    salary,
+    groceries,
+    add,
+    categorise,
+    link,
+    mine,
+  };
 }
 
 describe("savingsRatePermille", () => {
@@ -166,6 +181,53 @@ describe.each([
       keptCents: -999,
       savingsRatePermille: null,
     });
+  });
+
+  it("scopes money out to the viewer's share under share: mine", () => {
+    const h = household(makeUow());
+    // Shared out is 214500 and nobody contributed, so each partner's share is half.
+    const mineB = cashFlowTotals(h.as(h.b), { ...SEPTEMBER, share: "mine" });
+    expect(mineB).toEqual({
+      ...SEPTEMBER,
+      moneyInCents: 500000,
+      moneyOutCents: 107250,
+      keptCents: 392750,
+      savingsRatePermille: 786,
+    });
+    // A's own private spend stays whole; only the shared part is replaced by A's share.
+    h.add(h.as(h.a), h.privA, -4000);
+    expect(cashFlowTotals(h.as(h.a), { ...SEPTEMBER, share: "mine" })).toMatchObject({
+      moneyInCents: 500000,
+      moneyOutCents: 107250 + 4000,
+    });
+    // Everything is the default, and unchanged by the scope existing.
+    const everything = cashFlowTotals(h.as(h.a), SEPTEMBER);
+    expect(cashFlowTotals(h.as(h.a), { ...SEPTEMBER, share: "everything" })).toEqual(everything);
+    expect(everything.moneyOutCents).toBe(218500);
+    // The even setting also leaves each partner half of it.
+    h.uow.transaction((r) =>
+      r.householdSettings.update({ ...DEFAULT_SETTINGS, sharedAttribution: "even" }),
+    );
+    expect(cashFlowTotals(h.as(h.b), { ...SEPTEMBER, share: "mine" }).moneyOutCents).toBe(107250);
+    expect(() => cashFlowTotals(h.ctxOf(h.sys.viewer), { ...SEPTEMBER, share: "mine" })).toThrow(
+      AppError,
+    );
+    expect(() => cashFlowTotals(h.as(h.b), { ...SEPTEMBER, share: "half" } as never)).toThrow(
+      AppError,
+    );
+  });
+
+  it("keeps shared-beneficiary spend on a private account whole under share: mine", () => {
+    const h = household(makeUow());
+    const t = h.add(h.as(h.a), h.privA, -1500);
+    h.uow.transaction((r) => {
+      const split = r.transactions.findVisible(h.as(h.a).viewer, t, "2026-09-27")?.splits[0];
+      if (split === undefined) throw new Error("no split");
+      r.transactions.updateSplit({ ...split, beneficiary: "shared" });
+    });
+    expect(cashFlowTotals(h.as(h.a), { ...SEPTEMBER, share: "mine" }).moneyOutCents).toBe(
+      107250 + 1500,
+    );
   });
 
   it("gives B the same answer whatever A does in A's private accounts", () => {

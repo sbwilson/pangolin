@@ -1,11 +1,15 @@
-import type { z } from "zod";
+import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
-import { parseInput } from "../errors.ts";
+import { AppError, parseInput } from "../errors.ts";
 import type { CashFlowTotals } from "../ports/unit-of-work.ts";
 import { rangeInput } from "./breakdown.ts";
+import { sharedApportionment, viewerShareCents } from "./shared-apportionment.ts";
 
-/** The input of `reports.cashFlowTotals`: an inclusive range of posting days, `from ≤ to`. */
-export const cashFlowTotalsInput = rangeInput({});
+/**
+ * The input of `reports.cashFlowTotals`: an inclusive range of posting days, `from ≤ to`, and
+ * optionally `share`: `mine` scopes money out to the viewer's share of shared spending.
+ */
+export const cashFlowTotalsInput = rangeInput({ share: z.enum(["everything", "mine"]).optional() });
 export type CashFlowTotalsInput = z.input<typeof cashFlowTotalsInput>;
 
 /** Money in, money out and kept over `from`..`to` (inclusive), as the viewer sees them. */
@@ -39,12 +43,23 @@ export function savingsRatePermille(keptCents: number, moneyInCents: number): nu
  * transfers and investing count in neither figure. A transfer to an account the viewer cannot
  * see is a transfer whatever its type, so the partner's figures never depend on the other
  * person's private data (AD-3). A household total: it may differ between the two partners.
+ *
+ * With `share: "mine"`, money out is the viewer's visible money out with the part whose
+ * beneficiary is `shared` replaced by their apportioned share of the shared total (from
+ * `sharedApportionment`); money in is unchanged and kept follows. A person viewer only.
  */
 export function cashFlowTotals(ctx: UseCaseContext, input: CashFlowTotalsInput): CashFlowReport {
-  const range = parseInput(cashFlowTotalsInput, input);
+  const { share, ...range } = parseInput(cashFlowTotalsInput, input);
   const today = ctx.clock.today().toString();
+  if (share === "mine" && ctx.viewer.kind !== "person") {
+    throw new AppError("Validation", "My share needs a signed-in person");
+  }
+  const scope =
+    share === "mine"
+      ? { mineShareCents: viewerShareCents(ctx, sharedApportionment(ctx, range)) }
+      : undefined;
   const totals = ctx.uow.read((repos) =>
-    repos.transactions.cashFlowTotals(ctx.viewer, today, range),
+    repos.transactions.cashFlowTotals(ctx.viewer, today, range, scope),
   );
   return {
     from: range.from,

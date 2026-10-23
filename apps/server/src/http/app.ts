@@ -10,6 +10,7 @@ import {
   acceptRuleOfferItem,
   backupStatus,
   balanceAsOf,
+  type CashFlowTotalsInput,
   type Clock,
   type CodeHasher,
   type CreateHandoffInput,
@@ -50,6 +51,7 @@ import {
   fixSetAsideRowItem,
   getAccount,
   getActivity,
+  getHouseholdSettings,
   getPayee,
   getPayeeAlias,
   getPreferences,
@@ -108,6 +110,7 @@ import {
   setSplitField,
   setSplits,
   setSplitTags,
+  sharedShare,
   spending,
   type TokenPort,
   type UnitOfWork,
@@ -117,6 +120,7 @@ import {
   updateActivity,
   updateCategory,
   updateCategoryGroup,
+  updateHouseholdSettings,
   updateInstitution,
   updatePayee,
   updatePayeeAlias,
@@ -351,6 +355,15 @@ export function createApi(deps: ApiDeps) {
         },
         200,
       );
+    })
+    .get("/api/system/household", (c) => {
+      // The household-wide settings row (base currency, time zone, FY start, attribution).
+      return c.json(getHouseholdSettings(ctx(c), {}), 200);
+    })
+    .patch("/api/system/household", async (c) => {
+      // Any of `baseCurrency`, `timezone`, `sharedAttribution`; `fyStart` and any other key is 400.
+      writable();
+      return c.json(updateHouseholdSettings(ctx(c), await objectBody(c)), 200);
     })
     .get("/api/identity/preferences", (c) => {
       return c.json(getPreferences(ctx(c), {}), 200);
@@ -706,8 +719,19 @@ export function createApi(deps: ApiDeps) {
     .get("/api/reports/cash-flow", (c) => {
       // Per viewer (AD-3): money in, money out and kept over `from`..`to` (inclusive), summed in
       // SQL by flowKind (AD-23). A missing, malformed or backwards range is 400.
+      // `share=mine` scopes money out to the viewer's share of shared spending.
+      const input = {
+        from: c.req.query("from"),
+        to: c.req.query("to"),
+        share: c.req.query("share"),
+      };
+      return c.json(cashFlowTotals(ctx(c), input as CashFlowTotalsInput), 200);
+    })
+    .get("/api/reports/shared-apportionment", (c) => {
+      // The shared total over `from`..`to` and the viewer's share of it. The total and the
+      // apportionment come from public accounts only (AD-7), so both partners see the same.
       const input = { from: c.req.query("from"), to: c.req.query("to") };
-      return c.json(cashFlowTotals(ctx(c), input as { from: string; to: string }), 200);
+      return c.json(sharedShare(ctx(c), input as { from: string; to: string }), 200);
     })
     .get("/api/reports/pnl", (c) => {
       // Per viewer (AD-3): income and expense by category group or category over `from`..`to`,

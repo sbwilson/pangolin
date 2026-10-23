@@ -545,6 +545,33 @@ describe("flowKind parity (AD-23)", () => {
         });
       }
     }
+    // The `My share` scope: shared-beneficiary money out becomes the share, alike in both.
+    for (const [who, viewer] of Object.entries(sqlite.viewers)) {
+      for (const [name, range] of Object.entries(RANGES)) {
+        const scoped = (uow: UnitOfWork, v: Viewer, mineShareCents: number) =>
+          uow.read((r) => r.transactions.cashFlowTotals(v, TODAY, range, { mineShareCents }));
+        const plain = sqliteUow.read((r) => r.transactions.cashFlowTotals(viewer, TODAY, range));
+        const at0 = scoped(sqliteUow, viewer, 0);
+        const at700 = scoped(sqliteUow, viewer, 700);
+        expect(at700, `${who} ${name}`).toEqual(
+          scoped(memoryUow, memory.viewers[who] as Viewer, 700),
+        );
+        expect(at0, `${who} ${name}`).toEqual(scoped(memoryUow, memory.viewers[who] as Viewer, 0));
+        // Money in is untouched, a share moves money out one for one, kept follows.
+        expect(at700.moneyInCents).toBe(plain.moneyInCents);
+        expect(at700.moneyOutCents - at0.moneyOutCents).toBe(700);
+        expect(at700.keptCents).toBe(at700.moneyInCents - at700.moneyOutCents || 0);
+        expect(at0.moneyOutCents).toBeLessThanOrEqual(plain.moneyOutCents);
+      }
+    }
+    // B sees only public accounts, where every split here is shared: money out is the share.
+    expect(
+      sqliteUow.read((r) =>
+        r.transactions.cashFlowTotals(sqlite.viewers.B as Viewer, TODAY, SEPTEMBER, {
+          mineShareCents: 4242,
+        }),
+      ).moneyOutCents,
+    ).toBe(4242);
     const b = sqlite.viewers.B as Viewer;
     expect(
       sqliteUow.read((r) => r.transactions.cashFlowTotals(b, TODAY, RANGES.empty as DayRange)),
