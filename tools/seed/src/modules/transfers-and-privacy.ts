@@ -28,7 +28,21 @@ interface Pair {
   readonly to: { account: string; description: string; category: CategoryRef };
   /** The person the group is created as. */
   readonly by: string;
+  /** The person who put the money into a shared account: set on the shared leg (AD-7). */
+  readonly contributor?: string;
 }
+
+/**
+ * Each partner moves this much from their private account into joint everyday on the same day of
+ * every month, with `performedBy` set on the joint leg. Contribution is 60% A / 40% B over any
+ * range holding whole months. The quarterly top-up below is left unattributed on purpose (a
+ * transfer into a shared account with no `performedBy` counts for neither person).
+ */
+export const CONTRIBUTION_DAY = 3;
+export const MONTHLY_CONTRIBUTION_CENTS: Readonly<Record<string, number>> = {
+  [A]: 150_000,
+  [B]: 100_000,
+};
 
 const BETWEEN = cat("Transfers (not spending)", "Between our accounts");
 const TO_SAVINGS = cat("Transfers (not spending)", "To savings");
@@ -191,6 +205,31 @@ export const transfersAndPrivacy: SeedModule = {
       });
     }
 
+    // Monthly contributions: each partner's private account into joint everyday.
+    for (const date of monthlyOn(w, CONTRIBUTION_DAY)) {
+      for (const [person, privateAccount] of [
+        [A, ACCOUNT_KEYS.privateA],
+        [B, ACCOUNT_KEYS.privateB],
+      ] as const) {
+        add({
+          date,
+          cents: MONTHLY_CONTRIBUTION_CENTS[person] as number,
+          from: {
+            account: privateAccount,
+            description: "Monthly contribution to joint account",
+            category: BETWEEN,
+          },
+          to: {
+            account: ACCOUNT_KEYS.everyday,
+            description: "Monthly contribution from personal account",
+            category: BETWEEN,
+          },
+          by: person,
+          contributor: person,
+        });
+      }
+    }
+
     // The surprises, as transactions of their own (the card payments below include them).
     const surpriseEvents: TransactionCreatedEvent[] = SURPRISES.flatMap((s) => {
       const date = surpriseDate(w, s);
@@ -260,6 +299,7 @@ export const transfersAndPrivacy: SeedModule = {
         amountCents: p.cents,
         description: p.to.description,
         category: p.to.category,
+        ...(p.contributor === undefined ? {} : { performedBy: p.contributor }),
       };
       created.push(out, into);
       groups.push({ type: "transfer.grouped", transactions: [out.key, into.key], by: p.by });
@@ -267,6 +307,7 @@ export const transfersAndPrivacy: SeedModule = {
         transactions: [out.key, into.key],
         by: p.by,
         amountCents: p.cents,
+        ...(p.contributor === undefined ? {} : { contributor: p.contributor }),
         withPrivateAccount:
           privateAccounts.has(p.from.account) || privateAccounts.has(p.to.account),
       });
@@ -296,9 +337,41 @@ export const transfersAndPrivacy: SeedModule = {
       }
       visibleCounts[person] = count;
     }
+    const contributed: Record<string, number> = {};
+    for (const p of pairs) {
+      if (p.contributor !== undefined) {
+        contributed[p.contributor] = (contributed[p.contributor] ?? 0) + p.cents;
+      }
+    }
+    const contributedTotal = Object.values(contributed).reduce((n, c) => n + c, 0);
+    const contributionDates = pairs
+      .filter((p) => p.contributor !== undefined)
+      .map((p) => iso(p.date))
+      .sort();
+    const firstContribution = contributionDates[0];
     return {
       events,
       expectations: {
+        // The apportionment ticket's verify: the whole window's contribution per person, in cents
+        // and permille of the total, and a range ahead of the first contribution that has none.
+        contribution: {
+          monthlyCents: { ...MONTHLY_CONTRIBUTION_CENTS },
+          totalCents: contributed,
+          permille: Object.fromEntries(
+            Object.entries(contributed).map(([person, cents]) => [
+              person,
+              Math.round((cents * 1000) / contributedTotal),
+            ]),
+          ),
+          dates: [...new Set(contributionDates)],
+          noContributionRange:
+            firstContribution === undefined
+              ? null
+              : {
+                  from: iso(w.start),
+                  to: iso(Temporal.PlainDate.from(firstContribution).subtract({ days: 1 })),
+                },
+        },
         transactionCount: all.length,
         visibleCounts,
         hidden: hidden.map((h) => {

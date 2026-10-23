@@ -21,6 +21,8 @@ export interface SeedTransactionInput {
   readonly description: string;
   readonly payeeId?: string | null | undefined;
   readonly notes?: string | null | undefined;
+  /** Who performed it (a person id); null or omitted when unattributed. */
+  readonly performedBy?: string | null | undefined;
   readonly splits: readonly SeedSplitInput[];
 }
 
@@ -67,7 +69,7 @@ export function seedTransactions(
         fingerprint: fingerprintManual(input.accountId, id),
         fingerprintVersion: MANUAL_FINGERPRINT_VERSION,
         importId: null,
-        performedBy: null,
+        performedBy: (input.performedBy ?? null) as Id<"Person"> | null,
         transferGroupId: null,
         needsReview: false,
         isHidden: false,

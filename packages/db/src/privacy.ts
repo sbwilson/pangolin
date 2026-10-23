@@ -151,16 +151,50 @@ export function visibleTxn(viewer: Viewer | undefined, today: string): TxnProjec
 }
 
 /**
+ * How many owners the counterpart's account of the current `transaction` row's transfer has: NULL
+ * when the row is not linked or no other live row of its group sits in a live account (the same
+ * counterpart `flowCounterpartSql` picks); 1 for a private account without reading its owners.
+ * A viewer-independent shape fact for the shared figures (AD-7).
+ */
+export function flowCounterpartOwnerCountSql(): SQL {
+  const cp = alias(transaction, "fcp");
+  const ca = alias(account, "fca");
+  const owner = alias(accountOwner, "fco");
+  return sql`(SELECT CASE WHEN ${ca.isPrivate} = 1 THEN 1
+        ELSE (SELECT count(*) FROM ${accountOwner} ${owner} WHERE ${owner.accountId} = ${ca.id}) END
+      FROM ${transaction} ${cp}
+      JOIN ${account} ${ca} ON ${ca.id} = ${cp.accountId}
+      WHERE ${transaction.transferGroupId} IS NOT NULL
+        AND ${cp.transferGroupId} = ${transaction.transferGroupId}
+        AND ${cp.id} <> ${transaction.id}
+        AND ${cp.deletedAt} IS NULL
+        AND ${ca.deletedAt} IS NULL
+      ORDER BY ${cp.id} LIMIT 1)`;
+}
+
+/** Options of the flow-class SQL. */
+export interface FlowKindOptions {
+  /**
+   * Treat a private counterpart as `'hidden'` for every viewer, not only for the partner. Used by
+   * shared figures, which are identical for both partners (AD-7).
+   */
+  readonly publicOnly?: boolean;
+}
+
+/**
  * The counterpart of the current `transaction` row's transfer, as `flowKind` takes it (AD-23):
  * NULL when the row is not linked or no other live row of its group sits in a live account;
  * `'hidden'` when that row's account is not one the viewer may see; else the account's type.
  * With more than one other row, the one with the lowest id. Throws without a viewer.
  */
-export function flowCounterpartSql(viewer: Viewer | undefined): SQL {
+export function flowCounterpartSql(viewer: Viewer | undefined, options: FlowKindOptions = {}): SQL {
   const accounts = visibleAccounts(viewer);
   const cp = alias(transaction, "fcp");
   const ca = alias(account, "fca");
-  return sql`(SELECT CASE WHEN ${ca.id} IN (SELECT ${account.id} FROM ${account} WHERE ${accounts})
+  // `publicOnly`: a private counterpart is `'hidden'` whoever asks, so the class never depends on
+  // the viewer (AD-7). The viewer is still required.
+  const publicOnly = options.publicOnly === true ? sql` AND ${ca.isPrivate} = 0` : sql``;
+  return sql`(SELECT CASE WHEN ${ca.id} IN (SELECT ${account.id} FROM ${account} WHERE ${accounts})${publicOnly}
         THEN ${ca.type} ELSE 'hidden' END
       FROM ${transaction} ${cp}
       JOIN ${account} ${ca} ON ${ca.id} = ${cp.accountId}
@@ -181,8 +215,8 @@ export function flowCounterpartSql(viewer: Viewer | undefined): SQL {
  * the other person's private accounts (AD-3, AD-4). Every aggregate of flows uses this.
  * Throws without a viewer.
  */
-export function flowKindSql(viewer: Viewer | undefined): SQL {
-  const counterpart = flowCounterpartSql(viewer);
+export function flowKindSql(viewer: Viewer | undefined, options: FlowKindOptions = {}): SQL {
+  const counterpart = flowCounterpartSql(viewer, options);
   const group = alias(categoryGroup, "fcg");
   const cat = alias(category, "fcc");
   const groupKind = sql`(SELECT ${group.kind} FROM ${category} ${cat}

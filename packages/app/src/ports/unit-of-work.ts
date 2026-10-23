@@ -548,6 +548,17 @@ export interface CashFlowTotals {
 }
 
 /**
+ * The inputs of the shared apportionment (AD-7), worked out in SQL over public accounts only, so
+ * they are the same whoever asks.
+ */
+export interface SharedFigures {
+  /** Minus the sum of `expense` splits with `beneficiary = 'shared'` on public accounts. */
+  readonly sharedExpenseCents: number;
+  /** Each person's contribution in cents, by person id; people with none are absent. */
+  readonly contributions: readonly { readonly personId: string; readonly cents: number }[];
+}
+
+/**
  * One row of the report breakdown (AD-23): the `income` or `expense` splits a viewer may see in a
  * range, summed per category (with its group) and per visible payee. Categories are named even
  * when soft-deleted; an uncategorised split has every category and group field null. The payee is
@@ -701,6 +712,16 @@ export interface TransactionRepo {
    * first). The rows of a kind sum to that kind's `cashFlowTotals` figure. Throws without a viewer.
    */
   flowBreakdown(viewer: Viewer, today: string, range: DayRange): FlowBreakdownRow[];
+  /**
+   * The shared total and each person's contribution over `range` (inclusive, pending and posted),
+   * read from public accounts only whoever `viewer` is, so both partners get the same figures
+   * (AD-7). A counterpart in a private account is classed hidden. Contribution is (a) positive
+   * splits on a public joint account (2+ owners) whose transaction is linked to a counterpart
+   * that is not a joint account, paid by `performedBy` (null is unattributed), plus (b) shared
+   * `expense` out of a public single-owner account, paid by `performedBy` or the sole owner.
+   * Ordered by person id. Throws without a viewer.
+   */
+  sharedFigures(viewer: Viewer, today: string, range: DayRange): SharedFigures;
   /** How many rows `filter` leaves that come strictly before `cursor` in list order. */
   countBefore(
     viewer: Viewer,
@@ -1695,6 +1716,7 @@ export interface ReadRepos {
     | "summarise"
     | "cashFlowTotals"
     | "flowBreakdown"
+    | "sharedFigures"
     | "countBefore"
     | "dayNets"
     | "latestPostedOn"

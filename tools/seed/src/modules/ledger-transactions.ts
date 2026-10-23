@@ -436,7 +436,8 @@ export const ledgerTransactions: SeedModule = {
 
     if (world.profile === "perf") {
       const TOTAL_TARGET = 50_000;
-      const TRANSFERS_AND_SURPRISES = 92;
+      // The transfers-and-privacy module's rows: 92 before the monthly contributions, plus 48 (24 pairs).
+      const TRANSFERS_AND_SURPRISES = 140;
       const targetDrafts = TOTAL_TARGET - TRANSFERS_AND_SURPRISES;
       const topUpCount = targetDrafts - drafts.length;
 

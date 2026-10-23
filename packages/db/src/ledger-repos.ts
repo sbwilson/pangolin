@@ -10,6 +10,7 @@ import type {
   InstitutionRepo,
   InstitutionRow,
   OwnedAccount,
+  SharedFigures,
   SplitRow,
   TransactionCursor,
   TransactionFilter,
@@ -44,6 +45,8 @@ import { type BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3"
 import { balanceAsOf } from "./balance.ts";
 import type { Db } from "./open.ts";
 import {
+  type FlowKindOptions,
+  flowCounterpartOwnerCountSql,
   flowKindSql,
   liveVisibleTxn,
   requireViewer,
@@ -450,6 +453,67 @@ function cashFlowTotals(orm: Orm, viewer: Viewer, today: string, range: DayRange
 }
 
 /**
+ * The shared total and per-person contributions over `range` from public accounts only, so they
+ * do not depend on `viewer` beyond requiring one (AD-7): a private counterpart is classed hidden
+ * (`flowKindSql` with `publicOnly`) and no private account's row is read. Sums in SQL.
+ */
+function sharedFigures(orm: Orm, viewer: Viewer, today: string, range: DayRange): SharedFigures {
+  const projection = visibleTxn(viewer, today);
+  const kind = flowKindSql(viewer, { publicOnly: true });
+  const owners = sql`(SELECT count(*) FROM ${accountOwner} WHERE ${accountOwner.accountId} = ${transaction.accountId})`;
+  const soleOwner = sql`(SELECT ${accountOwner.personId} FROM ${accountOwner} WHERE ${accountOwner.accountId} = ${transaction.accountId} ORDER BY ${accountOwner.personId} LIMIT 1)`;
+  const cpOwners = flowCounterpartOwnerCountSql();
+  const flows = orm
+    .select({
+      kind: sql<string>`${kind}`.as("flow_kind"),
+      amount: sql<number>`${split.amountCents}`.as("flow_amount"),
+      beneficiary: sql<string>`${split.beneficiary}`.as("flow_beneficiary"),
+      payer: sql<string | null>`(CASE
+        WHEN ${owners} >= 2 AND ${split.amountCents} > 0 AND ${cpOwners} < 2
+          THEN ${transaction.performedBy}
+        WHEN ${kind} = 'expense' AND ${split.beneficiary} = 'shared' AND ${owners} = 1
+          THEN coalesce(${transaction.performedBy}, ${soleOwner})
+        END)`.as("flow_payer"),
+      contribution: sql<number>`(CASE
+        WHEN ${owners} >= 2 AND ${split.amountCents} > 0 AND ${cpOwners} < 2
+          THEN ${split.amountCents}
+        WHEN ${kind} = 'expense' AND ${split.beneficiary} = 'shared' AND ${owners} = 1
+          THEN -${split.amountCents}
+        ELSE 0 END)`.as("flow_contribution"),
+    })
+    .from(split)
+    .innerJoin(transaction, eq(transaction.id, split.transactionId))
+    .where(
+      and(
+        projection.where,
+        sql`${transaction.accountId} IN (SELECT ${account.id} FROM ${account} WHERE ${account.isPrivate} = 0)`,
+        gte(transaction.postedOn, range.from),
+        lte(transaction.postedOn, range.to),
+      ),
+    )
+    .as("flows");
+  const total = orm
+    .select({
+      cents: sql<number>`coalesce(-sum(CASE WHEN ${flows.kind} = 'expense' AND ${flows.beneficiary} = 'shared' THEN ${flows.amount} ELSE 0 END), 0)`,
+    })
+    .from(flows)
+    .get();
+  const rows = orm
+    .select({ personId: flows.payer, cents: sql<number>`sum(${flows.contribution})` })
+    .from(flows)
+    .where(sql`${flows.payer} IS NOT NULL`)
+    .groupBy(sql`${flows.payer}`)
+    .orderBy(sql`${flows.payer}`)
+    .all();
+  return {
+    sharedExpenseCents: Number(total?.cents ?? 0) || 0,
+    contributions: rows
+      .map((r) => ({ personId: r.personId as string, cents: Number(r.cents) || 0 }))
+      .filter((r) => r.cents !== 0),
+  };
+}
+
+/**
  * The non-zero `income` and `expense` splits `viewer` may see posted in `range`, classed by `flowKindSql`
  * (AD-23) and summed in SQL per kind, category and projected payee. The payee is `visibleTxn`'s
  * `payeeId`/`payeeName`, never the raw `payee_id`, so a hidden name or another person's scoped
@@ -517,11 +581,16 @@ function flowBreakdown(
  * straight from `flowKindSql`. For the parity test that holds the SQL expression to the `domain`
  * function; no use case reads it. Throws without a viewer.
  */
-export function splitFlowKinds(db: Db, viewer: Viewer, today: string): Record<string, string> {
+export function splitFlowKinds(
+  db: Db,
+  viewer: Viewer,
+  today: string,
+  options: FlowKindOptions = {},
+): Record<string, string> {
   const orm = drizzle({ client: db });
   const projection = visibleTxn(viewer, today);
   const rows = orm
-    .select({ id: split.id, kind: sql<string>`${flowKindSql(viewer)}` })
+    .select({ id: split.id, kind: sql<string>`${flowKindSql(viewer, options)}` })
     .from(split)
     .innerJoin(transaction, eq(transaction.id, split.transactionId))
     .where(projection.where)
@@ -823,6 +892,12 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
       requireViewer(viewer, "flowBreakdown");
       check();
       return flowBreakdown(orm, viewer, today, range);
+    },
+
+    sharedFigures: (viewer, today, range) => {
+      requireViewer(viewer, "sharedFigures");
+      check();
+      return sharedFigures(orm, viewer, today, range);
     },
 
     countBefore: (viewer, today, filter, cursor) => {

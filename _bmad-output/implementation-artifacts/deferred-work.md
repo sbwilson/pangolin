@@ -491,3 +491,7 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-spending-insight/story-tracer-bullet-flowkind-and-the-cash-flow-landing-page-plan.md`
   summary: Deleting or removing one partner's private side of a transfer changes the other partner's cash-flow figures, because the surviving shared row is unlinked and falls back to the sign rule.
   evidence: `deleteTransaction` and `leave-household` unlink the survivor (decision 81), so B's shared row loses `transfer_group_id` and `flowKind` classes it by sign; pre-existing behaviour that 4.1's totals now expose, already visible to B via the vanished transfer label.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-spending-insight/story-contribution-and-apportionment-plan.md`
+  summary: `sharedFigures` correlated SQL has no timing evidence on the 50k-row perf profile.
+  evidence: Unverified medium; add a `sharedApportionment` timing case beside the cash-flow one in `ledger-perf.test.ts` (≤300 ms) to settle it.

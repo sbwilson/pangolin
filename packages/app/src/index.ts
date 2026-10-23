@@ -601,6 +601,7 @@ export type {
   RunningJobRow,
   SetupLinkRepo,
   SetupLinkRow,
+  SharedFigures,
   THEME_MODES,
   THEME_NAMES,
   ThemeMode,
@@ -711,6 +712,12 @@ export {
   profitAndLoss,
   profitAndLossInput,
 } from "./reports/profit-and-loss.ts";
+export {
+  type SharedApportionment,
+  type SharedApportionmentInput,
+  sharedApportionment,
+  sharedApportionmentInput,
+} from "./reports/shared-apportionment.ts";
 export {
   type SpendingInput,
   type SpendingReport,

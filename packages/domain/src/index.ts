@@ -20,6 +20,13 @@ export {
   sha256Hex,
 } from "./dedupe/fingerprint.ts";
 export {
+  type ApportionBasis,
+  type ApportionInput,
+  type Apportionment,
+  type ApportionSetting,
+  apportion,
+} from "./flows/apportion.ts";
+export {
   FLOW_KINDS,
   type FlowAccountType,
   type FlowGroupKind,

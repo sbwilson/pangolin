@@ -43,6 +43,11 @@ describe("checkSeedReferences", () => {
     ).toEqual([]);
   });
 
+  it("checks performedBy names a known person", () => {
+    expect(last(...world, txn({ performedBy: "q" }))).toEqual([]);
+    expect(last(...world, txn({ performedBy: "nobody" }))).toEqual(['unknown person "nobody"']);
+  });
+
   it("names duplicate person, institution, account, tag, payee and transaction keys", () => {
     expect(last(person("p"), person("p"))).toEqual(['person key "p" is used twice']);
     const inst: SeedReferenceEvent = { type: "institution.created", key: "i" };

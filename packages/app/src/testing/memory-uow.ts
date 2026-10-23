@@ -1209,14 +1209,10 @@ function transferLabelFor(
 }
 
 /**
- * Mirror of `flowCounterpartSql`: the other live row of the transfer group (lowest id) whose
- * account is live, as `"hidden"` when the viewer cannot see that account, else its type.
+ * The account of the other live row of the transfer group (lowest id) whose account is live, or
+ * null when the row is not linked or there is none.
  */
-function flowCounterpartFor(
-  working: MemoryState,
-  viewer: Viewer,
-  row: TransactionRow,
-): null | "hidden" | FlowAccountType {
+function flowCounterpartAccountFor(working: MemoryState, row: TransactionRow): AccountRow | null {
   if (row.transferGroupId === null) return null;
   const other = working.transactions
     .filter(
@@ -1228,16 +1224,36 @@ function flowCounterpartFor(
       return x.a !== undefined && !working.deleted.has(x.a.id);
     })
     .sort((x, y) => byText(x.t.id, y.t.id))[0];
-  if (other === undefined) return null;
-  return accountVisible(working, viewer, other.a) ? other.a.type : "hidden";
+  return other?.a ?? null;
 }
 
-/** The domain `flowKind` of one split of `row`, as `viewer` sees its counterpart (AD-23). */
+/**
+ * Mirror of `flowCounterpartSql`: the counterpart's type, `"hidden"` when the viewer cannot see
+ * that account (or, with `publicOnly`, when it is private whoever asks), null when unlinked.
+ */
+function flowCounterpartFor(
+  working: MemoryState,
+  viewer: Viewer,
+  row: TransactionRow,
+  publicOnly = false,
+): null | "hidden" | FlowAccountType {
+  const other = flowCounterpartAccountFor(working, row);
+  if (other === null) return null;
+  return accountVisible(working, viewer, other) && !(publicOnly && other.isPrivate)
+    ? other.type
+    : "hidden";
+}
+
+/**
+ * The domain `flowKind` of one split of `row`, as `viewer` sees its counterpart (AD-23); with
+ * `publicOnly` a private counterpart is hidden for every viewer (shared figures, AD-7).
+ */
 function splitFlowKindFor(
   working: MemoryState,
   viewer: Viewer,
   row: TransactionRow,
   s: SplitRow,
+  publicOnly = false,
 ): FlowKind {
   const cat =
     s.categoryId === null ? undefined : working.categories.find((c) => c.id === s.categoryId);
@@ -1245,7 +1261,7 @@ function splitFlowKindFor(
     cat === undefined ? undefined : working.categoryGroups.find((g) => g.id === cat.groupId);
   return flowKind({
     amountCents: s.amountCents,
-    counterpart: flowCounterpartFor(working, viewer, row),
+    counterpart: flowCounterpartFor(working, viewer, row, publicOnly),
     groupKind: group?.kind ?? null,
   });
 }
@@ -1750,6 +1766,46 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
       }
       moneyOutCents = moneyOutCents || 0;
       return { moneyInCents, moneyOutCents, keptCents: moneyInCents - moneyOutCents || 0 };
+    },
+    sharedFigures: (viewer, today, range) => {
+      requireViewer(viewer);
+      requireDay(today, "visibleTxn");
+      check();
+      const ownersOf = (accountId: string) =>
+        working.accountOwners.filter((o) => o.accountId === accountId);
+      let sharedExpenseCents = 0;
+      const byPerson = new Map<string, number>();
+      for (const row of visibleRows(viewer)) {
+        if (row.postedOn < range.from || row.postedOn > range.to) continue;
+        const acct = working.accounts.find((a) => a.id === row.accountId);
+        if (acct === undefined || acct.isPrivate) continue;
+        const owners = ownersOf(acct.id);
+        const cp = flowCounterpartAccountFor(working, row);
+        const cpOwners = cp === null ? null : cp.isPrivate ? 1 : ownersOf(cp.id).length;
+        for (const s of working.splits.filter((x) => x.transactionId === row.id)) {
+          const kind = splitFlowKindFor(working, viewer, row, s, true);
+          const shared = s.beneficiary === "shared";
+          if (kind === "expense" && shared) sharedExpenseCents -= s.amountCents;
+          let payer: string | null = null;
+          let cents = 0;
+          if (owners.length >= 2 && s.amountCents > 0 && cpOwners !== null && cpOwners < 2) {
+            payer = row.performedBy;
+            cents = s.amountCents;
+          } else if (kind === "expense" && shared && owners.length === 1) {
+            const sole = [...owners].map((o) => o.personId).sort(byText)[0] ?? null;
+            payer = row.performedBy ?? sole;
+            cents = -s.amountCents;
+          }
+          if (payer !== null) byPerson.set(payer, (byPerson.get(payer) ?? 0) + cents);
+        }
+      }
+      return {
+        sharedExpenseCents: sharedExpenseCents || 0,
+        contributions: [...byPerson.entries()]
+          .filter(([, cents]) => cents !== 0)
+          .sort(([x], [y]) => byText(x, y))
+          .map(([personId, cents]) => ({ personId, cents })),
+      };
     },
     flowBreakdown: (viewer, today, range) => {
       requireViewer(viewer);
@@ -3097,6 +3153,7 @@ export function memoryUnitOfWork(
           summarise: transactionRepo(uow.state, check).summarise,
           cashFlowTotals: transactionRepo(uow.state, check).cashFlowTotals,
           flowBreakdown: transactionRepo(uow.state, check).flowBreakdown,
+          sharedFigures: transactionRepo(uow.state, check).sharedFigures,
           countBefore: transactionRepo(uow.state, check).countBefore,
           dayNets: transactionRepo(uow.state, check).dayNets,
           latestPostedOn: transactionRepo(uow.state, check).latestPostedOn,

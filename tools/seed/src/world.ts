@@ -189,6 +189,8 @@ export interface TransactionCreatedEvent {
   /** The key of a payee. */
   readonly payee?: string;
   readonly notes?: string;
+  /** The key of the person who performed it (AD-26); omitted when unattributed. */
+  readonly performedBy?: string;
   readonly category?: CategoryRef;
   /** Keys of tags. */
   readonly tags?: readonly string[];

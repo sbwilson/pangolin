@@ -167,6 +167,7 @@ const EVENT_SCHEMAS = {
     description: z.string().min(1).max(500),
     payee: key.optional(),
     notes: z.string().min(1).max(1000).optional(),
+    performedBy: key.optional(),
     category: categoryRef.optional(),
     tags: z.array(key).optional(),
     splits: z.array(splitSchema).min(1).max(50).optional(),
@@ -577,6 +578,8 @@ function applyEvents(
           description: event.description,
           payeeId: event.payee !== undefined ? (payees[event.payee] as string) : null,
           notes: event.notes ?? null,
+          performedBy:
+            event.performedBy !== undefined ? (people[event.performedBy] as string) : null,
           splits,
         });
         break;

@@ -23,6 +23,7 @@ export type SeedReferenceEvent =
       readonly account: string;
       readonly amountCents: number;
       readonly payee?: string | undefined;
+      readonly performedBy?: string | undefined;
       readonly tags?: readonly string[] | undefined;
       readonly splits?:
         | readonly {
@@ -132,6 +133,9 @@ export function checkSeedReferences(event: SeedReferenceEvent, known: SeedKnown)
       if (account === undefined) bad(`unknown account "${event.account}"`);
       if (event.payee !== undefined && !known.payees.has(event.payee)) {
         bad(`unknown payee "${event.payee}"`);
+      }
+      if (event.performedBy !== undefined && !known.people.has(event.performedBy)) {
+        bad(`unknown person "${event.performedBy}"`);
       }
       if (event.splits !== undefined) {
         const sum = event.splits.reduce((total, split) => total + split.amountCents, 0);

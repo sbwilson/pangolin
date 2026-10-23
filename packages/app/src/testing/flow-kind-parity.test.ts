@@ -58,8 +58,10 @@ function ids() {
 /** A named account of the scenario; `each_<type>` is one public account per account type. */
 type AccountKey = string;
 
-const ACCOUNTS: Record<AccountKey, { type: AccountType; private: boolean }> = {
+const ACCOUNTS: Record<AccountKey, { type: AccountType; private: boolean; solo?: true }> = {
   everyday: { type: "transaction", private: false },
+  // A public account with one owner (A): shared spend out of it is A's contribution (AD-7).
+  soloA: { type: "transaction", private: false, solo: true },
   card: { type: "credit_card", private: false },
   loan: { type: "home_loan", private: false },
   broker: { type: "brokerage", private: false },
@@ -72,7 +74,8 @@ const ACCOUNTS: Record<AccountKey, { type: AccountType; private: boolean }> = {
 };
 
 /** The account behind a key (every key the scenario uses is in `ACCOUNTS`). */
-const accountOf = (key: AccountKey) => ACCOUNTS[key] as { type: AccountType; private: boolean };
+const accountOf = (key: AccountKey) =>
+  ACCOUNTS[key] as { type: AccountType; private: boolean; solo?: true };
 
 type GroupKey = "income" | "expense" | "transfer";
 
@@ -150,7 +153,9 @@ function scenario(uow: UnitOfWork) {
       };
       r.accounts.insert(
         row,
-        def.private ? [own(row.id, a, 10000)] : [own(row.id, a, 5000), own(row.id, b, 5000)],
+        def.private || def.solo === true
+          ? [own(row.id, a, 10000)]
+          : [own(row.id, a, 5000), own(row.id, b, 5000)],
       );
     }
     for (const [i, g] of (["income", "expense", "transfer"] as const).entries()) {
@@ -286,7 +291,13 @@ function scenario(uow: UnitOfWork) {
     from: AccountKey,
     to: AccountKey,
     amount: number,
-    opts: { fromGroup?: GroupKey | null; toGroup?: GroupKey | null; deleteTo?: boolean } = {},
+    opts: {
+      fromGroup?: GroupKey | null;
+      toGroup?: GroupKey | null;
+      deleteTo?: boolean;
+      /** Set as `performedBy` on the receiving leg. */
+      by?: Id<"Person">;
+    } = {},
   ) => {
     const group = newId<"TransferGroup">();
     r.transferGroups.insert({ id: group, matchedBy: "manual", createdAt: T, updatedAt: T });
@@ -301,6 +312,7 @@ function scenario(uow: UnitOfWork) {
     );
     const inn = add(r, `${key}.in`, to, [{ amountCents: amount, group: opts.toGroup ?? null }], {
       transferGroupId: group,
+      ...(opts.by === undefined ? {} : { performedBy: opts.by }),
     });
     if (opts.deleteTo === true) {
       r.transactions.softDelete(systemViewer("cli:test"), txnIds[`${key}.in`] as string, T);
@@ -387,6 +399,24 @@ function scenario(uow: UnitOfWork) {
     });
     r.categories.softDelete(deletedTransferCat, T);
     r.categories.softDelete(deletedExpenseCat, T);
+    // Shared-figure inputs (AD-7): contributions into the joint account from each partner's
+    // private account (B's from a public account of another type, A's attributed and unattributed),
+    // a joint-to-joint transfer, personal spend, and spend on the single-owner account.
+    pair(r, "contribA", "privA", "everyday", 25000, { by: a });
+    pair(r, "contribAUnattributed", "privA", "everyday", 3500);
+    pair(r, "contribAFromBroker", "privABroker", "everyday", 4400, { by: a });
+    pair(r, "jointToJoint", "each_savings", "everyday", 6100, { by: b });
+    pair(r, "toSolo", "everyday", "soloA", 1200, { by: b });
+    single(r, "soloSpend", "soloA", [{ amountCents: -700, group: "expense" }]);
+    single(r, "soloSpendByB", "soloA", [{ amountCents: -900, group: "expense" }], {
+      performedBy: b,
+    });
+    single(r, "soloJuly", "soloA", [{ amountCents: -300, group: "expense" }], {
+      postedOn: "2026-07-15",
+    });
+    single(r, "salaryAttributed", "everyday", [{ amountCents: 1000, group: "income" }], {
+      performedBy: a,
+    });
     // Outside the September range.
     single(r, "august", "everyday", [{ amountCents: -7777, group: null }], {
       postedOn: "2026-08-31",
@@ -405,7 +435,14 @@ function scenario(uow: UnitOfWork) {
     known,
     viewers,
     txnIds,
-    ids: { shopPayee, scopedPayee, deletedExpenseCat, expenseCat: cats.expense },
+    ids: {
+      shopPayee,
+      scopedPayee,
+      deletedExpenseCat,
+      expenseCat: cats.expense,
+      personA: a,
+      personB: b,
+    },
   };
 }
 
@@ -521,11 +558,81 @@ describe("flowKind parity (AD-23)", () => {
     // property link 9000 + pending 1234 + the expense half of two splits 3000 + the Everyday side
     // of the per-type links to home_loan, property, vehicle and other (4 × 1100). The redraw and
     // the deleted-category split count in neither. The payee rows add 1100 in (the hidden refund)
-    // and 6600 out (shop, hidden shop, scoped payee and the deleted expense category).
+    // and 6600 out (shop, hidden shop, scoped payee and the deleted expense category). The shared
+    // figures' rows add 1000 in (attributed salary) and 1600 out (spend on the single-owner account).
     expect(sqliteUow.read((r) => r.transactions.cashFlowTotals(b, TODAY, SEPTEMBER))).toEqual({
-      moneyInCents: 505000 + 1100,
-      moneyOutCents: 226134 + 6600,
-      keptCents: 505000 + 1100 - (226134 + 6600),
+      moneyInCents: 505000 + 1100 + 1000,
+      moneyOutCents: 226134 + 6600 + 1600,
+      keptCents: 505000 + 1100 + 1000 - (226134 + 6600 + 1600),
+    });
+  });
+
+  it("classes a private counterpart as hidden for every viewer with publicOnly", () => {
+    const { known, viewers } = scenario(createUnitOfWork(db));
+    const publicKinds = splitFlowKinds(db, viewers.B as Viewer, TODAY, { publicOnly: true });
+    const forB = splitFlowKinds(db, viewers.B as Viewer, TODAY);
+    // For B it changes nothing: B already cannot see a private account.
+    expect(publicKinds).toEqual(forB);
+    for (const who of ["A", "system"]) {
+      const kinds = splitFlowKinds(db, viewers[who] as Viewer, TODAY, { publicOnly: true });
+      for (const s of known) {
+        if (accountOf(s.account).private) continue;
+        // The class of a split on a public account is what B sees, whoever asks.
+        expect(kinds[s.id], `${who} ${s.txnKey}`).toBe(expectedKind("B", s));
+      }
+    }
+    // Without the option A still sees the real type of its own private counterpart.
+    const aKinds = splitFlowKinds(db, viewers.A as Viewer, TODAY);
+    const brokerLeg = known.find((s) => s.txnKey === "contribAFromBroker.in") as KnownSplit;
+    expect(aKinds[brokerLeg.id]).toBe("investing");
+    expect(splitFlowKinds(db, viewers.A as Viewer, TODAY, { publicOnly: true })[brokerLeg.id]).toBe(
+      "transfer",
+    );
+  });
+
+  it("works out the shared figures alike on SQLite and in memory, for every viewer", () => {
+    const sqlite = scenario(createUnitOfWork(db));
+    const memoryUow = memoryUnitOfWork();
+    const memory = scenario(memoryUow);
+    const sqliteUow = createUnitOfWork(db);
+    const figures = (uow: UnitOfWork, viewer: Viewer, range: DayRange) =>
+      uow.read((r) => r.transactions.sharedFigures(viewer, TODAY, range));
+    for (const [name, range] of Object.entries(RANGES)) {
+      const results = Object.entries(sqlite.viewers).map(([who, viewer]) => {
+        const fromSql = figures(sqliteUow, viewer, range);
+        expect(fromSql, `${who} ${name}`).toEqual(
+          figures(memoryUow, memory.viewers[who] as Viewer, range),
+        );
+        return fromSql;
+      });
+      // Public accounts only: the same whoever asks, partner or system.
+      expect(results[1], name).toEqual(results[0]);
+      expect(results[2], name).toEqual(results[0]);
+      // Every split here is shared, so the total is B's money out (B sees only public accounts).
+      const b = sqliteUow.read((r) =>
+        r.transactions.cashFlowTotals(sqlite.viewers.B as Viewer, TODAY, range),
+      );
+      expect(results[0]?.sharedExpenseCents, name).toBe(b.moneyOutCents);
+    }
+    const [a, b] = [sqlite.ids.personA, sqlite.ids.personB];
+    // September: A's attributed transfers in 25000 + 4400 (the unattributed 3500 and the
+    // joint-to-joint 6100 count for nobody) plus 700 of spend on A's own account; B's 900 is spend
+    // on A's account that B performed. Salary and the transfer into the single-owner account
+    // are not contributions. July adds A's 300.
+    expect(figures(sqliteUow, sqlite.viewers.B as Viewer, SEPTEMBER).contributions).toEqual(
+      [
+        { personId: a, cents: 25000 + 4400 + 700 },
+        { personId: b, cents: 900 },
+      ].sort((x, y) => (x.personId < y.personId ? -1 : 1)),
+    );
+    expect(
+      figures(sqliteUow, sqlite.viewers.A as Viewer, RANGES.wide as DayRange).contributions.find(
+        (c) => c.personId === a,
+      )?.cents,
+    ).toBe(25000 + 4400 + 700 + 300);
+    expect(figures(sqliteUow, sqlite.viewers.A as Viewer, RANGES.empty as DayRange)).toEqual({
+      sharedExpenseCents: 0,
+      contributions: [],
     });
   });
 
@@ -600,6 +707,11 @@ describe("flowKind parity (AD-23)", () => {
 
   it("throws without a viewer", () => {
     const uow = createUnitOfWork(db);
+    expect(() =>
+      uow.read((r) =>
+        r.transactions.sharedFigures(undefined as unknown as Viewer, TODAY, SEPTEMBER),
+      ),
+    ).toThrow(/viewer/);
     expect(() =>
       uow.read((r) =>
         r.transactions.cashFlowTotals(undefined as unknown as Viewer, TODAY, SEPTEMBER),
