@@ -46,3 +46,6 @@ Reports and charts (ECharts) over splits. CAP-14 part: contribution and apportio
 - Waits on epic-import-dedupe-transfers because: reports need categorised splits imported from real statements.
 - Waits on epic-app-shell-settings-theming because: it owns the `/` landing redirect this epic switches.
 - Decision (2026-10-05, user): epic-app-shell-settings-theming builds an empty Settings › Household section; this epic adds its 50/50 attribution control.
+- Decision (2026-10-23, breakdown): tracer bullet is `flowKind` plus a minimal `/cash-flow` page with the `/` redirect switched (entry 1); contribution counts transfers into shared accounts plus shared expenses paid from personal accounts, not salary paid straight into the shared account, with 50/50 when total contribution is zero, and the payer comes from `payerOf`.
+- Decision (2026-10-23, breakdown): Biggest little leaks is the top five merchants by spend with at least four transactions and a median of $25 or less, with no flexible-category tag; net worth covers cash, card and loan accounts with 12 monthly trend points, and property, valuation and brokerage lines wait for epics 14 and 9.
+- Decision (2026-10-23, breakdown): the epic is not an M2 gate; the M2 gate stays on epic-llm-categorisation-pdf.

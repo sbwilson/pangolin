@@ -1,0 +1,135 @@
+# tickets.toml — the epic's agreed children. Table order is build order; `id` is permanent and not an order.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Tracer bullet: flowKind and the Cash flow landing page"
+description = "Adds the single `flowKind` function in `domain` (income, expense, transfer, investing, per AD-23) with its SQL expression and parity tests, a `cashFlowTotals(viewer, range)` use case on `visibleTxn` returning money in, money out and kept, a Hono route, a minimal `/cash-flow` page with the three KPI tiles and no charts, and switches the `/` redirect and the sidebar Cash flow link to `/cash-flow`, updating `routing.spec.ts` and `shell.spec.ts`."
+verify = "On the seeded household the three KPI figures equal a hand sum of splits for each partner, `/` lands on `/cash-flow`, and a privacy test shows the partner's responses are unchanged when only the other person's private data changes."
+covers = ["CAP-17"]
+after = ["13.1", "12.2", "3.10"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Report core: groups, categories, merchants and the date range"
+description = "Adds use cases for P&L by group and by category, spending over any period, merchant lists and the uncategorised total, all derived on read from visible splits with transfers excluded, and puts the Quarter, FY to date and Custom date range (held in the URL) in the Cash flow header with a Money in, Money out, Kept and Savings rate KPI row."
+verify = "API tests per viewer show P&L, spending and merchant totals equal a hand sum of the seeded splits for each range, hidden-name rows never leak a merchant to the partner, and the range round-trips through the URL."
+covers = ["CAP-17"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Contribution and apportionment"
+description = "Adds a pure `domain` function and a use case that, for the selected period, counts a person's contribution as their transfers into shared accounts plus shared expenses paid from their personal accounts, with the payer taken from `payerOf`, falls back to 50/50 when total contribution is zero, honours the `shared_attribution` setting ('contribution' or 'even'), and rounds only through `allocate` so both shares sum exactly to the shared total; extends the seed with both partners' personal-to-shared transfers so the documented percentages are reproducible."
+verify = "Tests on the extended seed give the documented percentages for the contribution setting, 50/50 overrides them, a zero-contribution period gives 50/50, both partners' shares sum to the shared total to the cent, and the shared figures are identical for both partners."
+covers = ["CAP-14"]
+after = [1]
+hitl = false
+risk = "high"
+unknown = "Whether salary paid straight into the shared account should count as the earner's contribution; decided no for now (2026-10-23)."
+
+[[entry]]
+id = 4
+type = "story"
+title = "Household attribution setting and the share line"
+description = "Adds the HTTP route for reading and updating household settings, the shared-attribution control (by contribution or 50/50) in the Settings › Household card, and on Cash flow the always-visible apportioned share line with the 'My share / Everything I can see' toggle under it, held in the URL and defaulting to Everything."
+verify = "An e2e test changes the setting in Settings and the share line changes, the toggle switches the totals between the person's share and everything visible, and both partners see the same shared total."
+covers = ["CAP-14", "CAP-17"]
+after = [2, 3]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 5
+type = "story"
+title = "ECharts and the Sankey with its table and lists"
+description = "Adopts Apache ECharts (canvas renderer, richText tooltips, CSP nonce) and builds the Sankey card with Groups, Categories and Both views, the top nine groups plus an expandable Other, Uncategorised as its own node, click-through to Transactions, and a 'View as table' showing the P&L; adds the income and expense bar lists, latest transactions with hidden-name wink rows, and the empty and nothing-in-range states, with the P&L table replacing the Sankey on phone."
+verify = "The Sankey totals equal the P&L table for the same range, a CSP e2e check renders the chart with no violation, a click on a node lands on Transactions with the matching filter, and a 375 px check shows the P&L table in place of the chart."
+covers = ["CAP-17"]
+after = [2]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Spending page"
+description = "Adds `/spending` with the share line and toggle, income and expense bar lists, and category bars sorted by amount with the change against the previous equal period, each drilling to Transactions."
+verify = "An e2e test on the seeded household shows category totals equal a hand sum for the range and the change against the previous equal period is correct, and a click lands on Transactions with the category filter."
+covers = ["CAP-17"]
+after = [4, 5]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Biggest little leaks"
+description = "Adds a use case and tile, on Cash flow and Spending, listing the top five merchants by total spend in the range that have at least four transactions and a median amount of $25 or less, built on `visibleTxn` so hidden names never appear, each drilling to Transactions; no flexible-category tag."
+verify = "On the seeded household the tile lists the merchants a hand calculation gives, a hidden-name merchant never appears for the partner, and a click lands on Transactions filtered to that merchant."
+covers = ["CAP-17"]
+after = [2]
+hitl = false
+risk = "medium"
+unknown = "The leak rule (top five, at least four transactions, median $25 or less) is the builder's proposal and is not in the spec."
+
+[[entry]]
+id = 8
+type = "story"
+title = "Net worth page with trend"
+description = "Adds a `netWorth(viewer, asOf)` use case over cash, card and loan accounts using `balanceAsOf`, with assets, liabilities and subtotals by account type, a 12-point monthly trend derived on read, and the `/net-worth` page with KPIs, the trend chart and its table, stale-account captions with an Import shortcut, the owner-only private lock, an empty state and a disabled Forecast link; property, valuation and brokerage lines are left as slots for epics 14 and 9."
+verify = "Net worth for each partner equals a hand sum of the accounts they can see, never includes the other partner's private accounts, shared figures match for both, the trend has 12 points that match month-end balances, and the page renders its empty state with no accounts."
+covers = ["CAP-17"]
+after = [5]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Axe and responsive checks for the new routes"
+description = "Adds `/cash-flow`, `/net-worth` and `/spending` to `axe.spec.ts` and adds 375 px phone and 320 px reflow checks for them."
+verify = "The axe e2e is clean on the three routes and none scrolls horizontally at 320 px."
+covers = ["CAP-17"]
+after = [6, 7, 8]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup of the epic's code, scoped when it starts from the build records and the review findings deferred during the epic; keeps components under about 400 lines and removes duplicated report queries."
+verify = "Lint, types, unit tests, check-boundaries and the Playwright suite pass unchanged."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 11
+type = "story"
+title = "End-to-end spending-insight journey"
+description = "One Playwright journey across the epic for both partners on the seeded household: land on Cash flow from `/`, read the Sankey, switch the share toggle, change the 50/50 setting, open Spending, see Biggest little leaks, and read Net worth with its trend."
+verify = "The journey passes in CI and checks Done-when 1 to 4."
+covers = ["CAP-17", "CAP-14"]
+after = [10]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 12
+type = "story"
+title = "Release and deploy"
+description = "Cuts the release, runs `pangolin upgrade` on the home server, and checks CI is green on the tag; the human runs the upgrade and pastes the output."
+verify = "The upgraded server shows `/cash-flow` as the landing page and CI (lint, types, unit, migration, Playwright, axe) is green on the release tag."
+covers = ["CAP-16"]
+after = [11]
+hitl = true
+risk = "medium"
