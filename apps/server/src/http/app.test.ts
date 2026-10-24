@@ -2545,6 +2545,41 @@ describe("GET /api/reports/cash-flow", () => {
   });
 });
 
+describe("GET /api/reports/net-worth", () => {
+  it("answers net worth report as of today and as of a specified date", async () => {
+    const db = openDb();
+    addPerson(db);
+    const app = createApp(deps(db));
+
+    const resToday = await app.request("/api/reports/net-worth", signedIn);
+    expect(resToday.status).toBe(200);
+    expect(resToday.headers.get("cache-control")).toBe("no-store");
+    const bodyToday = (await resToday.json()) as { netWorthCents: number; trend: unknown[] };
+    expect(bodyToday.netWorthCents).toBe(0);
+    expect(bodyToday.trend).toHaveLength(12);
+
+    const resAsOf = await app.request("/api/reports/net-worth?asOf=2026-10-15", signedIn);
+    expect(resAsOf.status).toBe(200);
+    const bodyAsOf = (await resAsOf.json()) as { asOf: string };
+    expect(bodyAsOf.asOf).toBe("2026-10-15");
+  });
+
+  it("answers 400 for a malformed asOf date", async () => {
+    const db = openDb();
+    addPerson(db);
+    const app = createApp(deps(db));
+    const res = await app.request("/api/reports/net-worth?asOf=not-a-date", signedIn);
+    expect(res.status).toBe(400);
+  });
+
+  it("answers 401 without a session", async () => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp(deps(db)).request("/api/reports/net-worth");
+    expect(res.status).toBe(401);
+  });
+});
+
 describe("Cache-Control on every /api response", () => {
   const routes: [string, string, number][] = [
     ["person data", "/api/identity/me", 200],
@@ -2560,6 +2595,7 @@ describe("Cache-Control on every /api response", () => {
     ["person data", "/api/reports/spending?from=2026-09-01&to=2026-09-30&by=group", 200],
     ["person data", "/api/reports/merchants?from=2026-09-01&to=2026-09-30&flow=income", 200],
     ["person data", "/api/reports/leaks?from=2026-09-01&to=2026-09-30", 200],
+    ["person data", "/api/reports/net-worth", 200],
     ["an error (404)", "/api/ledger/transactions/missing", 404],
     ["an unknown route (404)", "/api/nothing-here", 404],
     ["better-auth's passthrough", "/api/auth/get-session", 200],

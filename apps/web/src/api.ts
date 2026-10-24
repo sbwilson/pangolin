@@ -332,6 +332,19 @@ export async function fetchLeaks(range: {
   return await res.json();
 }
 
+/** The net worth report as of a given date (defaults to today). */
+export type NetWorthReport = InferResponseType<(typeof api.api.reports)["net-worth"]["$get"], 200>;
+export type NetWorthAccount = NetWorthReport["accounts"][number];
+export type NetWorthTrendPoint = NetWorthReport["trend"][number];
+export type NetWorthSubtotals = NetWorthReport["subtotals"];
+
+export async function fetchNetWorth(options?: { readonly asOf?: string }): Promise<NetWorthReport> {
+  const query = options?.asOf ? { asOf: options.asOf } : {};
+  const res = await api.api.reports["net-worth"].$get({ query } as never);
+  if (!res.ok) throw await apiError(res);
+  return await res.json();
+}
+
 /** How shared spending is split between the partners. */
 export type SharedAttribution = "contribution" | "even";
 

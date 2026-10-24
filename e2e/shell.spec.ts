@@ -78,6 +78,13 @@ test("desktop shell navigation via AppSidebar reaches all shipped routes and red
     await expect(accountsLink).toHaveAttribute("aria-current", "page");
     await expect(txLink).not.toHaveAttribute("aria-current", "page");
 
+    // Navigate to Net worth
+    const netWorthLink = sidebar.getByRole("link", { name: "Net worth" });
+    await netWorthLink.click();
+    await expect(page).toHaveURL((url) => url.pathname === "/net-worth");
+    await expect(netWorthLink).toHaveAttribute("aria-current", "page");
+    await expect(accountsLink).not.toHaveAttribute("aria-current", "page");
+
     // Navigate to Settings
     const settingsLink = page.locator("aside").getByRole("link", { name: "Settings" });
     await settingsLink.click();
@@ -146,6 +153,13 @@ test("mobile shell navigation via MobileNav and More sheet reaches shipped route
     await expect(moreSheet).toBeVisible();
     await moreSheet.getByRole("button", { name: "Accounts" }).click();
     await expect(page).toHaveURL((url) => url.pathname === "/accounts");
+    await expect(moreSheet).toHaveCount(0);
+
+    // Open More sheet from Accounts and navigate to Net worth
+    await mobileNav.getByRole("button", { name: "More" }).click();
+    await expect(moreSheet).toBeVisible();
+    await moreSheet.getByRole("button", { name: "Net worth" }).click();
+    await expect(page).toHaveURL((url) => url.pathname === "/net-worth");
     await expect(moreSheet).toHaveCount(0);
 
     // Return to Transactions via tab bar

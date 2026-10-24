@@ -49,6 +49,31 @@ export function AppSidebar({ me, signOut, className }: AppSidebarProps) {
           </Link>
 
           <Link
+            to="/net-worth"
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            activeProps={{
+              className: "bg-accent font-semibold text-primary",
+              "aria-current": "page",
+            }}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 3v18h18" />
+              <path d="m7 14 4-4 4 4 5-5" />
+            </svg>
+            <span>Net worth</span>
+          </Link>
+
+          <Link
             to="/spending"
             className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             activeProps={{

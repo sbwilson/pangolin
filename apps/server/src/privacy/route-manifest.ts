@@ -237,6 +237,7 @@ export const MANIFEST: readonly ManifestEntry[] = [
   read("/api/reports/spending"),
   read("/api/reports/merchants"),
   read("/api/reports/leaks"),
+  read("/api/reports/net-worth"),
   read("/api/ledger/transactions"),
   // Search: the list filtered by `q` through the FTS5 index; the hidden-name and scoped-name
   // exclusion is applied on the viewer's projection at query time, never stored in the index.

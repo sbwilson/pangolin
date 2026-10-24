@@ -22,6 +22,15 @@ export {
   merchantsInput,
 } from "./merchants.ts";
 export {
+  type NetWorthAccount,
+  type NetWorthInput,
+  type NetWorthReport,
+  type NetWorthSubtotals,
+  type NetWorthTrendPoint,
+  netWorth,
+  netWorthInput,
+} from "./net-worth.ts";
+export {
   type ProfitAndLossInput,
   type ProfitAndLossReport,
   profitAndLoss,

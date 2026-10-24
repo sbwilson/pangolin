@@ -87,6 +87,7 @@ import {
   type MerchantsInput,
   me,
   merchants,
+  netWorth,
   type ProfitAndLossInput,
   parseTransactionQuery,
   profitAndLoss,
@@ -757,6 +758,13 @@ export function createApi(deps: ApiDeps) {
       // and a median transaction amount <= $25 over `from`..`to` (inclusive). A missing or bad range is 400.
       const input = { from: c.req.query("from"), to: c.req.query("to") };
       return c.json(leaks(ctx(c), input as LeaksInput), 200);
+    })
+    .get("/api/reports/net-worth", (c) => {
+      // Per viewer (AD-3, AD-19): net worth over cash, card, and loan accounts as of `asOf`,
+      // with subtotals by account type and 12-point trend.
+      const asOf = c.req.query("asOf");
+      const input = asOf !== undefined ? { asOf } : {};
+      return c.json(netWorth(ctx(c), input), 200);
     })
     .get("/api/review", (c) => {
       // Per viewer (AD-3): the open items they may see, each with its card's detail. Never cached.
