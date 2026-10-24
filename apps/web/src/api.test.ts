@@ -256,7 +256,12 @@ describe("exportTransactions", () => {
       ),
     );
 
-    const result = await exportTransactions({ from: "2026-08-01", to: "2026-09-30", type: "out" });
+    const result = await exportTransactions({
+      from: "2026-08-01",
+      to: "2026-09-30",
+      type: "out",
+      group: "Living",
+    });
     expect(result).toBe(csvData);
 
     const fetchMock = vi.mocked(fetch);

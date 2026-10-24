@@ -12,6 +12,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../api.ts";
 import { ApiError } from "../api.ts";
+import { formatPercentOfIncome } from "../components/ProfitAndLossTable.tsx";
 import { formatCents } from "../lib/money.ts";
 import { parseSearch, stringifySearch, validateCashFlowSearch } from "../routes/search.ts";
 import { CashFlowPage, formatSavingsRate } from "./CashFlowPage.tsx";
@@ -20,6 +21,12 @@ vi.mock("../api.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api.ts")>()),
   fetchCashFlow: vi.fn(),
   fetchSharedShare: vi.fn(),
+  fetchAccounts: vi.fn(),
+  fetchCategories: vi.fn(),
+  fetchProfitAndLoss: vi.fn(),
+  fetchSpending: vi.fn(),
+  fetchMerchants: vi.fn(),
+  fetchTransactions: vi.fn(),
 }));
 
 afterEach(() => {
@@ -45,6 +52,174 @@ const shareReport = (range: { from: string; to: string }) => ({
   sharedCents: 123456,
   shareCents: 74074,
   sharePercent: 60,
+});
+
+const accountsList = [
+  {
+    id: "acct-1",
+    name: "Everyday",
+    type: "depository" as const,
+    pool: "shared" as const,
+    closedOn: null,
+  },
+];
+
+const pnlGroupReport = (range: { from: string; to: string }) => ({
+  ...range,
+  by: "group" as const,
+  income: {
+    totalCents: 512345,
+    rows: [
+      { id: "grp-salary", name: "Salary", cents: 500000 },
+      { id: null, name: null, cents: 12345 },
+    ],
+  },
+  expense: {
+    totalCents: 300000,
+    rows: [
+      { id: "grp-housing", name: "Housing", cents: 200000 },
+      { id: "grp-food", name: "Food", cents: 80000 },
+      { id: null, name: null, cents: 20000 },
+    ],
+  },
+  uncategorised: { inCents: 12345, outCents: 20000 },
+});
+
+const pnlCategoryReport = (range: { from: string; to: string }) => ({
+  ...range,
+  by: "category" as const,
+  income: {
+    totalCents: 512345,
+    rows: [
+      {
+        id: "cat-wages",
+        name: "Alex Wages",
+        groupId: "grp-salary",
+        groupName: "Salary",
+        cents: 500000,
+      },
+      { id: null, name: null, groupId: null, groupName: null, cents: 12345 },
+    ],
+  },
+  expense: {
+    totalCents: 300000,
+    rows: [
+      { id: "cat-rent", name: "Rent", groupId: "grp-housing", groupName: "Housing", cents: 200000 },
+      {
+        id: "cat-groceries",
+        name: "Groceries",
+        groupId: "grp-food",
+        groupName: "Food",
+        cents: 80000,
+      },
+      { id: null, name: null, groupId: null, groupName: null, cents: 20000 },
+    ],
+  },
+  uncategorised: { inCents: 12345, outCents: 20000 },
+});
+
+const spendingGroupReport = (range: { from: string; to: string }) => ({
+  ...range,
+  by: "group" as const,
+  totalCents: 300000,
+  rows: [
+    { id: "grp-housing", name: "Housing", cents: 200000 },
+    { id: "grp-food", name: "Food", cents: 80000 },
+    { id: null, name: null, cents: 20000 },
+  ],
+});
+
+const spendingCategoryReport = (range: { from: string; to: string }) => ({
+  ...range,
+  by: "category" as const,
+  totalCents: 300000,
+  rows: [
+    { id: "cat-rent", name: "Rent", groupId: "grp-housing", groupName: "Housing", cents: 200000 },
+    {
+      id: "cat-groceries",
+      name: "Groceries",
+      groupId: "grp-food",
+      groupName: "Food",
+      cents: 80000,
+    },
+    { id: null, name: null, groupId: null, groupName: null, cents: 20000 },
+  ],
+});
+
+const merchantsIncomeReport = (range: { from: string; to: string }) => ({
+  ...range,
+  flow: "income" as const,
+  totalCents: 512345,
+  rows: [{ payeeId: "payee-employer", payeeName: "Acme Corp", cents: 500000 }],
+});
+
+const merchantsExpenseReport = (range: { from: string; to: string }) => ({
+  ...range,
+  flow: "expense" as const,
+  totalCents: 300000,
+  rows: [
+    { payeeId: "payee-landlord", payeeName: "Landlord", cents: 200000 },
+    { payeeId: "payee-woolies", payeeName: "Woolworths", cents: 80000 },
+    { payeeId: null, payeeName: null, cents: 20000 },
+  ],
+});
+
+const transactionsReport = () => ({
+  transactions: [
+    {
+      id: "txn-1",
+      accountId: "acct-1",
+      postedOn: "2026-08-10",
+      amountCents: -5000,
+      descriptionRaw: "Woolworths",
+      status: "posted" as const,
+      notes: null,
+      nameHidden: false,
+      nameHiddenBy: null,
+      nameHiddenUntil: null,
+      remainingCents: 0,
+      splits: [
+        {
+          id: "split-1",
+          amountCents: -5000,
+          beneficiary: "shared",
+          memo: null,
+          categoryId: "cat-groceries",
+          tags: [],
+          categorySource: "user" as const,
+          beneficiarySource: "user" as const,
+        },
+      ],
+    },
+    {
+      id: "txn-hidden",
+      accountId: "acct-1",
+      postedOn: "2026-08-12",
+      amountCents: -12000,
+      descriptionRaw: "Hidden until Aug 2026",
+      status: "posted" as const,
+      notes: null,
+      nameHidden: true,
+      nameHiddenBy: "person-sam",
+      nameHiddenUntil: "2026-09-01T00:00:00Z",
+      remainingCents: 0,
+      splits: [
+        {
+          id: "split-2",
+          amountCents: -12000,
+          beneficiary: "shared",
+          memo: null,
+          categoryId: null,
+          tags: [],
+          categorySource: null,
+          beneficiarySource: null,
+        },
+      ],
+    },
+  ],
+  page: { total: 2, pageCount: 1, page: 1, next: null, prev: null },
+  summary: { count: 2, inCents: 0, outCents: 17000 },
+  dayNets: { "2026-08-10": -5000, "2026-08-12": -12000 },
 });
 
 function renderPage(url: string) {
@@ -80,6 +255,24 @@ describe("CashFlowPage", () => {
     vi.useFakeTimers({ now: new Date(2026, 7, 14, 12), toFake: ["Date"] });
     vi.mocked(api.fetchCashFlow).mockImplementation(async (range) => report(range));
     vi.mocked(api.fetchSharedShare).mockImplementation(async (range) => shareReport(range));
+    vi.mocked(api.fetchAccounts).mockResolvedValue(accountsList);
+    vi.mocked(api.fetchCategories).mockResolvedValue([
+      { id: "cat-wages", name: "Alex Wages", groupId: "grp-salary", groupName: "Salary" },
+      { id: "cat-rent", name: "Rent", groupId: "grp-housing", groupName: "Housing" },
+      { id: "cat-groceries", name: "Groceries", groupId: "grp-food", groupName: "Food" },
+    ]);
+    vi.mocked(api.fetchProfitAndLoss).mockImplementation(async ({ from, to, by }) =>
+      by === "group" ? pnlGroupReport({ from, to }) : pnlCategoryReport({ from, to }),
+    );
+    vi.mocked(api.fetchSpending).mockImplementation(async ({ from, to, by }) =>
+      by === "group" ? spendingGroupReport({ from, to }) : spendingCategoryReport({ from, to }),
+    );
+    vi.mocked(api.fetchMerchants).mockImplementation(async ({ from, to, flow }) =>
+      flow === "income"
+        ? merchantsIncomeReport({ from, to })
+        : merchantsExpenseReport({ from, to }),
+    );
+    vi.mocked(api.fetchTransactions).mockResolvedValue(transactionsReport());
   });
 
   it("shows the share line under the tiles with the server's figures and percent", async () => {
@@ -234,10 +427,131 @@ describe("CashFlowPage", () => {
   });
 
   it("says when the figures are unavailable", async () => {
-    vi.mocked(api.fetchCashFlow).mockRejectedValue(new ApiError(500, "Internal", "boom"));
+    vi.mocked(api.fetchCashFlow).mockRejectedValue(new Error("offline"));
     renderPage("/cash-flow");
     expect((await screen.findByRole("alert")).textContent).toMatch(/Cash flow is unavailable/);
     expect(screen.queryByTestId("cash-flow-tiles")).toBeNull();
+  });
+
+  it("renders the P&L table on desktop when toggled, expands groups to show sub-categories, and links to /transactions", async () => {
+    const user = userEvent.setup();
+    renderPage("/cash-flow?from=2026-07-01&to=2026-09-30");
+
+    // Toggle to Profit & loss table
+    const tableButton = await screen.findByRole("button", { name: "Profit & loss" });
+    await user.click(tableButton);
+
+    const pnlTable = await screen.findByTestId("pnl-table");
+    expect(pnlTable).toBeTruthy();
+
+    // Verify groups and amounts
+    expect(within(pnlTable).getByText("Housing")).toBeTruthy();
+    expect(within(pnlTable).getByText(formatCents(200000))).toBeTruthy();
+    expect(within(pnlTable).getByText("Food")).toBeTruthy();
+
+    // Expand Housing group to reveal Rent sub-category
+    const expandHousing = screen.getByRole("button", { name: "Expand Housing" });
+    await user.click(expandHousing);
+
+    const rentLink = await screen.findByRole("link", { name: "Rent" });
+    expect(rentLink.getAttribute("href")).toContain("/transactions");
+    expect(rentLink.getAttribute("href")).toContain("category=cat-rent");
+
+    // Uncategorised row links with uncategorised=true
+    const uncatLinks = screen.getAllByRole("link", { name: "Uncategorised" });
+    expect(uncatLinks.length).toBeGreaterThan(0);
+    expect(uncatLinks[0]?.getAttribute("href")).toContain("uncategorised=true");
+  });
+
+  it("switches bar lists between category, group, and merchant, with drill-through links", async () => {
+    const user = userEvent.setup();
+    renderPage("/cash-flow?from=2026-07-01&to=2026-09-30");
+
+    const incomeCard = await screen.findByTestId("income-bar-card");
+    const expenseCard = await screen.findByTestId("expense-bar-card");
+
+    // Default: Income by Category, Expense by Group
+    expect(within(incomeCard).getByText("Alex Wages")).toBeTruthy();
+    expect(within(expenseCard).getByText("Housing")).toBeTruthy();
+
+    // Switch Income to Merchant
+    const incomeMerchantBtn = within(incomeCard).getByRole("button", { name: "Merchant" });
+    await user.click(incomeMerchantBtn);
+    expect(await within(incomeCard).findByText("Acme Corp")).toBeTruthy();
+    const acmeLink = within(incomeCard).getByRole("link", { name: "Acme Corp" });
+    expect(acmeLink.getAttribute("href")).toContain("payee=payee-employer");
+
+    // Switch Expense to Category
+    const expenseCategoryBtn = within(expenseCard).getByRole("button", { name: "Category" });
+    await user.click(expenseCategoryBtn);
+    expect(await within(expenseCard).findByText("Groceries")).toBeTruthy();
+    const grocLink = within(expenseCard).getByRole("link", { name: "Groceries" });
+    expect(grocLink.getAttribute("href")).toContain("category=cat-groceries");
+
+    // Switch Expense to Merchant
+    const expenseMerchantBtn = within(expenseCard).getByRole("button", { name: "Merchant" });
+    await user.click(expenseMerchantBtn);
+    expect(await within(expenseCard).findByText("Woolworths")).toBeTruthy();
+  });
+
+  it("renders wink rows for hidden transactions in latest transactions", async () => {
+    renderPage("/cash-flow?from=2026-07-01&to=2026-09-30");
+
+    await screen.findByTestId("latest-transactions-card");
+
+    // Normal transaction shows description
+    expect(screen.getByText("Woolworths")).toBeTruthy();
+
+    // Hidden transaction renders wink row with mascot, WINK_LINE, hidden label, and omits payee
+    const winkRow = await screen.findByTestId("wink-row");
+    expect(within(winkRow).getByText(/Shh, it's a surprise/)).toBeTruthy();
+    expect(within(winkRow).getByText(/Hidden until 1 September 2026/)).toBeTruthy();
+    expect(within(winkRow).queryByText("Secret Present")).toBeNull();
+  });
+
+  it("renders the empty database state when there are no accounts", async () => {
+    vi.mocked(api.fetchAccounts).mockResolvedValue([]);
+    renderPage("/cash-flow");
+
+    const emptyState = await screen.findByTestId("empty-database-state");
+    expect(within(emptyState).getByText("Nothing to sniff at yet")).toBeTruthy();
+    expect(within(emptyState).getByRole("button", { name: "Import a bank file" })).toBeTruthy();
+    expect(screen.queryByTestId("sankey-card")).toBeNull();
+  });
+
+  it("renders the nothing-in-range state when accounts exist but no transactions in range", async () => {
+    vi.mocked(api.fetchCashFlow).mockImplementation(async (range) => ({
+      ...range,
+      moneyInCents: 0,
+      moneyOutCents: 0,
+      keptCents: 0,
+      savingsRatePermille: null,
+    }));
+    vi.mocked(api.fetchTransactions).mockResolvedValue({
+      transactions: [],
+      page: { total: 0, pageCount: 0, page: 1, next: null, prev: null },
+      summary: { count: 0, inCents: 0, outCents: 0 },
+      dayNets: {},
+    });
+
+    renderPage("/cash-flow?from=2026-01-01&to=2026-01-31");
+
+    const nothingState = await screen.findByTestId("nothing-in-range-state");
+    expect(within(nothingState).getByText("Nothing in this period")).toBeTruthy();
+    expect(screen.queryByTestId("sankey-card")).toBeNull();
+  });
+
+  it("renders the P&L table directly on phone viewport (< md)", async () => {
+    window.innerWidth = 375;
+    window.dispatchEvent(new Event("resize"));
+
+    renderPage("/cash-flow?from=2026-07-01&to=2026-09-30");
+
+    // P&L table is rendered directly, with no Sankey chart canvas or view toggles
+    const phoneContainer = await screen.findByTestId("sankey-card-phone");
+    expect(phoneContainer).toBeTruthy();
+    expect(within(phoneContainer).getByTestId("pnl-table")).toBeTruthy();
+    expect(screen.queryByTestId("sankey-chart")).toBeNull();
   });
 });
 
@@ -264,5 +578,15 @@ describe("formatSavingsRate", () => {
     expect(formatSavingsRate(-2500)).toBe("-250.0%");
     expect(formatSavingsRate(1000)).toBe("100.0%");
     expect(formatSavingsRate(null)).toBe("—%");
+  });
+});
+
+describe("formatPercentOfIncome", () => {
+  it("formats positive, negative and zero amounts relative to income", () => {
+    expect(formatPercentOfIncome(50000, 100000)).toBe("50.0%");
+    expect(formatPercentOfIncome(-20000, 100000)).toBe("-20.0%");
+    expect(formatPercentOfIncome(0, 100000)).toBe("0.0%");
+    expect(formatPercentOfIncome(50000, 0)).toBe("—%");
+    expect(formatPercentOfIncome(50000, -1000)).toBe("—%");
   });
 });

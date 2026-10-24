@@ -270,6 +270,53 @@ export async function fetchSharedShare(range: {
   return await res.json();
 }
 
+/** P&L over an inclusive range as the viewer sees it, by group or category. */
+export type ProfitAndLossReport = InferResponseType<(typeof api.api.reports)["pnl"]["$get"], 200>;
+export type ReportRow = ProfitAndLossReport["income"]["rows"][number];
+
+export async function fetchProfitAndLoss(range: {
+  readonly from: string;
+  readonly to: string;
+  readonly by: "group" | "category";
+}): Promise<ProfitAndLossReport> {
+  const res = await api.api.reports.pnl.$get({
+    query: { from: range.from, to: range.to, by: range.by },
+  });
+  if (!res.ok) throw await apiError(res);
+  return await res.json();
+}
+
+/** Spending over an inclusive range by group or category (the P&L expense section alone). */
+export type SpendingReport = InferResponseType<(typeof api.api.reports)["spending"]["$get"], 200>;
+
+export async function fetchSpending(range: {
+  readonly from: string;
+  readonly to: string;
+  readonly by: "group" | "category";
+}): Promise<SpendingReport> {
+  const res = await api.api.reports.spending.$get({
+    query: { from: range.from, to: range.to, by: range.by },
+  });
+  if (!res.ok) throw await apiError(res);
+  return await res.json();
+}
+
+/** Merchants over an inclusive range for one flow kind (income or expense). */
+export type MerchantsReport = InferResponseType<(typeof api.api.reports)["merchants"]["$get"], 200>;
+export type MerchantRow = MerchantsReport["rows"][number];
+
+export async function fetchMerchants(range: {
+  readonly from: string;
+  readonly to: string;
+  readonly flow: "income" | "expense";
+}): Promise<MerchantsReport> {
+  const res = await api.api.reports.merchants.$get({
+    query: { from: range.from, to: range.to, flow: range.flow },
+  });
+  if (!res.ok) throw await apiError(res);
+  return await res.json();
+}
+
 /** How shared spending is split between the partners. */
 export type SharedAttribution = "contribution" | "even";
 
@@ -425,15 +472,17 @@ export interface TransactionList {
  */
 export async function fetchTransactions(params: TransactionsSearch = {}): Promise<TransactionList> {
   // The route reads its query by hand (`parseTransactionQuery`), so the typed client has no
-  // `query` input for it; the client still sends one.
-  const res = await api.api.ledger.transactions.$get({ query: params } as never);
+  // `query` input for it; the client still sends one. `group` is a web drill-down filter.
+  const { group: _g, ...serverParams } = params;
+  const res = await api.api.ledger.transactions.$get({ query: serverParams } as never);
   if (!res.ok) throw await apiError(res);
   return (await res.json()) as TransactionList;
 }
 
 /** Exports transactions matching `params` to RFC 4180 CSV; needs recent sign-in (5 minutes). */
 export async function exportTransactions(params: TransactionsSearch = {}): Promise<string> {
-  const res = await api.api.ledger.export.$get({ query: params } as never);
+  const { group: _g, ...serverParams } = params;
+  const res = await api.api.ledger.export.$get({ query: serverParams } as never);
   if (!res.ok) throw await apiError(res);
   return await res.text();
 }

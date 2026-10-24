@@ -47,6 +47,7 @@ export interface TransactionsSearch {
   readonly from?: string;
   readonly to?: string;
   readonly category?: string;
+  readonly group?: string;
   readonly tag?: string;
   readonly payee?: string;
   readonly minCents?: string;
@@ -90,7 +91,8 @@ export function validateTransactionsSearch(search: object): TransactionsSearch {
     const value = (search as Record<string, unknown>)[name];
     if (typeof value === "string" && ok(value)) out[name] = value;
   };
-  for (const name of ["account", "category", "tag", "payee"]) keep(name, (v) => WORD.test(v));
+  for (const name of ["account", "category", "group", "tag", "payee"])
+    keep(name, (v) => WORD.test(v));
   for (const name of ["from", "to"]) keep(name, isRealDay);
   for (const name of ["minCents", "maxCents"]) keep(name, (v) => COUNT.test(v));
   keep("type", (v) => v === "in" || v === "out");

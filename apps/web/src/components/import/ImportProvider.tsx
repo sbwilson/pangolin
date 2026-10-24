@@ -20,6 +20,11 @@ export interface ImportControls {
 
 const ImportContext = createContext<ImportControls | null>(null);
 
+/** Opens the Import popover from anywhere under the provider, or null when outside one. */
+export function useOptionalImport(): ImportControls | null {
+  return useContext(ImportContext);
+}
+
 /** Opens the Import popover from anywhere under the provider. */
 export function useImport(): ImportControls {
   const controls = useContext(ImportContext);
