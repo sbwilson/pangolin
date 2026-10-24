@@ -495,12 +495,19 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-spending-insight/story-contribution-and-apportionment-plan.md`
   summary: `sharedFigures` correlated SQL has no timing evidence on the 50k-row perf profile.
   evidence: Unverified medium; add a `sharedApportionment` timing case beside the cash-flow one in `ledger-perf.test.ts` (≤300 ms) to settle it.
+  disposition: fixed (story 4.10; added shared apportionment 50k-row timing test in apps/server/src/http/ledger-perf.test.ts, timing ~132 ms <= 300 ms)
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-spending-insight/story-axe-and-responsive-checks-for-the-new-routes-plan.md`
   summary: Missing `<th scope="row">` and descriptive table header semantics in `NetWorthTrendTable`.
   evidence: Review of story 4.9: the 12-month trend table headers have `scope="col"` but month cells in tbody use generic `<td>`; pre-existing from story 4.8.
+  disposition: fixed (story 4.10; updated month cells in tbody to <th scope="row"> in apps/web/src/components/NetWorthTrendTable.tsx)
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-spending-insight/story-axe-and-responsive-checks-for-the-new-routes-plan.md`
   summary: Horizontally scrollable table containers (`overflow-x-auto`) lack keyboard accessibility (`tabIndex={0}`).
   evidence: Review of story 4.9: under WCAG 2.1.1, containers requiring horizontal scrolling should be keyboard-focusable; pre-existing pattern in `NetWorthTrendTable` and `SpendingCategoryBarsCard`.
+  disposition: fixed (story 4.10; added tabIndex={0}, role="region", and aria-label to overflow-x-auto containers in NetWorthTrendTable.tsx and SpendingCategoryBarsCard.tsx)
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-spending-insight/story-axe-and-responsive-checks-for-the-new-routes-plan.md`
   summary: Ambiguous "Import" button accessible name in `AccountRowItem` (`NetWorthPage.tsx`).
   evidence: Review of story 4.9: stale account rows render an "Import" button without an account-specific `aria-label`; pre-existing from story 4.8.
+  disposition: fixed (story 4.10; added aria-label={`Import statement for ${account.name}`} in apps/web/src/components/NetWorthAccountRow.tsx)
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-spending-insight/story-refactor-sweep-plan.md`
+  summary: ProfitAndLossTable scroll container lacks keyboard accessibility (tabIndex={0}, role="region", aria-label) and uses <td> instead of <th scope="row"> for row headers.
+  evidence: Review of story 4.10: pre-existing from story 4.5; NetWorthTrendTable and SpendingCategoryBarsCard were remediated in story 4.10, but ProfitAndLossTable retains the unlabelled scroll container.

@@ -1,17 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useMemo } from "react";
-import {
-  fetchAccounts,
-  fetchCashFlow,
-  fetchCategories,
-  fetchLeaks,
-  fetchMerchants,
-  fetchProfitAndLoss,
-  fetchSharedShare,
-  fetchTransactions,
-  type SharedShare,
-} from "../api.ts";
+import { fetchTransactions, type SharedShare } from "../api.ts";
 import { BarListsCard } from "../components/BarListsCard.tsx";
 import { BiggestLittleLeaksCard } from "../components/BiggestLittleLeaksCard.tsx";
 import { DateRangeControl } from "../components/DateRangeControl.tsx";
@@ -19,17 +9,12 @@ import { useOptionalImport } from "../components/import/index.ts";
 import { LatestTransactionsCard } from "../components/LatestTransactionsCard.tsx";
 import { MascotIcon } from "../components/MascotLogo.tsx";
 import { SankeyCard } from "../components/SankeyCard.tsx";
+import { cashFlowKey, sharedShareKey, useReportQueries } from "../hooks/useReportQueries.ts";
 import { type DateRange, localDay, quarterRange } from "../lib/date-range.ts";
 import { formatCents } from "../lib/money.ts";
 import { validateCashFlowSearch } from "../routes/search.ts";
 
-/** The query key of the cash-flow figures for one range. */
-export const cashFlowKey = (range: { from: string; to: string }, share?: "mine") =>
-  ["reports", "cash-flow", range.from, range.to, share ?? "everything"] as const;
-
-/** The query key of the shared total and the viewer's share for one range. */
-export const sharedShareKey = (range: { from: string; to: string }) =>
-  ["reports", "shared-apportionment", range.from, range.to] as const;
+export { cashFlowKey, sharedShareKey };
 
 /**
  * "Your share: $X of $Y shared (N%)", every figure and the percent worked out by the server. With
@@ -67,73 +52,22 @@ export function CashFlowPage() {
       : quarterRange(today);
   const share = search.share;
 
-  const totals = useQuery({
-    queryKey: cashFlowKey(range, share),
-    queryFn: () => fetchCashFlow(share === undefined ? range : { ...range, share }),
-    placeholderData: keepPreviousData,
-    retry: false,
-  });
+  const {
+    totals,
+    shared,
+    accounts,
+    categories,
+    pnlGroup,
+    pnlCategory,
+    incomeMerchants,
+    expenseMerchants,
+    leaks,
+  } = useReportQueries(range, { share, today });
   const data = totals.data;
-
-  const shared = useQuery({
-    queryKey: sharedShareKey(range),
-    queryFn: () => fetchSharedShare(range),
-    placeholderData: keepPreviousData,
-    retry: false,
-  });
-
-  const accounts = useQuery({
-    queryKey: ["accounts"],
-    queryFn: fetchAccounts,
-    placeholderData: keepPreviousData,
-    retry: false,
-  });
-
-  const categories = useQuery({
-    queryKey: ["categories"],
-    queryFn: fetchCategories,
-    placeholderData: keepPreviousData,
-    retry: false,
-  });
-
-  const pnlGroup = useQuery({
-    queryKey: ["reports", "pnl", range.from, range.to, "group"],
-    queryFn: () => fetchProfitAndLoss({ from: range.from, to: range.to, by: "group" }),
-    placeholderData: keepPreviousData,
-    retry: false,
-  });
-
-  const pnlCategory = useQuery({
-    queryKey: ["reports", "pnl", range.from, range.to, "category"],
-    queryFn: () => fetchProfitAndLoss({ from: range.from, to: range.to, by: "category" }),
-    placeholderData: keepPreviousData,
-    retry: false,
-  });
-
-  const incomeMerchants = useQuery({
-    queryKey: ["reports", "merchants", range.from, range.to, "income"],
-    queryFn: () => fetchMerchants({ from: range.from, to: range.to, flow: "income" }),
-    placeholderData: keepPreviousData,
-    retry: false,
-  });
-
-  const expenseMerchants = useQuery({
-    queryKey: ["reports", "merchants", range.from, range.to, "expense"],
-    queryFn: () => fetchMerchants({ from: range.from, to: range.to, flow: "expense" }),
-    placeholderData: keepPreviousData,
-    retry: false,
-  });
 
   const latestTxns = useQuery({
     queryKey: ["ledger", "transactions", range.from, range.to],
     queryFn: () => fetchTransactions({ from: range.from, to: range.to, page: "1" }),
-    placeholderData: keepPreviousData,
-    retry: false,
-  });
-
-  const leaks = useQuery({
-    queryKey: ["reports", "leaks", range.from, range.to],
-    queryFn: () => fetchLeaks(range),
     placeholderData: keepPreviousData,
     retry: false,
   });

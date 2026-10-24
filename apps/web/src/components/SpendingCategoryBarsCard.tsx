@@ -114,7 +114,14 @@ export function SpendingCategoryBarsCard({
       {rows.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">No expenses in this period</p>
       ) : (
-        <div className="overflow-x-auto">
+        // biome-ignore lint/a11y/useSemanticElements: WCAG 2.1.1 scrollable table container
+        <div
+          className="overflow-x-auto focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: WCAG 2.1.1 scrollable container keyboard access
+          tabIndex={0}
+          role="region"
+          aria-label="Category spending breakdown"
+        >
           <div className="min-w-[500px]">
             {/* Table header */}
             <div className="grid grid-cols-[minmax(180px,280px)_1fr_100px_140px] items-center gap-3 pb-2 text-xs font-medium text-muted-foreground">

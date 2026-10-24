@@ -329,12 +329,18 @@ describe("NetWorthPage component", () => {
     expect(screen.queryByTestId("net-worth-chart")).toBeNull();
     const table = screen.getByTestId("net-worth-table");
     expect(table).toBeTruthy();
+    expect(table.getAttribute("tabIndex")).toBe("0");
+    expect(table.getAttribute("role")).toBe("region");
+    expect(table.getAttribute("aria-label")).toBe("12-month net worth trend");
     expect(toggle.textContent).toBe("View as chart");
 
     // Table has 12 rows, most recent first (October 2026)
     const rows = table.querySelectorAll("tbody tr");
     expect(rows.length).toBe(12);
     expect(rows[0]?.textContent).toContain("October 2026");
+    const monthHeader = rows[0]?.querySelector("th[scope='row']");
+    expect(monthHeader).toBeTruthy();
+    expect(monthHeader?.textContent).toContain("October 2026");
 
     // Click toggle back to chart
     await user.click(toggle);
@@ -353,6 +359,7 @@ describe("NetWorthPage component", () => {
     const privateSaverRow = screen.getByTestId("account-row-a-private-saver");
     const importBtn = privateSaverRow.querySelector("button");
     expect(importBtn).toBeTruthy();
+    expect(importBtn?.getAttribute("aria-label")).toBe("Import statement for Simon's saver");
     if (importBtn) {
       await user.click(importBtn);
     }

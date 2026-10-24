@@ -266,6 +266,11 @@ describe("SpendingPage", () => {
     const categoryCard = await screen.findByTestId("spending-category-bars-card");
     expect(categoryCard).toBeTruthy();
     expect(within(categoryCard).getByText("Spending by category")).toBeTruthy();
+    const scrollContainer = categoryCard.querySelector('[role="region"]');
+    expect(scrollContainer).toBeTruthy();
+    expect(scrollContainer?.getAttribute("tabIndex")).toBe("0");
+    expect(scrollContainer?.getAttribute("role")).toBe("region");
+    expect(scrollContainer?.getAttribute("aria-label")).toBe("Category spending breakdown");
 
     // Biggest little leaks card
     const leaksCard = await screen.findByTestId("biggest-little-leaks-card");
