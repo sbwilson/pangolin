@@ -193,9 +193,11 @@ export function CashFlowPage() {
             { label: "Kept", figure: formatCents(data.keptCents) },
             { label: "Savings rate", figure: formatSavingsRate(data.savingsRatePermille) },
           ].map((tile) => (
-            <div key={tile.label} className="rounded-lg border border-border bg-card p-4">
+            <div key={tile.label} className="min-w-0 rounded-lg border border-border bg-card p-4">
               <dt className="text-sm text-muted-foreground">{tile.label}</dt>
-              <dd className="m-0 mt-1 text-2xl font-semibold tabular-nums">{tile.figure}</dd>
+              <dd className="m-0 mt-1 text-xl sm:text-2xl font-semibold tabular-nums">
+                {tile.figure}
+              </dd>
             </div>
           ))}
         </dl>

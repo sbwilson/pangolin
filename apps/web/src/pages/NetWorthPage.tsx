@@ -429,13 +429,14 @@ function AccountRowItem({
           </span>
         ) : (
           <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-            <span
-              className="inline-block size-2 rounded-full"
-              style={{
-                backgroundColor:
-                  account.pool === me.personId ? me.colour : "var(--muted-foreground, #888888)",
-              }}
-            />
+            <svg width="8" height="8" viewBox="0 0 8 8" className="shrink-0" aria-hidden="true">
+              <circle
+                cx="4"
+                cy="4"
+                r="4"
+                fill={account.pool === me.personId ? me.colour : "currentColor"}
+              />
+            </svg>
             {ownerLabel(account, me)}
           </span>
         )}
@@ -642,10 +643,18 @@ function NetWorthTrendTable({ trend }: { readonly trend: readonly NetWorthTrendP
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-border text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-            <th className="py-2 pr-4 font-semibold">Month</th>
-            <th className="py-2 px-4 text-right font-semibold">Net worth</th>
-            <th className="py-2 px-4 text-right font-semibold">Assets</th>
-            <th className="py-2 pl-4 text-right font-semibold">Liabilities</th>
+            <th scope="col" className="py-2 pr-4 font-semibold">
+              Month
+            </th>
+            <th scope="col" className="py-2 px-4 text-right font-semibold">
+              Net worth
+            </th>
+            <th scope="col" className="py-2 px-4 text-right font-semibold">
+              Assets
+            </th>
+            <th scope="col" className="py-2 pl-4 text-right font-semibold">
+              Liabilities
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">

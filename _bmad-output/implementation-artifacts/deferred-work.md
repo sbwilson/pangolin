@@ -495,3 +495,12 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-spending-insight/story-contribution-and-apportionment-plan.md`
   summary: `sharedFigures` correlated SQL has no timing evidence on the 50k-row perf profile.
   evidence: Unverified medium; add a `sharedApportionment` timing case beside the cash-flow one in `ledger-perf.test.ts` (≤300 ms) to settle it.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-spending-insight/story-axe-and-responsive-checks-for-the-new-routes-plan.md`
+  summary: Missing `<th scope="row">` and descriptive table header semantics in `NetWorthTrendTable`.
+  evidence: Review of story 4.9: the 12-month trend table headers have `scope="col"` but month cells in tbody use generic `<td>`; pre-existing from story 4.8.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-spending-insight/story-axe-and-responsive-checks-for-the-new-routes-plan.md`
+  summary: Horizontally scrollable table containers (`overflow-x-auto`) lack keyboard accessibility (`tabIndex={0}`).
+  evidence: Review of story 4.9: under WCAG 2.1.1, containers requiring horizontal scrolling should be keyboard-focusable; pre-existing pattern in `NetWorthTrendTable` and `SpendingCategoryBarsCard`.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-spending-insight/story-axe-and-responsive-checks-for-the-new-routes-plan.md`
+  summary: Ambiguous "Import" button accessible name in `AccountRowItem` (`NetWorthPage.tsx`).
+  evidence: Review of story 4.9: stale account rows render an "Import" button without an account-specific `aria-label`; pre-existing from story 4.8.

@@ -218,6 +218,107 @@ test.describe("WCAG 2.2 AA accessibility audit", () => {
       }
     });
 
+    test(`/spending in ${mode} mode passes WCAG 2.2 AA audit`, async ({
+      browser,
+      cspViolations,
+    }) => {
+      const storageState = await alexSession(browser);
+      const context = await browser.newContext({
+        colorScheme: mode,
+        ...(storageState ? { storageState } : {}),
+      });
+      try {
+        await watchCsp(context, cspViolations);
+        await context.addInitScript(
+          ({ m }: { m: string }) => {
+            try {
+              localStorage.setItem("pangolin_mode", m);
+            } catch {}
+          },
+          { m: mode },
+        );
+        const page = await context.newPage();
+        await page.goto("/spending");
+        await page.waitForLoadState("domcontentloaded");
+        await expect(page.getByRole("heading", { level: 2, name: "Spending" })).toBeVisible();
+        await expect(page.getByTestId("share-line")).toBeVisible();
+        await expect(page.getByTestId("bar-lists-card")).toBeVisible();
+        await expect(page.getByTestId("spending-category-bars-card")).toBeVisible();
+        await expect(page.getByTestId("biggest-little-leaks-card")).toBeVisible();
+
+        await setMode(page, mode);
+
+        const initialViolations = await auditPage(page);
+        expect(
+          initialViolations,
+          `Violations on /spending (${mode}): ${JSON.stringify(initialViolations, null, 2)}`,
+        ).toEqual([]);
+
+        // Audit the range control with Custom's From and To open too.
+        await page.getByRole("button", { name: "Custom" }).click();
+        await expect(page.getByLabel("From")).toBeVisible();
+
+        const customViolations = await auditPage(page);
+        expect(
+          customViolations,
+          `Violations on /spending with Custom range open (${mode}): ${JSON.stringify(customViolations, null, 2)}`,
+        ).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
+    test(`/net-worth in ${mode} mode passes WCAG 2.2 AA audit`, async ({
+      browser,
+      cspViolations,
+    }) => {
+      const storageState = await alexSession(browser);
+      const context = await browser.newContext({
+        colorScheme: mode,
+        ...(storageState ? { storageState } : {}),
+      });
+      try {
+        await watchCsp(context, cspViolations);
+        await context.addInitScript(
+          ({ m }: { m: string }) => {
+            try {
+              localStorage.setItem("pangolin_mode", m);
+            } catch {}
+          },
+          { m: mode },
+        );
+        const page = await context.newPage();
+        await page.goto("/net-worth");
+        await page.waitForLoadState("domcontentloaded");
+        await expect(page.getByRole("heading", { name: "Net worth" })).toBeVisible();
+        await expect(page.getByTestId("net-worth-kpis")).toBeVisible();
+        await expect(page.getByTestId("trend-card")).toBeVisible();
+        await expect(page.getByTestId("assets-card")).toBeVisible();
+        await expect(page.getByTestId("liabilities-card")).toBeVisible();
+
+        await setMode(page, mode);
+
+        // Audit default trend chart view
+        const chartViolations = await auditPage(page);
+        expect(
+          chartViolations,
+          `Violations on /net-worth chart view (${mode}): ${JSON.stringify(chartViolations, null, 2)}`,
+        ).toEqual([]);
+
+        // Audit table view via "View as table" toggle
+        await page.getByRole("button", { name: "View as table" }).click();
+        await expect(page.getByTestId("net-worth-table")).toBeVisible();
+
+        const tableViolations = await auditPage(page);
+        expect(
+          tableViolations,
+          `Violations on /net-worth table view (${mode}): ${JSON.stringify(tableViolations, null, 2)}`,
+        ).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
     test(`/review in ${mode} mode passes WCAG 2.2 AA audit`, async ({ browser, cspViolations }) => {
       const storageState = await alexSession(browser);
       const context = await browser.newContext({
@@ -476,4 +577,192 @@ test.describe("WCAG 2.2 AA dark mode theme contrast audit", () => {
       }
     });
   }
+});
+
+test.describe("WCAG 1.4.10 320 px reflow audit", () => {
+  const routes = [
+    { path: "/cash-flow", name: "Cash flow", testId: "cash-flow-tiles" },
+    { path: "/spending", name: "Spending", testId: "bar-lists-card" },
+    { path: "/net-worth", name: "Net worth", testId: "net-worth-kpis" },
+  ] as const;
+
+  for (const { path, name, testId } of routes) {
+    test(`${path} at 320 px width reflows with zero horizontal scroll and passes WCAG 2.2 AA audit`, async ({
+      browser,
+      cspViolations,
+    }) => {
+      const storageState = await alexSession(browser);
+      const context = await browser.newContext({
+        viewport: { width: 320, height: 800 },
+        ...(storageState ? { storageState } : {}),
+      });
+      try {
+        await watchCsp(context, cspViolations);
+        const page = await context.newPage();
+        await page.goto(path);
+        await page.waitForLoadState("domcontentloaded");
+        await expect(page.getByRole("heading", { name })).toBeVisible();
+        await expect(page.getByTestId(testId)).toBeVisible();
+
+        const overflow = await page.evaluate(() => ({
+          scrollWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
+          clientWidth: document.documentElement.clientWidth,
+        }));
+        expect(
+          overflow.scrollWidth,
+          `Horizontal scroll overflow on ${path} at 320 px (scrollWidth: ${overflow.scrollWidth}, clientWidth: ${overflow.clientWidth})`,
+        ).toBeLessThanOrEqual(overflow.clientWidth);
+
+        const violations = await auditPage(page);
+        expect(
+          violations,
+          `Violations on ${path} at 320 px reflow: ${JSON.stringify(violations, null, 2)}`,
+        ).toEqual([]);
+
+        if (path === "/net-worth") {
+          await page.getByRole("button", { name: "View as table" }).click();
+          await expect(page.getByTestId("net-worth-table")).toBeVisible();
+
+          const tableOverflow = await page.evaluate(() => ({
+            scrollWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
+            clientWidth: document.documentElement.clientWidth,
+          }));
+          expect(
+            tableOverflow.scrollWidth,
+            `Horizontal scroll overflow on /net-worth table view at 320 px (scrollWidth: ${tableOverflow.scrollWidth}, clientWidth: ${tableOverflow.clientWidth})`,
+          ).toBeLessThanOrEqual(tableOverflow.clientWidth);
+
+          const tableViolations = await auditPage(page);
+          expect(
+            tableViolations,
+            `Violations on /net-worth table view at 320 px reflow: ${JSON.stringify(tableViolations, null, 2)}`,
+          ).toEqual([]);
+        }
+      } finally {
+        await context.close();
+      }
+    });
+  }
+});
+
+test.describe("375 px phone responsive audit", () => {
+  test("/cash-flow at 375 px adapts to phone layout with P&L table and zero horizontal scroll", async ({
+    browser,
+    cspViolations,
+  }) => {
+    const storageState = await alexSession(browser);
+    const context = await browser.newContext({
+      viewport: { width: 375, height: 667 },
+      ...(storageState ? { storageState } : {}),
+    });
+    try {
+      await watchCsp(context, cspViolations);
+      const page = await context.newPage();
+      await page.goto("/cash-flow");
+      await page.waitForLoadState("domcontentloaded");
+      await expect(page.getByRole("heading", { level: 2, name: "Cash flow" })).toBeVisible();
+
+      // Mobile layout adaptation: Sankey canvas is replaced by P&L table
+      await expect(page.getByTestId("sankey-card-phone")).toBeVisible();
+      await expect(page.getByTestId("pnl-table")).toBeVisible();
+      await expect(page.getByTestId("sankey-chart")).toBeHidden();
+
+      const overflow = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      }));
+      expect(
+        overflow.scrollWidth,
+        `Horizontal scroll overflow on /cash-flow at 375 px (scrollWidth: ${overflow.scrollWidth}, clientWidth: ${overflow.clientWidth})`,
+      ).toBeLessThanOrEqual(overflow.clientWidth);
+
+      const violations = await auditPage(page);
+      expect(
+        violations,
+        `Violations on /cash-flow at 375 px: ${JSON.stringify(violations, null, 2)}`,
+      ).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("/spending at 375 px stacks cards vertically with zero horizontal scroll", async ({
+    browser,
+    cspViolations,
+  }) => {
+    const storageState = await alexSession(browser);
+    const context = await browser.newContext({
+      viewport: { width: 375, height: 667 },
+      ...(storageState ? { storageState } : {}),
+    });
+    try {
+      await watchCsp(context, cspViolations);
+      const page = await context.newPage();
+      await page.goto("/spending");
+      await page.waitForLoadState("domcontentloaded");
+      await expect(page.getByRole("heading", { level: 2, name: "Spending" })).toBeVisible();
+
+      await expect(page.getByTestId("share-line")).toBeVisible();
+      await expect(page.getByTestId("bar-lists-card")).toBeVisible();
+      await expect(page.getByTestId("spending-category-bars-card")).toBeVisible();
+      await expect(page.getByTestId("biggest-little-leaks-card")).toBeVisible();
+
+      const overflow = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      }));
+      expect(
+        overflow.scrollWidth,
+        `Horizontal scroll overflow on /spending at 375 px (scrollWidth: ${overflow.scrollWidth}, clientWidth: ${overflow.clientWidth})`,
+      ).toBeLessThanOrEqual(overflow.clientWidth);
+
+      const violations = await auditPage(page);
+      expect(
+        violations,
+        `Violations on /spending at 375 px: ${JSON.stringify(violations, null, 2)}`,
+      ).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("/net-worth at 375 px stacks account cards and KPIs with zero horizontal scroll", async ({
+    browser,
+    cspViolations,
+  }) => {
+    const storageState = await alexSession(browser);
+    const context = await browser.newContext({
+      viewport: { width: 375, height: 667 },
+      ...(storageState ? { storageState } : {}),
+    });
+    try {
+      await watchCsp(context, cspViolations);
+      const page = await context.newPage();
+      await page.goto("/net-worth");
+      await page.waitForLoadState("domcontentloaded");
+      await expect(page.getByRole("heading", { name: "Net worth" })).toBeVisible();
+
+      await expect(page.getByTestId("net-worth-kpis")).toBeVisible();
+      await expect(page.getByTestId("trend-card")).toBeVisible();
+      await expect(page.getByTestId("assets-card")).toBeVisible();
+      await expect(page.getByTestId("liabilities-card")).toBeVisible();
+
+      const overflow = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      }));
+      expect(
+        overflow.scrollWidth,
+        `Horizontal scroll overflow on /net-worth at 375 px (scrollWidth: ${overflow.scrollWidth}, clientWidth: ${overflow.clientWidth})`,
+      ).toBeLessThanOrEqual(overflow.clientWidth);
+
+      const violations = await auditPage(page);
+      expect(
+        violations,
+        `Violations on /net-worth at 375 px: ${JSON.stringify(violations, null, 2)}`,
+      ).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
 });
