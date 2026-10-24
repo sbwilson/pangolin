@@ -147,6 +147,7 @@ const REPORT_QUERIES = CASH_FLOW_QUERIES.flatMap((range) => [
   `/api/reports/spending?${range}&by=category`,
   `/api/reports/merchants?${range}&flow=income`,
   `/api/reports/merchants?${range}&flow=expense`,
+  `/api/reports/leaks?${range}`,
 ]);
 
 /** Every `GET` route that returns person data, as B sees it, keyed by route and ids. */

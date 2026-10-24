@@ -5,6 +5,7 @@ import {
   fetchAccounts,
   fetchCashFlow,
   fetchCategories,
+  fetchLeaks,
   fetchMerchants,
   fetchProfitAndLoss,
   fetchSharedShare,
@@ -12,6 +13,7 @@ import {
   type SharedShare,
 } from "../api.ts";
 import { BarListsCard } from "../components/BarListsCard.tsx";
+import { BiggestLittleLeaksCard } from "../components/BiggestLittleLeaksCard.tsx";
 import { DateRangeControl } from "../components/DateRangeControl.tsx";
 import { useOptionalImport } from "../components/import/index.ts";
 import { LatestTransactionsCard } from "../components/LatestTransactionsCard.tsx";
@@ -125,6 +127,13 @@ export function CashFlowPage() {
   const latestTxns = useQuery({
     queryKey: ["ledger", "transactions", range.from, range.to],
     queryFn: () => fetchTransactions({ from: range.from, to: range.to, page: "1" }),
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+
+  const leaks = useQuery({
+    queryKey: ["reports", "leaks", range.from, range.to],
+    queryFn: () => fetchLeaks(range),
     placeholderData: keepPreviousData,
     retry: false,
   });
@@ -302,6 +311,8 @@ export function CashFlowPage() {
               range={range}
             />
           ) : null}
+
+          {leaks.data ? <BiggestLittleLeaksCard leaks={leaks.data.rows} range={range} /> : null}
         </>
       )}
     </section>

@@ -23,6 +23,7 @@ vi.mock("../api.ts", async (importOriginal) => ({
   fetchCategories: vi.fn(),
   fetchProfitAndLoss: vi.fn(),
   fetchMerchants: vi.fn(),
+  fetchLeaks: vi.fn(),
 }));
 
 afterEach(() => {
@@ -229,6 +230,19 @@ describe("SpendingPage", () => {
     vi.mocked(api.fetchMerchants).mockImplementation(async (opts) =>
       opts.flow === "income" ? merchantsIncomeReport(opts) : merchantsExpenseReport(opts),
     );
+    vi.mocked(api.fetchLeaks).mockImplementation(async ({ from, to }) => ({
+      from,
+      to,
+      rows: [
+        {
+          payeeId: "payee-leak",
+          payeeName: "Corner Cafe",
+          count: 5,
+          totalCents: 4500,
+          medianCents: 900,
+        },
+      ],
+    }));
   });
 
   it("renders spending header, share line, bar lists, and category bars on default load", async () => {
@@ -252,6 +266,16 @@ describe("SpendingPage", () => {
     const categoryCard = await screen.findByTestId("spending-category-bars-card");
     expect(categoryCard).toBeTruthy();
     expect(within(categoryCard).getByText("Spending by category")).toBeTruthy();
+
+    // Biggest little leaks card
+    const leaksCard = await screen.findByTestId("biggest-little-leaks-card");
+    expect(leaksCard).toBeTruthy();
+    expect(within(leaksCard).getByText("Biggest little leaks")).toBeTruthy();
+    expect(within(leaksCard).getByText("Corner Cafe")).toBeTruthy();
+    const leakTile = within(leaksCard).getByTestId("leak-tile-payee-leak");
+    expect(leakTile.getAttribute("href")).toBe(
+      "/transactions?payee=payee-leak&from=2026-07-01&to=2026-09-30",
+    );
   });
 
   it("sorts category expense rows descending by amount", async () => {

@@ -10,6 +10,7 @@ import type {
   FlowBreakdownRow,
   InstitutionRepo,
   InstitutionRow,
+  LeakMerchantRow,
   OwnedAccount,
   SharedFigures,
   SplitRow,
@@ -588,6 +589,97 @@ function flowBreakdown(
 }
 
 /**
+ * Top five qualifying merchant leaks in `range`: merchants with at least 4 visible expense
+ * transactions and a median transaction expense amount <= $25. Grouped at the transaction
+ * level so multi-split transactions count as single visits. Sorted by total spend descending,
+ * then payee name ascending, then payee id.
+ */
+function merchantLeaks(
+  orm: Orm,
+  viewer: Viewer,
+  today: string,
+  range: DayRange,
+): LeakMerchantRow[] {
+  const projection = visibleTxn(viewer, today);
+  const kind = flowKindSql(viewer);
+
+  const txnSpends = orm
+    .select({
+      transactionId: transaction.id,
+      payeeId: sql<string>`${projection.payeeId}`.as("payee_id"),
+      payeeName: sql<string>`${projection.payeeName}`.as("payee_name"),
+      spendCents: sql<number>`-sum(${split.amountCents})`.as("spend_cents"),
+    })
+    .from(split)
+    .innerJoin(transaction, eq(transaction.id, split.transactionId))
+    .where(
+      and(
+        projection.where,
+        gte(transaction.postedOn, range.from),
+        lte(transaction.postedOn, range.to),
+        sql`${projection.payeeId} IS NOT NULL`,
+        sql`${kind} = 'expense'`,
+        sql`${split.amountCents} < 0`,
+      ),
+    )
+    .groupBy(transaction.id, sql`${projection.payeeId}`, sql`${projection.payeeName}`)
+    .having(sql`-sum(${split.amountCents}) > 0`)
+    .as("txn_spends");
+
+  const ranked = orm
+    .select({
+      payeeId: txnSpends.payeeId,
+      payeeName: txnSpends.payeeName,
+      spendCents: txnSpends.spendCents,
+      rn: sql<number>`row_number() over (partition by ${txnSpends.payeeId} order by ${txnSpends.spendCents}, ${txnSpends.transactionId})`.as(
+        "rn",
+      ),
+      cnt: sql<number>`count(*) over (partition by ${txnSpends.payeeId})`.as("cnt"),
+      totalCents:
+        sql<number>`sum(${txnSpends.spendCents}) over (partition by ${txnSpends.payeeId})`.as(
+          "total_cents",
+        ),
+    })
+    .from(txnSpends)
+    .as("ranked");
+
+  const rows = orm
+    .select({
+      payeeId: ranked.payeeId,
+      payeeName: ranked.payeeName,
+      count: ranked.cnt,
+      totalCents: ranked.totalCents,
+      medianCents: sql<number>`CAST(round(avg(${ranked.spendCents})) AS INTEGER)`,
+    })
+    .from(ranked)
+    .where(
+      sql`${ranked.cnt} >= 4 AND ${ranked.rn} IN ((${ranked.cnt} + 1) / 2, (${ranked.cnt} + 2) / 2)`,
+    )
+    .groupBy(
+      sql`${ranked.payeeId}`,
+      sql`${ranked.payeeName}`,
+      sql`${ranked.cnt}`,
+      sql`${ranked.totalCents}`,
+    )
+    .having(sql`avg(${ranked.spendCents}) <= 2500`)
+    .orderBy(
+      sql`${ranked.totalCents} DESC`,
+      sql`${ranked.payeeName} ASC`,
+      sql`${ranked.payeeId} ASC`,
+    )
+    .limit(5)
+    .all();
+
+  return rows.map((r) => ({
+    payeeId: r.payeeId,
+    payeeName: r.payeeName,
+    count: Number(r.count),
+    totalCents: Number(r.totalCents),
+    medianCents: Number(r.medianCents),
+  }));
+}
+
+/**
  * The `flowKind` (AD-23) of every split of the live transactions `viewer` may see, by split id,
  * straight from `flowKindSql`. For the parity test that holds the SQL expression to the `domain`
  * function; no use case reads it. Throws without a viewer.
@@ -903,6 +995,12 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
       requireViewer(viewer, "flowBreakdown");
       check();
       return flowBreakdown(orm, viewer, today, range);
+    },
+
+    merchantLeaks: (viewer, today, range) => {
+      requireViewer(viewer, "merchantLeaks");
+      check();
+      return merchantLeaks(orm, viewer, today, range);
     },
 
     sharedFigures: (viewer, today, range) => {

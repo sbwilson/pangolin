@@ -207,6 +207,7 @@ export async function hiddenNameScenario(
       `/api/reports/merchants?${REPORT_RANGE}&flow=expense`,
       `/api/reports/pnl?${REPORT_RANGE}&by=category`,
       `/api/reports/spending?${REPORT_RANGE}&by=group`,
+      `/api/reports/leaks?${REPORT_RANGE}`,
     ],
     transactionIds: [transactionId],
   };

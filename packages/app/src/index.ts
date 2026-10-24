@@ -652,6 +652,7 @@ export {
   type InstitutionRepo,
   type InstitutionRow,
   type LatestImport,
+  type LeakMerchantRow,
   type OwnedAccount,
   type PayeeAliasRepo,
   type PayeeAliasRow,
@@ -698,6 +699,13 @@ export {
   cashFlowTotalsInput,
   savingsRatePermille,
 } from "./reports/cash-flow-totals.ts";
+export {
+  type LeakMerchant,
+  type LeaksInput,
+  type LeaksReport,
+  leaks,
+  leaksInput,
+} from "./reports/leaks.ts";
 export {
   MERCHANT_FLOWS,
   type MerchantFlow,

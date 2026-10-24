@@ -40,6 +40,7 @@ import type {
   InstitutionRow,
   JobRepo,
   JobRow,
+  LeakMerchantRow,
   LoginAttemptRepo,
   LoginAttemptRow,
   OwnedAccount,
@@ -1865,6 +1866,86 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
             nullsFirst(x.payeeId, y.payeeId),
         );
     },
+    merchantLeaks: (viewer, today, range) => {
+      requireViewer(viewer);
+      requireDay(today, "visibleTxn");
+      check();
+      const txnExpenseSpends = new Map<
+        string,
+        { payeeId: string; payeeName: string; cents: number }
+      >();
+      for (const row of visibleRows(viewer)) {
+        if (row.postedOn < range.from || row.postedOn > range.to) continue;
+        const shown = view(viewer, row, today);
+        if (shown.payeeId === null || shown.payeeName === null) continue;
+        let txnSpend = 0;
+        for (const s of working.splits.filter((x) => x.transactionId === row.id)) {
+          const kind = splitFlowKindFor(working, viewer, row, s);
+          if (kind === "expense" && s.amountCents < 0) {
+            txnSpend += -s.amountCents;
+          }
+        }
+        if (txnSpend > 0) {
+          txnExpenseSpends.set(row.id, {
+            payeeId: shown.payeeId,
+            payeeName: shown.payeeName,
+            cents: txnSpend,
+          });
+        }
+      }
+
+      const payeeMap = new Map<
+        string,
+        { payeeId: string; payeeName: string; amounts: { id: string; cents: number }[] }
+      >();
+      for (const [txnId, t] of txnExpenseSpends.entries()) {
+        const existing = payeeMap.get(t.payeeId);
+        if (existing) {
+          existing.amounts.push({ id: txnId, cents: t.cents });
+        } else {
+          payeeMap.set(t.payeeId, {
+            payeeId: t.payeeId,
+            payeeName: t.payeeName,
+            amounts: [{ id: txnId, cents: t.cents }],
+          });
+        }
+      }
+
+      const qualifying: LeakMerchantRow[] = [];
+      for (const item of payeeMap.values()) {
+        if (item.amounts.length < 4) continue;
+        item.amounts.sort((a, b) => a.cents - b.cents || byText(a.id, b.id));
+        const count = item.amounts.length;
+        const totalCents = item.amounts.reduce((sum, c) => sum + c.cents, 0);
+        let medianCents: number;
+        if (count % 2 === 1) {
+          medianCents = item.amounts[Math.floor(count / 2)]?.cents ?? 0;
+        } else {
+          const m1 = item.amounts[count / 2 - 1]?.cents ?? 0;
+          const m2 = item.amounts[count / 2]?.cents ?? 0;
+          medianCents = Math.round((m1 + m2) / 2);
+        }
+
+        if (medianCents <= 2500) {
+          qualifying.push({
+            payeeId: item.payeeId,
+            payeeName: item.payeeName,
+            count,
+            totalCents,
+            medianCents,
+          });
+        }
+      }
+
+      qualifying.sort(
+        (a, b) =>
+          b.totalCents - a.totalCents ||
+          byText(a.payeeName, b.payeeName) ||
+          byText(a.payeeId, b.payeeId),
+      );
+
+      return qualifying.slice(0, 5);
+    },
     countBefore: (viewer, today, filter, cursor) => {
       requireViewer(viewer);
       requireDay(today, "visibleTxn");
@@ -3163,6 +3244,7 @@ export function memoryUnitOfWork(
           summarise: transactionRepo(uow.state, check).summarise,
           cashFlowTotals: transactionRepo(uow.state, check).cashFlowTotals,
           flowBreakdown: transactionRepo(uow.state, check).flowBreakdown,
+          merchantLeaks: transactionRepo(uow.state, check).merchantLeaks,
           sharedFigures: transactionRepo(uow.state, check).sharedFigures,
           countBefore: transactionRepo(uow.state, check).countBefore,
           dayNets: transactionRepo(uow.state, check).dayNets,

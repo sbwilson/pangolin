@@ -1,7 +1,29 @@
-import { localDay, quarterRange } from "../apps/web/src/lib/date-range.ts";
-import { formatCents } from "../apps/web/src/lib/money.ts";
 import { loadAccount, signInWithPassword } from "./helpers/account.ts";
 import { expect, test } from "./helpers/csp.ts";
+
+const pad = (n: number) => String(n).padStart(2, "0");
+const day = (year: number, month: number, date: number) => `${year}-${pad(month)}-${pad(date)}`;
+
+function localDay(date: Date): string {
+  return day(date.getFullYear(), date.getMonth() + 1, date.getDate());
+}
+
+function lastDay(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function quarterRange(today: string): { from: string; to: string } {
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7));
+  const first = Math.floor((month - 1) / 3) * 3 + 1;
+  const last = first + 2;
+  return { from: day(year, first, 1), to: day(year, last, lastDay(year, last)) };
+}
+
+function formatCents(cents: number, currency = "AUD"): string {
+  const value = cents === 0 ? 0 : cents / 100;
+  return new Intl.NumberFormat("en-AU", { style: "currency", currency }).format(value);
+}
 
 test.describe("Spending Page", () => {
   test("renders spending page with bar lists, category bars, correct period change and drill-down", async ({

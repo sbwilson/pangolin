@@ -317,6 +317,21 @@ export async function fetchMerchants(range: {
   return await res.json();
 }
 
+/** The "Biggest little leaks" report over an inclusive range. */
+export type LeaksReport = InferResponseType<(typeof api.api.reports)["leaks"]["$get"], 200>;
+export type LeakMerchant = LeaksReport["rows"][number];
+
+export async function fetchLeaks(range: {
+  readonly from: string;
+  readonly to: string;
+}): Promise<LeaksReport> {
+  const res = await api.api.reports.leaks.$get({
+    query: { from: range.from, to: range.to },
+  });
+  if (!res.ok) throw await apiError(res);
+  return await res.json();
+}
+
 /** How shared spending is split between the partners. */
 export type SharedAttribution = "contribution" | "even";
 

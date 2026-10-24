@@ -732,8 +732,215 @@ describe("flowKind parity (AD-23)", () => {
     for (const row of rows("A")) expect(["income", "expense"]).toContain(row.kind);
   });
 
+  it("computes merchantLeaks alike on SQLite and in memory", () => {
+    const memoryUow = memoryUnitOfWork();
+    const sqliteUow = createUnitOfWork(db);
+    const newId = ids();
+    const personA = newId<"Person">();
+    const personB = newId<"Person">();
+    const accountId = newId<"Account">();
+    const leakPayee1 = newId<"Payee">();
+    const leakPayee2 = newId<"Payee">();
+    const bigPayee = newId<"Payee">();
+    const fewPayee = newId<"Payee">();
+    const hiddenPayee = newId<"Payee">();
+    const scopedPayee = newId<"Payee">();
+
+    for (const uow of [memoryUow, sqliteUow]) {
+      uow.transaction((r) => {
+        r.person.insert({
+          id: personA,
+          userId: null,
+          displayName: "A",
+          colour: "#000000",
+          createdAt: T,
+          updatedAt: T,
+          deletedAt: null,
+        });
+        r.person.insert({
+          id: personB,
+          userId: null,
+          displayName: "B",
+          colour: "#000000",
+          createdAt: T,
+          updatedAt: T,
+          deletedAt: null,
+        });
+        r.accounts.insert(
+          {
+            id: accountId,
+            name: "joint",
+            type: "transaction",
+            currency: "AUD",
+            isPrivate: false,
+            institutionId: null,
+            openedOn: null,
+            closedOn: null,
+            isSavings: false,
+            createdAt: T,
+            updatedAt: T,
+          },
+          [
+            { accountId, personId: personA, shareBp: 5000, createdAt: T, updatedAt: T },
+            { accountId, personId: personB, shareBp: 5000, createdAt: T, updatedAt: T },
+          ],
+        );
+        const payeeRow = (id: Id<"Payee">, name: string, scopePersonId: Id<"Person"> | null) => ({
+          id,
+          name,
+          logoAttachmentId: null,
+          websiteUrl: null,
+          defaultCategoryId: null,
+          scopePersonId,
+          createdAt: T,
+          updatedAt: T,
+        });
+        r.payees.insert(payeeRow(leakPayee1, "Corner Cafe", null), null);
+        r.payees.insert(payeeRow(leakPayee2, "Bakery", null), null);
+        r.payees.insert(payeeRow(bigPayee, "Fancy Dinner", null), null);
+        r.payees.insert(payeeRow(fewPayee, "Occasional Lunch", null), null);
+        r.payees.insert(payeeRow(hiddenPayee, "Secret Treats", null), null);
+        r.payees.insert(payeeRow(scopedPayee, "A Personal Shop", personA), null);
+
+        let tIndex = 0;
+        const addTxn = (
+          payeeId: Id<"Payee">,
+          splits: number[],
+          overrides: Partial<TransactionRow> = {},
+        ) => {
+          tIndex++;
+          const txnId = newId<"Transaction">();
+          const totalCents = splits.reduce((a, b) => a + b, 0);
+          r.transactions.insert(
+            {
+              id: txnId,
+              accountId,
+              postedOn: "2026-09-15",
+              amountCents: totalCents,
+              descriptionRaw: `Txn ${tIndex}`,
+              payeeId,
+              status: "posted",
+              externalId: null,
+              fingerprint: `fp-${tIndex}`,
+              fingerprintVersion: 1,
+              importId: null,
+              performedBy: null,
+              transferGroupId: null,
+              needsReview: false,
+              isHidden: false,
+              nameHiddenBy: null,
+              nameHiddenUntil: null,
+              notes: null,
+              createdAt: T,
+              updatedAt: T,
+              ...overrides,
+            },
+            splits.map((amountCents) => ({
+              id: newId<"Split">(),
+              transactionId: txnId,
+              amountCents,
+              categoryId: null,
+              activityId: null,
+              beneficiary: "shared",
+              propertyId: null,
+              taxCategoryId: null,
+              deductibleBp: null,
+              memo: null,
+              categorySource: null,
+              activitySource: null,
+              taxCategorySource: null,
+              beneficiarySource: null,
+              deductibleBpSource: null,
+              createdAt: T,
+              updatedAt: T,
+            })),
+          );
+        };
+
+        // leakPayee1: Corner Cafe - 4 transactions: $10, $20, $20, $30 -> total $80, median $20
+        addTxn(leakPayee1, [-1000]);
+        addTxn(leakPayee1, [-2000]);
+        addTxn(leakPayee1, [-2000]);
+        addTxn(leakPayee1, [-3000]);
+
+        // leakPayee2: Bakery - 4 transactions with multi-splits:
+        // Txn 1: -$5 and -$5 = -$10
+        // Txn 2: -$15
+        // Txn 3: -$15
+        // Txn 4: -$20
+        // -> total $60, median $15
+        addTxn(leakPayee2, [-500, -500]);
+        addTxn(leakPayee2, [-1500]);
+        addTxn(leakPayee2, [-1500]);
+        addTxn(leakPayee2, [-2000]);
+
+        // bigPayee: 5 transactions of $30 -> median $30 > $25 (excluded)
+        for (let i = 0; i < 5; i++) addTxn(bigPayee, [-3000]);
+
+        // fewPayee: 3 transactions of $5 -> count 3 < 4 (excluded)
+        for (let i = 0; i < 3; i++) addTxn(fewPayee, [-500]);
+
+        // hiddenPayee: 4 transactions of $10 hidden by A until Dec 2026
+        for (let i = 0; i < 4; i++) {
+          addTxn(hiddenPayee, [-1000], {
+            nameHiddenBy: personA,
+            nameHiddenUntil: "2026-12-31",
+          });
+        }
+
+        // scopedPayee: 4 transactions of $10 scoped to personA
+        for (let i = 0; i < 4; i++) addTxn(scopedPayee, [-1000]);
+      });
+    }
+
+    const viewerA = personViewer(personA, now);
+    const viewerB = personViewer(personB, now);
+    const sysViewer = systemViewer("job:test");
+
+    for (const viewer of [viewerA, viewerB, sysViewer]) {
+      const fromSql = sqliteUow.read((r) => r.transactions.merchantLeaks(viewer, TODAY, SEPTEMBER));
+      const fromMemory = memoryUow.read((r) =>
+        r.transactions.merchantLeaks(viewer, TODAY, SEPTEMBER),
+      );
+      expect(fromSql).toEqual(fromMemory);
+    }
+
+    // For viewer B: hiddenPayee and scopedPayee are excluded!
+    const bLeaks = sqliteUow.read((r) => r.transactions.merchantLeaks(viewerB, TODAY, SEPTEMBER));
+    expect(bLeaks).toHaveLength(2);
+    expect(bLeaks[0]).toEqual({
+      payeeId: leakPayee1,
+      payeeName: "Corner Cafe",
+      count: 4,
+      totalCents: 8000,
+      medianCents: 2000,
+    });
+    expect(bLeaks[1]).toEqual({
+      payeeId: leakPayee2,
+      payeeName: "Bakery",
+      count: 4,
+      totalCents: 6000,
+      medianCents: 1500,
+    });
+
+    // For viewer A: sees Corner Cafe ($80), Bakery ($60), A Personal Shop ($40), Secret Treats ($40)
+    const aLeaks = sqliteUow.read((r) => r.transactions.merchantLeaks(viewerA, TODAY, SEPTEMBER));
+    expect(aLeaks).toHaveLength(4);
+    expect(aLeaks.map((l) => l.payeeName)).toEqual([
+      "Corner Cafe",
+      "Bakery",
+      "A Personal Shop",
+      "Secret Treats",
+    ]);
+  });
+
   it("throws without a viewer", () => {
     const uow = createUnitOfWork(db);
+    expect(() =>
+      uow.read((r) =>
+        r.transactions.merchantLeaks(undefined as unknown as Viewer, TODAY, SEPTEMBER),
+      ),
+    ).toThrow(/viewer/);
     expect(() =>
       uow.read((r) =>
         r.transactions.sharedFigures(undefined as unknown as Viewer, TODAY, SEPTEMBER),

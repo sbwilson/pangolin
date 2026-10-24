@@ -560,3 +560,47 @@ test("mobile More tab allows signing out which terminates session and lands on /
     await context.close();
   }
 });
+
+test("Biggest little leaks card renders on Cash flow and Spending, and clicking a leak navigates to filtered transactions", async ({
+  browser,
+  cspViolations,
+}) => {
+  const context = await browser.newContext({ storageState: await alexSession(browser) });
+  try {
+    await watchCsp(context, cspViolations);
+    const page = await context.newPage();
+
+    // 1. On Cash Flow
+    await page.goto("/cash-flow?from=2026-04-01&to=2026-06-30");
+    await expect(page.getByRole("heading", { level: 2, name: "Cash flow" })).toBeVisible();
+
+    const leaksCardOnCashFlow = page.getByTestId("biggest-little-leaks-card");
+    await expect(leaksCardOnCashFlow).toBeVisible();
+    await expect(
+      leaksCardOnCashFlow.getByRole("heading", { name: "Biggest little leaks" }),
+    ).toBeVisible();
+
+    // 2. On Spending
+    await page.goto("/spending?from=2026-04-01&to=2026-06-30");
+    await expect(page.getByRole("heading", { level: 2, name: "Spending" })).toBeVisible();
+
+    const leaksCardOnSpending = page.getByTestId("biggest-little-leaks-card");
+    await expect(leaksCardOnSpending).toBeVisible();
+    await expect(
+      leaksCardOnSpending.getByRole("heading", { name: "Biggest little leaks" }),
+    ).toBeVisible();
+
+    // Verify leak tiles exist in seeded range and test drill-down
+    const firstLeakTile = leaksCardOnSpending.locator('[data-testid^="leak-tile-"]').first();
+    await expect(firstLeakTile).toBeVisible();
+    const tileHref = await firstLeakTile.getAttribute("href");
+    expect(tileHref).toContain("/transactions");
+    expect(tileHref).toContain("payee=");
+
+    await firstLeakTile.click();
+    await expect(page).toHaveURL(tileHref ?? "");
+    await expect(page.getByRole("heading", { level: 1, name: "Pangolin Money" })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});

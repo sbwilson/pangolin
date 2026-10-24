@@ -585,6 +585,18 @@ export interface FlowBreakdownRow {
   readonly cents: number;
 }
 
+/**
+ * One qualifying merchant for the "Biggest little leaks" report: at least 4 visible expense
+ * transactions and a median transaction expense amount <= $25 (2500 cents).
+ */
+export interface LeakMerchantRow {
+  readonly payeeId: string;
+  readonly payeeName: string;
+  readonly count: number;
+  readonly totalCents: number;
+  readonly medianCents: number;
+}
+
 export interface TransactionRepo {
   /**
    * Whether the account has a live transaction dated before `date` (`YYYY-MM-DD`) that does not
@@ -727,6 +739,14 @@ export interface TransactionRepo {
    * first). The rows of a kind sum to that kind's `cashFlowTotals` figure. Throws without a viewer.
    */
   flowBreakdown(viewer: Viewer, today: string, range: DayRange): FlowBreakdownRow[];
+  /**
+   * The top five merchants by total spend in `range` with at least four visible expense
+   * transactions and a median transaction expense amount of $25 or less (<= 2500 cents).
+   * Payees of transactions with hidden names or scoped to another person project as null
+   * and never qualify. Top five sorted by total spend descending, then payee name ascending,
+   * then payee id. Throws without a viewer.
+   */
+  merchantLeaks(viewer: Viewer, today: string, range: DayRange): LeakMerchantRow[];
   /**
    * The shared total and each person's contribution over `range` (inclusive, pending and posted),
    * read from public accounts only whoever `viewer` is, so both partners get the same figures
@@ -1731,6 +1751,7 @@ export interface ReadRepos {
     | "summarise"
     | "cashFlowTotals"
     | "flowBreakdown"
+    | "merchantLeaks"
     | "sharedFigures"
     | "countBefore"
     | "dayNets"

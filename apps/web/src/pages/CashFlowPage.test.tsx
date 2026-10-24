@@ -27,6 +27,7 @@ vi.mock("../api.ts", async (importOriginal) => ({
   fetchSpending: vi.fn(),
   fetchMerchants: vi.fn(),
   fetchTransactions: vi.fn(),
+  fetchLeaks: vi.fn(),
 }));
 
 afterEach(() => {
@@ -273,6 +274,19 @@ describe("CashFlowPage", () => {
         : merchantsExpenseReport({ from, to }),
     );
     vi.mocked(api.fetchTransactions).mockResolvedValue(transactionsReport());
+    vi.mocked(api.fetchLeaks).mockImplementation(async ({ from, to }) => ({
+      from,
+      to,
+      rows: [
+        {
+          payeeId: "payee-leak",
+          payeeName: "Corner Cafe",
+          count: 5,
+          totalCents: 4500,
+          medianCents: 900,
+        },
+      ],
+    }));
   });
 
   it("shows the share line under the tiles with the server's figures and percent", async () => {
@@ -507,6 +521,20 @@ describe("CashFlowPage", () => {
     expect(within(winkRow).getByText(/Shh, it's a surprise/)).toBeTruthy();
     expect(within(winkRow).getByText(/Hidden until 1 September 2026/)).toBeTruthy();
     expect(within(winkRow).queryByText("Secret Present")).toBeNull();
+  });
+
+  it("renders Biggest little leaks card with drill-down link to filtered transactions", async () => {
+    renderPage("/cash-flow?from=2026-07-01&to=2026-09-30");
+
+    const leaksCard = await screen.findByTestId("biggest-little-leaks-card");
+    expect(within(leaksCard).getByText("Biggest little leaks")).toBeTruthy();
+    expect(within(leaksCard).getByText("Corner Cafe")).toBeTruthy();
+    expect(within(leaksCard).getByText("$45.00")).toBeTruthy();
+
+    const tile = within(leaksCard).getByTestId("leak-tile-payee-leak");
+    expect(tile.getAttribute("href")).toBe(
+      "/transactions?payee=payee-leak&from=2026-07-01&to=2026-09-30",
+    );
   });
 
   it("renders the empty database state when there are no accounts", async () => {

@@ -66,6 +66,8 @@ import {
   issueReEnrolmentLink,
   issueSetupLink,
   keepDuplicateItem,
+  type LeaksInput,
+  leaks,
   leaveHousehold,
   linkTransferItem,
   listAccounts,
@@ -749,6 +751,12 @@ export function createApi(deps: ApiDeps) {
       // A missing or bad range or `flow` is 400.
       const input = { from: c.req.query("from"), to: c.req.query("to"), flow: c.req.query("flow") };
       return c.json(merchants(ctx(c), input as MerchantsInput), 200);
+    })
+    .get("/api/reports/leaks", (c) => {
+      // Per viewer (AD-3, AD-4): top five merchants with at least 4 visible expense transactions
+      // and a median transaction amount <= $25 over `from`..`to` (inclusive). A missing or bad range is 400.
+      const input = { from: c.req.query("from"), to: c.req.query("to") };
+      return c.json(leaks(ctx(c), input as LeaksInput), 200);
     })
     .get("/api/review", (c) => {
       // Per viewer (AD-3): the open items they may see, each with its card's detail. Never cached.

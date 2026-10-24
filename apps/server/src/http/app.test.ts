@@ -2478,6 +2478,11 @@ describe("GET /api/reports/cash-flow", () => {
       totalCents: 4500,
       rows: [{ payeeId: null, payeeName: null, cents: 4500 }],
     });
+    expect(await get(`/api/reports/leaks?${range}`)).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-30",
+      rows: [],
+    });
   });
 
   it.each([
@@ -2493,6 +2498,9 @@ describe("GET /api/reports/cash-flow", () => {
       "/api/reports/merchants?from=2026-09-01&to=2026-09-30&flow=transfer",
     ],
     ["merchants without a range", "/api/reports/merchants?flow=income"],
+    ["leaks without a range", "/api/reports/leaks"],
+    ["leaks backwards", "/api/reports/leaks?from=2026-09-30&to=2026-09-01"],
+    ["leaks with a bad day", "/api/reports/leaks?from=2026-02-30&to=2026-03-31"],
   ])("answers 400 Validation for %s", async (_what, path) => {
     const db = openDb();
     addPerson(db);
@@ -2505,6 +2513,7 @@ describe("GET /api/reports/cash-flow", () => {
     "/api/reports/pnl?from=2026-09-01&to=2026-09-30&by=group",
     "/api/reports/spending?from=2026-09-01&to=2026-09-30&by=category",
     "/api/reports/merchants?from=2026-09-01&to=2026-09-30&flow=expense",
+    "/api/reports/leaks?from=2026-09-01&to=2026-09-30",
   ])("answers 401 without a session for %s", async (path) => {
     const db = openDb();
     addPerson(db);
@@ -2550,6 +2559,7 @@ describe("Cache-Control on every /api response", () => {
     ["person data", "/api/reports/pnl?from=2026-09-01&to=2026-09-30&by=group", 200],
     ["person data", "/api/reports/spending?from=2026-09-01&to=2026-09-30&by=group", 200],
     ["person data", "/api/reports/merchants?from=2026-09-01&to=2026-09-30&flow=income", 200],
+    ["person data", "/api/reports/leaks?from=2026-09-01&to=2026-09-30", 200],
     ["an error (404)", "/api/ledger/transactions/missing", 404],
     ["an unknown route (404)", "/api/nothing-here", 404],
     ["better-auth's passthrough", "/api/auth/get-session", 200],

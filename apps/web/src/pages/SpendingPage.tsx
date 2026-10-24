@@ -4,11 +4,13 @@ import { useMemo } from "react";
 import {
   fetchAccounts,
   fetchCategories,
+  fetchLeaks,
   fetchMerchants,
   fetchProfitAndLoss,
   fetchSharedShare,
 } from "../api.ts";
 import { BarListsCard } from "../components/BarListsCard.tsx";
+import { BiggestLittleLeaksCard } from "../components/BiggestLittleLeaksCard.tsx";
 import { DateRangeControl } from "../components/DateRangeControl.tsx";
 import { useOptionalImport } from "../components/import/index.ts";
 import { MascotIcon } from "../components/MascotLogo.tsx";
@@ -84,6 +86,13 @@ export function SpendingPage() {
   const expenseMerchants = useQuery({
     queryKey: ["reports", "merchants", range.from, range.to, "expense"],
     queryFn: () => fetchMerchants({ from: range.from, to: range.to, flow: "expense" }),
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+
+  const leaks = useQuery({
+    queryKey: ["reports", "leaks", range.from, range.to],
+    queryFn: () => fetchLeaks(range),
     placeholderData: keepPreviousData,
     retry: false,
   });
@@ -246,6 +255,8 @@ export function SpendingPage() {
               today={today}
             />
           ) : null}
+
+          {leaks.data ? <BiggestLittleLeaksCard leaks={leaks.data.rows} range={range} /> : null}
         </>
       )}
     </section>

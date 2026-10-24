@@ -239,6 +239,116 @@ function handSum(personKey: string, from: string, to: string) {
   return { moneyIn, moneyOut, counted, kinds, hiddenTransfer, splits: splitsSeen };
 }
 
+/** The hand sum of one person's qualifying merchant leaks over `from`..`to`, by AD-23 from the seed alone. */
+function handLeaks(personKey: string, from: string, to: string) {
+  const groupKind = new Map(DEFAULT_CATEGORIES.map((g) => [g.name, g.kind as string]));
+  const accounts = new Map<string, { type: string; visible: boolean }>();
+  const txns = new Map<string, SeedEvent>();
+  const counterpartOf = new Map<string, string>();
+  const payeeVisible = new Map<string, boolean>();
+  const hiddenBy = new Map<string, string>();
+  const ownerOf = new Map<string, string | undefined>();
+  const payeeNameMap = new Map<string, string>();
+
+  for (const e of seed.events) {
+    if (e.type === "account.created") {
+      const mine = (e.owners ?? []).some((o) => o.person === personKey);
+      accounts.set(e.key as string, {
+        type: e.accountType as string,
+        visible: e.isPrivate !== true || mine,
+      });
+      ownerOf.set(e.key as string, e.isPrivate === true ? e.owners?.[0]?.person : undefined);
+    } else if (e.type === "payee.created") {
+      const origin = e.origin ?? null;
+      const scope = origin === null ? undefined : ownerOf.get(origin);
+      payeeVisible.set(e.key as string, scope === undefined || scope === personKey);
+      payeeNameMap.set(e.key as string, e.name as string);
+    } else if (e.type === "transaction.name-hidden") {
+      hiddenBy.set(e.transaction as string, e.by as string);
+    } else if (e.type === "transaction.created") {
+      txns.set(e.key as string, e);
+    } else if (e.type === "transfer.grouped") {
+      const [x, y] = e.transactions as [string, string];
+      counterpartOf.set(x, y);
+      counterpartOf.set(y, x);
+    }
+  }
+
+  const merchantTxns = new Map<string, number[]>();
+  for (const [key, t] of txns) {
+    const account = accounts.get(t.account as string);
+    if (account === undefined || !account.visible) continue;
+    const day = t.postedOn as string;
+    if (day < from || day > to) continue;
+    const by = hiddenBy.get(key);
+    const payee =
+      t.payee === undefined || (by !== undefined && by !== personKey) || !payeeVisible.get(t.payee)
+        ? null
+        : t.payee;
+    if (payee === null) continue;
+
+    const other = counterpartOf.get(key);
+    const otherAccount =
+      other === undefined ? undefined : accounts.get(txns.get(other)?.account as string);
+    const splits: SeedSplit[] = t.splits ?? [
+      { amountCents: t.amountCents as number, ...(t.category ? { category: t.category } : {}) },
+    ];
+    let txnSpend = 0;
+    for (const s of splits) {
+      let kind: "income" | "expense" | "transfer" | "investing";
+      if (otherAccount !== undefined && !otherAccount.visible) {
+        kind = "transfer";
+      } else if (
+        otherAccount !== undefined &&
+        ["transaction", "savings", "offset", "credit_card"].includes(otherAccount.type)
+      ) {
+        kind = "transfer";
+      } else if (otherAccount?.type === "home_loan") {
+        kind = s.amountCents < 0 ? "expense" : "transfer";
+      } else if (otherAccount !== undefined && ["brokerage", "super"].includes(otherAccount.type)) {
+        kind = "investing";
+      } else if (s.category !== undefined && groupKind.get(s.category.group) === "transfer") {
+        kind = "transfer";
+      } else {
+        kind = s.amountCents > 0 ? "income" : "expense";
+      }
+      if (kind === "expense" && s.amountCents < 0) {
+        txnSpend += -s.amountCents;
+      }
+    }
+    if (txnSpend > 0) {
+      const list = merchantTxns.get(payee) ?? [];
+      list.push(txnSpend);
+      merchantTxns.set(payee, list);
+    }
+  }
+
+  const results: { payee: string; count: number; totalCents: number; medianCents: number }[] = [];
+  for (const [payee, amounts] of merchantTxns) {
+    if (amounts.length < 4) continue;
+    amounts.sort((a, b) => a - b);
+    const count = amounts.length;
+    const totalCents = amounts.reduce((a, b) => a + b, 0);
+    const medianCents =
+      count % 2 === 1
+        ? (amounts[Math.floor(count / 2)] as number)
+        : Math.round(((amounts[count / 2 - 1] as number) + (amounts[count / 2] as number)) / 2);
+    if (medianCents <= 2500) {
+      results.push({ payee, count, totalCents, medianCents });
+    }
+  }
+
+  const byText = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+  results.sort((a, b) => {
+    if (b.totalCents !== a.totalCents) return b.totalCents - a.totalCents;
+    const nameA = payeeNameMap.get(a.payee) ?? "";
+    const nameB = payeeNameMap.get(b.payee) ?? "";
+    return byText(nameA, nameB) || byText(a.payee, b.payee);
+  });
+
+  return results.slice(0, 5);
+}
+
 /** Positive cents per label for one kind of the hand-summed splits, as sorted [label, cents]. */
 function handRows(
   splits: readonly HandSplit[],
@@ -302,6 +412,7 @@ describe("GET /api/reports/{pnl,spending,merchants} on the default seed", () => 
     };
     let namedPayees = 0;
     let nullPayees = 0;
+    let foundLeaks = 0;
     for (const personKey of Object.keys(people)) {
       const cookie = cookieOf[people[personKey] as string] as string;
       for (const range of ranges) {
@@ -355,8 +466,38 @@ describe("GET /api/reports/{pnl,spending,merchants} on the default seed", () => 
             ),
           );
         }
+
+        const leaksBody = await get(cookie, `/api/reports/leaks?${q}`);
+        expect(leaksBody.from, at).toBe(range.from);
+        expect(leaksBody.to, at).toBe(range.to);
+        const expectedLeaks = handLeaks(personKey, range.from, range.to);
+        expect(
+          (
+            leaksBody.rows as {
+              payeeName: string;
+              count: number;
+              totalCents: number;
+              medianCents: number;
+            }[]
+          ).map((r) => ({
+            payeeName: r.payeeName,
+            count: r.count,
+            totalCents: r.totalCents,
+            medianCents: r.medianCents,
+          })),
+          `${at} leaks`,
+        ).toEqual(
+          expectedLeaks.map((l) => ({
+            payeeName: payeeName.get(l.payee) as string,
+            count: l.count,
+            totalCents: l.totalCents,
+            medianCents: l.medianCents,
+          })),
+        );
+        if (expectedLeaks.length > 0) foundLeaks++;
       }
     }
+    expect(foundLeaks).toBeGreaterThan(0);
     // The seed exercises both named merchants and the null bucket.
     expect(namedPayees).toBeGreaterThan(0);
     expect(nullPayees).toBeGreaterThan(0);
