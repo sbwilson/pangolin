@@ -5,6 +5,7 @@ import {
   hasClearableFilters,
   hasFilters,
   oneTimeLink,
+  validateCashFlowSearch,
   validateTokenSearch,
   validateTransactionsSearch,
 } from "./routes/search.ts";
@@ -74,6 +75,20 @@ describe("typed search params", () => {
     );
     expect(router.state.location.pathname).toBe("/transactions");
     expect(search(router)).toEqual({ transfers: "true" });
+  });
+
+  it("matches /spending and validates its search params", async () => {
+    const router = await load("/spending?from=2026-07-01&to=2026-09-30&share=mine");
+    expect(router.state.location.pathname).toBe("/spending");
+    expect(validateCashFlowSearch(search(router) ?? {})).toEqual({
+      from: "2026-07-01",
+      to: "2026-09-30",
+      share: "mine",
+    });
+
+    const badRouter = await load("/spending?from=bad-date&to=2026-09-30&unknown=val");
+    expect(badRouter.state.location.pathname).toBe("/spending");
+    expect(validateCashFlowSearch(search(badRouter) ?? {})).toEqual({});
   });
 
   it("keeps a numeric-looking token a string", async () => {

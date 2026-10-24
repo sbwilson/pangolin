@@ -248,7 +248,14 @@ export function MobileNav({ signOut, className }: MobileNavProps) {
               <span>Net worth</span>
             </span>
 
-            <span className="flex cursor-default items-center gap-3 py-3 text-sm text-muted-foreground opacity-60">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSheet(null);
+                void navigate({ to: "/spending" });
+              }}
+              className="flex items-center gap-3 py-3 text-left text-sm font-medium text-foreground transition-colors hover:text-primary"
+            >
               <svg
                 width="16"
                 height="16"
@@ -263,7 +270,7 @@ export function MobileNav({ signOut, className }: MobileNavProps) {
                 <path d="M12 3a9 9 0 1 0 9 9h-9zM15 3.6A9 9 0 0 1 20.4 9H15z" />
               </svg>
               <span>Spending</span>
-            </span>
+            </button>
 
             <button
               type="button"

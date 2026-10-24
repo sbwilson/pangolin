@@ -49,6 +49,31 @@ export function AppSidebar({ me, signOut, className }: AppSidebarProps) {
           </Link>
 
           <Link
+            to="/spending"
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            activeProps={{
+              className: "bg-accent font-semibold text-primary",
+              "aria-current": "page",
+            }}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 3a9 9 0 1 0 9 9h-9z" />
+              <path d="M15 3.6A9 9 0 0 1 20.4 9H15z" />
+            </svg>
+            <span>Spending</span>
+          </Link>
+
+          <Link
             to="/transactions"
             className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             activeProps={{

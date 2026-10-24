@@ -401,8 +401,8 @@ describe("tags and categories", () => {
           ? { categoryGroups: [{ id: "g1", name: "Food" }] }
           : {
               categories: [
-                { id: "c1", name: "Groceries", groupId: "g1" },
-                { id: "c2", name: "Odd", groupId: "gone" },
+                { id: "c1", name: "Groceries", groupId: "g1", isFixedCost: false },
+                { id: "c2", name: "Odd", groupId: "gone", isFixedCost: true },
               ],
             };
         return new Response(JSON.stringify(body), {
@@ -412,8 +412,8 @@ describe("tags and categories", () => {
       }),
     );
     expect(await fetchCategories()).toEqual([
-      { id: "c1", name: "Groceries", groupId: "g1", groupName: "Food" },
-      { id: "c2", name: "Odd", groupId: "gone", groupName: "" },
+      { id: "c1", name: "Groceries", groupId: "g1", groupName: "Food", isFixedCost: false },
+      { id: "c2", name: "Odd", groupId: "gone", groupName: "", isFixedCost: true },
     ]);
   });
 });

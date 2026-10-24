@@ -507,6 +507,7 @@ export interface CategorySummary {
   readonly name: string;
   readonly groupId: string;
   readonly groupName: string;
+  readonly isFixedCost?: boolean;
 }
 
 export async function fetchCategories(): Promise<CategorySummary[]> {
@@ -517,11 +518,12 @@ export async function fetchCategories(): Promise<CategorySummary[]> {
   if (!categories.ok) throw await apiError(categories);
   if (!groups.ok) throw await apiError(groups);
   const names = new Map((await groups.json()).categoryGroups.map((g) => [g.id, g.name]));
-  return (await categories.json()).categories.map(({ id, name, groupId }) => ({
+  return (await categories.json()).categories.map(({ id, name, groupId, isFixedCost }) => ({
     id,
     name,
     groupId,
     groupName: names.get(groupId) ?? "",
+    ...(isFixedCost !== undefined ? { isFixedCost } : {}),
   }));
 }
 

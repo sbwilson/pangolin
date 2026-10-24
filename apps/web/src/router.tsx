@@ -10,12 +10,14 @@ import { parseSearch, stringifySearch } from "./routes/search.ts";
 import { settingsRoute } from "./routes/settings.tsx";
 import { setupRoute } from "./routes/setup.tsx";
 import { signInRoute } from "./routes/sign-in.tsx";
+import { spendingRoute } from "./routes/spending.tsx";
 import { transactionsRoute } from "./routes/transactions.tsx";
 
 // A later page adds its route object here, and nothing else in the shell changes.
 const routeTree = rootRoute.addChildren([
   homeRoute,
   cashFlowRoute,
+  spendingRoute,
   transactionsRoute,
   accountsRoute,
   accountRoute,
