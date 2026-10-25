@@ -197,7 +197,7 @@ test.describe("WCAG 2.2 AA accessibility audit", () => {
           { m: mode },
         );
         const page = await context.newPage();
-        await page.goto("/cash-flow");
+        await page.goto("/cash-flow?from=2026-04-01&to=2026-06-30");
         await page.waitForLoadState("domcontentloaded");
         await expect(page.getByRole("heading", { level: 2, name: "Cash flow" })).toBeVisible();
         await expect(page.getByText("Money in")).toBeVisible();
@@ -238,7 +238,7 @@ test.describe("WCAG 2.2 AA accessibility audit", () => {
           { m: mode },
         );
         const page = await context.newPage();
-        await page.goto("/spending");
+        await page.goto("/spending?from=2026-04-01&to=2026-06-30");
         await page.waitForLoadState("domcontentloaded");
         await expect(page.getByRole("heading", { level: 2, name: "Spending" })).toBeVisible();
         await expect(page.getByTestId("share-line")).toBeVisible();
@@ -290,7 +290,7 @@ test.describe("WCAG 2.2 AA accessibility audit", () => {
         const page = await context.newPage();
         await page.goto("/net-worth");
         await page.waitForLoadState("domcontentloaded");
-        await expect(page.getByRole("heading", { name: "Net worth" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Net worth", exact: true })).toBeVisible();
         await expect(page.getByTestId("net-worth-kpis")).toBeVisible();
         await expect(page.getByTestId("trend-card")).toBeVisible();
         await expect(page.getByTestId("assets-card")).toBeVisible();
@@ -581,8 +581,12 @@ test.describe("WCAG 2.2 AA dark mode theme contrast audit", () => {
 
 test.describe("WCAG 1.4.10 320 px reflow audit", () => {
   const routes = [
-    { path: "/cash-flow", name: "Cash flow", testId: "cash-flow-tiles" },
-    { path: "/spending", name: "Spending", testId: "bar-lists-card" },
+    {
+      path: "/cash-flow?from=2026-04-01&to=2026-06-30",
+      name: "Cash flow",
+      testId: "cash-flow-tiles",
+    },
+    { path: "/spending?from=2026-04-01&to=2026-06-30", name: "Spending", testId: "bar-lists-card" },
     { path: "/net-worth", name: "Net worth", testId: "net-worth-kpis" },
   ] as const;
 
@@ -601,7 +605,7 @@ test.describe("WCAG 1.4.10 320 px reflow audit", () => {
         const page = await context.newPage();
         await page.goto(path);
         await page.waitForLoadState("domcontentloaded");
-        await expect(page.getByRole("heading", { name })).toBeVisible();
+        await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
         await expect(page.getByTestId(testId)).toBeVisible();
 
         const overflow = await page.evaluate(() => ({
@@ -658,7 +662,7 @@ test.describe("375 px phone responsive audit", () => {
     try {
       await watchCsp(context, cspViolations);
       const page = await context.newPage();
-      await page.goto("/cash-flow");
+      await page.goto("/cash-flow?from=2026-04-01&to=2026-06-30");
       await page.waitForLoadState("domcontentloaded");
       await expect(page.getByRole("heading", { level: 2, name: "Cash flow" })).toBeVisible();
 
@@ -698,7 +702,7 @@ test.describe("375 px phone responsive audit", () => {
     try {
       await watchCsp(context, cspViolations);
       const page = await context.newPage();
-      await page.goto("/spending");
+      await page.goto("/spending?from=2026-04-01&to=2026-06-30");
       await page.waitForLoadState("domcontentloaded");
       await expect(page.getByRole("heading", { level: 2, name: "Spending" })).toBeVisible();
 
@@ -740,7 +744,7 @@ test.describe("375 px phone responsive audit", () => {
       const page = await context.newPage();
       await page.goto("/net-worth");
       await page.waitForLoadState("domcontentloaded");
-      await expect(page.getByRole("heading", { name: "Net worth" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Net worth", exact: true })).toBeVisible();
 
       await expect(page.getByTestId("net-worth-kpis")).toBeVisible();
       await expect(page.getByTestId("trend-card")).toBeVisible();
