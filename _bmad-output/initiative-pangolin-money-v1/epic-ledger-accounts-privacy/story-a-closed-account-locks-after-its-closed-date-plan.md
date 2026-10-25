@@ -3,7 +3,7 @@ title: 'A closed account locks after its closed date'
 type: 'feature'
 ticket: '23'
 created: '2026-10-07'
-status: 'built'
+status: done
 baseline_revision: '97ae1df6ae0feb8828a1c3057839f4ef54c1daf6'
 route: 'full'
 route_source: 'auto'

@@ -3,7 +3,7 @@ title: 'Tracer bullet: one account''s transactions, seen per viewer'
 type: 'feature'
 ticket: '1'
 created: '2026-10-04'
-status: 'built'
+status: done
 baseline_revision: '496e09e4d5b50b28951027ef3b698bae675c6599'
 route: 'full'
 route_source: 'auto'

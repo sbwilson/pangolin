@@ -3,7 +3,7 @@ title: 'Re-auth dialog and account lifecycle settings'
 type: 'feature'
 ticket: 5
 created: '2026-10-18'
-status: 'built'
+status: done
 baseline_revision: '4307ba771b4af33373739af9c7f11123d1dba3e6'
 route: 'full'
 route_source: 'auto'

@@ -3,7 +3,7 @@ title: 'Theme engine and preferences persistence'
 type: 'feature'
 ticket: '2'
 created: '2026-10-17'
-status: 'built'
+status: done
 baseline_revision: 'b0529443a43fd0f9565e5a7a5e6e30cc33073236'
 route: 'full'
 route_source: 'auto'

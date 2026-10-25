@@ -3,7 +3,7 @@ title: 'Web stack: router, table and virtual list, Tailwind and shadcn'
 type: 'feature'
 ticket: '1'
 created: '2026-10-04'
-status: 'built'
+status: done
 baseline_revision: '82e05724a25219194835b75618b89cd3d2ab2343'
 route: 'full'
 route_source: 'auto'

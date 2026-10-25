@@ -3,7 +3,7 @@ title: 'Either person may share a public account and change who is on it'
 type: 'feature'
 ticket: '20'
 created: '2026-10-06'
-status: 'built'
+status: done
 baseline_revision: '2925774b9df7b04f991890dbbf27607d8ad15abc'
 route: 'full'
 route_source: 'auto'

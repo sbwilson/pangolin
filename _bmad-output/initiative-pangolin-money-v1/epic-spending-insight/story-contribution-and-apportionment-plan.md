@@ -4,7 +4,7 @@ type: 'feature'
 ticket: '3'
 created: '2026-10-24'
 baseline_revision: '3ba0a9c12f1a12ae4fe2176244a51a2060a81e80'
-status: 'built'
+status: done
 route: 'full'
 route_source: 'auto'
 review: 'thorough'

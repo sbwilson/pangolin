@@ -3,7 +3,7 @@ title: 'Accounts module'
 type: 'feature'
 ticket: '4'
 created: '2026-10-04'
-status: 'built'
+status: done
 baseline_revision: '85af142490d063c08c65621056378a0a7145d775'
 route: 'full'
 route_source: 'auto'

@@ -3,7 +3,7 @@ title: 'Privacy suite: search, export and audit'
 type: 'feature'
 ticket: '7'
 created: '2026-10-09'
-status: 'built'
+status: done
 baseline_revision: '7ba615342332545b7c84841b8c88343315fe07ad'
 route: 'full'
 route_source: 'auto'

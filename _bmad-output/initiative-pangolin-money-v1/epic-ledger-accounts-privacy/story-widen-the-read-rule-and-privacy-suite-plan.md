@@ -3,7 +3,7 @@ title: 'Widen the read rule and privacy suite'
 type: 'chore'
 ticket: '18'
 created: '2026-10-06'
-status: 'built'
+status: done
 baseline_revision: 'fc36bf7033db54ddb959496fc371950ed6bd3002'
 route: 'full'
 route_source: 'auto'

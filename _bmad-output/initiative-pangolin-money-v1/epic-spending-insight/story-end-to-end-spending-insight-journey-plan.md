@@ -3,7 +3,7 @@ title: 'End-to-end spending-insight journey'
 type: 'test'
 ticket: '11'
 created: '2026-10-25'
-status: 'built'
+status: done
 baseline_revision: '073b5916af7c9161525effb8ef866e5c47362562'
 route: 'full'
 route_source: 'auto'

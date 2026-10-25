@@ -3,7 +3,7 @@ title: 'Tracer bullet: flowKind and the Cash flow landing page'
 type: 'feature'
 ticket: '1'
 created: '2026-10-23'
-status: 'built'
+status: done
 baseline_revision: 'd9513ea88f5bb99cb36c1fde399a598e882f2d40'
 route: 'full'
 route_source: 'auto'

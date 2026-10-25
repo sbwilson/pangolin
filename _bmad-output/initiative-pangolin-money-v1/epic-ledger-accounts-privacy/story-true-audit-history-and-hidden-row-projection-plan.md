@@ -3,7 +3,7 @@ title: 'True audit history and hidden-row projection'
 type: 'bugfix'
 ticket: 14
 created: '2026-10-05'
-status: 'built'
+status: done
 route: 'full'
 route_source: 'auto'
 review: 'thorough'

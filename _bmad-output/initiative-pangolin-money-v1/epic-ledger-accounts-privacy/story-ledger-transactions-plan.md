@@ -3,7 +3,7 @@ title: 'Ledger: transactions'
 type: 'feature'
 ticket: '6'
 created: '2026-10-04'
-status: 'built'
+status: done
 baseline_revision: 'fbea231ed83eff67d56daf576f45f67b78898dab'
 route: 'full'
 route_source: 'auto'

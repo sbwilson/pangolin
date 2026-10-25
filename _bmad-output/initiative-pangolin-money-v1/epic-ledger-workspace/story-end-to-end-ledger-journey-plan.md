@@ -3,7 +3,7 @@ title: 'End-to-end ledger journey'
 type: 'feature'
 ticket: 10
 created: '2026-10-16'
-status: 'built'
+status: done
 baseline_revision: '5a423288b494c06cc528bfcd1a9383db671e81af'
 route: 'oneshot'
 route_source: 'auto'

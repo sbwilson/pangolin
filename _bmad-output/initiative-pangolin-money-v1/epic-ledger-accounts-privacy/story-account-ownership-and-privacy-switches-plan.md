@@ -3,7 +3,7 @@ title: 'Account ownership and privacy switches'
 type: 'bugfix'
 ticket: 15
 created: '2026-10-05'
-status: 'built'
+status: done
 route: 'full'
 route_source: 'auto'
 review: 'thorough'

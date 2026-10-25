@@ -3,7 +3,7 @@ title: 'WCAG 2.2 AA automated axe audit harness'
 type: 'feature'
 ticket: 6
 created: '2026-10-18'
-status: 'built'
+status: done
 baseline_revision: '2fce49e8e61d3f4342e7defd03e1fef0baf730a6'
 route: 'full'
 route_source: 'auto'

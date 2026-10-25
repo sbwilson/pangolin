@@ -3,7 +3,7 @@ title: 'Ledger: splits, provenance, beneficiary and tags'
 type: 'feature'
 ticket: '13'
 created: '2026-10-04'
-status: 'built'
+status: done
 baseline_revision: '6ecdf2c75403edc909260e1c2d09631d9d1b52ec'
 route: 'full'
 route_source: 'auto'

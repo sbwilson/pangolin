@@ -3,7 +3,7 @@ title: 'Account screens (Accounts page and /accounts/:id)'
 type: 'feature'
 ticket: '4'
 created: '2026-10-07'
-status: 'built'
+status: done
 baseline_revision: '1e0e2b5d057bba0dac5eee67ac1e5fa1a0954d86'
 route: 'full'
 route_source: 'auto'

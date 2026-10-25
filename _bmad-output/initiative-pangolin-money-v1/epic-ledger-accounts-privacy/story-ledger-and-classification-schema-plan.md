@@ -3,7 +3,7 @@ title: 'Ledger and classification schema'
 type: 'feature'
 ticket: '2'
 created: '2026-10-04'
-status: 'built'
+status: done
 baseline_revision: '1697f3f044775c32fadbc2f3aaf5727f27d00033'
 route: 'full'
 route_source: 'auto'

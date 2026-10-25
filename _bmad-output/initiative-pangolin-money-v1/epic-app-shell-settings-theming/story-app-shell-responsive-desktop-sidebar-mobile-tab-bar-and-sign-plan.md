@@ -3,7 +3,7 @@ title: 'App shell: responsive desktop sidebar, mobile tab bar, and /sign-in rout
 type: 'feature'
 ticket: 1
 created: '2026-10-17'
-status: 'built'
+status: done
 baseline_revision: 'd1e1e7263afbab9153d150c44190cc2485bb35ec'
 route: 'full'
 route_source: 'auto'

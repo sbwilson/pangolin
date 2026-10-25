@@ -4,7 +4,7 @@ type: 'bugfix'
 ticket: ''
 created: '2026-10-07'
 baseline_revision: '2f8fc9129f9d758a89c48ba5dd61d3ee2c008aca'
-status: 'built'
+status: done
 route: 'full'
 route_source: 'auto'
 review: 'thorough'

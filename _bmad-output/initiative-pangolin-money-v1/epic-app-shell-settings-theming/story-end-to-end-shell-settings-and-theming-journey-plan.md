@@ -3,7 +3,7 @@ title: 'End-to-end shell, settings, and theming journey'
 type: 'feature'
 ticket: '8'
 created: '2026-10-19'
-status: 'built'
+status: done
 baseline_revision: '0afe64ba063ab6a0082b638821d5cd66619a9678'
 route: 'full'
 route_source: 'auto'

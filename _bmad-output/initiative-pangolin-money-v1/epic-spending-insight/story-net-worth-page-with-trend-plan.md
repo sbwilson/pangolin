@@ -3,7 +3,7 @@ title: 'Net worth page with trend'
 type: 'feature'
 ticket: '8'
 created: '2026-10-24'
-status: 'built'
+status: done
 baseline_revision: '97cd3215bdfa5c9746afd90658182fc48192ff0a'
 route: 'full'
 route_source: 'auto'

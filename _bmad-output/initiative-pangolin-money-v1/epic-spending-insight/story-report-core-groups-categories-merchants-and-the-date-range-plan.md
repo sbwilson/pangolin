@@ -3,7 +3,7 @@ title: 'Report core: groups, categories, merchants and the date range'
 type: 'feature'
 ticket: '2'
 created: '2026-10-23'
-status: 'built'
+status: done
 baseline_revision: '3e8bb5cb3dd6498e278410e4623fca8f1fe0496b'
 route: 'full'
 route_source: 'auto'

@@ -3,7 +3,7 @@ title: 'ECharts and the Sankey with its table and lists'
 type: 'feature'
 ticket: '5'
 created: '2026-10-24'
-status: 'built'
+status: done
 baseline_revision: 'a2dcc94c5a23e11d957394c108b4c4db38d434cd'
 route: 'full'
 route_source: 'auto'

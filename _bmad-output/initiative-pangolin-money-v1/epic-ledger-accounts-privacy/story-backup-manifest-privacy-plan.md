@@ -3,7 +3,7 @@ title: 'Backup manifest privacy'
 type: 'bugfix'
 ticket: '17'
 created: '2026-10-06'
-status: 'built'
+status: done
 baseline_revision: 'bfd0abbeaf3a0976f37cba302bfa0826ebcdd7d0'
 route: 'full'
 route_source: 'auto'

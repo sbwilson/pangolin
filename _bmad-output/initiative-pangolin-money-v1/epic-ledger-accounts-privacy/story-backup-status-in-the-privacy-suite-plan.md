@@ -3,7 +3,7 @@ title: 'Backup status in the privacy suite'
 type: 'chore'
 ticket: '22'
 created: '2026-10-06'
-status: 'built'
+status: done
 baseline_revision: '513085a6090b3a1789031ad8c7d44c42b087112b'
 route: 'full'
 route_source: 'auto'

@@ -3,7 +3,7 @@ title: 'Drop the backup figures from the stored row'
 type: 'chore'
 ticket: '21'
 created: '2026-10-06'
-status: 'built'
+status: done
 baseline_revision: '03d6fe3818d10c08af701a993f02db1cb827a925'
 route: 'full'
 route_source: 'auto'

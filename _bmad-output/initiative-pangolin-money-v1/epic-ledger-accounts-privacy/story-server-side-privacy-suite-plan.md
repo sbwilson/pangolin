@@ -3,7 +3,7 @@ title: 'Server-side privacy suite'
 type: 'feature'
 ticket: '10'
 created: '2026-10-05'
-status: 'built'
+status: done
 baseline_revision: '06a5288e1266831bc42c40e38b0fa9256c6b79e1'
 route: 'full'
 route_source: 'auto'

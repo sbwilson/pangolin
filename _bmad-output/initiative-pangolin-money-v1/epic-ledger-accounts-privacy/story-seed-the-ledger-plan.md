@@ -3,7 +3,7 @@ title: 'Seed the ledger'
 type: 'feature'
 ticket: '8'
 created: '2026-10-04'
-status: 'built'
+status: done
 baseline_revision: '6fa4f2690aff22323cf1b99ccb84190fef66854f'
 route: 'full'
 route_source: 'auto'

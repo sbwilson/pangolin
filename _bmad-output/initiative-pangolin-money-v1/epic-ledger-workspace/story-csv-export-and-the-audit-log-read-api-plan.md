@@ -3,7 +3,7 @@ title: 'CSV export and the audit-log read API'
 type: 'feature'
 ticket: '6'
 created: '2026-10-08'
-status: 'built'
+status: done
 baseline_revision: '7145643f573b8dfb4a183afff7a861bfc77afe87'
 route: 'full'
 route_source: 'auto'

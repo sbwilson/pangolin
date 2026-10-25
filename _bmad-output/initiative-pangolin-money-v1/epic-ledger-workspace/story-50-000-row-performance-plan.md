@@ -3,7 +3,7 @@ title: '50,000-row performance'
 type: 'feature'
 ticket: '8'
 created: '2026-10-13'
-status: 'built'
+status: done
 baseline_revision: '4547f0457593b5576e7434e9d87c770e2d4c3638'
 route: 'full'
 route_source: 'auto'

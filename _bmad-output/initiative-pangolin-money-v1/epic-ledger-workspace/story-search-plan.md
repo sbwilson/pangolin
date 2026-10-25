@@ -3,7 +3,7 @@ title: 'Search (FTS5 index, search API, list text filter, basic UI)'
 type: 'feature'
 ticket: '5'
 created: '2026-10-07'
-status: 'built'
+status: done
 baseline_revision: 'e9fa95c38e7285aa03846ec3f101599d67382c04'
 route: 'full'
 route_source: 'auto'

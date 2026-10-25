@@ -3,7 +3,7 @@ title: 'Settings page framework: System status and Signed-in devices'
 type: 'feature'
 ticket: 3
 created: '2026-10-18'
-status: 'built'
+status: done
 baseline_revision: 'b33136af620fb50dfe345fd8ac212255004e15f6'
 route: 'full'
 route_source: 'auto'

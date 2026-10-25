@@ -3,7 +3,7 @@ title: 'Biggest little leaks'
 type: 'feature'
 ticket: '7'
 created: '2026-10-24'
-status: 'built'
+status: done
 baseline_revision: '845eab73ad6fb174d6845298de9fba712fcd38d7'
 route: 'full'
 route_source: 'auto'

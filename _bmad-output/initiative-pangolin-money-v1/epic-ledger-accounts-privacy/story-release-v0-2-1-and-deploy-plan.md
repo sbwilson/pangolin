@@ -3,7 +3,7 @@ title: 'Release v0.2.1 and deploy'
 type: 'chore'
 ticket: '19'
 created: '2026-10-06'
-status: 'built'
+status: done
 baseline_revision: '84a66994371dcb4f7d4f99c4e5287a93b8a1a825'
 route: 'full'
 route_source: 'auto'

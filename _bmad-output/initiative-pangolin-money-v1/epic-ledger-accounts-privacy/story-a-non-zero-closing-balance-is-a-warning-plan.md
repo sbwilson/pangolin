@@ -3,7 +3,7 @@ title: 'A non-zero closing balance is a warning'
 type: 'feature'
 ticket: '24'
 created: '2026-10-07'
-status: 'built'
+status: done
 baseline_revision: 'bf81e3e817d3960f82ac2b9df1497c2b33383174'
 route: 'full'
 route_source: 'auto'

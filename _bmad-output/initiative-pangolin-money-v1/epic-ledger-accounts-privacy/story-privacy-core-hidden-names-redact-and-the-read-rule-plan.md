@@ -3,7 +3,7 @@ title: 'Privacy core: hidden names, redact and the read rule'
 type: 'feature'
 ticket: '3'
 created: '2026-10-04'
-status: 'built'
+status: done
 baseline_revision: '0c424d74c6a38733da0661c65217e6daf07d7726'
 route: 'full'
 route_source: 'auto'

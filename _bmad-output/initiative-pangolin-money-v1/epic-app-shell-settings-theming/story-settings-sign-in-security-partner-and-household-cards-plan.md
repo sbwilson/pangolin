@@ -3,7 +3,7 @@ title: 'Settings: Sign-in & security, Partner, and Household cards'
 type: 'feature'
 ticket: 4
 created: '2026-10-18'
-status: 'built'
+status: done
 baseline_revision: '43117262b7c3bdc0fb8a6e582865412b099e0e72'
 route: 'full'
 route_source: 'auto'

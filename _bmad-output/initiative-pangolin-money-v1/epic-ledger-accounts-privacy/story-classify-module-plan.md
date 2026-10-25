@@ -3,7 +3,7 @@ title: 'Classify module'
 type: 'feature'
 ticket: '5'
 created: '2026-10-04'
-status: 'built'
+status: done
 baseline_revision: '2a41bbe275abea9c2a059f974e5a2c1b8b55f412'
 route: 'full'
 route_source: 'auto'
