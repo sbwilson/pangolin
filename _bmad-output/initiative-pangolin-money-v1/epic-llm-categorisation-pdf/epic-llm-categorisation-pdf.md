@@ -18,6 +18,22 @@ One LlmProvider interface with OpenAI-compatible and Anthropic-compatible adapte
 
 Categorisation mostly happens by itself and any bank's PDF statement can be imported. Using the app weekly instead of the spreadsheets is the M2 gate.
 
+## Requirements
+
+Source: SPEC.md CAP-1, CAP-2, categorisation.md, import-pipeline.md, and UX design.
+
+- LLM-1: LlmProvider abstraction in `packages/llm` with OpenAI-compatible and Anthropic-compatible adapters and contract test suite against `tools/mock-llm` replaying recorded error, rate limit, timeout, and refusal fixtures (CAP-2).
+- LLM-2: Provider configuration, AES-GCM encrypted API keys at rest, LAN address detection for `is_local`, cloud opt-in flags (`cloud_pdf`, `cloud_rows`), and evaluation harness scoring accuracy, calibration, and latency on labelled synthetic transactions (CAP-2).
+- LLM-3: Transaction categorisation batching engine with SQLite FTS5 few-shot search over visible transactions, Zod schema validation, `suggestion` table recording, and cloud privacy guardrail (CAP-2).
+- LLM-4: Settings › LLM providers card at `/settings#llm-providers` with provider configuration, purpose assignments, test connection, live request preview produced by the real request builder (AD-6), and re-authentication guard (CAP-2).
+- LLM-5: Review inbox integration at `/review`: bulk-accept card for ≥ 90% confidence suggestions, individual suggestion cards, and resolution via `ledger.setSplitField` with provenance `llm` (CAP-2).
+- LLM-6: Set-aside row interpretation (`row_interpret`) for unreadable CSV/OFX/QIF rows: local-by-default, cloud only with explicit opt-in, never for private accounts, proposing schema-validated transaction fixes with user confirmation (CAP-1, CAP-2).
+- LLM-7: PDF statement extraction engine with pdf.js, vision fallback rejection, page-by-page schema extraction, and deterministic balance verification checks (opening + Σ amounts = closing to the cent, running balance, date range, and account validation) (CAP-1).
+- LLM-8: PDF statement upload via Import popover, encrypted attachment storage (`data/attachments/<HMAC>`, AD-21), and side-by-side visual correction UI displaying extracted rows beside page images on error (CAP-1).
+- LLM-9: Clean payee name & website domain extraction, `net`-lane egress-proxied logo fetch job, local attachment serving, and private payee privacy guard (CAP-2).
+- LLM-10: Refactor sweep across `packages/llm`, `packages/importers`, `packages/app`, and `apps/web` (CAP-1, CAP-2).
+- LLM-11: Milestone M2 gate verification, end-to-end Playwright tests, WCAG 2.2 AA axe audit, and release v0.2.6 deployment to `pang-dev` (CAP-1, CAP-2, CAP-16).
+
 ## Done when
 
 1. We use it weekly instead of the spreadsheets. (M2 gate)
@@ -50,3 +66,8 @@ packages/llm and PDF extraction in packages/importers. CAP-2 part: LLM suggestio
 - Waits on epic-platform-foundations because: the job runner and the mock LLM server.
 - Waits on epic-import-dedupe-transfers because: the pipeline stages, import_row staging, set-aside rows, attachment storage and the review inbox.
 - Waits on epic-app-shell-settings-theming because: the LLM providers card sits on its Settings page.
+- Decision (2026-10-26, inception): Tracer bullet is entry 1 (LlmProvider abstraction with OpenAI and Anthropic adapters and mock contract tests).
+- Decision (2026-10-26, inception): Entry 3 (Categorisation engine) precedes Entry 4 (Settings UI) so the real categorisation request builder exists for the live Settings preview per AD-6.
+- Decision (2026-10-26, user): Entry 6 (`row_interpret`) implements transaction proposals only; loan rate-change proposals are deferred to epic-loans-property (epic 14).
+- Decision (2026-10-26, user): Entry 7 rejects scanned PDFs lacking a text layer with a clear message if the configured model lacks vision capability.
+- Decision (2026-10-26, inception): Release target for Milestone M2 gate is release v0.2.6 (since v0.2.5 was released in epic 4).
