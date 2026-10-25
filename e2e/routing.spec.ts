@@ -1,52 +1,9 @@
 // Story 12.1: the router. A setup link's `token` is typed in the route's search params, read
 // once, then dropped from the URL (and history) with a replace; a deep link opens its page
 // inside the shell.
-import { existsSync } from "node:fs";
 import type { Browser } from "@playwright/test";
-import { firstSessionFile, loadAccount, signInWithPassword } from "./helpers/account.ts";
+import { alexSession, loadAccount, signInWithPassword } from "./helpers/account.ts";
 import { expect, test, watchCsp } from "./helpers/csp.ts";
-
-let signedIn: Promise<string> | undefined;
-
-/**
- * Signs Alex in once with password and TOTP and saves the session. The partner's session from
- * registration is no use here: the recovery spec, which runs first, resets the partner's access.
- * A TOTP code cannot be replayed within its 30 second step and an earlier spec may have just used
- * this one, so a sign-in that does not land waits for the next step and tries once more.
- */
-function alexSession(browser: Browser): Promise<string> {
-  if (existsSync(firstSessionFile)) {
-    return Promise.resolve(firstSessionFile);
-  }
-  signedIn ??= (async () => {
-    const account = loadAccount();
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const context = await browser.newContext();
-      try {
-        const page = await context.newPage();
-        await signInWithPassword(page, account);
-        const landed = await page
-          .getByText("Signed in as Alex")
-          .waitFor({ timeout: 10_000 })
-          .then(
-            () => true,
-            () => false,
-          );
-        if (landed) {
-          await context.storageState({ path: firstSessionFile });
-          return firstSessionFile;
-        }
-      } catch {
-        // Transient error during sign in attempt; proceed to wait and retry
-      } finally {
-        await context.close();
-      }
-      await new Promise((resolve) => setTimeout(resolve, 30_000 - (Date.now() % 30_000) + 500));
-    }
-    throw new Error("Alex could not sign in with password and TOTP (twice)");
-  })();
-  return signedIn;
-}
 
 test("a setup link's token is read once and then leaves the URL", async ({ page }) => {
   await page.goto("/setup");

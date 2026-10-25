@@ -1,12 +1,12 @@
 import { existsSync } from "node:fs";
-import { loadAccount, partnerSessionFile, signInWithPassword } from "./helpers/account.ts";
+import { alexSession, partnerSessionFile } from "./helpers/account.ts";
 import { expect, test } from "./helpers/csp.ts";
 
 test.describe("Net Worth Page", () => {
-  test("renders KPIs, trend with table toggle, and verifies hand sums", async ({ page }) => {
+  test("renders KPIs, trend with table toggle, and verifies hand sums", async ({ browser }) => {
+    const context = await browser.newContext({ storageState: await alexSession(browser) });
+    const page = await context.newPage();
     await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
-    // If a saved session file exists, use it or sign in with password
-    await signInWithPassword(page, loadAccount());
 
     // Navigate to /net-worth
     await page.goto("/net-worth");
@@ -62,16 +62,17 @@ test.describe("Net Worth Page", () => {
     await expect(forecastLink).toHaveAttribute("aria-disabled", "true");
   });
 
-  test("partner cannot see private accounts of the other partner", async ({ browser, page }) => {
+  test("partner cannot see private accounts of the other partner", async ({ browser }) => {
     // Only run if partner session file exists
     if (!existsSync(partnerSessionFile)) {
       test.skip();
       return;
     }
 
-    // First user signs in and views net worth
+    // First user views net worth
+    const alexContext = await browser.newContext({ storageState: await alexSession(browser) });
+    const page = await alexContext.newPage();
     await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
-    await signInWithPassword(page, loadAccount("first"));
     await page.goto("/net-worth");
     await expect(page.getByRole("heading", { level: 1, name: "Net worth" })).toBeVisible();
 

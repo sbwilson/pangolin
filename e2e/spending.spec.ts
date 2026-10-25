@@ -1,12 +1,8 @@
-import { loadAccount, signInWithPassword } from "./helpers/account.ts";
+import { alexSession, loadAccount, signInWithPassword } from "./helpers/account.ts";
 import { expect, test } from "./helpers/csp.ts";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const day = (year: number, month: number, date: number) => `${year}-${pad(month)}-${pad(date)}`;
-
-function localDay(date: Date): string {
-  return day(date.getFullYear(), date.getMonth() + 1, date.getDate());
-}
 
 function lastDay(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -27,10 +23,11 @@ function formatCents(cents: number, currency = "AUD"): string {
 
 test.describe("Spending Page", () => {
   test("renders spending page with bar lists, category bars, correct period change and drill-down", async ({
-    page,
+    browser,
   }) => {
+    const context = await browser.newContext({ storageState: await alexSession(browser) });
+    const page = await context.newPage();
     await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
-    await signInWithPassword(page, loadAccount());
 
     // Navigate to /spending
     await page.goto("/spending");
@@ -70,7 +67,7 @@ test.describe("Spending Page", () => {
     const fromParam = url.searchParams.get("from");
     const toParam = url.searchParams.get("to");
     const activeRange =
-      fromParam && toParam ? { from: fromParam, to: toParam } : quarterRange(localDay(new Date()));
+      fromParam && toParam ? { from: fromParam, to: toParam } : quarterRange("2026-07-15");
 
     // Fetch the server's spending report for category breakdown
     const spendingQuery = `from=${activeRange.from}&to=${activeRange.to}&by=category`;

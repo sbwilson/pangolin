@@ -1,11 +1,5 @@
 import { existsSync } from "node:fs";
-import type { Browser } from "@playwright/test";
-import {
-  firstSessionFile,
-  loadAccount,
-  partnerSessionFile,
-  signInWithPassword,
-} from "./helpers/account.ts";
+import { alexSession, partnerSessionFile } from "./helpers/account.ts";
 import { expect, test, watchCsp } from "./helpers/csp.ts";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -25,42 +19,6 @@ function quarterRange(today: string): { from: string; to: string } {
   const first = Math.floor((month - 1) / 3) * 3 + 1;
   const last = first + 2;
   return { from: day(year, first, 1), to: day(year, last, lastDay(year, last)) };
-}
-
-let signedIn: Promise<string> | undefined;
-
-function alexSession(browser: Browser): Promise<string> {
-  if (existsSync(firstSessionFile)) {
-    return Promise.resolve(firstSessionFile);
-  }
-  signedIn ??= (async () => {
-    const account = loadAccount();
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const context = await browser.newContext();
-      try {
-        const page = await context.newPage();
-        await signInWithPassword(page, account);
-        const landed = await page
-          .getByText("Signed in as Alex")
-          .waitFor({ timeout: 10_000 })
-          .then(
-            () => true,
-            () => false,
-          );
-        if (landed) {
-          await context.storageState({ path: firstSessionFile });
-          return firstSessionFile;
-        }
-      } catch {
-        // Transient error during sign in attempt; proceed to wait and retry
-      } finally {
-        await context.close();
-      }
-      await new Promise((resolve) => setTimeout(resolve, 30_000 - (Date.now() % 30_000) + 500));
-    }
-    throw new Error("Alex could not sign in with password and TOTP (twice)");
-  })();
-  return signedIn;
 }
 
 test.describe("End-to-end spending insight journey", () => {
@@ -121,8 +79,8 @@ test.describe("End-to-end spending insight journey", () => {
       const pnlTable = page.getByTestId("pnl-table");
       await expect(pnlTable).toBeVisible();
 
-      // Switch back to Flow to verify re-mount
-      const flowButton = page.getByRole("button", { name: "Flow" });
+      // Switch back to Sankey to verify re-mount
+      const flowButton = page.getByRole("button", { name: "Sankey" });
       await flowButton.click();
       await expect(page.getByTestId("sankey-chart")).toBeVisible();
 

@@ -224,7 +224,7 @@ export function SankeyCard({ pnlGroup, pnlCategory, range, keptCents }: SankeyCa
       </header>
 
       {viewMode === "table" || hasRenderError ? (
-        <div>
+        <div key="table-view">
           {hasRenderError ? (
             <p role="alert" className="mb-3 text-xs text-muted-foreground">
               Sankey chart unavailable. Showing Profit & loss table instead.
@@ -238,7 +238,12 @@ export function SankeyCard({ pnlGroup, pnlCategory, range, keptCents }: SankeyCa
           />
         </div>
       ) : (
-        <div ref={containerRef} data-testid="sankey-chart" className="w-full h-96 min-h-[384px]" />
+        <div
+          key="sankey-chart"
+          ref={containerRef}
+          data-testid="sankey-chart"
+          className="w-full h-96 min-h-[384px]"
+        />
       )}
     </div>
   );

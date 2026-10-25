@@ -1,12 +1,13 @@
-import { loadAccount, signInWithPassword } from "./helpers/account.ts";
+import { alexSession } from "./helpers/account.ts";
 import { expect, test } from "./helpers/csp.ts";
 
 test.describe("Cash Flow & Sankey", () => {
   test("desktop renders Sankey and P&L table with matching totals and zero CSP violations", async ({
-    page,
+    browser,
   }) => {
+    const context = await browser.newContext({ storageState: await alexSession(browser) });
+    const page = await context.newPage();
     await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
-    await signInWithPassword(page, loadAccount());
 
     await page.goto("/cash-flow");
     await expect(page.getByRole("heading", { level: 2, name: "Cash flow" })).toBeVisible();
@@ -44,8 +45,8 @@ test.describe("Cash Flow & Sankey", () => {
     const pnlTable = page.getByTestId("pnl-table");
     await expect(pnlTable).toBeVisible();
 
-    // Switch back to Flow to verify chart re-mounts without blank canvas
-    const flowButton = page.getByRole("button", { name: "Flow" });
+    // Switch back to Sankey to verify chart re-mounts without blank canvas
+    const flowButton = page.getByRole("button", { name: "Sankey" });
     await expect(flowButton).toBeVisible();
     await flowButton.click();
     await expect(page.getByTestId("sankey-chart")).toBeVisible();
@@ -96,11 +97,14 @@ test.describe("Cash Flow & Sankey", () => {
   });
 
   test("phone view (< md, 375 px) renders P&L table directly with no chart canvas", async ({
-    page,
+    browser,
   }) => {
+    const context = await browser.newContext({
+      storageState: await alexSession(browser),
+      viewport: { width: 375, height: 667 },
+    });
+    const page = await context.newPage();
     await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
-    await signInWithPassword(page, loadAccount());
-    await page.setViewportSize({ width: 375, height: 667 });
 
     await page.goto("/cash-flow");
     await expect(page.getByRole("heading", { level: 2, name: "Cash flow" })).toBeVisible();

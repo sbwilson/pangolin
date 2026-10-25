@@ -2,10 +2,10 @@
 // link comes from the server's data directory, and the first person's credentials are saved
 // for later specs to sign in with.
 import { execSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Page } from "@playwright/test";
+import { type Browser, expect, type Page } from "@playwright/test";
 import { totp } from "./totp.ts";
 
 export interface Account {
@@ -83,4 +83,43 @@ export async function saveRecoveryCodes(page: Page): Promise<string[]> {
   await page.getByLabel("I have saved these codes").check();
   await continueButton.click();
   return codes;
+}
+
+let signedIn: Promise<string> | undefined;
+
+/**
+ * Signs Alex in once with password and TOTP and saves the session.
+ */
+export function alexSession(browser: Browser): Promise<string> {
+  if (existsSync(firstSessionFile)) {
+    return Promise.resolve(firstSessionFile);
+  }
+  signedIn ??= (async () => {
+    const account = loadAccount();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const context = await browser.newContext();
+      try {
+        const page = await context.newPage();
+        await signInWithPassword(page, account);
+        const landed = await page
+          .getByText("Signed in as Alex")
+          .waitFor({ timeout: 10_000 })
+          .then(
+            () => true,
+            () => false,
+          );
+        if (landed) {
+          await context.storageState({ path: firstSessionFile });
+          return firstSessionFile;
+        }
+      } catch {
+        // Transient error during sign in attempt; proceed to wait and retry
+      } finally {
+        await context.close();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 30_000 - (Date.now() % 30_000) + 500));
+    }
+    throw new Error("Alex could not sign in with password and TOTP (twice)");
+  })();
+  return signedIn;
 }
