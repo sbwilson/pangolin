@@ -148,6 +148,13 @@
       "when": 1792568463960,
       "tag": "0020_batch_opening_balance",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1792982400000,
+      "tag": "0021_llm_provider",
+      "breakpoints": true
     }
   ]
 }

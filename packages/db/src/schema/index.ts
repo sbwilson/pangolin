@@ -24,6 +24,7 @@ export { importHandoff } from "./import-handoff.ts";
 export { importRow } from "./import-row.ts";
 export { institution } from "./institution.ts";
 export { job } from "./job.ts";
+export { llmProvider, llmPurposeAssignment } from "./llm-provider.ts";
 export { loginAttempt } from "./login-attempt.ts";
 export { payee } from "./payee.ts";
 export { payeeAlias } from "./payee-alias.ts";

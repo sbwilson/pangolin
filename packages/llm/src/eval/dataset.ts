@@ -1,0 +1,230 @@
+/**
+ * Labelled synthetic transaction dataset and category choices for evaluating LLM models.
+ */
+
+export interface EvalItem {
+  readonly id: string;
+  readonly description: string;
+  readonly amountCents: number;
+  readonly date: string;
+  readonly expectedCategoryId: string;
+  readonly expectedPayeeName?: string | undefined;
+  readonly expectedWebsiteDomain?: string | undefined;
+}
+
+export interface CategoryChoice {
+  readonly id: string;
+  readonly name: string;
+  readonly group: string;
+}
+
+export const CATEGORY_CHOICES: ReadonlyArray<CategoryChoice> = [
+  { id: "salary", name: "Salary", group: "Income" },
+  { id: "groceries", name: "Groceries", group: "Food" },
+  { id: "dining-out", name: "Dining out", group: "Food" },
+  { id: "takeaway-delivery", name: "Takeaway and delivery", group: "Food" },
+  { id: "coffee", name: "Coffee", group: "Food" },
+  { id: "alcohol", name: "Alcohol", group: "Food" },
+  { id: "rent", name: "Rent", group: "Housing" },
+  { id: "mortgage-repayments", name: "Mortgage repayments", group: "Housing" },
+  { id: "rates-strata", name: "Rates and strata", group: "Housing" },
+  { id: "home-maintenance", name: "Home maintenance", group: "Housing" },
+  { id: "electricity", name: "Electricity", group: "Utilities" },
+  { id: "gas", name: "Gas", group: "Utilities" },
+  { id: "water", name: "Water", group: "Utilities" },
+  { id: "internet", name: "Internet", group: "Utilities" },
+  { id: "mobile", name: "Mobile", group: "Utilities" },
+  { id: "fuel", name: "Fuel", group: "Transport" },
+  { id: "public-transport", name: "Public transport", group: "Transport" },
+  { id: "tolls", name: "Tolls", group: "Transport" },
+  { id: "parking", name: "Parking", group: "Transport" },
+  { id: "gp-specialists", name: "GP and specialists", group: "Health" },
+  { id: "pharmacy", name: "Pharmacy", group: "Health" },
+  { id: "fitness", name: "Fitness", group: "Health" },
+  { id: "clothing", name: "Clothing", group: "Personal" },
+  { id: "entertainment", name: "Entertainment", group: "Lifestyle" },
+  { id: "subscriptions", name: "Subscriptions", group: "Lifestyle" },
+];
+
+export const SYNTHETIC_DATASET: ReadonlyArray<EvalItem> = [
+  {
+    id: "tx-001",
+    description: "WOOLWORTHS 1234 BONDI",
+    amountCents: -5840,
+    date: "2026-09-01",
+    expectedCategoryId: "groceries",
+    expectedPayeeName: "Woolworths",
+    expectedWebsiteDomain: "woolworths.com.au",
+  },
+  {
+    id: "tx-002",
+    description: "COLES SUPERMARKETS SURRY HILLS",
+    amountCents: -7215,
+    date: "2026-09-02",
+    expectedCategoryId: "groceries",
+    expectedPayeeName: "Coles",
+    expectedWebsiteDomain: "coles.com.au",
+  },
+  {
+    id: "tx-003",
+    description: "ALDI STORES CHATSWOOD",
+    amountCents: -4530,
+    date: "2026-09-03",
+    expectedCategoryId: "groceries",
+    expectedPayeeName: "Aldi",
+    expectedWebsiteDomain: "aldi.com.au",
+  },
+  {
+    id: "tx-004",
+    description: "ORIGIN ENERGY ELEC 987654",
+    amountCents: -18500,
+    date: "2026-09-04",
+    expectedCategoryId: "electricity",
+    expectedPayeeName: "Origin Energy",
+    expectedWebsiteDomain: "originenergy.com.au",
+  },
+  {
+    id: "tx-005",
+    description: "AGL GAS PAYMENT DD",
+    amountCents: -9420,
+    date: "2026-09-05",
+    expectedCategoryId: "gas",
+    expectedPayeeName: "AGL",
+    expectedWebsiteDomain: "agl.com.au",
+  },
+  {
+    id: "tx-006",
+    description: "SYDNEY WATER RATES & CHARGES",
+    amountCents: -24000,
+    date: "2026-09-06",
+    expectedCategoryId: "water",
+    expectedPayeeName: "Sydney Water",
+    expectedWebsiteDomain: "sydneywater.com.au",
+  },
+  {
+    id: "tx-007",
+    description: "TELSTRA POST-PAID MOBILE",
+    amountCents: -6500,
+    date: "2026-09-07",
+    expectedCategoryId: "mobile",
+    expectedPayeeName: "Telstra",
+    expectedWebsiteDomain: "telstra.com.au",
+  },
+  {
+    id: "tx-008",
+    description: "AUSSIE BROADBAND INTERNET",
+    amountCents: -8900,
+    date: "2026-09-08",
+    expectedCategoryId: "internet",
+    expectedPayeeName: "Aussie Broadband",
+    expectedWebsiteDomain: "aussiebroadband.com.au",
+  },
+  {
+    id: "tx-009",
+    description: "AMPOL SERVICE STATION ALEXANDRIA",
+    amountCents: -8240,
+    date: "2026-09-09",
+    expectedCategoryId: "fuel",
+    expectedPayeeName: "Ampol",
+    expectedWebsiteDomain: "ampol.com.au",
+  },
+  {
+    id: "tx-010",
+    description: "TRANSPORT FOR NSW OPAL AUTO-TOPUP",
+    amountCents: -4000,
+    date: "2026-09-10",
+    expectedCategoryId: "public-transport",
+    expectedPayeeName: "Transport for NSW",
+    expectedWebsiteDomain: "transportnsw.info",
+  },
+  {
+    id: "tx-011",
+    description: "CHEMIST WAREHOUSE BROADWAY",
+    amountCents: -3480,
+    date: "2026-09-11",
+    expectedCategoryId: "pharmacy",
+    expectedPayeeName: "Chemist Warehouse",
+    expectedWebsiteDomain: "chemistwarehouse.com.au",
+  },
+  {
+    id: "tx-012",
+    description: "NETFLIX AUSTRALIA",
+    amountCents: -1899,
+    date: "2026-09-12",
+    expectedCategoryId: "subscriptions",
+    expectedPayeeName: "Netflix",
+    expectedWebsiteDomain: "netflix.com",
+  },
+  {
+    id: "tx-013",
+    description: "SPOTIFY P12345678 SYDNEY",
+    amountCents: -1399,
+    date: "2026-09-13",
+    expectedCategoryId: "subscriptions",
+    expectedPayeeName: "Spotify",
+    expectedWebsiteDomain: "spotify.com",
+  },
+  {
+    id: "tx-014",
+    description: "BWS LIQUOR STORE NEWTOWN",
+    amountCents: -4800,
+    date: "2026-09-14",
+    expectedCategoryId: "alcohol",
+    expectedPayeeName: "BWS",
+    expectedWebsiteDomain: "bws.com.au",
+  },
+  {
+    id: "tx-015",
+    description: "UBER EATS ORDER SYDNEY",
+    amountCents: -3750,
+    date: "2026-09-15",
+    expectedCategoryId: "takeaway-delivery",
+    expectedPayeeName: "Uber Eats",
+    expectedWebsiteDomain: "ubereats.com",
+  },
+  {
+    id: "tx-016",
+    description: "ZARA AUSTRALIA PTY LTD",
+    amountCents: -12900,
+    date: "2026-09-16",
+    expectedCategoryId: "clothing",
+    expectedPayeeName: "Zara",
+    expectedWebsiteDomain: "zara.com",
+  },
+  {
+    id: "tx-017",
+    description: "BUNNINGS 382000 ALEXANDRIA",
+    amountCents: -6750,
+    date: "2026-09-17",
+    expectedCategoryId: "home-maintenance",
+    expectedPayeeName: "Bunnings",
+    expectedWebsiteDomain: "bunnings.com.au",
+  },
+  {
+    id: "tx-018",
+    description: "JB HI-FI CITY SYDNEY",
+    amountCents: -14900,
+    date: "2026-09-18",
+    expectedCategoryId: "entertainment",
+    expectedPayeeName: "JB Hi-Fi",
+    expectedWebsiteDomain: "jbhifi.com.au",
+  },
+  {
+    id: "tx-019",
+    description: "FITNESS FIRST DIRECT DEBIT",
+    amountCents: -4400,
+    date: "2026-09-19",
+    expectedCategoryId: "fitness",
+    expectedPayeeName: "Fitness First",
+    expectedWebsiteDomain: "fitnessfirst.com.au",
+  },
+  {
+    id: "tx-020",
+    description: "CITY OF SYDNEY RATES 2026/27",
+    amountCents: -34500,
+    date: "2026-09-20",
+    expectedCategoryId: "rates-strata",
+    expectedPayeeName: "City of Sydney",
+    expectedWebsiteDomain: "cityofsydney.nsw.gov.au",
+  },
+];

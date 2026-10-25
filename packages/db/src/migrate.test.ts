@@ -67,10 +67,11 @@ describe("committed migrations", () => {
       "0018_batch_undo_and_importer",
       "0019_batch_reconcile",
       "0020_batch_opening_balance",
+      "0021_llm_provider",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 21 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 21 });
-    expect(schemaVersion(db)).toBe(21);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 22 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 22 });
+    expect(schemaVersion(db)).toBe(22);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });
@@ -143,6 +144,34 @@ describe("committed migrations", () => {
       notnull: number;
     }[];
     expect(snapCols.find((c) => c.name === "import_batch_id")?.notnull).toBe(0);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+
+  it("creates llm_provider and llm_purpose_assignment tables when 0020 upgrades to 0021", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 21));
+    expect(schemaVersion(db)).toBe(21);
+    expect(migrate(db, migrations.slice(0, 22)).applied).toEqual(["0021_llm_provider"]);
+    expect(schemaVersion(db)).toBe(22);
+
+    const providerCols = (
+      db.pragma("table_info(llm_provider)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(providerCols).toContain("id");
+    expect(providerCols).toContain("name");
+    expect(providerCols).toContain("kind");
+    expect(providerCols).toContain("base_url");
+    expect(providerCols).toContain("model");
+    expect(providerCols).toContain("api_key_ciphertext");
+    expect(providerCols).toContain("api_key_last4");
+    expect(providerCols).toContain("is_local");
+    expect(providerCols).toContain("cloud_pdf");
+    expect(providerCols).toContain("cloud_rows");
+
+    const assignmentCols = (
+      db.pragma("table_info(llm_purpose_assignment)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(assignmentCols).toEqual(["purpose", "provider_id", "updated_at"]);
     expect(db.pragma("foreign_key_check")).toEqual([]);
   });
 

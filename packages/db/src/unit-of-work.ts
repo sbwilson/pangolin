@@ -46,6 +46,7 @@ import { auditHiddenUntil, auditPayeeHidden, visibleAudit } from "./privacy.ts";
 import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
 import { createAttachmentRepo, createImportHandoffRepo } from "./repositories/handoff-repos.ts";
 import { createImportBatchRepo, createImportRowRepo } from "./repositories/import-repos.ts";
+import { createLlmProviderRepo } from "./repositories/llm-provider.ts";
 import { createPersonPreferenceRepo } from "./repositories/person-preference.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
 import { auditLog } from "./schema/audit-log.ts";
@@ -266,6 +267,7 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     importRows: createImportRowRepo(orm, () => guard(scope)),
     attachments: createAttachmentRepo(orm, () => guard(scope)),
     importHandoffs: createImportHandoffRepo(orm, () => guard(scope)),
+    llmProviders: createLlmProviderRepo(orm, () => guard(scope)),
   };
 }
 
@@ -392,6 +394,15 @@ export function createUnitOfWork(db: Db): UnitOfWork {
             importHandoffs: {
               findForRecipient: repos.importHandoffs.findForRecipient,
               listForSender: repos.importHandoffs.listForSender,
+            },
+            llmProviders: {
+              findById: repos.llmProviders.findById,
+              findSafe: repos.llmProviders.findSafe,
+              listSafe: repos.llmProviders.listSafe,
+              findAssignment: repos.llmProviders.findAssignment,
+              listAssignments: repos.llmProviders.listAssignments,
+              findForPurpose: repos.llmProviders.findForPurpose,
+              findSafeForPurpose: repos.llmProviders.findSafeForPurpose,
             },
           };
         },

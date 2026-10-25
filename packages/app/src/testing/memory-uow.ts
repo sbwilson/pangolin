@@ -41,6 +41,10 @@ import type {
   JobRepo,
   JobRow,
   LeakMerchantRow,
+  LlmProviderRepo,
+  LlmProviderRow,
+  LlmProviderSafeView,
+  LlmPurposeAssignmentRow,
   LoginAttemptRepo,
   LoginAttemptRow,
   OwnedAccount,
@@ -89,6 +93,7 @@ import {
   BALANCE_SOURCES,
   CATEGORY_GROUP_KINDS,
   INSTITUTION_KINDS,
+  LLM_PURPOSES,
   RULE_ORIGINS,
   SPLIT_SOURCES,
   TRANSFER_MATCHES,
@@ -144,6 +149,8 @@ export interface MemoryState {
   sessions: Record<string, number>;
   /** Password hash per user ID, standing in for `auth_account.password`. */
   passwords: Record<string, string>;
+  llmProviders: LlmProviderRow[];
+  llmPurposeAssignments: LlmPurposeAssignmentRow[];
 }
 
 export interface MemoryUnitOfWork extends UnitOfWork {
@@ -3003,6 +3010,99 @@ function ruleRepo(working: MemoryState, check: () => void): RuleRepo {
   };
 }
 
+function toSafeProvider(row: LlmProviderRow): LlmProviderSafeView {
+  const { apiKeyCiphertext: _, ...safe } = row;
+  return safe;
+}
+
+function llmProviderRepo(working: MemoryState, check: () => void): LlmProviderRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.llmProviders.some((p) => p.id === row.id)) {
+        throw new Error(`llm_provider with id ${row.id} already exists`);
+      }
+      working.llmProviders.push(row);
+    },
+    update: (row) => {
+      check();
+      const index = working.llmProviders.findIndex((p) => p.id === row.id);
+      if (index === -1) return false;
+      const existing = working.llmProviders[index];
+      if (!existing) return false;
+      working.llmProviders[index] = { ...row, createdAt: existing.createdAt };
+      return true;
+    },
+    delete: (id) => {
+      check();
+      const before = working.llmProviders.length;
+      working.llmProviders = working.llmProviders.filter((p) => p.id !== id);
+      working.llmPurposeAssignments = working.llmPurposeAssignments.filter(
+        (a) => a.providerId !== id,
+      );
+      return working.llmProviders.length < before;
+    },
+    findById: (id) => {
+      check();
+      return working.llmProviders.find((p) => p.id === id);
+    },
+    findSafe: (id) => {
+      check();
+      const row = working.llmProviders.find((p) => p.id === id);
+      return row ? toSafeProvider(row) : undefined;
+    },
+    listSafe: () => {
+      check();
+      return working.llmProviders.map(toSafeProvider);
+    },
+    assignPurpose: (purpose, providerId, updatedAt) => {
+      check();
+      if (!LLM_PURPOSES.includes(purpose)) {
+        throw new Error(`Invalid LLM purpose: ${purpose}`);
+      }
+      if (!working.llmProviders.some((p) => p.id === providerId)) {
+        throw new Error("FOREIGN KEY constraint failed: llm_purpose_assignment.provider_id");
+      }
+      const index = working.llmPurposeAssignments.findIndex((a) => a.purpose === purpose);
+      const row: LlmPurposeAssignmentRow = { purpose, providerId: providerId as never, updatedAt };
+      if (index >= 0) {
+        working.llmPurposeAssignments[index] = row;
+      } else {
+        working.llmPurposeAssignments.push(row);
+      }
+    },
+    findAssignment: (purpose) => {
+      check();
+      return working.llmPurposeAssignments.find((a) => a.purpose === purpose);
+    },
+    listAssignments: () => {
+      check();
+      return [...working.llmPurposeAssignments];
+    },
+    unassignPurpose: (purpose) => {
+      check();
+      const before = working.llmPurposeAssignments.length;
+      working.llmPurposeAssignments = working.llmPurposeAssignments.filter(
+        (a) => a.purpose !== purpose,
+      );
+      return working.llmPurposeAssignments.length < before;
+    },
+    findForPurpose: (purpose) => {
+      check();
+      const assignment = working.llmPurposeAssignments.find((a) => a.purpose === purpose);
+      if (!assignment) return undefined;
+      return working.llmProviders.find((p) => p.id === assignment.providerId);
+    },
+    findSafeForPurpose: (purpose) => {
+      check();
+      const assignment = working.llmPurposeAssignments.find((a) => a.purpose === purpose);
+      if (!assignment) return undefined;
+      const row = working.llmProviders.find((p) => p.id === assignment.providerId);
+      return row ? toSafeProvider(row) : undefined;
+    },
+  };
+}
+
 export function memoryUnitOfWork(
   settings: HouseholdSettingsRow = DEFAULT_SETTINGS,
 ): MemoryUnitOfWork {
@@ -3048,6 +3148,8 @@ export function memoryUnitOfWork(
       reEnrolmentLinks: [],
       sessions: {},
       passwords: {},
+      llmProviders: [],
+      llmPurposeAssignments: [],
     },
     failAudit: false,
     transaction<T>(fn: (tx: TxRepos) => T): T {
@@ -3092,6 +3194,8 @@ export function memoryUnitOfWork(
         reEnrolmentLinks: [...uow.state.reEnrolmentLinks],
         sessions: uow.state.sessions,
         passwords: uow.state.passwords,
+        llmProviders: [...uow.state.llmProviders],
+        llmPurposeAssignments: [...uow.state.llmPurposeAssignments],
       };
       let active = true;
       const check = () => {
@@ -3138,6 +3242,7 @@ export function memoryUnitOfWork(
         importRows: importRowRepo(working, check),
         attachments: attachmentRepo(working, check),
         importHandoffs: importHandoffRepo(working, check),
+        llmProviders: llmProviderRepo(working, check),
         recoveryBundle: {
           get: () => {
             check();
@@ -3190,6 +3295,8 @@ export function memoryUnitOfWork(
         uow.state.reEnrolmentLinks = working.reEnrolmentLinks;
         uow.state.sessions = working.sessions;
         uow.state.passwords = working.passwords;
+        uow.state.llmProviders = working.llmProviders;
+        uow.state.llmPurposeAssignments = working.llmPurposeAssignments;
         return result;
       } finally {
         active = false;
@@ -3322,6 +3429,16 @@ export function memoryUnitOfWork(
         importHandoffs: {
           findForRecipient: importHandoffRepo(uow.state, check).findForRecipient,
           listForSender: importHandoffRepo(uow.state, check).listForSender,
+        },
+        llmProviders: {
+          findById: (id) => llmProviderRepo(uow.state, check).findById(id),
+          findSafe: (id) => llmProviderRepo(uow.state, check).findSafe(id),
+          listSafe: () => llmProviderRepo(uow.state, check).listSafe(),
+          findAssignment: (purpose) => llmProviderRepo(uow.state, check).findAssignment(purpose),
+          listAssignments: () => llmProviderRepo(uow.state, check).listAssignments(),
+          findForPurpose: (purpose) => llmProviderRepo(uow.state, check).findForPurpose(purpose),
+          findSafeForPurpose: (purpose) =>
+            llmProviderRepo(uow.state, check).findSafeForPurpose(purpose),
         },
       });
     },

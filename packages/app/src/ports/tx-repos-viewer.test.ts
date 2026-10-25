@@ -50,6 +50,7 @@ const UNSCOPED_REPOS: Readonly<Record<string, string>> = {
     "encrypted-file metadata (a keyed hash name, mime, size); no statement content, and a file is reached only through the hand-off that links it",
   personPreferences:
     "a person's UI preferences (theme, mode), read and written by their own id; no ledger data",
+  llmProviders: "household-wide LLM provider configuration and purpose assignments",
 };
 
 /** `Repo.method` for each method that may take no viewer first, with the reason. */

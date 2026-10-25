@@ -1690,6 +1690,64 @@ export interface ImportHandoffRepo {
   ): { readonly id: string; readonly attachmentId: string | null }[];
 }
 
+export type LlmProviderKind = "openai" | "anthropic";
+
+export const LLM_PURPOSES = ["categorise", "pdf_extract", "row_interpret"] as const;
+export type LlmPurpose = (typeof LLM_PURPOSES)[number];
+
+/** Full LLM provider record including encrypted API key ciphertext for outbound execution. */
+export interface LlmProviderRow {
+  readonly id: Id<"LlmProvider">;
+  readonly name: string;
+  readonly kind: LlmProviderKind;
+  readonly baseUrl: string;
+  readonly model: string;
+  readonly apiKeyCiphertext: string | null;
+  readonly apiKeyLast4: string | null;
+  readonly isLocal: boolean;
+  readonly cloudPdf: boolean;
+  readonly cloudRows: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** Safe LLM provider read model with ciphertext omitted. */
+export interface LlmProviderSafeView {
+  readonly id: Id<"LlmProvider">;
+  readonly name: string;
+  readonly kind: LlmProviderKind;
+  readonly baseUrl: string;
+  readonly model: string;
+  readonly apiKeyLast4: string | null;
+  readonly isLocal: boolean;
+  readonly cloudPdf: boolean;
+  readonly cloudRows: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/** Assignment linking a purpose to an LLM provider. */
+export interface LlmPurposeAssignmentRow {
+  readonly purpose: LlmPurpose;
+  readonly providerId: Id<"LlmProvider">;
+  readonly updatedAt: string;
+}
+
+export interface LlmProviderRepo {
+  insert(row: LlmProviderRow): void;
+  update(row: LlmProviderRow): boolean;
+  delete(id: string): boolean;
+  findById(id: string): LlmProviderRow | undefined;
+  findSafe(id: string): LlmProviderSafeView | undefined;
+  listSafe(): LlmProviderSafeView[];
+  assignPurpose(purpose: LlmPurpose, providerId: string, updatedAt: string): void;
+  findAssignment(purpose: LlmPurpose): LlmPurposeAssignmentRow | undefined;
+  listAssignments(): LlmPurposeAssignmentRow[];
+  unassignPurpose(purpose: LlmPurpose): boolean;
+  findForPurpose(purpose: LlmPurpose): LlmProviderRow | undefined;
+  findSafeForPurpose(purpose: LlmPurpose): LlmProviderSafeView | undefined;
+}
+
 /** Repositories bound to one open transaction. They throw once that transaction has ended. */
 export interface TxRepos {
   readonly householdSettings: HouseholdSettingsRepo;
@@ -1724,6 +1782,7 @@ export interface TxRepos {
   readonly importRows: ImportRowRepo;
   readonly attachments: AttachmentRepo;
   readonly importHandoffs: ImportHandoffRepo;
+  readonly llmProviders: LlmProviderRepo;
 }
 
 /** The read-only subset of `TxRepos`, for queries. */
@@ -1785,6 +1844,16 @@ export interface ReadRepos {
   >;
   readonly importRows: Pick<ImportRowRepo, "listForBatch" | "find">;
   readonly importHandoffs: Pick<ImportHandoffRepo, "findForRecipient" | "listForSender">;
+  readonly llmProviders: Pick<
+    LlmProviderRepo,
+    | "findById"
+    | "findSafe"
+    | "listSafe"
+    | "findAssignment"
+    | "listAssignments"
+    | "findForPurpose"
+    | "findSafeForPurpose"
+  >;
 }
 
 export interface UnitOfWork {
