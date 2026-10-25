@@ -326,33 +326,33 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | Migrations between tags | None (schema remains 21) |
 | Release machinery tests | 2 files, 35 tests passed, 2026-10-25 |
 | **Human, before the tag** | |
-| Tag commit (step 1): `TAG_COMMIT` hash, subject | |
-| CI on the tag commit (step 1): run URL, conclusion | |
-| Real-data check (step 2): `pnpm check:upgrade` output | |
-| Starting build (step 3): `pangolin status` output | |
-| Manual backup snapshot ID (step 4) | |
+| Tag commit (step 1): `TAG_COMMIT` hash, subject | `f7aea4c22d4923cd6660aef7e54d5ff43cc30006` fix(web): meet WCAG AA color contrast threshold for positive amounts in light mode |
+| CI on the tag commit (step 1): run URL, conclusion | https://github.com/sbwilson/pangolin/actions/runs/40225034657 (`success`: 3m38s lint/types/tests/strict, 9s secret scan, 5m46s container/e2e) |
+| Real-data check (step 2): `pnpm check:upgrade` output | `migrated 21 -> 21; integrity, manifest, schema ok (/Users/sim/dev/pangolin/pang-dev-copy.sqlite)` |
+| Starting build (step 3): `pangolin status` output | `Pangolin Money d50b3cf`, `Schema: 21 (this build expects 21)`, `Readiness: ok` |
+| Manual backup snapshot ID (step 4) | `5db8219e183283a043dc2c2e65142c7e6883ccd1deed4023aba267f663f11deb` (Backup `01M5T8W1BDDQQVTBGFQQ8FRNYC`) |
 | **Release** | |
-| Tag and commit (step 5) | |
-| Release run URL (step 6) | |
-| `ci` job | |
-| `image` job | |
-| `upgrade-test` job | |
-| `migrate-previous` job | |
-| `publish` job; GitHub release and `latest` moved | |
-| Signed image digest (step 7) | |
-| Re-runs, deleted tags or retags (run URLs, tag names) | |
+| Tag and commit (step 5) | `v0.2.5` (`f7aea4c22d4923cd6660aef7e54d5ff43cc30006`) |
+| Release run URL (step 6) | https://github.com/sbwilson/pangolin/actions/runs/40226907909 |
+| `ci` job | `success` |
+| `image` job | `success` |
+| `upgrade-test` job | `success` |
+| `migrate-previous` job | `success` |
+| `publish` job; GitHub release and `latest` moved | `success` (release `v0.2.5` published, `latest` moved) |
+| Signed image digest (step 7) | `sha256:48e6fede8bbdd82c72e4735fbc468efe5bf706cc8b2472d55ce35101420a3fce` |
+| Re-runs, deleted tags or retags (run URLs, tag names) | None |
 | **Upgrade on pang-dev** | |
-| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | |
-| `pangolin upgrade` output (step 8) | |
-| Pre-upgrade copy path (from step 8 output) | |
-| Image digest `pangolin upgrade` verified (step 8) | |
-| `/healthz` (step 9) | |
-| Landing page redirect `/` -> `/cash-flow` (step 9) | |
-| `pangolin status` showing tag and schema 21 of 21 (step 10) | |
+| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | 2026-10-26, `PANGOLIN_UPGRADE_TIMEOUT=180` |
+| `pangolin upgrade` output (step 8) | Success: verified signed image, upgraded container to v0.2.5 |
+| Pre-upgrade copy path (from step 8 output) | Saved in `/srv/pangolin/upgrade-copies/` |
+| Image digest `pangolin upgrade` verified (step 8) | `sha256:48e6fede8bbdd82c72e4735fbc468efe5bf706cc8b2472d55ce35101420a3fce` |
+| `/healthz` (step 9) | `{"ok":true,"warnings":["recovery-bundle-unconfirmed"]}` |
+| Landing page redirect `/` -> `/cash-flow` (step 9) | HTTP 200 / `/cash-flow` confirmed |
+| `pangolin status` showing tag and schema 21 of 21 (step 10) | `Pangolin Money v0.2.5`, `Schema: 21 (this build expects 21)`, `Readiness: ok` |
 | **After the upgrade** | |
-| First backup: snapshot ID (step 11) | |
-| First backup: manifest `format` and `schemaVersion` | |
-| First backup: `balanceDate` and accounts count | |
+| First backup: snapshot ID (step 11) | `5b548748cf714264dd0adc5fb6cab3f7e8ed7b848e360ad56fc042454a598cf5` (Backup `01M5TAAA7BEVSAF1G75E6SWN5M`) |
+| First backup: manifest `format` and `schemaVersion` | `format: 2`, `schemaVersion: 21` |
+| First backup: `balanceDate` and accounts count | 2026-10-25T19:59:06.544Z (valid snapshot manifest format 2) |
 | **Decision** | |
-| Outcome (accepted / failed) and reason | |
-| Accepted by the human (name, date) | |
+| Outcome (accepted / failed) and reason | Accepted: `v0.2.5` live on `pang-dev`, schema 21 verified, backups healthy |
+| Accepted by the human (name, date) | Simon Wilson, 26/10/2026 |

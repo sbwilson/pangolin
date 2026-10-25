@@ -3,7 +3,7 @@ title: 'Release v0.2.5 and deploy'
 type: 'chore'
 ticket: '12'
 created: '2026-10-25'
-status: built
+status: complete
 baseline_revision: '094174981642ecdd2da7b2dadb0af4d47ad790d7'
 route: 'full'
 route_source: 'auto'
@@ -64,10 +64,10 @@ context:
 
 **Execution:**
 - [x] `docs/release-v0.2.5.md` -- Create release document -- Authored from v0.2.4 template tailored to Epic 4 features, schema 21, and checklist.
-- [x] `e2e/playwright.config.ts`, `e2e/routing.spec.ts`, `e2e/cash-flow.spec.ts`, `e2e/spending.spec.ts`, `e2e/net-worth.spec.ts`, `e2e/spending-insight.spec.ts` -- Pre-flight E2E stabilization -- Ensure test execution order, clock pinning to seed timeline (2026-07-15), and session management pass cleanly in CI container job.
-- [ ] `git` pre-flight & CI check -- Verify ancestry and green CI -- Confirm HEAD descends from `v0.2.4` and all checks (`pnpm typecheck`, `pnpm lint`, `vitest`, `check-boundaries`) pass locally and on GitHub Actions push.
-- [ ] Human execution support -- Support checklist steps -- Assist human with `pnpm check:upgrade` dry run, tagging `v0.2.5`, watching release workflow, `pangolin upgrade v0.2.5`, and capturing output.
-- [ ] `docs/release-v0.2.5.md` -- Populate evidence record -- Fill in all evidence fields and decision records from human-pasted outputs.
+- [x] `e2e/playwright.config.ts`, `e2e/routing.spec.ts`, `e2e/cash-flow.spec.ts`, `e2e/spending.spec.ts`, `e2e/net-worth.spec.ts`, `e2e/spending-insight.spec.ts`, `e2e/axe.spec.ts` -- Pre-flight E2E stabilization -- Ensure test execution order, seeded date parameters, and session management pass cleanly in CI container job.
+- [x] `git` pre-flight & CI check -- Verify ancestry and green CI -- Confirm HEAD descends from `v0.2.4` and all checks (`pnpm typecheck`, `pnpm lint`, `vitest`, `check-boundaries`) pass locally and on GitHub Actions push.
+- [x] Human execution support -- Support checklist steps -- Assist human with `pnpm check:upgrade` dry run, tagging `v0.2.5`, watching release workflow, `pangolin upgrade v0.2.5`, and capturing output.
+- [x] `docs/release-v0.2.5.md` -- Populate evidence record -- Fill in all evidence fields and decision records from human-pasted outputs.
 
 **Acceptance Criteria:**
 - Given the `v0.2.5` tag commit, CI on `develop` and all five jobs of `release.yml` on the tag pass.
