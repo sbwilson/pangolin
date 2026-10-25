@@ -2,25 +2,6 @@ import { existsSync } from "node:fs";
 import { alexSession, partnerSessionFile } from "./helpers/account.ts";
 import { expect, test, watchCsp } from "./helpers/csp.ts";
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const day = (year: number, month: number, date: number) => `${year}-${pad(month)}-${pad(date)}`;
-
-function localDay(date: Date): string {
-  return day(date.getFullYear(), date.getMonth() + 1, date.getDate());
-}
-
-function lastDay(year: number, month: number): number {
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
-function quarterRange(today: string): { from: string; to: string } {
-  const year = Number(today.slice(0, 4));
-  const month = Number(today.slice(5, 7));
-  const first = Math.floor((month - 1) / 3) * 3 + 1;
-  const last = first + 2;
-  return { from: day(year, first, 1), to: day(year, last, lastDay(year, last)) };
-}
-
 test.describe("End-to-end spending insight journey", () => {
   test("complete cross-epic journey across Cash Flow, Settings, Spending, and Net Worth for both partners", async ({
     browser,
@@ -30,7 +11,6 @@ test.describe("End-to-end spending insight journey", () => {
     try {
       await watchCsp(context, cspViolations);
       const page = await context.newPage();
-      await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
 
       // 1. Landing redirect from / to /cash-flow (Done-when 4)
       await page.goto("/");
@@ -44,6 +24,10 @@ test.describe("End-to-end spending insight journey", () => {
         await expect(tiles.getByText(label, { exact: true })).toBeVisible();
       }
       await expect(tiles.locator("dd")).toHaveCount(4);
+
+      // Navigate to seeded quarter range for reports and Sankey tests
+      await page.goto("/cash-flow?from=2026-04-01&to=2026-06-30");
+      await expect(page.getByRole("heading", { level: 2, name: "Cash flow" })).toBeVisible();
 
       // Verify apportioned share line and My share / Everything I can see toggle
       const shareLine = page.getByTestId("share-line");
@@ -181,7 +165,7 @@ test.describe("End-to-end spending insight journey", () => {
         await expect(radio5050).toHaveAttribute("aria-checked", "true");
 
         // Verify share line on Cash Flow under 50/50
-        await page.goto("/cash-flow");
+        await page.goto("/cash-flow?from=2026-04-01&to=2026-06-30");
         await expect(shareLine).toBeVisible();
         const activeUrl = new URL(page.url());
         const fromParam = activeUrl.searchParams.get("from");
@@ -189,7 +173,7 @@ test.describe("End-to-end spending insight journey", () => {
         const range =
           fromParam && toParam
             ? { from: fromParam, to: toParam }
-            : quarterRange(localDay(new Date()));
+            : { from: "2026-04-01", to: "2026-06-30" };
         const queryStr = `?from=${range.from}&to=${range.to}`;
 
         const alexShareRes = await page.request.get(`/api/reports/shared-apportionment${queryStr}`);
@@ -266,7 +250,7 @@ test.describe("End-to-end spending insight journey", () => {
       }
 
       // 5. Spending page category breakdown & Biggest Little Leaks (Done-when 1 & 4)
-      await page.goto("/spending");
+      await page.goto("/spending?from=2026-04-01&to=2026-06-30");
       await expect(page.getByRole("heading", { level: 2, name: "Spending" })).toBeVisible();
       await expect(page.getByTestId("share-line")).toBeVisible();
 
@@ -275,7 +259,7 @@ test.describe("End-to-end spending insight journey", () => {
       const spFrom = spendingUrl.searchParams.get("from");
       const spTo = spendingUrl.searchParams.get("to");
       const spRange =
-        spFrom && spTo ? { from: spFrom, to: spTo } : quarterRange(localDay(new Date()));
+        spFrom && spTo ? { from: spFrom, to: spTo } : { from: "2026-04-01", to: "2026-06-30" };
       const spQuery = `from=${spRange.from}&to=${spRange.to}&by=category`;
       const pnlCatRes = await page.request.get(`/api/reports/pnl?${spQuery}`);
       expect(pnlCatRes.status()).toBe(200);

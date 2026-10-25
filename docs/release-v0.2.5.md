@@ -96,10 +96,10 @@ The version is the tag. `package.json` stays `0.0.0` and there is no CHANGELOG f
      the ledger. Resolved in `e2e/playwright.config.ts` by introducing a `reports` project that depends
      on `chromium` (running `cash-flow`, `spending`, `net-worth`, and `spending-insight` after seeded
      ledger initialization and before `accounts` and `axe`).
-   - Identified unpinned date range issue: navigating to `/cash-flow` or `/spending` without explicit
-     query parameters defaulted to current quarter (October 2026), outside the seed's data window
-     (`DEFAULT_TODAY = "2026-07-15"`). Resolved by fixing browser time in `cash-flow.spec.ts`,
-     `spending.spec.ts`, and `spending-insight.spec.ts` via `page.clock.setFixedTime`.
+   - Identified unpinned date range and session invalidation issues: navigating to `/cash-flow` or `/spending` without explicit
+     query parameters defaulted to current quarter (outside the seed's data window), and Alex resetting Sam in `recovery.spec.ts`
+     invalidated `partnerSessionFile`. Resolved by passing explicit seeded range parameters (`?from=2026-04-01&to=2026-06-30`) in
+     report specs and preserving active session state in `recovery.spec.ts`.
    - Identified session eviction issue in `routing.spec.ts`: mobile sign-out deleted `first-session.json`
      via `rmSync`, while `alexSession` retained memoized state. Resolved by removing `rmSync` and adding
      `existsSync(firstSessionFile)` check.

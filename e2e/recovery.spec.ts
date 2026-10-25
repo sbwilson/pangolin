@@ -3,6 +3,7 @@
 // redeems to set a new password and enrol again; only Sam sees the notice. In order.
 import {
   loadAccount,
+  partnerSessionFile,
   saveAccount,
   saveRecoveryCodes,
   signInWithPassword,
@@ -120,8 +121,19 @@ test("Alex resets Sam's access: Sam sets a new password, re-enrols and alone see
     const secret = await sam.getByLabel("Secret key").inputValue();
     await sam.getByLabel("Authenticator code").fill(totp(secret));
     await sam.getByRole("button", { name: "Finish" }).click();
-    expect(await saveRecoveryCodes(sam)).toHaveLength(10);
+    const codes = await saveRecoveryCodes(sam);
+    expect(codes).toHaveLength(10);
     await expect(sam.getByText("Signed in as Sam")).toBeVisible();
+    await samContext.storageState({ path: partnerSessionFile });
+    saveAccount(
+      {
+        email: loadAccount("partner").email,
+        password: newPassword,
+        totpSecret: secret,
+        recoveryCodes: codes,
+      },
+      "partner",
+    );
     await sam.goto("/review");
     await expect(
       sam.getByText(/A one-time recovery link for your account was issued on .* by Alex\./),
@@ -156,6 +168,7 @@ test("Alex resets Sam's access: Sam sets a new password, re-enrols and alone see
     // Sam dismisses it.
     await sam.getByRole("button", { name: "Got it" }).click();
     await expect(sam.getByText(/A one-time recovery link for your account/)).toHaveCount(0);
+    await samContext.storageState({ path: partnerSessionFile });
   } finally {
     await samContext.close();
   }

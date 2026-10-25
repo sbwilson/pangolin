@@ -7,9 +7,7 @@ test.describe("Cash Flow & Sankey", () => {
   }) => {
     const context = await browser.newContext({ storageState: await alexSession(browser) });
     const page = await context.newPage();
-    await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
-
-    await page.goto("/cash-flow");
+    await page.goto("/cash-flow?from=2026-04-01&to=2026-06-30");
     await expect(page.getByRole("heading", { level: 2, name: "Cash flow" })).toBeVisible();
 
     // Verify KPI tiles
@@ -104,9 +102,7 @@ test.describe("Cash Flow & Sankey", () => {
       viewport: { width: 375, height: 667 },
     });
     const page = await context.newPage();
-    await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
-
-    await page.goto("/cash-flow");
+    await page.goto("/cash-flow?from=2026-04-01&to=2026-06-30");
     await expect(page.getByRole("heading", { level: 2, name: "Cash flow" })).toBeVisible();
 
     // On phone, P&L table is rendered directly under phone container

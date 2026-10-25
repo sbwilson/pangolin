@@ -6,7 +6,6 @@ test.describe("Net Worth Page", () => {
   test("renders KPIs, trend with table toggle, and verifies hand sums", async ({ browser }) => {
     const context = await browser.newContext({ storageState: await alexSession(browser) });
     const page = await context.newPage();
-    await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
 
     // Navigate to /net-worth
     await page.goto("/net-worth");
@@ -72,7 +71,6 @@ test.describe("Net Worth Page", () => {
     // First user views net worth
     const alexContext = await browser.newContext({ storageState: await alexSession(browser) });
     const page = await alexContext.newPage();
-    await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
     await page.goto("/net-worth");
     await expect(page.getByRole("heading", { level: 1, name: "Net worth" })).toBeVisible();
 
@@ -80,7 +78,6 @@ test.describe("Net Worth Page", () => {
     const partnerContext = await browser.newContext({ storageState: partnerSessionFile });
     try {
       const partnerPage = await partnerContext.newPage();
-      await partnerPage.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
       await partnerPage.goto("/net-worth");
       await expect(partnerPage.getByRole("heading", { level: 1, name: "Net worth" })).toBeVisible();
 

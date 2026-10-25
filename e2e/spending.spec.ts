@@ -1,21 +1,6 @@
 import { alexSession, loadAccount, signInWithPassword } from "./helpers/account.ts";
 import { expect, test } from "./helpers/csp.ts";
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const day = (year: number, month: number, date: number) => `${year}-${pad(month)}-${pad(date)}`;
-
-function lastDay(year: number, month: number): number {
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
-function quarterRange(today: string): { from: string; to: string } {
-  const year = Number(today.slice(0, 4));
-  const month = Number(today.slice(5, 7));
-  const first = Math.floor((month - 1) / 3) * 3 + 1;
-  const last = first + 2;
-  return { from: day(year, first, 1), to: day(year, last, lastDay(year, last)) };
-}
-
 function formatCents(cents: number, currency = "AUD"): string {
   const value = cents === 0 ? 0 : cents / 100;
   return new Intl.NumberFormat("en-AU", { style: "currency", currency }).format(value);
@@ -27,10 +12,9 @@ test.describe("Spending Page", () => {
   }) => {
     const context = await browser.newContext({ storageState: await alexSession(browser) });
     const page = await context.newPage();
-    await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
 
     // Navigate to /spending
-    await page.goto("/spending");
+    await page.goto("/spending?from=2026-04-01&to=2026-06-30");
     await expect(page.getByRole("heading", { level: 2, name: "Spending" })).toBeVisible();
 
     // Verify apportioned share line
@@ -62,12 +46,14 @@ test.describe("Spending Page", () => {
       categoryBarsCard.getByRole("heading", { name: "Spending by category" }),
     ).toBeVisible();
 
-    // Extract current URL range or derive dynamically from quarterRange(today)
+    // Extract current URL range or derive dynamically
     const url = new URL(page.url());
     const fromParam = url.searchParams.get("from");
     const toParam = url.searchParams.get("to");
     const activeRange =
-      fromParam && toParam ? { from: fromParam, to: toParam } : quarterRange("2026-07-15");
+      fromParam && toParam
+        ? { from: fromParam, to: toParam }
+        : { from: "2026-04-01", to: "2026-06-30" };
 
     // Fetch the server's spending report for category breakdown
     const spendingQuery = `from=${activeRange.from}&to=${activeRange.to}&by=category`;
