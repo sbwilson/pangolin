@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@pangolin/app": "workspace:*",
-    "@pangolin/shared": "workspace:*"
+    "@pangolin/shared": "workspace:*",
+    "zod": "4.6.5"
   }
 }

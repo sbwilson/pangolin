@@ -172,6 +172,9 @@ importers:
       '@pangolin/db':
         specifier: workspace:*
         version: link:packages/db
+      '@pangolin/mock-llm':
+        specifier: workspace:*
+        version: link:tools/mock-llm
       '@testing-library/dom':
         specifier: 10.4.2
         version: 10.4.2
@@ -394,6 +397,9 @@ importers:
       '@pangolin/shared':
         specifier: workspace:*
         version: link:../shared
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   packages/shared:
     dependencies:

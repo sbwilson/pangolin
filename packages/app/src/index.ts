@@ -544,6 +544,12 @@ export {
 export type { AttachmentStore } from "./ports/attachment-store.ts";
 export type { Clock } from "./ports/clock.ts";
 export type {
+  LlmProvider,
+  LlmUsage,
+  StructuredPrompt,
+  StructuredResponse,
+} from "./ports/llm-provider.ts";
+export type {
   CsvColumnMapping,
   DateFormat,
   ParsedStatementRow,

@@ -34,7 +34,10 @@ export const ALLOWED: Readonly<Record<string, Rule>> = {
   "packages/db": ADAPTER,
   "packages/importers": ADAPTER,
   "packages/connectors": ADAPTER,
-  "packages/llm": ADAPTER,
+  "packages/llm": {
+    ...ADAPTER,
+    testOnly: ["tools/mock-llm"],
+  },
   "apps/server": {
     allow: [
       "packages/app",
