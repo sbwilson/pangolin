@@ -105,7 +105,7 @@ export function LatestTransactionsCard({
                 <div className="shrink-0 text-right">
                   <span
                     className={`text-sm font-semibold tabular-nums ${
-                      isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"
+                      isPositive ? "text-emerald-700 dark:text-emerald-400" : "text-foreground"
                     }`}
                   >
                     {formatCents(txn.amountCents)}
