@@ -72,6 +72,7 @@ test.describe("End-to-end spending insight journey", () => {
     try {
       await watchCsp(context, cspViolations);
       const page = await context.newPage();
+      await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
 
       // 1. Landing redirect from / to /cash-flow (Done-when 4)
       await page.goto("/");

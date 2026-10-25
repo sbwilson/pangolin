@@ -35,11 +35,28 @@ export default defineConfig({
           testIgnore: [
             "auth.spec.ts",
             "restored.spec.ts",
+            "cash-flow.spec.ts",
+            "spending.spec.ts",
+            "net-worth.spec.ts",
+            "spending-insight.spec.ts",
             "accounts.spec.ts",
             "axe.spec.ts",
             "import.spec.ts",
           ],
           dependencies: ["auth"],
+          use: chrome,
+        },
+        // Reports read the ledger that ledger.spec seeds (once, into an empty ledger), so they run
+        // after chromium has completed and seeded the ledger, and before import.spec mutates it.
+        {
+          name: "reports",
+          testMatch: [
+            "cash-flow.spec.ts",
+            "spending.spec.ts",
+            "net-worth.spec.ts",
+            "spending-insight.spec.ts",
+          ],
+          dependencies: ["chromium"],
           use: chrome,
         },
         // Reads the ledger that ledger.spec seeds (once, into an empty ledger), so it runs after
@@ -48,7 +65,7 @@ export default defineConfig({
         {
           name: "accounts",
           testMatch: ["accounts.spec.ts", "import.spec.ts"],
-          dependencies: ["chromium"],
+          dependencies: ["reports"],
           use: chrome,
         },
         {

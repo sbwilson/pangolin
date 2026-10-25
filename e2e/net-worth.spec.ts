@@ -4,6 +4,7 @@ import { expect, test } from "./helpers/csp.ts";
 
 test.describe("Net Worth Page", () => {
   test("renders KPIs, trend with table toggle, and verifies hand sums", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
     // If a saved session file exists, use it or sign in with password
     await signInWithPassword(page, loadAccount());
 
@@ -69,6 +70,7 @@ test.describe("Net Worth Page", () => {
     }
 
     // First user signs in and views net worth
+    await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
     await signInWithPassword(page, loadAccount("first"));
     await page.goto("/net-worth");
     await expect(page.getByRole("heading", { level: 1, name: "Net worth" })).toBeVisible();
@@ -77,6 +79,7 @@ test.describe("Net Worth Page", () => {
     const partnerContext = await browser.newContext({ storageState: partnerSessionFile });
     try {
       const partnerPage = await partnerContext.newPage();
+      await partnerPage.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
       await partnerPage.goto("/net-worth");
       await expect(partnerPage.getByRole("heading", { level: 1, name: "Net worth" })).toBeVisible();
 

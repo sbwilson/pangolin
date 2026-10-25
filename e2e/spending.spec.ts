@@ -29,6 +29,7 @@ test.describe("Spending Page", () => {
   test("renders spending page with bar lists, category bars, correct period change and drill-down", async ({
     page,
   }) => {
+    await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
     await signInWithPassword(page, loadAccount());
 
     // Navigate to /spending

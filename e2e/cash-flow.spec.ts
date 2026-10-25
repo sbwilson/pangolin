@@ -5,6 +5,7 @@ test.describe("Cash Flow & Sankey", () => {
   test("desktop renders Sankey and P&L table with matching totals and zero CSP violations", async ({
     page,
   }) => {
+    await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
     await signInWithPassword(page, loadAccount());
 
     await page.goto("/cash-flow");
@@ -97,8 +98,9 @@ test.describe("Cash Flow & Sankey", () => {
   test("phone view (< md, 375 px) renders P&L table directly with no chart canvas", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 375, height: 667 });
+    await page.clock.setFixedTime(new Date("2026-07-15T12:00:00Z"));
     await signInWithPassword(page, loadAccount());
+    await page.setViewportSize({ width: 375, height: 667 });
 
     await page.goto("/cash-flow");
     await expect(page.getByRole("heading", { level: 2, name: "Cash flow" })).toBeVisible();
