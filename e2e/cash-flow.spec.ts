@@ -59,21 +59,21 @@ test.describe("Cash Flow & Sankey", () => {
     const keptText = await tiles.locator("dd").nth(2).innerText();
 
     const pnlIncomeText = await pnlTable
-      .locator("tr")
+      .locator("tbody tr")
       .filter({ hasText: "Income" })
       .first()
       .locator("td")
       .nth(1)
       .innerText();
     const pnlExpenseText = await pnlTable
-      .locator("tr")
+      .locator("tbody tr")
       .filter({ hasText: "Expenses" })
       .first()
       .locator("td")
       .nth(1)
       .innerText();
     const pnlKeptText = await pnlTable
-      .locator("tr")
+      .locator("tbody tr")
       .filter({ hasText: "Kept" })
       .first()
       .locator("td")

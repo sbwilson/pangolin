@@ -78,7 +78,7 @@ test.describe("End-to-end spending insight journey", () => {
 
       const pnlIncomeText = (
         await pnlTable
-          .locator("tr")
+          .locator("tbody tr")
           .filter({ hasText: "Income" })
           .first()
           .locator("td")
@@ -87,7 +87,7 @@ test.describe("End-to-end spending insight journey", () => {
       ).trim();
       const pnlExpenseText = (
         await pnlTable
-          .locator("tr")
+          .locator("tbody tr")
           .filter({ hasText: "Expenses" })
           .first()
           .locator("td")
@@ -96,7 +96,7 @@ test.describe("End-to-end spending insight journey", () => {
       ).trim();
       const pnlKeptText = (
         await pnlTable
-          .locator("tr")
+          .locator("tbody tr")
           .filter({ hasText: "Kept" })
           .first()
           .locator("td")
