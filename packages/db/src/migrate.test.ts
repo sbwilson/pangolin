@@ -68,10 +68,11 @@ describe("committed migrations", () => {
       "0019_batch_reconcile",
       "0020_batch_opening_balance",
       "0021_llm_provider",
+      "0022_suggestion",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 22 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 22 });
-    expect(schemaVersion(db)).toBe(22);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 23 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 23 });
+    expect(schemaVersion(db)).toBe(23);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });
@@ -172,6 +173,36 @@ describe("committed migrations", () => {
       db.pragma("table_info(llm_purpose_assignment)") as { name: string; notnull: number }[]
     ).map((c) => c.name);
     expect(assignmentCols).toEqual(["purpose", "provider_id", "updated_at"]);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+
+  it("creates suggestion table when 0021 upgrades to 0022", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 22));
+    expect(schemaVersion(db)).toBe(22);
+    expect(migrate(db, migrations.slice(0, 23)).applied).toEqual(["0022_suggestion"]);
+    expect(schemaVersion(db)).toBe(23);
+
+    const suggestionCols = (
+      db.pragma("table_info(suggestion)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(suggestionCols).toContain("id");
+    expect(suggestionCols).toContain("account_id");
+    expect(suggestionCols).toContain("transaction_id");
+    expect(suggestionCols).toContain("split_id");
+    expect(suggestionCols).toContain("source");
+    expect(suggestionCols).toContain("field");
+    expect(suggestionCols).toContain("suggested_value");
+    expect(suggestionCols).toContain("payee_name");
+    expect(suggestionCols).toContain("website_domain");
+    expect(suggestionCols).toContain("tax_category_id");
+    expect(suggestionCols).toContain("activity_id");
+    expect(suggestionCols).toContain("confidence");
+    expect(suggestionCols).toContain("model");
+    expect(suggestionCols).toContain("prompt_version");
+    expect(suggestionCols).toContain("outcome");
+    expect(suggestionCols).toContain("created_at");
+    expect(suggestionCols).toContain("resolved_at");
     expect(db.pragma("foreign_key_check")).toEqual([]);
   });
 

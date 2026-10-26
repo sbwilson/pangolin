@@ -199,6 +199,13 @@ export function setSplitField(ctx: UseCaseContext, input: SetSplitFieldInput): S
         });
       }
     }
+    const openSuggestion = tx.suggestions.findOpenForSplit(old.id, field);
+    if (openSuggestion) {
+      const isMatch = source === "llm" || (value !== null && String(value) === openSuggestion.suggestedValue);
+      const outcome = isMatch ? "accepted" : "superseded";
+      const resolvedAt = formatInstant(ctx.clock.now());
+      tx.suggestions.resolveOpen(old.id, field, outcome, resolvedAt);
+    }
     for (const listener of listeners) {
       listener(tx, audit, { transactionId: before.id, splitId: old.id, field, value, source });
     }

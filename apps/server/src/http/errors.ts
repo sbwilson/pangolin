@@ -11,6 +11,7 @@ const STATUS: Readonly<Record<ErrorCode | "Internal", ContentfulStatusCode>> = {
   // Authenticated, but the action needs a fresh sign-in; its own code tells it apart from 401.
   ReauthRequired: 403,
   RateLimited: 429,
+  PermissionDenied: 403,
   Internal: 500,
 };
 

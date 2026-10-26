@@ -39,6 +39,7 @@ const API_STATUS: Readonly<Record<ErrorCode, ApiStatus>> = {
   Unauthenticated: "UNAUTHORIZED",
   ReauthRequired: "FORBIDDEN",
   RateLimited: "TOO_MANY_REQUESTS",
+  PermissionDenied: "FORBIDDEN",
 };
 
 /** An `AppError` as better-auth's `APIError`, keeping its code and message; others unchanged. */

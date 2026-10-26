@@ -121,6 +121,30 @@ export {
   loadClassificationContext,
 } from "./classify/classify-transaction.ts";
 export {
+  CATEGORISE_BATCH_SIZE,
+  type CategoriseTransactionsContext,
+  type CategoriseTransactionsInput,
+  type CategoriseTransactionsResult,
+  categoriseTransactions,
+} from "./classify/categorise-engine.ts";
+export {
+  CATEGORISE_PROMPT_VERSION,
+  type BuildCategorisationRequestInput,
+  type CategoriseCategoryOption,
+  type CategoriseOutput,
+  type CategoriseRequestItem,
+  type CategoriseSuggestion,
+  buildCategorisationRequest,
+  categoriseOutputSchema,
+  categoriseSuggestionSchema,
+} from "./classify/categorise-request.ts";
+export {
+  type FewShotSearchInput,
+  fewShotSearch,
+  findFewShotExamples,
+  searchFewShot,
+} from "./classify/few-shot-search.ts";
+export {
   DEFAULT_CATEGORIES,
   DEFAULT_TAX_CATEGORIES,
   seedDefaults,
@@ -680,6 +704,13 @@ export {
   type SplitSource,
   type SplitTagged,
   type SplitTagRow,
+  SUGGESTION_OUTCOMES,
+  SUGGESTION_SOURCES,
+  type SuggestionOutcome,
+  type SuggestionRepo,
+  type SuggestionRow,
+  type SuggestionSource,
+  type FewShotExample,
   type TagRepo,
   type TagRow,
   type TaxCategoryRepo,

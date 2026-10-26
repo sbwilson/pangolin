@@ -24,6 +24,7 @@ describe("toApiError", () => {
     ["Conflict", 409],
     ["RateLimited", 429],
     ["ReauthRequired", 403],
+    ["PermissionDenied", 403],
   ] as const)("keeps an AppError %s as its code, with status %i", (code, status) => {
     const error = toApiError(new AppError(code, "m"));
     expect(error).toBeInstanceOf(APIError);

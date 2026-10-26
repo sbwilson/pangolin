@@ -9,6 +9,7 @@ export const ERROR_CODES = [
   "Unauthenticated",
   "ReauthRequired",
   "RateLimited",
+  "PermissionDenied",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

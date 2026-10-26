@@ -48,6 +48,7 @@ import { createAttachmentRepo, createImportHandoffRepo } from "./repositories/ha
 import { createImportBatchRepo, createImportRowRepo } from "./repositories/import-repos.ts";
 import { createLlmProviderRepo } from "./repositories/llm-provider.ts";
 import { createPersonPreferenceRepo } from "./repositories/person-preference.ts";
+import { createSuggestionRepo } from "./repositories/suggestion.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
 import { auditLog } from "./schema/audit-log.ts";
 import { householdSettings } from "./schema/household-settings.ts";
@@ -268,6 +269,7 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     attachments: createAttachmentRepo(orm, () => guard(scope)),
     importHandoffs: createImportHandoffRepo(orm, () => guard(scope)),
     llmProviders: createLlmProviderRepo(orm, () => guard(scope)),
+    suggestions: createSuggestionRepo(orm, () => guard(scope)),
   };
 }
 
@@ -403,6 +405,13 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               listAssignments: repos.llmProviders.listAssignments,
               findForPurpose: repos.llmProviders.findForPurpose,
               findSafeForPurpose: repos.llmProviders.findSafeForPurpose,
+            },
+            suggestions: {
+              findOpenForSplit: repos.suggestions.findOpenForSplit,
+              listOpenForSplit: repos.suggestions.listOpenForSplit,
+              listForTransaction: repos.suggestions.listForTransaction,
+              listOpenForAccount: repos.suggestions.listOpenForAccount,
+              findFewShot: repos.suggestions.findFewShot,
             },
           };
         },

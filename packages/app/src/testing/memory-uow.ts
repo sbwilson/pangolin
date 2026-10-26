@@ -28,6 +28,7 @@ import type {
   CategoryRepo,
   CategoryRow,
   CredentialRepo,
+  FewShotExample,
   FlowBreakdownRow,
   HouseholdSettingsRow,
   ImportBatchRepo,
@@ -72,6 +73,8 @@ import type {
   SplitRow,
   SplitTagged,
   SplitTagRow,
+  SuggestionRepo,
+  SuggestionRow,
   TagRepo,
   TagRow,
   TaxCategoryRepo,
@@ -151,6 +154,7 @@ export interface MemoryState {
   passwords: Record<string, string>;
   llmProviders: LlmProviderRow[];
   llmPurposeAssignments: LlmPurposeAssignmentRow[];
+  suggestions: SuggestionRow[];
 }
 
 export interface MemoryUnitOfWork extends UnitOfWork {
@@ -3103,6 +3107,161 @@ function llmProviderRepo(working: MemoryState, check: () => void): LlmProviderRe
   };
 }
 
+function suggestionRepo(working: MemoryState, check: () => void): SuggestionRepo {
+  const visible = (viewer: Viewer, accountId: string): boolean => {
+    if (!viewer) throw new TypeError("a viewer is required");
+    const acc = working.accounts.find((a) => a.id === accountId && a.deletedAt === null);
+    if (!acc) return false;
+    if (viewer.kind === "system") return true;
+    if (!acc.isPrivate) return true;
+    const owners = working.accountOwners.filter((o) => o.accountId === accountId);
+    return owners.some((o) => o.personId === viewer.personId);
+  };
+
+  return {
+    insert: (row) => {
+      check();
+      if (
+        row.resolvedAt === null &&
+        working.suggestions.some(
+          (s) => s.splitId === row.splitId && s.field === row.field && s.resolvedAt === null,
+        )
+      ) {
+        throw new Error(
+          `Open suggestion already exists for split ${row.splitId} and field ${row.field}`,
+        );
+      }
+      working.suggestions.push(row);
+    },
+
+    insertMany: (rows) => {
+      check();
+      for (const row of rows) {
+        if (
+          row.resolvedAt === null &&
+          working.suggestions.some(
+            (s) => s.splitId === row.splitId && s.field === row.field && s.resolvedAt === null,
+          )
+        ) {
+          throw new Error(
+            `Open suggestion already exists for split ${row.splitId} and field ${row.field}`,
+          );
+        }
+        working.suggestions.push(row);
+      }
+    },
+
+    findOpenForSplit: (splitId, field) => {
+      check();
+      return working.suggestions.find(
+        (s) => s.splitId === splitId && s.field === field && s.resolvedAt === null,
+      );
+    },
+
+    listOpenForSplit: (viewer, splitId) => {
+      check();
+      return working.suggestions.filter(
+        (s) => s.splitId === splitId && s.resolvedAt === null && visible(viewer, s.accountId),
+      );
+    },
+
+    listForTransaction: (viewer, transactionId) => {
+      check();
+      return working.suggestions
+        .filter((s) => s.transactionId === transactionId && visible(viewer, s.accountId))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    },
+
+    listOpenForAccount: (viewer, accountId) => {
+      check();
+      if (!visible(viewer, accountId)) return [];
+      return working.suggestions
+        .filter((s) => s.accountId === accountId && s.resolvedAt === null)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    },
+
+    resolveOpen: (splitId, field, outcome, at) => {
+      check();
+      const s = working.suggestions.find(
+        (x) => x.splitId === splitId && x.field === field && x.resolvedAt === null,
+      );
+      if (!s) return false;
+      const idx = working.suggestions.indexOf(s);
+      working.suggestions[idx] = {
+        ...s,
+        outcome,
+        resolvedAt: at,
+      };
+      return true;
+    },
+
+    findFewShot: (viewer, today, query, limit = 10) => {
+      check();
+      if (!viewer) throw new TypeError("findFewShot: a viewer is required");
+      const search = parseSearch(query);
+      if (!search || search.terms.length === 0) return [];
+
+      const publicAccountIds = new Set(
+        working.accounts.filter((a) => !a.isPrivate && a.deletedAt === null).map((a) => a.id),
+      );
+
+      const matching: FewShotExample[] = [];
+      const seenTxnIds = new Set<string>();
+
+      const txns = working.transactions
+        .filter((t) => t.deletedAt === null && publicAccountIds.has(t.accountId))
+        .filter((t) => {
+          if (
+            t.nameHiddenUntil !== null &&
+            t.nameHiddenUntil > today &&
+            (viewer.kind !== "person" || t.nameHiddenBy !== viewer.personId)
+          ) {
+            return false;
+          }
+          return true;
+        })
+        .sort((a, b) => {
+          const d = b.postedOn.localeCompare(a.postedOn);
+          return d !== 0 ? d : b.id.localeCompare(a.id);
+        });
+
+      for (const t of txns) {
+        if (matching.length >= limit) break;
+        if (seenTxnIds.has(t.id)) continue;
+
+        const splitsWithCategory = working.splits.filter(
+          (s) => s.transactionId === t.id && s.categoryId !== null,
+        );
+        if (splitsWithCategory.length === 0) continue;
+
+        const payee = t.payeeId ? working.payees.find((p) => p.id === t.payeeId) : undefined;
+        const fields = [
+          t.descriptionRaw,
+          payee?.name ?? "",
+          ...splitsWithCategory.map((s) => s.memo ?? ""),
+        ];
+        if (!searchMatches(search.terms, fields)) continue;
+
+        const mainSplit = splitsWithCategory[0]!;
+        const cat = working.categories.find((c) => c.id === mainSplit.categoryId);
+
+        seenTxnIds.add(t.id);
+        matching.push({
+          transactionId: t.id,
+          description: t.descriptionRaw,
+          amountCents: t.amountCents,
+          postedOn: t.postedOn,
+          categoryId: mainSplit.categoryId!,
+          categoryName: cat?.name,
+          payeeName: payee?.name ?? null,
+        });
+      }
+
+      return matching;
+    },
+  };
+}
+
 export function memoryUnitOfWork(
   settings: HouseholdSettingsRow = DEFAULT_SETTINGS,
 ): MemoryUnitOfWork {
@@ -3150,6 +3309,7 @@ export function memoryUnitOfWork(
       passwords: {},
       llmProviders: [],
       llmPurposeAssignments: [],
+      suggestions: [],
     },
     failAudit: false,
     transaction<T>(fn: (tx: TxRepos) => T): T {
@@ -3196,6 +3356,7 @@ export function memoryUnitOfWork(
         passwords: uow.state.passwords,
         llmProviders: [...uow.state.llmProviders],
         llmPurposeAssignments: [...uow.state.llmPurposeAssignments],
+        suggestions: [...uow.state.suggestions],
       };
       let active = true;
       const check = () => {
@@ -3243,6 +3404,7 @@ export function memoryUnitOfWork(
         attachments: attachmentRepo(working, check),
         importHandoffs: importHandoffRepo(working, check),
         llmProviders: llmProviderRepo(working, check),
+        suggestions: suggestionRepo(working, check),
         recoveryBundle: {
           get: () => {
             check();
@@ -3297,6 +3459,7 @@ export function memoryUnitOfWork(
         uow.state.passwords = working.passwords;
         uow.state.llmProviders = working.llmProviders;
         uow.state.llmPurposeAssignments = working.llmPurposeAssignments;
+        uow.state.suggestions = working.suggestions;
         return result;
       } finally {
         active = false;
@@ -3439,6 +3602,18 @@ export function memoryUnitOfWork(
           findForPurpose: (purpose) => llmProviderRepo(uow.state, check).findForPurpose(purpose),
           findSafeForPurpose: (purpose) =>
             llmProviderRepo(uow.state, check).findSafeForPurpose(purpose),
+        },
+        suggestions: {
+          findOpenForSplit: (splitId, field) =>
+            suggestionRepo(uow.state, check).findOpenForSplit(splitId, field),
+          listOpenForSplit: (viewer, splitId) =>
+            suggestionRepo(uow.state, check).listOpenForSplit(viewer, splitId),
+          listForTransaction: (viewer, transactionId) =>
+            suggestionRepo(uow.state, check).listForTransaction(viewer, transactionId),
+          listOpenForAccount: (viewer, accountId) =>
+            suggestionRepo(uow.state, check).listOpenForAccount(viewer, accountId),
+          findFewShot: (viewer, today, query, limit) =>
+            suggestionRepo(uow.state, check).findFewShot(viewer, today, query, limit),
         },
       });
     },

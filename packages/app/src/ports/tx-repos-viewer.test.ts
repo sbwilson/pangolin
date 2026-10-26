@@ -24,6 +24,7 @@ const SCOPED_REPOS = [
   "importBatches",
   "importRows",
   "importHandoffs",
+  "suggestions",
 ] as const;
 
 /** `TxRepos` keys that hold no scoped data, each with its reason. Every other key is checked. */
@@ -99,6 +100,10 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
     "new rows; the use case checked the batch and account with findVisible",
   "ImportRowRepo.insert": "a new row; the use case checked the batch and account with findVisible",
   "ImportRowRepo.updateStatus": "the use case checked the row and account with findVisible",
+  "SuggestionRepo.insert": "a new suggestion; the use case checked the account with findVisible",
+  "SuggestionRepo.insertMany": "new suggestions; the use case checked the account with findVisible",
+  "SuggestionRepo.findOpenForSplit": "reads the open suggestion on a split the use case read through the viewer",
+  "SuggestionRepo.resolveOpen": "a write on a suggestion whose split the use case read through the viewer",
   "ImportHandoffRepo.insert": "a new hand-off; the use case set the sender to the viewer",
   "ImportHandoffRepo.markImported": "the use case found the hand-off with findForRecipient first",
   "ImportHandoffRepo.markDismissed": "the use case found the hand-off with findForRecipient first",

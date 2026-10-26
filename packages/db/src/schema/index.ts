@@ -38,6 +38,7 @@ export { rule } from "./rule.ts";
 export { setupLink } from "./setup-link.ts";
 export { split } from "./split.ts";
 export { splitTag } from "./split-tag.ts";
+export { suggestion } from "./suggestion.ts";
 export { tag } from "./tag.ts";
 export { taxCategory } from "./tax-category.ts";
 export { transaction } from "./transaction.ts";

@@ -1247,6 +1247,55 @@ export interface RuleRepo {
   deleteScopedTo(personId: string): number;
 }
 
+export const SUGGESTION_SOURCES = ["llm", "activity", "rule_offer"] as const;
+export type SuggestionSource = (typeof SUGGESTION_SOURCES)[number];
+
+export const SUGGESTION_OUTCOMES = ["open", "accepted", "superseded", "rejected"] as const;
+export type SuggestionOutcome = (typeof SUGGESTION_OUTCOMES)[number];
+
+/** One `suggestion` row proposed by an LLM or heuristic (AD-10). */
+export interface SuggestionRow {
+  readonly id: Id<"Suggestion">;
+  readonly accountId: Id<"Account">;
+  readonly transactionId: Id<"Transaction">;
+  readonly splitId: Id<"Split">;
+  readonly source: SuggestionSource;
+  readonly field: string;
+  readonly suggestedValue: string;
+  readonly payeeName: string | null;
+  readonly websiteDomain: string | null;
+  readonly taxCategoryId: Id<"TaxCategory"> | null;
+  readonly activityId: Id<"Activity"> | null;
+  readonly confidence: number | null;
+  readonly model: string | null;
+  readonly promptVersion: string | null;
+  readonly outcome: SuggestionOutcome;
+  readonly createdAt: string;
+  readonly resolvedAt: string | null;
+}
+
+/** Past categorised transaction returned as a few-shot example from public accounts. */
+export interface FewShotExample {
+  readonly transactionId: string;
+  readonly description: string;
+  readonly amountCents: number;
+  readonly postedOn: string;
+  readonly categoryId: string;
+  readonly categoryName?: string | undefined;
+  readonly payeeName?: string | null | undefined;
+}
+
+export interface SuggestionRepo {
+  insert(row: SuggestionRow): void;
+  insertMany(rows: readonly SuggestionRow[]): void;
+  findOpenForSplit(splitId: string, field: string): SuggestionRow | undefined;
+  listOpenForSplit(viewer: Viewer, splitId: string): SuggestionRow[];
+  listForTransaction(viewer: Viewer, transactionId: string): SuggestionRow[];
+  listOpenForAccount(viewer: Viewer, accountId: string): SuggestionRow[];
+  resolveOpen(splitId: string, field: string, outcome: SuggestionOutcome, at: string): boolean;
+  findFewShot(viewer: Viewer, today: string, query: string, limit?: number): FewShotExample[];
+}
+
 /**
  * `recovery_bundle`: the recovery bundle the household confirmed it stored safely (story 1.17).
  * Only its id, never a secret.
@@ -1783,6 +1832,7 @@ export interface TxRepos {
   readonly attachments: AttachmentRepo;
   readonly importHandoffs: ImportHandoffRepo;
   readonly llmProviders: LlmProviderRepo;
+  readonly suggestions: SuggestionRepo;
 }
 
 /** The read-only subset of `TxRepos`, for queries. */
@@ -1853,6 +1903,14 @@ export interface ReadRepos {
     | "listAssignments"
     | "findForPurpose"
     | "findSafeForPurpose"
+  >;
+  readonly suggestions: Pick<
+    SuggestionRepo,
+    | "findOpenForSplit"
+    | "listOpenForSplit"
+    | "listForTransaction"
+    | "listOpenForAccount"
+    | "findFewShot"
   >;
 }
 

@@ -12,6 +12,7 @@ const EXPECTED: Record<ErrorCode, number> = {
   Unauthenticated: 401,
   ReauthRequired: 403,
   RateLimited: 429,
+  PermissionDenied: 403,
 };
 
 function appThrowing(thrown: () => unknown, logged: unknown[] = []) {
