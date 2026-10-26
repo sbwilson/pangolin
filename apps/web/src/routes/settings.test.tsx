@@ -26,6 +26,8 @@ vi.mock("../api.ts", async (importOriginal) => ({
   leaveHousehold: vi.fn(),
   fetchHouseholdSettings: vi.fn(),
   updateSharedAttribution: vi.fn(),
+  fetchLlmSettings: vi.fn(),
+  fetchLlmRequestPreview: vi.fn(),
 }));
 
 vi.mock("../auth-client.ts", () => ({
@@ -217,6 +219,18 @@ describe("SettingsPage", () => {
 
     vi.mocked(api.listAccounts).mockResolvedValue([]);
     vi.mocked(api.fetchInstitutions).mockResolvedValue([]);
+    vi.mocked(api.fetchLlmSettings).mockResolvedValue({
+      providers: [],
+      assignments: [],
+    });
+    vi.mocked(api.fetchLlmRequestPreview).mockResolvedValue({
+      provider: null,
+      model: undefined,
+      isLocal: true,
+      prompt: "Categorise transactions...",
+      schemaName: "categorise",
+      sampleItems: [],
+    });
   });
 
   afterEach(() => {
@@ -259,13 +273,15 @@ describe("SettingsPage", () => {
     expect(mobileNav).toBeTruthy();
     expect(mobileNav.className).toContain("md:hidden");
 
-    // All 6 sections in desktop nav
+    // All 8 sections in desktop nav
     const expectedSections = [
       "Appearance",
       "Sign-in & security",
       "Signed-in devices",
       "Partner",
       "Household",
+      "Accounts",
+      "LLM providers",
       "System status",
     ];
     for (const name of expectedSections) {
@@ -279,6 +295,8 @@ describe("SettingsPage", () => {
     expect(document.getElementById("devices")).toBeTruthy();
     expect(document.getElementById("partner")).toBeTruthy();
     expect(document.getElementById("household")).toBeTruthy();
+    expect(document.getElementById("accounts")).toBeTruthy();
+    expect(document.getElementById("llm-providers")).toBeTruthy();
     expect(document.getElementById("status")).toBeTruthy();
 
     // Appearance is active by default
@@ -950,7 +968,7 @@ describe("SettingsPage", () => {
   });
 
   describe("AccountSettings and SettingsNav", () => {
-    it("navigation rail and mobile chips display all 7 sections in order", async () => {
+    it("navigation rail and mobile chips display all 8 sections in order", async () => {
       renderSettings();
 
       const desktopNav = screen.getByRole("navigation", { name: "Settings sections" });
@@ -962,6 +980,7 @@ describe("SettingsPage", () => {
         "Partner",
         "Household",
         "Accounts",
+        "LLM providers",
         "System status",
       ]);
 
@@ -974,6 +993,7 @@ describe("SettingsPage", () => {
         "Partner",
         "Household",
         "Accounts",
+        "LLM providers",
         "System status",
       ]);
     });
@@ -1239,6 +1259,41 @@ describe("SettingsPage", () => {
       await waitFor(() => {
         expect(mockSignOut).toHaveBeenCalled();
       });
+    });
+  });
+
+  describe("LlmProviderSettings and SettingsNav", () => {
+    it("renders LLM providers card under #llm-providers", async () => {
+      renderSettings();
+
+      const section = document.getElementById("llm-providers");
+      expect(section).toBeTruthy();
+      expect(within(section!).getByRole("heading", { name: "LLM providers" })).toBeTruthy();
+    });
+
+    it("resolves initial #llm-providers hash on mount to set aria-current on LLM providers link", () => {
+      window.location.hash = "#llm-providers";
+      renderSettings();
+
+      const llmLinks = screen.getAllByRole("link", { name: "LLM providers" });
+      expect(llmLinks[0]?.getAttribute("aria-current")).toBe("location");
+
+      const appearanceLinks = screen.getAllByRole("link", { name: "Appearance" });
+      expect(appearanceLinks[0]?.getAttribute("aria-current")).toBeNull();
+    });
+
+    it("updates active section marker when clicking LLM providers nav link", async () => {
+      const user = userEvent.setup();
+      renderSettings();
+
+      const desktopNav = screen.getByRole("navigation", { name: "Settings sections" });
+      const llmLink = within(desktopNav).getByRole("link", { name: "LLM providers" });
+
+      await user.click(llmLink);
+
+      expect(llmLink.getAttribute("aria-current")).toBe("location");
+      const appearanceLink = within(desktopNav).getByRole("link", { name: "Appearance" });
+      expect(appearanceLink.getAttribute("aria-current")).toBeNull();
     });
   });
 });

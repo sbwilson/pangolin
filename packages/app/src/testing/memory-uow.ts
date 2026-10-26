@@ -3110,7 +3110,7 @@ function llmProviderRepo(working: MemoryState, check: () => void): LlmProviderRe
 function suggestionRepo(working: MemoryState, check: () => void): SuggestionRepo {
   const visible = (viewer: Viewer, accountId: string): boolean => {
     if (!viewer) throw new TypeError("a viewer is required");
-    const acc = working.accounts.find((a) => a.id === accountId && a.deletedAt === null);
+    const acc = working.accounts.find((a) => a.id === accountId && a.closedOn === null);
     if (!acc) return false;
     if (viewer.kind === "system") return true;
     if (!acc.isPrivate) return true;
@@ -3202,14 +3202,14 @@ function suggestionRepo(working: MemoryState, check: () => void): SuggestionRepo
       if (!search || search.terms.length === 0) return [];
 
       const publicAccountIds = new Set(
-        working.accounts.filter((a) => !a.isPrivate && a.deletedAt === null).map((a) => a.id),
+        working.accounts.filter((a) => !a.isPrivate && a.closedOn === null).map((a) => a.id),
       );
 
       const matching: FewShotExample[] = [];
       const seenTxnIds = new Set<string>();
 
       const txns = working.transactions
-        .filter((t) => t.deletedAt === null && publicAccountIds.has(t.accountId))
+        .filter((t) => publicAccountIds.has(t.accountId))
         .filter((t) => {
           if (
             t.nameHiddenUntil !== null &&

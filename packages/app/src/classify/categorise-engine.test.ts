@@ -81,7 +81,7 @@ function setupTestEnvironment() {
   );
 
   // Seed accounts (one public, one private to Alex)
-  uow.state.accounts.push(
+  (uow.state.accounts as any).push(
     {
       id: publicAccountId,
       name: "Everyday Joint",
@@ -112,7 +112,7 @@ function setupTestEnvironment() {
     },
   );
 
-  uow.state.accountOwners.push(
+  (uow.state.accountOwners as any).push(
     {
       id: newId<"AccountOwner">(),
       accountId: publicAccountId,
@@ -141,7 +141,7 @@ function setupTestEnvironment() {
   const groupFood = newId<"CategoryGroup">();
   const groupTransport = newId<"CategoryGroup">();
 
-  uow.state.categoryGroups.push(
+  (uow.state.categoryGroups as any).push(
     {
       id: groupFood,
       name: "Food",
@@ -208,7 +208,7 @@ describe("Few-shot FTS5 search", () => {
     for (let i = 1; i <= 15; i++) {
       const txnId = env.newId<"Transaction">();
       const splitId = env.newId<"Split">();
-      env.uow.state.transactions.push({
+      (env.uow.state.transactions as any).push({
         id: txnId,
         accountId: env.publicAccountId,
         postedOn: `2026-10-${String(i).padStart(2, "0")}`,
@@ -270,7 +270,7 @@ describe("Few-shot FTS5 search", () => {
     // Past categorised transaction in private account
     const privTxnId = env.newId<"Transaction">();
     const privSplitId = env.newId<"Split">();
-    env.uow.state.transactions.push({
+    (env.uow.state.transactions as any).push({
       id: privTxnId,
       accountId: env.privateAccountId,
       postedOn: "2026-10-15",
@@ -420,7 +420,7 @@ describe("Categorisation Engine", () => {
       const splitId = env.newId<"Split">();
       txnIds.push(txnId);
 
-      env.uow.state.transactions.push({
+      (env.uow.state.transactions as any).push({
         id: txnId,
         accountId: env.publicAccountId,
         postedOn: "2026-10-26",
@@ -511,7 +511,7 @@ describe("Categorisation Engine", () => {
 
     const privTxnId = env.newId<"Transaction">();
     const privSplitId = env.newId<"Split">();
-    env.uow.state.transactions.push({
+    (env.uow.state.transactions as any).push({
       id: privTxnId,
       accountId: env.privateAccountId,
       postedOn: "2026-10-26",
@@ -577,7 +577,7 @@ describe("Categorisation Engine", () => {
 
     const privTxnId = env.newId<"Transaction">();
     const privSplitId = env.newId<"Split">();
-    env.uow.state.transactions.push({
+    (env.uow.state.transactions as any).push({
       id: privTxnId,
       accountId: env.privateAccountId,
       postedOn: "2026-10-26",
@@ -650,7 +650,7 @@ describe("Categorisation Engine", () => {
 
     const txnId = env.newId<"Transaction">();
     const splitId = env.newId<"Split">();
-    env.uow.state.transactions.push({
+    (env.uow.state.transactions as any).push({
       id: txnId,
       accountId: env.publicAccountId,
       postedOn: "2026-10-26",
@@ -728,7 +728,7 @@ describe("Categorisation Engine", () => {
       const splitId = env.newId<"Split">();
       txnIds.push(txnId);
 
-      env.uow.state.transactions.push({
+      (env.uow.state.transactions as any).push({
         id: txnId,
         accountId: env.publicAccountId,
         postedOn: "2026-10-26",
@@ -805,7 +805,7 @@ describe("Categorisation Engine", () => {
 
     const txnId = env.newId<"Transaction">();
     const splitId = env.newId<"Split">();
-    env.uow.state.transactions.push({
+    (env.uow.state.transactions as any).push({
       id: txnId,
       accountId: env.publicAccountId,
       postedOn: "2026-10-26",
@@ -895,7 +895,7 @@ describe("Categorisation Engine", () => {
 
     const txnId = env.newId<"Transaction">();
     const splitId = env.newId<"Split">();
-    env.uow.state.transactions.push({
+    (env.uow.state.transactions as any).push({
       id: txnId,
       accountId: env.publicAccountId,
       postedOn: "2026-10-26",
@@ -985,7 +985,7 @@ describe("Categorisation Engine", () => {
     const txnId = env.newId<"Transaction">();
     const splitId = env.newId<"Split">();
 
-    env.uow.state.transactions.push({
+    (env.uow.state.transactions as any).push({
       id: txnId,
       accountId: env.publicAccountId,
       postedOn: "2026-10-26",

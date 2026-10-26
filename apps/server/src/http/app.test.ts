@@ -84,6 +84,7 @@ function deps(db: Db, authn: Authn = { kind: "live", gateway: fakeGateway() }): 
     newId: createIdGenerator(),
     tokens: nodeTokens,
     codes: recoveryCodeHasher("test-secret"),
+    authSecret: "test-secret",
     attachments: fakeAttachmentStore(),
     publicUrl: ORIGIN,
     authn,
@@ -3278,5 +3279,190 @@ describe("POST /api/import and /api/handoffs", () => {
       content: csv,
     });
     expect(self.status).toBe(400);
+  });
+});
+
+describe("LLM provider endpoints (/api/llm/*)", () => {
+  const signedIn = { headers: { origin: ORIGIN, cookie: SESSION_COOKIE } };
+  const staleAuth = (db: Db) =>
+    createApp(
+      deps(db, {
+        kind: "live",
+        gateway: fakeGateway(new Date("2026-09-26T00:00:00Z")), // 1 day before fixed clock
+      }),
+    );
+
+  it("requires a session for GET /api/llm/settings", async () => {
+    const db = openDb();
+    addPerson(db);
+    const res = await createApp(deps(db)).request("/api/llm/settings");
+    expect(res.status).toBe(401);
+  });
+
+  it("lists settings with 200 for authenticated user", async () => {
+    const db = openDb();
+    addPerson(db);
+    const app = createApp(deps(db));
+    const res = await app.request("/api/llm/settings", signedIn);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ providers: [], assignments: [] });
+  });
+
+  it("enforces re-authentication (403 ReauthRequired) on provider CRUD and purpose assignment", async () => {
+    const db = openDb();
+    addPerson(db);
+    const staleApp = staleAuth(db);
+
+    // Create provider with stale session
+    const createRes = await staleApp.request("/api/llm/providers", {
+      ...signedIn,
+      method: "POST",
+      body: JSON.stringify({
+        name: "Ollama",
+        kind: "openai",
+        baseUrl: "http://localhost:11434/v1",
+        model: "llama3.2",
+      }),
+    });
+    expect(createRes.status).toBe(403);
+    expect(await createRes.json()).toMatchObject({ error: { code: "ReauthRequired" } });
+
+    // Update with stale session
+    const updateRes = await staleApp.request("/api/llm/providers/dummy", {
+      ...signedIn,
+      method: "PUT",
+      body: JSON.stringify({ name: "Updated" }),
+    });
+    expect(updateRes.status).toBe(403);
+    expect(await updateRes.json()).toMatchObject({ error: { code: "ReauthRequired" } });
+
+    // Delete with stale session
+    const deleteRes = await staleApp.request("/api/llm/providers/dummy", {
+      ...signedIn,
+      method: "DELETE",
+    });
+    expect(deleteRes.status).toBe(403);
+    expect(await deleteRes.json()).toMatchObject({ error: { code: "ReauthRequired" } });
+
+    // Purpose assignment with stale session
+    const purposeRes = await staleApp.request("/api/llm/purposes/categorise", {
+      ...signedIn,
+      method: "PUT",
+      body: JSON.stringify({ providerId: null }),
+    });
+    expect(purposeRes.status).toBe(403);
+    expect(await purposeRes.json()).toMatchObject({ error: { code: "ReauthRequired" } });
+  });
+
+  it("supports provider CRUD, purpose assignment, test connection, and live preview", async () => {
+    const db = openDb();
+    addPerson(db);
+    const app = createApp(deps(db));
+
+    // 1. Create a local provider
+    const createRes = await app.request("/api/llm/providers", {
+      ...signedIn,
+      method: "POST",
+      body: JSON.stringify({
+        name: "Local Ollama",
+        kind: "openai",
+        baseUrl: "http://192.168.1.50:11434/v1",
+        model: "llama3.2",
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const createdLocal = (await createRes.json()) as any;
+    expect(createdLocal).toMatchObject({
+      name: "Local Ollama",
+      isLocal: true,
+      apiKeyLast4: null,
+      cloudPdf: false,
+      cloudRows: false,
+    });
+    expect(createdLocal.apiKeyCiphertext).toBeUndefined();
+
+    // 2. Create a cloud provider
+    const cloudRes = await app.request("/api/llm/providers", {
+      ...signedIn,
+      method: "POST",
+      body: JSON.stringify({
+        name: "Cloud OpenAI",
+        kind: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-4o-mini",
+        apiKey: "sk-proj-abc123456789xyz7Q2a",
+        cloudPdf: true,
+        cloudRows: false,
+      }),
+    });
+    expect(cloudRes.status).toBe(201);
+    const createdCloud = (await cloudRes.json()) as any;
+    expect(createdCloud).toMatchObject({
+      name: "Cloud OpenAI",
+      isLocal: false,
+      apiKeyLast4: "7Q2a",
+      cloudPdf: true,
+      cloudRows: false,
+    });
+
+    // 3. Assign purpose
+    const assignRes = await app.request("/api/llm/purposes/categorise", {
+      ...signedIn,
+      method: "PUT",
+      body: JSON.stringify({ providerId: createdLocal.id }),
+    });
+    expect(assignRes.status).toBe(200);
+    expect(await assignRes.json()).toEqual({
+      purpose: "categorise",
+      providerId: createdLocal.id,
+    });
+
+    // 4. Update provider
+    const updateRes = await app.request(`/api/llm/providers/${createdLocal.id}`, {
+      ...signedIn,
+      method: "PUT",
+      body: JSON.stringify({
+        name: "Local Ollama Updated",
+      }),
+    });
+    expect(updateRes.status).toBe(200);
+    const updated = (await updateRes.json()) as any;
+    expect(updated.name).toBe("Local Ollama Updated");
+
+    // 5. Test connection
+    const testRes = await app.request(`/api/llm/providers/${createdLocal.id}/test`, {
+      ...signedIn,
+      method: "POST",
+    });
+    expect(testRes.status).toBe(200);
+    const testBody = await testRes.json();
+    // Test connection either succeeds with latency or fails with sanitized error (endpoint doesn't really exist)
+    expect(testBody).toHaveProperty("ok");
+
+    // 6. Preview request
+    const previewRes = await app.request("/api/llm/preview", {
+      ...signedIn,
+      method: "POST",
+      body: JSON.stringify({ purpose: "categorise" }),
+    });
+    expect(previewRes.status).toBe(200);
+    const preview = (await previewRes.json()) as any;
+    expect(preview.schemaName).toBe("categorise");
+    expect(preview.prompt).toBeDefined();
+
+    // 7. Delete provider
+    const deleteRes = await app.request(`/api/llm/providers/${createdCloud.id}`, {
+      ...signedIn,
+      method: "DELETE",
+    });
+    expect(deleteRes.status).toBe(200);
+    expect(await deleteRes.json()).toEqual({ success: true });
+
+    // Verify settings list reflects deletion
+    const finalSettingsRes = await app.request("/api/llm/settings", signedIn);
+    const finalSettings = (await finalSettingsRes.json()) as any;
+    expect(finalSettings.providers).toHaveLength(1);
+    expect(finalSettings.providers[0].id).toBe(createdLocal.id);
   });
 });

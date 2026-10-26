@@ -82,7 +82,7 @@ export interface PersonEntry {
 
 export interface SystemEntry {
   readonly kind: "system";
-  readonly method: "GET" | "POST";
+  readonly method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   readonly path: string;
   readonly reason: string;
 }
@@ -124,12 +124,26 @@ const write = (
   extra: Partial<Omit<PersonEntry, "kind" | "method" | "path" | "access">> = {},
 ): PersonEntry => ({ kind: "person", method, path, access: "write", ...extra });
 
-const system = (path: string, reason: string): SystemEntry => ({
-  kind: "system",
-  method: "GET",
-  path,
-  reason,
-});
+const system = (
+  methodOrPath: string,
+  pathOrReason: string,
+  maybeReason?: string,
+): SystemEntry => {
+  if (maybeReason !== undefined) {
+    return {
+      kind: "system",
+      method: methodOrPath as SystemEntry["method"],
+      path: pathOrReason,
+      reason: maybeReason,
+    };
+  }
+  return {
+    kind: "system",
+    method: "GET",
+    path: methodOrPath,
+    reason: pathOrReason,
+  };
+};
 
 const identity = (method: "GET" | "POST", path: string, reason: string): IdentityEntry => ({
   kind: "identity",
@@ -147,6 +161,15 @@ export const MANIFEST: readonly ManifestEntry[] = [
   system("/api/system/recovery-bundle", "Whether the recovery bundle is confirmed; no secrets."),
   system("/api/system/household", "Household settings row: currency, zone, FY start, attribution."),
   write("PATCH", "/api/system/household", { body: () => ({ sharedAttribution: "even" }) }),
+
+  // LLM provider configuration and request preview (AD-6).
+  system("GET", "/api/llm/settings", "Safe read model of configured providers and purpose assignments; API keys omitted."),
+  system("POST", "/api/llm/providers", "Configure a new LLM provider; safe read model returned, keys encrypted at rest."),
+  system("PUT", "/api/llm/providers/:id", "Update an LLM provider; safe read model returned, keys encrypted at rest."),
+  system("DELETE", "/api/llm/providers/:id", "Delete an LLM provider and cascades purpose assignments."),
+  system("POST", "/api/llm/providers/:id/test", "Test provider connectivity with ping prompt; no credentials returned."),
+  system("PUT", "/api/llm/purposes/:purpose", "Assign LLM capability to provider."),
+  system("POST", "/api/llm/preview", "Sample request preview for categorisation using public transactions; no private account data."),
 
   read("/api/identity/me"),
   read("/api/identity/preferences"),

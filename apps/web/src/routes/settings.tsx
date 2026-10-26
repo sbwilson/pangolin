@@ -1,6 +1,7 @@
 import { createRoute } from "@tanstack/react-router";
 import { AccountSettings } from "../components/AccountSettings.tsx";
 import { HouseholdSettings } from "../components/HouseholdSettings.tsx";
+import { LlmProviderSettings } from "../components/LlmProviderSettings.tsx";
 import { PartnerSettings } from "../components/PartnerSettings.tsx";
 import { SettingsNav } from "../components/SettingsNav.tsx";
 import { SignedInDevices } from "../components/SignedInDevices.tsx";
@@ -54,6 +55,12 @@ export function SettingsPage() {
             className="scroll-mt-4 rounded-xl border border-border bg-card p-6 shadow-sm"
           >
             <AccountSettings />
+          </section>
+          <section
+            id="llm-providers"
+            className="scroll-mt-4 rounded-xl border border-border bg-card p-6 shadow-sm"
+          >
+            <LlmProviderSettings />
           </section>
           <section
             id="status"

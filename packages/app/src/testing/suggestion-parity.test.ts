@@ -166,7 +166,7 @@ describe("Suggestion repository parity (SQLite vs Memory)", () => {
             createdAt: "2026-10-26T10:00:00Z",
             updatedAt: "2026-10-26T10:00:00Z",
             deletedAt: null,
-          } as TransactionRow,
+          } as any,
           [
             {
               id: splitId,
@@ -293,7 +293,7 @@ describe("Suggestion repository parity (SQLite vs Memory)", () => {
             createdAt: "2026-10-25T10:00:00Z",
             updatedAt: "2026-10-25T10:00:00Z",
             deletedAt: null,
-          } as TransactionRow,
+          } as any,
           [
             {
               id: publicSplitId,
@@ -338,7 +338,7 @@ describe("Suggestion repository parity (SQLite vs Memory)", () => {
             createdAt: "2026-10-25T10:00:00Z",
             updatedAt: "2026-10-25T10:00:00Z",
             deletedAt: null,
-          } as TransactionRow,
+          } as any,
           [
             {
               id: privateSplitId,

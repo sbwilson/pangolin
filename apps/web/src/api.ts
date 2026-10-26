@@ -897,3 +897,139 @@ export async function handOffFile(input: {
 }): Promise<void> {
   await postJson<{ handedOff: true }>("/api/handoffs", input);
 }
+
+// -----------------------------------------------------------------------------
+// LLM Providers Settings & Live Preview
+// -----------------------------------------------------------------------------
+
+export type LlmProviderKind = "openai" | "anthropic";
+export type LlmPurpose = "categorise" | "pdf_extract" | "row_interpret";
+
+export interface LlmProviderSafeView {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: LlmProviderKind;
+  readonly baseUrl: string;
+  readonly model: string;
+  readonly apiKeyLast4: string | null;
+  readonly isLocal: boolean;
+  readonly cloudPdf: boolean;
+  readonly cloudRows: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface LlmPurposeAssignmentRow {
+  readonly purpose: LlmPurpose;
+  readonly providerId: string;
+  readonly updatedAt: string;
+}
+
+export interface LlmSettingsResult {
+  readonly providers: readonly LlmProviderSafeView[];
+  readonly assignments: readonly LlmPurposeAssignmentRow[];
+}
+
+export interface CreateLlmProviderInput {
+  readonly name: string;
+  readonly kind: LlmProviderKind;
+  readonly baseUrl: string;
+  readonly model: string;
+  readonly apiKey?: string | null | undefined;
+  readonly cloudPdf?: boolean | undefined;
+  readonly cloudRows?: boolean | undefined;
+}
+
+export interface UpdateLlmProviderInput {
+  readonly name?: string | undefined;
+  readonly kind?: LlmProviderKind | undefined;
+  readonly baseUrl?: string | undefined;
+  readonly model?: string | undefined;
+  readonly apiKey?: string | null | undefined;
+  readonly cloudPdf?: boolean | undefined;
+  readonly cloudRows?: boolean | undefined;
+}
+
+export interface TestLlmProviderResult {
+  readonly ok: boolean;
+  readonly latencyMs?: number | undefined;
+  readonly error?: string | undefined;
+}
+
+export interface LlmRequestPreviewItem {
+  readonly index: number;
+  readonly description: string;
+  readonly amountCents: number;
+  readonly postedOn: string;
+  readonly isPrivate?: boolean | undefined;
+}
+
+export interface LlmRequestPreviewResult {
+  readonly provider: LlmProviderSafeView | null;
+  readonly isLocal: boolean;
+  readonly model?: string | undefined;
+  readonly systemPrompt?: string | undefined;
+  readonly prompt: string;
+  readonly schemaName: string;
+  readonly schemaDescription?: string | undefined;
+  readonly sampleItems: readonly LlmRequestPreviewItem[];
+}
+
+export async function fetchLlmSettings(): Promise<LlmSettingsResult> {
+  const res = await fetch("/api/llm/settings");
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()) as LlmSettingsResult;
+}
+
+export async function createLlmProvider(
+  input: CreateLlmProviderInput,
+): Promise<LlmProviderSafeView> {
+  return await sendJson<LlmProviderSafeView>("POST", "/api/llm/providers", input);
+}
+
+export async function updateLlmProvider(
+  id: string,
+  input: UpdateLlmProviderInput,
+): Promise<LlmProviderSafeView> {
+  return await sendJson<LlmProviderSafeView>(
+    "PUT",
+    `/api/llm/providers/${encodeURIComponent(id)}`,
+    input,
+  );
+}
+
+export async function deleteLlmProvider(
+  id: string,
+): Promise<{ success: boolean }> {
+  return await sendJson<{ success: boolean }>(
+    "DELETE",
+    `/api/llm/providers/${encodeURIComponent(id)}`,
+  );
+}
+
+export async function testLlmProvider(
+  id: string,
+): Promise<TestLlmProviderResult> {
+  return await sendJson<TestLlmProviderResult>(
+    "POST",
+    `/api/llm/providers/${encodeURIComponent(id)}/test`,
+  );
+}
+
+export async function assignLlmPurpose(
+  purpose: LlmPurpose,
+  providerId: string | null,
+): Promise<{ purpose: LlmPurpose; providerId: string | null }> {
+  return await sendJson<{ purpose: LlmPurpose; providerId: string | null }>(
+    "PUT",
+    `/api/llm/purposes/${encodeURIComponent(purpose)}`,
+    { providerId },
+  );
+}
+
+export async function fetchLlmRequestPreview(input?: {
+  readonly purpose?: LlmPurpose | undefined;
+  readonly providerId?: string | undefined;
+}): Promise<LlmRequestPreviewResult> {
+  return await sendJson<LlmRequestPreviewResult>("POST", "/api/llm/preview", input ?? {});
+}

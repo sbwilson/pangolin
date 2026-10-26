@@ -3,11 +3,19 @@ import { join } from "node:path";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { serveStatic } from "@hono/node-server/serve-static";
 import {
+  AnthropicAdapter,
+  OpenAiAdapter,
+  decryptApiKey,
+  encryptApiKey,
+  isLanAddress,
+} from "@pangolin/llm";
+import {
   AppError,
   type AttachmentContext,
   type AttachmentStore,
   acceptHandoffItem,
   acceptRuleOfferItem,
+  assignLlmPurpose,
   backupStatus,
   balanceAsOf,
   type CashFlowTotalsInput,
@@ -25,6 +33,7 @@ import {
   createCategoryGroup,
   createHandoff,
   createInstitution,
+  createLlmProvider,
   createPayee,
   createPayeeAlias,
   createTag,
@@ -34,6 +43,7 @@ import {
   deadJobs,
   deleteActivity,
   deleteCategory,
+  deleteLlmProvider,
   deletePayee,
   deletePayeeAlias,
   deleteTag,
@@ -52,6 +62,8 @@ import {
   getAccount,
   getActivity,
   getHouseholdSettings,
+  getLlmRequestPreview,
+  getLlmSettings,
   getPayee,
   getPayeeAlias,
   getPreferences,
@@ -115,6 +127,10 @@ import {
   setSplitTags,
   sharedShare,
   spending,
+  testLlmProvider,
+  type LlmProviderRow,
+  type LlmPurpose,
+  type LlmUseCaseContext,
   type TokenPort,
   type UnitOfWork,
   type UseCaseContext,
@@ -125,6 +141,7 @@ import {
   updateCategoryGroup,
   updateHouseholdSettings,
   updateInstitution,
+  updateLlmProvider,
   updatePayee,
   updatePayeeAlias,
   updatePreferences,
@@ -170,6 +187,8 @@ export interface ApiDeps {
   readonly bundleId?: string;
   /** The encrypted attachment store (AD-21): hand-off files and the household leave. */
   readonly attachments: AttachmentStore;
+  /** Auth secret used to encrypt/decrypt sensitive credentials such as LLM API keys. */
+  readonly authSecret?: string | undefined;
 }
 
 export interface AppDeps extends ApiDeps {
@@ -273,6 +292,27 @@ export function createApi(deps: ApiDeps) {
   const withAttachments = (c: Context<SessionEnv>): AttachmentContext => ({
     ...ctx(c),
     attachments: deps.attachments,
+  });
+  const withLlm = (c: Context<SessionEnv>): LlmUseCaseContext => ({
+    ...ctx(c),
+    authSecret: deps.authSecret,
+    isLanAddress,
+    encryptApiKey,
+    decryptApiKey,
+    createProvider: (row: LlmProviderRow, apiKey?: string) => {
+      if (row.kind === "anthropic") {
+        return new AnthropicAdapter({
+          baseUrl: row.baseUrl,
+          apiKey: apiKey ?? undefined,
+          model: row.model,
+        });
+      }
+      return new OpenAiAdapter({
+        baseUrl: row.baseUrl,
+        apiKey: apiKey ?? undefined,
+        model: row.model,
+      });
+    },
   });
   /** The answer to a redemption: signed in (with what must still be enrolled), or not. */
   const redeemed = (c: Context, session: IssuedSession) => {
@@ -855,6 +895,41 @@ export function createApi(deps: ApiDeps) {
       assertStatementSize(input.content);
       createHandoff(withAttachments(c), input);
       return c.json({ handedOff: true as const }, 201);
+    })
+    .get("/api/llm/settings", (c) => {
+      return c.json(getLlmSettings(ctx(c)), 200);
+    })
+    .post("/api/llm/providers", async (c) => {
+      writable();
+      return c.json(createLlmProvider(withLlm(c), await objectBody(c)), 201);
+    })
+    .put("/api/llm/providers/:id", async (c) => {
+      writable();
+      return c.json(
+        updateLlmProvider(withLlm(c), await objectBody(c, { id: c.req.param("id") })),
+        200,
+      );
+    })
+    .delete("/api/llm/providers/:id", (c) => {
+      writable();
+      return c.json(deleteLlmProvider(withLlm(c), { id: c.req.param("id") }), 200);
+    })
+    .post("/api/llm/providers/:id/test", async (c) => {
+      return c.json(await testLlmProvider(withLlm(c), { id: c.req.param("id") }), 200);
+    })
+    .put("/api/llm/purposes/:purpose", async (c) => {
+      writable();
+      const body = await objectBody<{ providerId: string | null }>(c);
+      return c.json(
+        assignLlmPurpose(withLlm(c), {
+          purpose: c.req.param("purpose") as LlmPurpose,
+          providerId: body.providerId,
+        }),
+        200,
+      );
+    })
+    .post("/api/llm/preview", async (c) => {
+      return c.json(getLlmRequestPreview(ctx(c), await objectBody(c, {}, true)), 200);
     });
 }
 

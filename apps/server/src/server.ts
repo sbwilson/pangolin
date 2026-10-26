@@ -186,12 +186,13 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     let codes = recoveryCodeHasher(randomBytes(32).toString("base64url"));
     // Demo mode never writes, so it never stores a file either.
     let attachments: AttachmentStore = refusingAttachments;
+    let secret: string | undefined;
     if (demo) {
       // Demo mode: no sign-in; every request is the first seeded person, and writes still fail.
       authn = { kind: "demo" };
     } else {
       const identity = { uow, clock, newId, tokens: nodeTokens };
-      const secret = loadOrCreateAuthSecret(config.auth.secretFile);
+      secret = loadOrCreateAuthSecret(config.auth.secretFile);
       codes = recoveryCodeHasher(secret);
       attachments = createFileAttachmentStore(backupPaths(config.dataDir).attachmentsDir, secret);
       authn = {
@@ -217,6 +218,7 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       attachments,
       publicUrl: config.auth.publicUrl,
       authn,
+      authSecret: secret,
       trustedProxies: config.trustedProxies,
       recoveryRateLimitPerMinute: config.auth.rateLimitPerMinute,
       backupConfigured,

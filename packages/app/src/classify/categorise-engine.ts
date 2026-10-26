@@ -207,20 +207,20 @@ export async function categoriseTransactions(
       if (!suggestionOutput) continue;
 
       // Discard suggestion if category_id does not exist in known categories
-      if (!knownCategoryIds.has(suggestionOutput.category_id)) {
+      if (!knownCategoryIds.has(suggestionOutput.category_id as Id<"Category">)) {
         discardedCount++;
         continue;
       }
 
       const taxCategoryId =
         suggestionOutput.tax_category_id &&
-        knownTaxCategoryIds.has(suggestionOutput.tax_category_id)
+        knownTaxCategoryIds.has(suggestionOutput.tax_category_id as Id<"TaxCategory">)
           ? (suggestionOutput.tax_category_id as Id<"TaxCategory">)
           : null;
 
       const activityId =
         suggestionOutput.activity_id &&
-        knownActivityIds.has(suggestionOutput.activity_id)
+        knownActivityIds.has(suggestionOutput.activity_id as Id<"Activity">)
           ? (suggestionOutput.activity_id as Id<"Activity">)
           : null;
 

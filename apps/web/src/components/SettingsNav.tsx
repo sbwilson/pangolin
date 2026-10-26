@@ -13,6 +13,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "partner", label: "Partner" },
   { id: "household", label: "Household" },
   { id: "accounts", label: "Accounts" },
+  { id: "llm-providers", label: "LLM providers" },
   { id: "status", label: "System status" },
 ];
 
