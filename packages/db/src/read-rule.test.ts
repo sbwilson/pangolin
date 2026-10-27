@@ -53,6 +53,10 @@ const ALLOWED: Readonly<Record<string, { tables: readonly string[]; reason: stri
     tables: ["review-item"],
     reason: "reads review_item for a viewer only through visibleReviewItems(viewer)",
   },
+  "repositories/suggestion.ts": {
+    tables: ["account", "split", "transaction"],
+    reason: "reads account, split and transaction for few-shot examples with privacy filters",
+  },
 };
 
 /**

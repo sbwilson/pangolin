@@ -243,8 +243,12 @@ describe("Suggestion repository parity (SQLite vs Memory)", () => {
     );
 
     // Verify open is now undefined in both
-    expect(memoryUow.read((r) => r.suggestions.findOpenForSplit(splitId, "category"))).toBeUndefined();
-    expect(sqliteUow.read((r) => r.suggestions.findOpenForSplit(splitId, "category"))).toBeUndefined();
+    expect(
+      memoryUow.read((r) => r.suggestions.findOpenForSplit(splitId, "category")),
+    ).toBeUndefined();
+    expect(
+      sqliteUow.read((r) => r.suggestions.findOpenForSplit(splitId, "category")),
+    ).toBeUndefined();
 
     // Verify transaction history in both
     const viewer: Viewer = { kind: "person", personId: mem.personId, authAt: undefined as any };

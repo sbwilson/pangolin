@@ -1,10 +1,10 @@
 import {
   type FewShotExample,
+  parseSearch,
   type SuggestionOutcome,
   type SuggestionRepo,
   type SuggestionRow,
   type Viewer,
-  parseSearch,
 } from "@pangolin/app";
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
@@ -28,7 +28,10 @@ export function createSuggestionRepo(orm: Orm, check: () => void): SuggestionRep
     insertMany: (rows) => {
       check();
       if (rows.length === 0) return;
-      orm.insert(suggestion).values(rows as SuggestionRow[]).run();
+      orm
+        .insert(suggestion)
+        .values(rows as SuggestionRow[])
+        .run();
     },
 
     findOpenForSplit: (splitId, field) => {
@@ -53,13 +56,7 @@ export function createSuggestionRepo(orm: Orm, check: () => void): SuggestionRep
       const rows = orm
         .select()
         .from(suggestion)
-        .where(
-          and(
-            eq(suggestion.splitId, splitId),
-            isNull(suggestion.resolvedAt),
-            visible,
-          ),
-        )
+        .where(and(eq(suggestion.splitId, splitId), isNull(suggestion.resolvedAt), visible))
         .all();
       return rows as SuggestionRow[];
     },
@@ -70,12 +67,7 @@ export function createSuggestionRepo(orm: Orm, check: () => void): SuggestionRep
       const rows = orm
         .select()
         .from(suggestion)
-        .where(
-          and(
-            eq(suggestion.transactionId, transactionId),
-            visible,
-          ),
-        )
+        .where(and(eq(suggestion.transactionId, transactionId), visible))
         .orderBy(desc(suggestion.createdAt))
         .all();
       return rows as SuggestionRow[];
@@ -87,13 +79,7 @@ export function createSuggestionRepo(orm: Orm, check: () => void): SuggestionRep
       const rows = orm
         .select()
         .from(suggestion)
-        .where(
-          and(
-            eq(suggestion.accountId, accountId),
-            isNull(suggestion.resolvedAt),
-            visible,
-          ),
-        )
+        .where(and(eq(suggestion.accountId, accountId), isNull(suggestion.resolvedAt), visible))
         .orderBy(desc(suggestion.createdAt))
         .all();
       return rows as SuggestionRow[];

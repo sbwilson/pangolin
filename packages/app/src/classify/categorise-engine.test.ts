@@ -10,10 +10,7 @@ import { manualClock } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import type { Viewer } from "../viewer.ts";
 import { categoriseTransactions } from "./categorise-engine.ts";
-import {
-  CATEGORISE_PROMPT_VERSION,
-  buildCategorisationRequest,
-} from "./categorise-request.ts";
+import { buildCategorisationRequest, CATEGORISE_PROMPT_VERSION } from "./categorise-request.ts";
 import { findFewShotExamples } from "./few-shot-search.ts";
 
 const now = Temporal.Instant.from("2026-10-26T12:00:00.000Z");
@@ -251,12 +248,7 @@ describe("Few-shot FTS5 search", () => {
     }
 
     const results = env.uow.read((repos) =>
-      findFewShotExamples(
-        repos,
-        env.alexViewer,
-        clock.today().toString(),
-        "Woolworths Metro",
-      ),
+      findFewShotExamples(repos, env.alexViewer, clock.today().toString(), "Woolworths Metro"),
     );
 
     expect(results.length).toBeGreaterThan(0);
@@ -312,12 +304,7 @@ describe("Few-shot FTS5 search", () => {
     });
 
     const results = env.uow.read((repos) =>
-      findFewShotExamples(
-        repos,
-        env.alexViewer,
-        clock.today().toString(),
-        "Woolworths Private",
-      ),
+      findFewShotExamples(repos, env.alexViewer, clock.today().toString(), "Woolworths Private"),
     );
 
     // Private account must not be used as few-shot example
@@ -327,12 +314,7 @@ describe("Few-shot FTS5 search", () => {
   it("returns empty array when no transactions match query", () => {
     const env = setupTestEnvironment();
     const results = env.uow.read((repos) =>
-      findFewShotExamples(
-        repos,
-        env.alexViewer,
-        clock.today().toString(),
-        "UnmatchedQuery12345",
-      ),
+      findFewShotExamples(repos, env.alexViewer, clock.today().toString(), "UnmatchedQuery12345"),
     );
     expect(results).toEqual([]);
   });
@@ -391,9 +373,7 @@ describe("Categorisation request builder & AD-6 privacy sanitiser", () => {
           isPrivate: false,
         },
       ],
-      categories: [
-        { id: env.categories.groceries, name: "Groceries", groupName: "Food" },
-      ],
+      categories: [{ id: env.categories.groceries, name: "Groceries", groupName: "Food" }],
       isLocal: false,
     });
 
@@ -1054,9 +1034,7 @@ describe("Categorisation Engine", () => {
     expect(firstSuggestion.outcome).toBe("open");
     expect(firstSuggestion.resolvedAt).toBeNull();
 
-    const openBefore = env.uow.read((r) =>
-      r.suggestions.findOpenForSplit(splitId, "category"),
-    );
+    const openBefore = env.uow.read((r) => r.suggestions.findOpenForSplit(splitId, "category"));
     expect(openBefore?.id).toBe(firstSuggestion.id);
 
     // 2. Second categorisation run suggests Fuel
@@ -1090,16 +1068,12 @@ describe("Categorisation Engine", () => {
     expect(secondSuggestion.suggestedValue).toBe(env.categories.fuel);
 
     // Previous suggestion is now superseded
-    const firstUpdated = env.uow.state.suggestions.find(
-      (s) => s.id === firstSuggestion.id,
-    );
+    const firstUpdated = env.uow.state.suggestions.find((s) => s.id === firstSuggestion.id);
     expect(firstUpdated?.outcome).toBe("superseded");
     expect(firstUpdated?.resolvedAt).not.toBeNull();
 
     // Active open suggestion is the second one
-    const openAfter = env.uow.read((r) =>
-      r.suggestions.findOpenForSplit(splitId, "category"),
-    );
+    const openAfter = env.uow.read((r) => r.suggestions.findOpenForSplit(splitId, "category"));
     expect(openAfter?.id).toBe(secondSuggestion.id);
     expect(openAfter?.suggestedValue).toBe(env.categories.fuel);
   });

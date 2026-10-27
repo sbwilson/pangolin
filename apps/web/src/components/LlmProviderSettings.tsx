@@ -26,11 +26,13 @@ const PURPOSE_LABELS: Record<LlmPurpose, { title: string; description: string }>
   },
   pdf_extract: {
     title: "PDF statement extraction",
-    description: "Extracts transactions from statement PDFs. Blocked on cloud providers unless opted in.",
+    description:
+      "Extracts transactions from statement PDFs. Blocked on cloud providers unless opted in.",
   },
   row_interpret: {
     title: "Set-aside row interpretation",
-    description: "Interprets unparsed raw bank rows in Needs review. Never sends private account rows.",
+    description:
+      "Interprets unparsed raw bank rows in Needs review. Never sends private account rows.",
   },
 };
 
@@ -140,7 +142,10 @@ export function LlmProviderSettings() {
     try {
       await action();
     } catch (err: unknown) {
-      if ((err as ApiError)?.code === "ReauthRequired" || (err as { code?: string })?.code === "ReauthRequired") {
+      if (
+        (err as ApiError)?.code === "ReauthRequired" ||
+        (err as { code?: string })?.code === "ReauthRequired"
+      ) {
         setPendingAction(() => action);
         setReauthOpen(true);
       } else {
@@ -157,7 +162,9 @@ export function LlmProviderSettings() {
       try {
         await action();
       } catch (err: unknown) {
-        setActionError(err instanceof Error ? err.message : "Action failed after re-authentication");
+        setActionError(
+          err instanceof Error ? err.message : "Action failed after re-authentication",
+        );
       }
     } else {
       setReauthOpen(false);
@@ -259,6 +266,7 @@ export function LlmProviderSettings() {
           <div className="flex items-center gap-2">
             <span className="flex text-muted-foreground" aria-hidden="true">
               <svg
+                aria-hidden="true"
                 width="16"
                 height="16"
                 viewBox="0 0 24 24"
@@ -369,7 +377,8 @@ export function LlmProviderSettings() {
               />
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Locality is derived automatically: LAN addresses (10.x, 192.168.x, 172.16-31.x,
-                localhost, *.local) are marked local. Cloud providers default with cloud data opt-ins off.
+                localhost, *.local) are marked local. Cloud providers default with cloud data
+                opt-ins off.
               </p>
             </div>
 
@@ -395,7 +404,9 @@ export function LlmProviderSettings() {
               <input
                 id="llm-provider-key"
                 type="password"
-                placeholder={editingProvider?.apiKeyLast4 ? `••••••••${editingProvider.apiKeyLast4}` : "sk-..."}
+                placeholder={
+                  editingProvider?.apiKeyLast4 ? `••••••••${editingProvider.apiKeyLast4}` : "sk-..."
+                }
                 value={formApiKey}
                 onChange={(e) => setFormApiKey(e.target.value)}
                 className="mt-1 flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -405,7 +416,8 @@ export function LlmProviderSettings() {
 
           {isLocalPreview ? (
             <div className="rounded-md border border-border bg-muted/30 p-2.5 text-xs text-muted-foreground">
-              Local provider detected: requests run on your LAN with strict local privacy; cloud opt-ins are disabled.
+              Local provider detected: requests run on your LAN with strict local privacy; cloud
+              opt-ins are disabled.
             </div>
           ) : (
             <div className="space-y-2 rounded-md border border-border bg-muted/30 p-2.5">
@@ -438,7 +450,13 @@ export function LlmProviderSettings() {
           )}
 
           <div className="flex justify-end gap-2 pt-1">
-            <Button type="button" variant="outline" size="sm" onClick={resetForm} disabled={isSubmitting}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={resetForm}
+              disabled={isSubmitting}
+            >
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={isSubmitting}>
@@ -463,7 +481,10 @@ export function LlmProviderSettings() {
             {providers.map((p) => {
               const test = testResults[p.id];
               return (
-                <li key={p.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <li
+                  key={p.id}
+                  className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-foreground">{p.name}</span>
@@ -483,7 +504,12 @@ export function LlmProviderSettings() {
                       <span>Model: {p.model}</span>
                       <span>URL: {p.baseUrl}</span>
                       <span>
-                        Key: {p.apiKeyLast4 ? `••••••••${p.apiKeyLast4}` : p.isLocal ? "None" : "Not set"}
+                        Key:{" "}
+                        {p.apiKeyLast4
+                          ? `••••••••${p.apiKeyLast4}`
+                          : p.isLocal
+                            ? "None"
+                            : "Not set"}
                       </span>
                     </div>
 
@@ -498,7 +524,9 @@ export function LlmProviderSettings() {
                     {test ? (
                       <div className="pt-1">
                         {test.loading ? (
-                          <span className="text-xs text-muted-foreground">Testing connectivity…</span>
+                          <span className="text-xs text-muted-foreground">
+                            Testing connectivity…
+                          </span>
                         ) : test.ok ? (
                           <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
                             ✓ Connected ({test.latencyMs}ms)
@@ -570,7 +598,12 @@ export function LlmProviderSettings() {
                   <select
                     aria-label={`Select provider for ${meta.title}`}
                     value={currentProviderId}
-                    onChange={(e) => handleAssignPurpose(purpose, e.target.value.length > 0 ? e.target.value : null)}
+                    onChange={(e) =>
+                      handleAssignPurpose(
+                        purpose,
+                        e.target.value.length > 0 ? e.target.value : null,
+                      )
+                    }
                     className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   >
                     <option value="">None (Unassigned)</option>
@@ -613,7 +646,9 @@ export function LlmProviderSettings() {
               <div className="flex items-center gap-2">
                 <span className="text-muted-foreground">Target:</span>
                 <span className="font-medium text-foreground">
-                  {previewQuery.data?.provider ? previewQuery.data.provider.name : "No provider assigned (fallback)"}
+                  {previewQuery.data?.provider
+                    ? previewQuery.data.provider.name
+                    : "No provider assigned (fallback)"}
                 </span>
                 {previewQuery.data?.provider ? (
                   <span
@@ -642,14 +677,18 @@ export function LlmProviderSettings() {
             </div>
 
             <div className="space-y-1">
-              <div className="text-[11px] font-medium text-muted-foreground uppercase">System prompt</div>
+              <div className="text-[11px] font-medium text-muted-foreground uppercase">
+                System prompt
+              </div>
               <pre className="overflow-x-auto rounded-md bg-muted p-2.5 text-[11px] text-foreground font-mono whitespace-pre-wrap">
                 {previewQuery.data?.systemPrompt ?? "Loading…"}
               </pre>
             </div>
 
             <div className="space-y-1">
-              <div className="text-[11px] font-medium text-muted-foreground uppercase">User prompt payload</div>
+              <div className="text-[11px] font-medium text-muted-foreground uppercase">
+                User prompt payload
+              </div>
               <pre className="max-h-60 overflow-y-auto overflow-x-auto rounded-md bg-muted p-2.5 text-[11px] text-foreground font-mono whitespace-pre-wrap">
                 {previewQuery.data?.prompt ?? "Loading…"}
               </pre>
@@ -664,7 +703,8 @@ export function LlmProviderSettings() {
       </div>
 
       <div className="text-xs text-muted-foreground">
-        Adding, editing, or deleting providers and changing capability assignments asks you to confirm it's you.
+        Adding, editing, or deleting providers and changing capability assignments asks you to
+        confirm it's you.
       </div>
 
       {/* Reauth Dialog */}

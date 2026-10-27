@@ -221,7 +221,8 @@
         "!packages/db/src/ledger-repos.ts",
         "!packages/db/src/unit-of-work.ts",
         "!packages/db/src/classify-repos.ts",
-        "!packages/db/src/review-item-repo.ts"
+        "!packages/db/src/review-item-repo.ts",
+        "!packages/db/src/repositories/suggestion.ts"
       ],
       "plugins": ["./tools/lint/no-ledger-schema-read.grit"]
     },

@@ -3,19 +3,19 @@ import { Temporal } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.ts";
 import { createIdGenerator } from "../ids.ts";
+import { createTransaction } from "../ledger/create-transaction.ts";
 import type { LlmProvider, StructuredPrompt, StructuredResponse } from "../ports/llm-provider.ts";
 import type { LlmProviderRow } from "../ports/unit-of-work.ts";
-import { createTransaction } from "../ledger/create-transaction.ts";
 import { manualClock } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import type { Viewer } from "../viewer.ts";
 import {
-  type LlmUseCaseContext,
   assignLlmPurpose,
   createLlmProvider,
   deleteLlmProvider,
   getLlmRequestPreview,
   getLlmSettings,
+  type LlmUseCaseContext,
   testLlmProvider,
   updateLlmProvider,
 } from "./llm-provider-use-cases.ts";
@@ -57,7 +57,9 @@ function setup() {
     encryptApiKey: fakeEncrypt,
     decryptApiKey: fakeDecrypt,
     createProvider: (row: LlmProviderRow, apiKey?: string): LlmProvider => ({
-      generateStructured: async <T>(_prompt: StructuredPrompt<T>): Promise<StructuredResponse<T>> => {
+      generateStructured: async <T>(
+        _prompt: StructuredPrompt<T>,
+      ): Promise<StructuredResponse<T>> => {
         if (row.baseUrl.includes("error")) {
           throw new Error(`Connection refused to ${row.baseUrl} with key ${apiKey}`);
         }
@@ -314,7 +316,15 @@ describe("llm-provider-use-cases", () => {
           createdAt: "2026-10-26T12:00:00Z",
           updatedAt: "2026-10-26T12:00:00Z",
         },
-        [{ accountId: pubAcc, personId, shareBp: 10000, createdAt: "2026-10-26T12:00:00Z", updatedAt: "2026-10-26T12:00:00Z" }],
+        [
+          {
+            accountId: pubAcc,
+            personId,
+            shareBp: 10000,
+            createdAt: "2026-10-26T12:00:00Z",
+            updatedAt: "2026-10-26T12:00:00Z",
+          },
+        ],
       );
 
       tx.accounts.insert(
@@ -331,7 +341,15 @@ describe("llm-provider-use-cases", () => {
           createdAt: "2026-10-26T12:00:00Z",
           updatedAt: "2026-10-26T12:00:00Z",
         },
-        [{ accountId: privAcc, personId, shareBp: 10000, createdAt: "2026-10-26T12:00:00Z", updatedAt: "2026-10-26T12:00:00Z" }],
+        [
+          {
+            accountId: privAcc,
+            personId,
+            shareBp: 10000,
+            createdAt: "2026-10-26T12:00:00Z",
+            updatedAt: "2026-10-26T12:00:00Z",
+          },
+        ],
       );
     });
 

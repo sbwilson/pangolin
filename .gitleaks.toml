@@ -5,4 +5,4 @@ useDefault = true
 
 [allowlist]
 description = "Synthetic fixtures and docs examples"
-paths = ['''samples/''', '''docs/.*\.md''']
+paths = ['''samples/''', '''docs/.*\.md''', '''_bmad-output/.*''']

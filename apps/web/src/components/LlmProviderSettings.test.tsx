@@ -89,7 +89,8 @@ describe("LlmProviderSettings", () => {
       isLocal: true,
       model: "llama3.2",
       systemPrompt: "You are a financial transaction categorisation assistant.",
-      prompt: "Available categories:\n- groceries: Groceries\n\nCategorise the following transactions:\n[0] Description: WOOLWORTHS | Amount: 54.20 AUD",
+      prompt:
+        "Available categories:\n- groceries: Groceries\n\nCategorise the following transactions:\n[0] Description: WOOLWORTHS | Amount: 54.20 AUD",
       schemaName: "categorise",
       schemaDescription: "Transaction categorisation suggestions",
       sampleItems: [
@@ -130,7 +131,9 @@ describe("LlmProviderSettings", () => {
     expect(screen.getByText(/••••••••7Q2a/)).toBeTruthy();
 
     // Purpose dropdown has "Ollama Local" selected for categorise
-    const categoriseSelect = screen.getByLabelText("Select provider for Transaction categorisation") as HTMLSelectElement;
+    const categoriseSelect = screen.getByLabelText(
+      "Select provider for Transaction categorisation",
+    ) as HTMLSelectElement;
     expect(categoriseSelect.value).toBe(mockProviderLocal.id);
   });
 
@@ -248,7 +251,9 @@ describe("LlmProviderSettings", () => {
     await screen.findByText("Live request preview");
 
     // Initially collapsed
-    expect(screen.queryByText(/You are a financial transaction categorisation assistant/)).toBeNull();
+    expect(
+      screen.queryByText(/You are a financial transaction categorisation assistant/),
+    ).toBeNull();
 
     // Toggle open
     await user.click(screen.getByRole("button", { name: "View preview" }));

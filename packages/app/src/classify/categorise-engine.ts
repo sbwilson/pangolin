@@ -3,15 +3,11 @@ import { formatInstant } from "@pangolin/shared/temporal";
 import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
 import type { LlmProvider } from "../ports/llm-provider.ts";
-import type {
-  FewShotExample,
-  LlmProviderRow,
-  SuggestionRow,
-} from "../ports/unit-of-work.ts";
+import type { FewShotExample, LlmProviderRow, SuggestionRow } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
 import {
-  CATEGORISE_PROMPT_VERSION,
   buildCategorisationRequest,
+  CATEGORISE_PROMPT_VERSION,
   type CategoriseCategoryOption,
   type CategoriseRequestItem,
 } from "./categorise-request.ts";
@@ -64,9 +60,7 @@ export async function categoriseTransactions(
   const today = ctx.clock.today().toString();
 
   // 1. Resolve LLM provider and determine locality (AD-6)
-  const providerRow = ctx.uow.read((repos) =>
-    repos.llmProviders.findForPurpose("categorise"),
-  );
+  const providerRow = ctx.uow.read((repos) => repos.llmProviders.findForPurpose("categorise"));
 
   let provider: LlmProvider;
   let isLocal: boolean;
@@ -81,88 +75,90 @@ export async function categoriseTransactions(
     isLocal = providerRow.isLocal;
     model = providerRow.model;
   } else {
-    throw new AppError(
-      "Validation",
-      "No LLM provider configured for categorisation",
-    );
+    throw new AppError("Validation", "No LLM provider configured for categorisation");
   }
 
   // 2. Read transactions, accounts, categories, and tax categories
-  const { itemsToCategorise, categoryOptions, knownCategoryIds, knownTaxCategoryIds, knownActivityIds, fewShotPool } =
-    ctx.uow.read((repos) => {
-      const categories = repos.categories.list(ctx.viewer);
-      const groups = repos.categoryGroups.list(ctx.viewer);
-      const groupMap = new Map(groups.map((g) => [g.id, g.name]));
+  const {
+    itemsToCategorise,
+    categoryOptions,
+    knownCategoryIds,
+    knownTaxCategoryIds,
+    knownActivityIds,
+    fewShotPool,
+  } = ctx.uow.read((repos) => {
+    const categories = repos.categories.list(ctx.viewer);
+    const groups = repos.categoryGroups.list(ctx.viewer);
+    const groupMap = new Map(groups.map((g) => [g.id, g.name]));
 
-      const categoryOptions: CategoriseCategoryOption[] = categories.map((c) => ({
-        id: c.id,
-        name: c.name,
-        groupName: groupMap.get(c.groupId),
-      }));
-      const knownCategoryIds = new Set(categories.map((c) => c.id));
-      const knownTaxCategoryIds = new Set(repos.taxCategories.list(ctx.viewer).map((t) => t.id));
-      const knownActivityIds = new Set(repos.activities.list(ctx.viewer).map((a) => a.id));
+    const categoryOptions: CategoriseCategoryOption[] = categories.map((c) => ({
+      id: c.id,
+      name: c.name,
+      groupName: groupMap.get(c.groupId),
+    }));
+    const knownCategoryIds = new Set(categories.map((c) => c.id));
+    const knownTaxCategoryIds = new Set(repos.taxCategories.list(ctx.viewer).map((t) => t.id));
+    const knownActivityIds = new Set(repos.activities.list(ctx.viewer).map((a) => a.id));
 
-      const itemsToCategorise: ItemMeta[] = [];
-      const fewShotPool: FewShotExample[] = [];
+    const itemsToCategorise: ItemMeta[] = [];
+    const fewShotPool: FewShotExample[] = [];
 
-      for (const txnId of input.transactionIds) {
-        const txn = repos.transactions.findVisible(ctx.viewer, txnId, today);
-        if (!txn || txn.descriptionRaw === null) continue;
+    for (const txnId of input.transactionIds) {
+      const txn = repos.transactions.findVisible(ctx.viewer, txnId, today);
+      if (!txn || txn.descriptionRaw === null) continue;
 
-        const acc = repos.accounts.findVisible(ctx.viewer, txn.accountId);
-        if (!acc) continue;
-        const isPrivate = acc.isPrivate;
+      const acc = repos.accounts.findVisible(ctx.viewer, txn.accountId);
+      if (!acc) continue;
+      const isPrivate = acc.isPrivate;
 
-        // AD-6: Reject private account transactions immediately if provider is not local
-        if (!isLocal && isPrivate) {
-          throw new AppError(
-            "PermissionDenied",
-            "Cannot send private account transactions to a cloud LLM provider",
-          );
-        }
+      // AD-6: Reject private account transactions immediately if provider is not local
+      if (!isLocal && isPrivate) {
+        throw new AppError(
+          "PermissionDenied",
+          "Cannot send private account transactions to a cloud LLM provider",
+        );
+      }
 
-        const unclassifiedSplit =
-          txn.splits.find((s) => s.categoryId === null) ?? txn.splits[0];
-        if (!unclassifiedSplit) continue;
+      const unclassifiedSplit = txn.splits.find((s) => s.categoryId === null) ?? txn.splits[0];
+      if (!unclassifiedSplit) continue;
 
-        itemsToCategorise.push({
-          transactionId: txn.id,
-          accountId: txn.accountId,
-          splitId: unclassifiedSplit.id,
-          isPrivate,
-          description: txn.descriptionRaw,
-          amountCents: txn.amountCents,
-          postedOn: txn.postedOn,
-        });
+      itemsToCategorise.push({
+        transactionId: txn.id,
+        accountId: txn.accountId,
+        splitId: unclassifiedSplit.id,
+        isPrivate,
+        description: txn.descriptionRaw,
+        amountCents: txn.amountCents,
+        postedOn: txn.postedOn,
+      });
 
-        // Retrieve few-shot examples for this description from public accounts
-        if (fewShotPool.length < 10) {
-          const examples = findFewShotExamples(
-            repos,
-            ctx.viewer,
-            today,
-            txn.descriptionRaw,
-            10 - fewShotPool.length,
-          );
-          for (const ex of examples) {
-            if (!fewShotPool.some((p) => p.transactionId === ex.transactionId)) {
-              fewShotPool.push(ex);
-              if (fewShotPool.length >= 10) break;
-            }
+      // Retrieve few-shot examples for this description from public accounts
+      if (fewShotPool.length < 10) {
+        const examples = findFewShotExamples(
+          repos,
+          ctx.viewer,
+          today,
+          txn.descriptionRaw,
+          10 - fewShotPool.length,
+        );
+        for (const ex of examples) {
+          if (!fewShotPool.some((p) => p.transactionId === ex.transactionId)) {
+            fewShotPool.push(ex);
+            if (fewShotPool.length >= 10) break;
           }
         }
       }
+    }
 
-      return {
-        itemsToCategorise,
-        categoryOptions,
-        knownCategoryIds,
-        knownTaxCategoryIds,
-        knownActivityIds,
-        fewShotPool,
-      };
-    });
+    return {
+      itemsToCategorise,
+      categoryOptions,
+      knownCategoryIds,
+      knownTaxCategoryIds,
+      knownActivityIds,
+      fewShotPool,
+    };
+  });
 
   if (categoryOptions.length === 0 || itemsToCategorise.length === 0) {
     return { suggestions: [], recordedCount: 0, discardedCount: 0 };

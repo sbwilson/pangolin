@@ -8,6 +8,7 @@ language js
 //   classify-repos.ts    reads split and split_tag through `visibleTxnId(viewer)` or under the
 //                        tag's own scope filter.
 //   review-item-repo.ts  reads review_item only through `visibleReviewItems`.
+//   repositories/suggestion.ts reads account, split, transaction with `is_private = 0` / privacy filters.
 // Covers static imports (also `import type` and side-effect), `export ... from`, dynamic
 // `import()` and `require()`.
 or {

@@ -56,7 +56,7 @@ export function buildCategorisationRequest(
 ): StructuredPrompt<CategoriseOutput> {
   // AD-6: Cloud privacy sanitiser: refuse private accounts if provider is not local
   if (!input.isLocal) {
-    const hasPrivate = input.items.some((item) => (item.isPrivate ?? true));
+    const hasPrivate = input.items.some((item) => item.isPrivate ?? true);
     if (hasPrivate) {
       throw new AppError(
         "PermissionDenied",

@@ -54,7 +54,12 @@ function defaultIsLanAddress(urlOrHost: string): boolean {
   try {
     const url = urlOrHost.includes("://") ? new URL(urlOrHost) : new URL(`http://${urlOrHost}`);
     const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-    if (host === "localhost" || host.endsWith(".localhost") || host === "local" || host.endsWith(".local")) {
+    if (
+      host === "localhost" ||
+      host.endsWith(".localhost") ||
+      host === "local" ||
+      host.endsWith(".local")
+    ) {
       return true;
     }
     if (

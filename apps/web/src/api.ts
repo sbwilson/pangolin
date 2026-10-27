@@ -1018,18 +1018,14 @@ export async function updateLlmProvider(
   );
 }
 
-export async function deleteLlmProvider(
-  id: string,
-): Promise<{ success: boolean }> {
+export async function deleteLlmProvider(id: string): Promise<{ success: boolean }> {
   return await sendJson<{ success: boolean }>(
     "DELETE",
     `/api/llm/providers/${encodeURIComponent(id)}`,
   );
 }
 
-export async function testLlmProvider(
-  id: string,
-): Promise<TestLlmProviderResult> {
+export async function testLlmProvider(id: string): Promise<TestLlmProviderResult> {
   return await sendJson<TestLlmProviderResult>(
     "POST",
     `/api/llm/providers/${encodeURIComponent(id)}/test`,

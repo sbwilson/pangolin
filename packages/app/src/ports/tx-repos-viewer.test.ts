@@ -102,8 +102,10 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
   "ImportRowRepo.updateStatus": "the use case checked the row and account with findVisible",
   "SuggestionRepo.insert": "a new suggestion; the use case checked the account with findVisible",
   "SuggestionRepo.insertMany": "new suggestions; the use case checked the account with findVisible",
-  "SuggestionRepo.findOpenForSplit": "reads the open suggestion on a split the use case read through the viewer",
-  "SuggestionRepo.resolveOpen": "a write on a suggestion whose split the use case read through the viewer",
+  "SuggestionRepo.findOpenForSplit":
+    "reads the open suggestion on a split the use case read through the viewer",
+  "SuggestionRepo.resolveOpen":
+    "a write on a suggestion whose split the use case read through the viewer",
   "ImportHandoffRepo.insert": "a new hand-off; the use case set the sender to the viewer",
   "ImportHandoffRepo.markImported": "the use case found the hand-off with findForRecipient first",
   "ImportHandoffRepo.markDismissed": "the use case found the hand-off with findForRecipient first",

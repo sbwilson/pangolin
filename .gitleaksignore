@@ -3,3 +3,9 @@
 # replaced by a random per-run secret in a later commit.
 cc5f9745035c8efe9b2f7e6395899493a92d5d21:apps/server/src/testing/auth-harness.ts:generic-api-key:71
 62efca8f8172d4580edd0843571bf1bdb8e4df1b:apps/server/src/testing/auth-harness.ts:generic-api-key:75
+
+# Synthetic test API keys in LLM test cases and plan files (never real credentials)
+2f56cb9b757b46414c502c66e308a1872fda228b:_bmad-output/initiative-pangolin-money-v1/epic-llm-categorisation-pdf/story-settings-llm-providers-card-with-live-request-preview-and-re-plan.md:generic-api-key:52
+f7f124551faf3de40323971e89dfbfeaf030a638:packages/llm/src/crypto.test.ts:generic-api-key:6
+2f56cb9b757b46414c502c66e308a1872fda228b:apps/server/src/http/app.test.ts:generic-api-key:3394
+2f56cb9b757b46414c502c66e308a1872fda228b:packages/app/src/classify/llm-provider-use-cases.test.ts:generic-api-key:133
