@@ -383,4 +383,13 @@ describe("llm-provider-use-cases", () => {
     expect(preview.sampleItems.length).toBeGreaterThan(0);
     expect(preview.sampleItems.every((item) => item.isPrivate === false)).toBe(true);
   });
+
+  it("getLlmRequestPreview supports purpose: 'pdf_extract' with schema and sample items", () => {
+    const { ctx } = setup();
+    const preview = getLlmRequestPreview(ctx, { purpose: "pdf_extract" });
+    expect(preview.schemaName).toBe("pdf_extract");
+    expect(preview.prompt).toContain("Commonwealth Bank Statement");
+    expect(preview.prompt).toContain("Statement Period");
+    expect(preview.sampleItems.length).toBeGreaterThan(0);
+  });
 });

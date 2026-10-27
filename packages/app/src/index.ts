@@ -445,6 +445,35 @@ export {
   rowInterpretProposalSchema,
 } from "./imports/row-interpret-request.ts";
 export {
+  type BuildPdfExtractRequestInput,
+  buildPdfExtractRequest,
+  PDF_EXTRACT_PROMPT_VERSION,
+  type PdfExtractPage,
+  type PdfExtractRow,
+  pdfExtractPageSchema,
+  pdfExtractRowSchema,
+} from "./imports/pdf-extract-request.ts";
+export {
+  type StatementVerificationFailure,
+  type StatementVerificationInput,
+  type StatementVerificationResult,
+  type StatementVerificationSuccess,
+  type VerifiableStatementRow,
+  verifyStatementBalances,
+} from "./imports/pdf-verify.ts";
+export {
+  type ExtractAndImportPdfStatementInput,
+  type ExtractAndImportPdfStatementOptions,
+  type ExtractAndImportPdfStatementResult,
+  type ExtractedPdfPageItem,
+  type PdfImportContext,
+  type PdfTextExtractionPayload,
+  type PdfTextExtractor,
+  type VisionModelClassifier,
+  extractAndImportPdfStatement,
+  extractAndImportPdfStatementInput,
+} from "./imports/pdf-import.ts";
+export {
   type ConfirmSetAsideProposalInput,
   confirmSetAsideProposal,
   confirmSetAsideProposalInput,

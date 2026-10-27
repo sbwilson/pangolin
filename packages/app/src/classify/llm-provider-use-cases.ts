@@ -23,6 +23,7 @@ import {
   buildRowInterpretRequest,
   type RowInterpretRequestItem,
 } from "../imports/row-interpret-request.ts";
+import { buildPdfExtractRequest } from "../imports/pdf-extract-request.ts";
 
 export interface LlmUseCaseContext extends UseCaseContext {
   readonly authSecret?: string | undefined;
@@ -446,6 +447,17 @@ export const getLlmRequestPreviewInputSchema = z.object({
 });
 export type GetLlmRequestPreviewInput = z.infer<typeof getLlmRequestPreviewInputSchema>;
 
+export interface PdfExtractSampleItem {
+  readonly pageNumber: number;
+  readonly text: string;
+  readonly isPrivate?: false | undefined;
+}
+
+export type LlmPreviewSampleItem =
+  | CategoriseRequestItem
+  | RowInterpretRequestItem
+  | PdfExtractSampleItem;
+
 export interface LlmRequestPreviewResult {
   readonly provider: LlmProviderSafeView | null;
   readonly isLocal: boolean;
@@ -454,7 +466,7 @@ export interface LlmRequestPreviewResult {
   readonly prompt: string;
   readonly schemaName: string;
   readonly schemaDescription?: string | undefined;
-  readonly sampleItems: readonly (CategoriseRequestItem | RowInterpretRequestItem)[];
+  readonly sampleItems: readonly LlmPreviewSampleItem[];
 }
 
 export function getLlmRequestPreview(
@@ -476,6 +488,36 @@ export function getLlmRequestPreview(
 
     const isLocal = provider?.isLocal ?? false;
     const model = provider?.model;
+
+    if (parsed.purpose === "pdf_extract") {
+      const sampleText =
+        "Commonwealth Bank Statement\nAccount Number: **** **** **** 1234\nStatement Period: 2024-09-01 to 2024-09-30\nOpening Balance: $1,000.00\nClosing Balance: $1,030.00\n2024-09-02 SALARY PAYMENT $50.00 Balance: $1,050.00\n2024-09-05 COFFEE SHOP -$20.00 Balance: $1,030.00";
+
+      const structuredPrompt = buildPdfExtractRequest({
+        pageNumber: 1,
+        pageText: sampleText,
+        isLocal: provider ? provider.isLocal : true,
+        cloudPdf: true,
+        model,
+      });
+
+      return {
+        provider,
+        isLocal: provider ? provider.isLocal : true,
+        model,
+        systemPrompt: structuredPrompt.systemPrompt,
+        prompt: structuredPrompt.prompt,
+        schemaName: structuredPrompt.schemaName,
+        schemaDescription: structuredPrompt.schemaDescription,
+        sampleItems: [
+          {
+            pageNumber: 1,
+            text: sampleText,
+            isPrivate: false,
+          },
+        ],
+      };
+    }
 
     if (parsed.purpose === "row_interpret") {
       const sampleItems: RowInterpretRequestItem[] = [

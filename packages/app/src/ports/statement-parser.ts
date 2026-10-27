@@ -13,6 +13,8 @@ export interface ParsedStatementRow {
   readonly externalId: string | null;
   /** Running or closing balance in cents, if available. */
   readonly balanceCents?: number | null;
+  /** 1-based PDF page number where this row was extracted, if from a PDF statement. */
+  readonly pdfPage?: number | null;
 }
 
 export interface SetAsideStatementRow {

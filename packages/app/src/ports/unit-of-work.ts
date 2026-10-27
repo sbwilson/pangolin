@@ -1612,7 +1612,7 @@ export interface ImportRowRow {
   readonly rawLine: string;
   readonly status: ImportRowStatus;
   readonly reason: string | null;
-  readonly proposal: string | null;
+  readonly proposal?: string | null;
   readonly pdfPage: number | null;
   readonly createdAt: string;
   readonly updatedAt: string;

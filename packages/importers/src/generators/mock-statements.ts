@@ -271,3 +271,180 @@ export function generateTwelveMonthStatements(options?: {
   }
   return statements;
 }
+
+export interface MockPdfStatementRow {
+  readonly postedOn: string;
+  readonly description: string;
+  readonly amountCents: number;
+  readonly runningBalanceCents?: number | null;
+  readonly pageNumber?: number;
+}
+
+export interface GenerateMockPdfStatementOptions {
+  readonly bankName?: string;
+  readonly accountNumberLast4?: string;
+  readonly startDate?: string;
+  readonly endDate?: string;
+  readonly openingBalanceCents?: number;
+  readonly closingBalanceCents?: number;
+  readonly rows?: readonly MockPdfStatementRow[];
+  readonly scannedWithoutText?: boolean;
+}
+
+function formatPdfCurrency(cents: number): string {
+  const isNegative = cents < 0;
+  const abs = Math.abs(cents);
+  const dollars = Math.floor(abs / 100);
+  const remainder = abs % 100;
+  const formatted = `${dollars}.${remainder.toString().padStart(2, "0")}`;
+  return isNegative ? `-$${formatted}` : `$${formatted}`;
+}
+
+/**
+ * Generates a valid synthetic PDF binary buffer with text streams and verifiable totals (AD-6, AD-15).
+ * Supports multi-page statements and simulated scanned statements lacking extractable text.
+ */
+export function generateMockPdfStatement(options?: GenerateMockPdfStatementOptions): Buffer {
+  const bankName = options?.bankName ?? "Commonwealth Bank";
+  const accountNumberLast4 = options?.accountNumberLast4 ?? "1234";
+  const openingBalanceCents = options?.openingBalanceCents ?? 100_000;
+  const rows: readonly MockPdfStatementRow[] = options?.rows ?? [
+    {
+      postedOn: "2024-09-02",
+      description: "SALARY PAYMENT",
+      amountCents: 5_000,
+      runningBalanceCents: openingBalanceCents + 5_000,
+      pageNumber: 1,
+    },
+    {
+      postedOn: "2024-09-05",
+      description: "COFFEE SHOP",
+      amountCents: -2_000,
+      runningBalanceCents: openingBalanceCents + 3_000,
+      pageNumber: 1,
+    },
+  ];
+
+  const sumAmounts = rows.reduce((acc, r) => acc + r.amountCents, 0);
+  const closingBalanceCents =
+    options?.closingBalanceCents !== undefined
+      ? options.closingBalanceCents
+      : openingBalanceCents + sumAmounts;
+
+  const dates = rows.map((r) => r.postedOn).sort();
+  const startDate = options?.startDate ?? dates[0] ?? "2024-09-01";
+  const endDate = options?.endDate ?? dates[dates.length - 1] ?? "2024-09-30";
+
+  // Group rows by page
+  const pageMap = new Map<number, MockPdfStatementRow[]>();
+  for (const row of rows) {
+    const pageNum = row.pageNumber ?? 1;
+    const existing = pageMap.get(pageNum);
+    if (existing) {
+      existing.push(row);
+    } else {
+      pageMap.set(pageNum, [row]);
+    }
+  }
+
+  const pageNumbers = Array.from(pageMap.keys()).sort((a, b) => a - b);
+  if (pageNumbers.length === 0) {
+    pageNumbers.push(1);
+    pageMap.set(1, []);
+  }
+
+  const totalPages = pageNumbers.length;
+
+  const pageTexts: string[][] = pageNumbers.map((pageNum) => {
+    if (options?.scannedWithoutText) {
+      return [];
+    }
+    const pageRows = pageMap.get(pageNum) ?? [];
+    const lines: string[] = [
+      `${bankName} Statement`,
+      `Account Number: **** **** **** ${accountNumberLast4}`,
+      `Statement Period: ${startDate} to ${endDate}`,
+      `Opening Balance: ${formatPdfCurrency(openingBalanceCents)}`,
+      `Closing Balance: ${formatPdfCurrency(closingBalanceCents)}`,
+      `Page ${pageNum} of ${totalPages}`,
+      "Transactions:",
+      "Date | Description | Amount | Balance",
+    ];
+
+    for (const r of pageRows) {
+      const balStr =
+        r.runningBalanceCents !== null && r.runningBalanceCents !== undefined
+          ? ` Balance: ${formatPdfCurrency(r.runningBalanceCents)}`
+          : "";
+      lines.push(`${r.postedOn} ${r.description} ${formatPdfCurrency(r.amountCents)}${balStr}`);
+    }
+
+    return lines;
+  });
+
+  // Construct PDF structure
+  const objects: { id: number; body: string }[] = [];
+  let currentId = 1;
+  const catalogId = currentId++;
+  const pagesId = currentId++;
+  const fontId = currentId++;
+
+  const pageIds: number[] = [];
+  const contentIds: number[] = [];
+  for (let i = 0; i < totalPages; i++) {
+    pageIds.push(currentId++);
+    contentIds.push(currentId++);
+  }
+
+  objects.push({ id: catalogId, body: `<< /Type /Catalog /Pages ${pagesId} 0 R >>` });
+  objects.push({
+    id: pagesId,
+    body: `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${totalPages} >>`,
+  });
+  objects.push({ id: fontId, body: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>" });
+
+  for (let i = 0; i < totalPages; i++) {
+    const pId = pageIds[i]!;
+    const cId = contentIds[i]!;
+    objects.push({
+      id: pId,
+      body: `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${cId} 0 R >>`,
+    });
+
+    const lines = pageTexts[i]!;
+    let stream = "";
+    if (lines.length > 0) {
+      stream = "BT\n/F1 10 Tf\n50 740 Td\n";
+      for (const rawLine of lines) {
+        const line = rawLine.replace(/[()\\\r\n]/g, " ");
+        stream += `(${line}) Tj\n0 -16 Td\n`;
+      }
+      stream += "ET\n";
+    } else {
+      // Scanned page: graphical stroke/fill without text
+      stream = "10 10 100 100 re f\n";
+    }
+
+    objects.push({
+      id: cId,
+      body: `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}endstream`,
+    });
+  }
+
+  objects.sort((a, b) => a.id - b.id);
+  let output = "%PDF-1.4\n";
+  const offsets: number[] = [0];
+  for (const obj of objects) {
+    offsets[obj.id] = Buffer.byteLength(output);
+    output += `${obj.id} 0 obj\n${obj.body}\nendobj\n`;
+  }
+
+  const xrefOffset = Buffer.byteLength(output);
+  output += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i <= objects.length; i++) {
+    output += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  }
+  output += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return Buffer.from(output);
+}

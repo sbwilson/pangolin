@@ -1353,7 +1353,8 @@ bad-date,-20.00,Row 2 Bad Date
 
       const setAsideRows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
       expect(setAsideRows).toHaveLength(2);
-      const [row0, row1] = setAsideRows;
+      const row0 = setAsideRows[0]!;
+      const row1 = setAsideRows[1]!;
 
       const mockProvider = createMockProvider({
         proposals: [

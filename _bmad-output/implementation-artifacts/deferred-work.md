@@ -516,3 +516,9 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
   summary: Browser-level Playwright tests for review suggestion cards and bulk-accept flows on seeded ledger.
   evidence: The seeded test ledger contains no open review items or mock LLM suggestions; full browser e2e testing requires a seeded review item fixture (deferred consistently with story 3.8).
 
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-llm-categorisation-pdf/story-pdf-statement-extraction-engine-with-pdf-js-and-deterministi-plan.md`
+  summary: tx-repos-viewer.test.ts is red at baseline — `ImportRowRepo.updateProposal` takes no viewer first and is not in the AD-3 allow-list (3 failing tests).
+  evidence: Pre-existing, introduced by story 5.6 (commit c184775 added `updateProposal` without updating the allow-list); proven by running the test against the HEAD version of unit-of-work.ts with identical failures. Not caused by story 5.7.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-llm-categorisation-pdf/story-pdf-statement-extraction-engine-with-pdf-js-and-deterministi-plan.md`
+  summary: text-extractor passes a Uint8Array view over the caller's buffer to pdfjs getDocument; if pdfjs transfers/detaches it, a reused source buffer would be corrupted on a second extraction (medium if true, unverified).
+  evidence: Settled by demonstrating whether the pdfjs-dist legacy build detaches or mutates a caller-supplied buffer across repeated extractPdfTextPages calls on the same Uint8Array.

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@pangolin/app": "workspace:*",
-    "@pangolin/shared": "workspace:*"
+    "@pangolin/shared": "workspace:*",
+    "pdfjs-dist": "^6.4.299"
   }
 }
