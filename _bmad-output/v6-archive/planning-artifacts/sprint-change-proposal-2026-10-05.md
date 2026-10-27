@@ -11,7 +11,7 @@ proposals: 50
 
 # Sprint Change Proposal: UX catch-up, goal kinds and Cover an expense
 
-Paths used below: SPEC dir = `_bmad-output/specs/spec-pangolin-money/` · SPINE = `_bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md` · INIT dir = `_bmad-output/initiative-pangolin-money-v1/` · UX dir = `_bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/`.
+Paths used below: SPEC dir = `_bmad-output/specs/spec-pangolin-money/` · SPINE = `_bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md` · INIT dir = `_bmad-output/initiative-pangolin-money-v1/` · UX dir = `_bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/`.
 
 ## 1. Issue Summary
 
@@ -381,14 +381,14 @@ Also settled at group approval: M3 gate moves to epic 15 (G3); U-4 non-owner see
 - **Why:** Items 1, 10, 13; D3, D6, G3.
 
 #### E-3 · Ledger workspace entry 2: `/transactions`
-- **Artifact:** INIT epic-ledger-workspace/tickets.toml · entry 2
+- **Artifact:** INIT epic-ledger-workspace/tickets/tickets.toml · entry 2
 - **OLD:** "…the list page holds the filters in URL search params and renders a virtualised table."
 - **NEW:** "…the list page at `/transactions` (`/ledger` redirects) holds the filters and the date range (Quarter · FY to date · Custom) in URL search params. It groups rows by date with a server-computed day net, shows a server-computed summary line (count, in, out), and renders a virtualised table. The nav badge counts the viewer's uncategorised rows."
 - **Verify adds:** "`/ledger` redirects; no client sums." Update paths in `routing.spec.ts` and `ledger.spec.ts`.
 - **Why:** Items 11, X-5, X-10.
 
 #### E-4 · Ledger workspace entries 3 and 5, new entry 12
-- **Artifact:** INIT epic-ledger-workspace/tickets.toml · entries 3, 5, new 12
+- **Artifact:** INIT epic-ledger-workspace/tickets/tickets.toml · entries 3, 5, new 12
 - **OLD (entry 3 title):** "Edit splits, tags, beneficiary and hiding"
 - **NEW (entry 3):** "Transaction sheet: splits, tags, notes, beneficiary and hiding". Description adds the owner's "Hidden from <partner> until <date>" tag and the partner's wink row ("Hidden until <date>").
 - **OLD (entry 5):** "FTS5 over visibleTxn keyed on a stable integer, … and a basic search UI."
@@ -397,7 +397,7 @@ Also settled at group approval: M3 gate moves to epic 15 (G3); U-4 non-owner see
 - **Why:** X-10, X-11.
 
 #### E-5 · Ledger workspace entry 4 and Boundaries
-- **Artifact:** INIT epic-ledger-workspace/tickets.toml entry 4; epic-ledger-workspace.md § Boundaries
+- **Artifact:** INIT epic-ledger-workspace/tickets/tickets.toml entry 4; epic-ledger-workspace.md § Boundaries
 - **OLD:** "Create and edit accounts, owners and shares, and privacy (with the refusal when splits are shared), calling the accounts API."
 - **NEW:** Append: "The Accounts page groups rows as Cash · Savings · Cards · Loans, with a separate Properties card placeholder. It shows the owner-only lock and the stale caption (newest import > 45 days). `/accounts/:id` shows the balance, freshness and that account's transactions."
 - **Boundaries add:** "Not the app shell, Settings, sign-in route or themes (epic-app-shell-settings-theming). Not loan or property detail (epic-loans-property)."

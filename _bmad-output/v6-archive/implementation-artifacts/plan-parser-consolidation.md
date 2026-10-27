@@ -12,7 +12,7 @@ review_source: ''
 lenses_ran: []
 review_loop_iteration: 0
 context:
-  - '{project-root}/_bmad-output/initiative-pangolin-money-v1/epic-import-dedupe-transfers/epic-import-dedupe-transfers-retrospective.md'
+  - '{project-root}/_bmad-output/initiative-pangolin-money-v1/tickets/epic-import-dedupe-transfers/epic-import-dedupe-transfers-retrospective.md'
 ---
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">

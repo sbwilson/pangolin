@@ -50,7 +50,7 @@ context: []
 - `apps/server/src/auth/recovery.ts:153-168` `recover` -- `reserveLoginAttempt` instead of `assertLoginAllowed`; on `Unauthenticated` keep the failure (drop the extra `ok: false` insert); on success record success; on any other error `releaseLoginAttempt`. `reEnrol` unchanged.
 - `apps/server/src/auth/auth.test.ts:452-490` -- turn the `it.fails` S11a test into `it`; add tests for each matrix row not already covered by the existing lockout tests (pending TOTP counts as neither, a non-401 error is released, sequential count unchanged); `apps/server/src/auth/recovery.test.ts` -- a concurrent recovery burst.
 - `packages/app/src/identity/lockout.test.ts` (if it exists, else beside it) -- unit tests of reserve and release on the memory unit of work.
-- Backlog ticket `_bmad-output/backlog/bug-lockout-holds-under-concurrent-sign-ins.md` -- do not edit.
+- Backlog ticket `_bmad-output/v6-archive/backlog/bug-lockout-holds-under-concurrent-sign-ins.md` -- do not edit.
 
 ## Tasks & Acceptance
 

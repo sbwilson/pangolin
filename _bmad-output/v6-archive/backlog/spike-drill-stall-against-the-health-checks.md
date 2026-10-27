@@ -24,4 +24,4 @@ Time `integrity_check` on generated databases of growing size (for example 1, 2 
 
 ## References
 
-- findings — _bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/spike-check-the-suspected-seams-findings.md, section 3 (S11b)
+- findings — _bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-hardening/tickets/spike-check-the-suspected-seams-findings.md, section 3 (S11b)

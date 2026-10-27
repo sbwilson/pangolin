@@ -60,7 +60,7 @@ context:
 - `packages/app/src/imports/m1-report.ts` (+ test), `apps/server/src/cli.ts` (`printM1Report`), `cli.test.ts` -- accepted spans, join breaks, account ids.
 - `apps/server/src/admin/commands.ts`, `cli.ts` (`USAGE`) -- `opening-balance` command reusing `recordBalanceSnapshot` (`accounts/balance.ts`).
 - `docs/m1-gate.md` -- the accepted-start definition, join check, how to set openings for cards and existing batches.
-- `_bmad-output/implementation-artifacts/deferred-work.md` -- credit-limit field (`account.credit_limit_cents`, in `data-model.md`, absent from the schema) and a web prompt for opening balances.
+- `_bmad-output/v6-archive/implementation-artifacts/deferred-work.md` -- credit-limit field (`account.credit_limit_cents`, in `data-model.md`, absent from the schema) and a web prompt for opening balances.
 
 ## Tasks & Acceptance
 

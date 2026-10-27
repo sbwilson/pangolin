@@ -44,5 +44,5 @@ The lockout check reads the failure count, runs the scrypt hash, then records th
 
 ## References
 
-- findings — _bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/spike-check-the-suspected-seams-findings.md, section 2 (S11a)
+- findings — _bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-hardening/tickets/spike-check-the-suspected-seams-findings.md, section 2 (S11a)
 - security — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md

@@ -1,7 +1,7 @@
 # Validation Report — pangolin
 
-- **DESIGN.md:** `/Users/sim/dev/pangolin/_bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md`
-- **EXPERIENCE.md:** `/Users/sim/dev/pangolin/_bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md`
+- **DESIGN.md:** `/Users/sim/dev/pangolin/_bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md`
+- **EXPERIENCE.md:** `/Users/sim/dev/pangolin/_bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md`
 - **Run at:** 2026-10-05T03:19:37Z
 
 ## Overall verdict

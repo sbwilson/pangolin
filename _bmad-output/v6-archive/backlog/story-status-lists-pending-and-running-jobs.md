@@ -20,5 +20,5 @@ estimate: ""
 
 ## References
 
-- spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-9
+- spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-9
 - request — the user, 2026-10-03: "show a list of the pending jobs when we run `sudo pangolin status`"

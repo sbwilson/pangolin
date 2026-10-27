@@ -44,4 +44,4 @@ Run the `it.fails` S10 test in `apps/server/src/cli.test.ts`: restore a snapshot
 
 ## References
 
-- findings — _bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/spike-check-the-suspected-seams-findings.md, section 1 (S10)
+- findings — _bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-hardening/tickets/spike-check-the-suspected-seams-findings.md, section 1 (S10)

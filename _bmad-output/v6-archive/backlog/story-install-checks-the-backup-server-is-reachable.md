@@ -26,4 +26,4 @@ estimate: ""
 ## References
 
 - code — apps/server/src/backup/reachable.ts, checkRepositoryReachable
-- retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md, Behavior verification
+- retrospective — _bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-hardening/epic-platform-hardening-retrospective.md, Behavior verification
