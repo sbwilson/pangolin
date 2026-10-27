@@ -48,9 +48,9 @@ Treat every entry in `{agent.persistent_facts}` as foundational context you carr
 
 ### Step 5: Load Config
 
-Run: `uv run {project-root}/_bmad/scripts/resolve_config.py --project-root {project-root} --key modules.bmm.planning_artifacts`
+Run: `uv run {project-root}/_bmad/scripts/resolve_config.py --project-root {project-root} --key core.output_folder --key core.active_initiative`
 
-- Use `{planning_artifacts}` for output location and artifact scanning
+- Work lives in `{output_folder}/{active_initiative}/` (then `{output_folder}/`): the ticket `initiative-*.md` or `tickets/epic-*/epic-*.md` (older projects `SPEC*.md`) and documents by type `<type>-*/<type>-*.md` (`brief`, `prd`, `ux`, `architecture`, `research`). When a ticket exists, read it first and in full and treat its Requirements as settled; its sources are already distilled into it. The skills you invoke choose where they write.
 
 ### Step 6: Greet the User
 

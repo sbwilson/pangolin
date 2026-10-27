@@ -44,7 +44,7 @@ Announce skipped lenses first, then launch every active lens before handling any
 {{ workflow.thorough_lenses }}
 {% endif %}
 
-If a lens's instruction requires subagents and none are available, for each such lens write under `{{ config.implementation_artifacts }}` that lens's child prompt with every file it points to — the diff, the claims, the reviewer instruction file — replaced inline by that file's contents, and every other line left exactly as written. That session shares no filesystem with this one, so its prompt has to stand alone; this is the only place you read a reviewer instruction file yourself. Then HALT. Ask the human to run each in a separate session (ideally a different LLM) and paste back the findings.
+If a lens's instruction requires subagents and none are available, for each such lens write beside `{plan_file}`, named after it with the lens id appended, that lens's child prompt with every file it points to — the diff, the claims, the reviewer instruction file — replaced inline by that file's contents, and every other line left exactly as written. That session shares no filesystem with this one, so its prompt has to stand alone; this is the only place you read a reviewer instruction file yourself. Then HALT. Ask the human to run each in a separate session (ideally a different LLM) and paste back the findings.
 
 Write `lenses_ran` — the ids launched, in launch order — to `{plan_file}` frontmatter.
 
@@ -55,7 +55,7 @@ Write `lenses_ran` — the ids launched, in launch order — to `{plan_file}` fr
    If `## Review Triage Log` already has rows — a loopback or a resumed review — check each finding against them first. Same location and same claim as a logged row, and the code there still reads as the row describes: keep the row's verdict and route, write the row again with `carried` in front of the evidence, skip verification, and never patch or defer it again. Verify everything else as below.
 
    For each finding:
-   - A gap finding from the verification-gap lens arrives pre-verified — that lens's evidence rules made it read the tests and run the searches it cites, and triage trusts the claim as filed. Skip verification, render the verdict from the filed evidence, and weigh its filed disposition when routing. Its `Other findings` are verified like everything else.
+   - A gap finding from the verification-gap lens arrives pre-verified — that lens's evidence rules made it read the tests and run the searches it cites, and triage trusts the claim as filed. Skip verification and render the verdict from the filed evidence. Its `Other findings` are verified like everything else.
    - **Verify the finding's claim.** At the cited file and line, does the bad outcome the reviewer describes actually occur? Read beyond the changed lines — follow callers, guards upstream, etc — until you can answer yes or no. A different finding about nearby code does not settle this one. Judge whether the problem is real, not whether the proposed fix is plausible. Code that loudly fails on a situation you never showed the program can reach is correct behavior, not a defect.
    - **Render exactly one verdict** from what verification established — the verdict is the whole triage decision; there is no separate keep-or-dismiss.
      - `high` (intolerable), `medium` (tolerable), `low` (cosmetic or negligible) — the bad outcome is real. Assign severity by how much it hurts end users or developers. For developer-only problems (inconsistent design, eroded invariants, duplicated sources of truth), name where it will cause trouble — which caller will diverge, which rule will break. A vague "this is messy" with no named harm is not a severity grade; use `false` or `maybe-false` instead. When the harm is real but you cannot tell how bad, pick the higher grade.
@@ -95,7 +95,7 @@ Write `lenses_ran` — the ids launched, in launch order — to `{plan_file}` fr
      ```
 
      If it cannot be continued, apply the patches yourself. Then re-run the checks in `{plan_file}`'s `## Verification` section, if present — the patches changed code after the implementer's verification; if verification fails and the failure cannot be fixed, HALT and escalate to the human. Rewrite `{diff_file}` so it reflects the patched tree.
-   - **defer** — Append one new entry to `{{ config.implementation_artifacts }}/deferred-work.md` using this format. Do not modify existing entries or look for duplicates.
+   - **defer** — Append one new entry to `{{ initiative_folder }}/deferred-work.md` using this format. Do not modify existing entries or look for duplicates.
      ```markdown
      - source_plan: `{plan_file}`
        summary: <one sentence>
