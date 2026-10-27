@@ -38,6 +38,7 @@ These environment variables are set:
   "redrive_base_ref": "<branch the re-drive reads, or HEAD>",
   "baseline_commit": "<sha>",
   "paused_reason": "CRITICAL escalation from review session: ...",
+  "env_fault_site": null,
   "escalations": [
     {
       "type": "<kind>",
@@ -130,6 +131,31 @@ without hunting for it:
 The `sentinel` sub-block is present ONLY when the escalated story is a **sentinel**
 (see the stories-mode section below); an ordinary escalation omits it.
 
+In **tickets mode** (a BMAD v7 initiative ticket tree) `spec_file` is the ticket's
+**plan**, and the context also carries a `tickets` block — the ticket and its plan
+as they read now:
+
+```json
+{
+  "tickets": {
+    "ref": "1.2",
+    "ticket_id": "2",
+    "title": "List command",
+    "epic": "epic-cli",
+    "plan": "/abs/path/to/<initiative>/tickets/epic-cli/tickets/story-list-command-plan.md",
+    "plan_status": "blocked",
+    "blocked_reason": "intent gap",
+    "auto_run_result": "…excerpt of the plan's `## Auto Run Result`…"
+  }
+}
+```
+
+`plan_status`, `blocked_reason` and `auto_run_result` are `null` when the plan has
+no such value, is absent, or could not be read; `plan_status` and `blocked_reason`
+are `null` too when the plan's frontmatter is missing or malformed (the orchestrator
+journals an unreadable plan and a malformed frontmatter). The plan's `blocked_reason` is the condition build-auto halted on;
+the orchestrator clears it when it re-arms the ticket.
+
 Your **output marker** is the file at `resolution_path`. Writing it is the LAST
 action of a successful resolution. Schema:
 
@@ -149,8 +175,9 @@ case below — omit it entirely for an ordinary resolution.
 ## What you MUST do
 
 1. **Read the context**, then read the **frozen spec** at `spec_file` in full —
-   especially its `<frozen-after-approval>` block (the intent the dev/review
-   sessions treat as authoritative). The escalation is almost always that this
+   especially its `<intent-contract>` block (a v7 ticket plan;
+   `<frozen-after-approval>` in an older spec) — the intent the dev/review
+   sessions treat as authoritative. The escalation is almost always that this
    block is silent on, or contradicts, a case the implementation hit.
 2. **Present the current pause evidence plainly** to the human:
    - When the `escalations` array is non-empty, present its recorded entries in
@@ -172,11 +199,14 @@ case below — omit it entirely for an ordinary resolution.
 
 3. **Get the human's decision.** Ask follow-ups if the choice is unclear. Do not
    invent requirements; if the human is unsure, help them reason, don't guess.
-4. **Update the frozen spec** to encode the decision unambiguously: amend the
-   `<frozen-after-approval>` block and any affected acceptance criteria / test
+4. **Update the frozen spec** to encode the decision unambiguously: amend its
+   `<intent-contract>` block (v7 plan; `<frozen-after-approval>` in an older
+   spec) and any affected acceptance criteria / test
    matrix rows so a fresh dev session has exactly one correct reading. Make the
-   smallest change that removes the ambiguity. You MAY use the `bmad-spec` or
-   `bmad-correct-course` skills if a larger spec change is warranted. **If
+   smallest change that removes the ambiguity. If a larger change is warranted: in
+   sprint or stories mode you MAY use the `bmad-spec` or `bmad-correct-course`
+   skills (BMAD v6); in tickets mode use `bmad-agent-po` to refine or replan the
+   ticket. **If
    `spec_reaches_the_redrive` is `false`, make the same edit and then say plainly
    that this copy is not the one the re-drive reads, and name the remedy that
    `redrive_base_ref` selects: on a branch, the correction must be
@@ -195,7 +225,10 @@ dev session first **saved its attempted change as a patch file** (in the
 implementation-artifacts folder) before reverting the tree — the escalation
 `detail` and the spec's `## Review Triage Log` reference the patch path. That
 patch is concrete evidence: it shows exactly which reading of the intent the run
-implemented.
+implemented. In tickets mode the patch sits **beside the plan**, named after it
+with `.patch` for `.md`; name that path for `restore_patch`. The orchestrator moves
+it out of the tree into the run directory when it re-arms the ticket (it would
+otherwise fail the re-drive's clean-tree check) and latches the moved copy.
 
 **First check `restore_supported` in the context file.** When it is `false`
 (worktree-isolation runs: the re-drive discards and re-mounts the unit's
@@ -239,13 +272,46 @@ Use the patch two ways:
 If the attempted reading was wrong (the common case), omit `restore_patch`
 entirely: the orchestrator re-drives from scratch against the corrected intent.
 
+## Special case: an environment-fault escalation
+
+When `env_fault_site` in the context is **not** `null`, the run paused because the
+**environment** failed, not the story: an operator `[environment]` probe failed (or
+a verify command declared or hit an environment fault) at the site it names —
+`verify:<role>`, `probe:decision:<role>`, `probe:claim:<role>` or
+`probe:dispatch:<role>`. The attempt was **not** charged.
+
+A `probe:claim:<role>` site means the dev, fix, review or workflow session wrote an
+`Environment fault: <what is broken>` line in its final `## Auto Run Result` and
+the orchestrator's own probe then failed. The line only triggered that probe — a
+claim the probes did not confirm never pauses the run, so the failed probe, not
+the session's prose, is the evidence. `paused_reason` quotes the claim on its
+`session claim:` line.
+
+- **No spec change is needed.** Do not clarify the intent or reinterpret the
+  story to explain the failure; `paused_reason` names the probe or command that
+  failed and its output tail.
+- Tell the human to **fix the environment** (start the stopped service, container,
+  emulator or database the probe checks) and confirm the probe passes by hand.
+- Then **re-arm the escalation** as usual (record a resolution that says the
+  environment was repaired); the attempt budget resets on re-arm. A plain re-arm
+  re-drives a dev session from the baseline. When the attempt's work should be
+  kept, the human can instead exit this session and run
+  `bmad-loop resolve <run> --reverify`: it keeps the tree at HEAD (in place, or
+  the story's kept worktree unit), replays verification on it and, when that
+  passes, reviews and commits it (a unit merges) with no dev session. A
+  `probe:dispatch:<role>` pause is not an escalation at all — no session ran, so
+  the human fixes the environment and runs `bmad-loop resume <run>` (the probes
+  re-run first); `resolve` refuses that pause.
+
 ## What you MUST NOT do
 
 - **Do NOT** write the orchestrator's `result.json` — that is a dev/review
   artifact; this is not one of those sessions.
 - **Do NOT** change `sprint-status.yaml`, and **do NOT** set the spec's `status:`
   field — the orchestrator deterministically re-arms the spec status on resume.
-  Edit spec **content** only.
+  Edit spec **content** only. In tickets mode, **never run `tickets.py mark`** and
+  never set the plan's `status`, `blocked_at` or `blocked_reason` — the
+  orchestrator re-arms the ticket through its own `mark` and clears them.
 - **Do NOT** implement the story, write feature code, run tests, or commit. Your
   job ends at a corrected spec + the resolution marker. That holds when
   `spec_reaches_the_redrive` is `false` too: landing the corrected spec where the
