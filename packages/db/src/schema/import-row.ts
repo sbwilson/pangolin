@@ -19,6 +19,7 @@ export const importRow = sqliteTable(
     rawLine: text("raw_line").notNull(),
     status: text("status").notNull(),
     reason: text("reason"),
+    proposal: text("proposal"),
     pdfPage: integer("pdf_page"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),

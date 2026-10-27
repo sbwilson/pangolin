@@ -2,14 +2,19 @@ import { Temporal } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.ts";
 import { createIdGenerator } from "../ids.ts";
+import type { LlmProvider, StructuredPrompt, StructuredResponse } from "../ports/llm-provider.ts";
+import type { LlmProviderRow } from "../ports/unit-of-work.ts";
 import { manualClock } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import type { Viewer } from "../viewer.ts";
 import { importStatement } from "./import-statement.ts";
 import {
+  confirmSetAsideProposal,
   discardSetAsideRow,
   fixSetAsideRow,
   IMPORT_SET_ASIDE_REVIEW,
+  interpretSetAsideRows,
+  type InterpretSetAsideRowsContext,
   listSetAsideRowsForBatch,
 } from "./set-aside.ts";
 
@@ -1155,6 +1160,424 @@ bad-date,-20.00,Row 2 Bad Date
       // Set aside list is now empty
       const remainingRows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
       expect(remainingRows).toHaveLength(0);
+    });
+  });
+
+  describe("row_interpret and proposal confirmation flow (AD-6)", () => {
+    function createMockProvider(data: unknown): LlmProvider {
+      return {
+        generateStructured: async <T>(_prompt: StructuredPrompt<T>): Promise<StructuredResponse<T>> => ({
+          data: data as T,
+          raw: JSON.stringify(data),
+          usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+          model: "test-model",
+        }),
+      };
+    }
+
+    it("interprets set-aside rows with local provider and saves proposal in import_row", async () => {
+      const { alexCtx, sharedAccountId, uow } = setup();
+
+      const csvContent = [
+        "Date,Amount,Description",
+        "31/09/2026,-36.00,BWS NEWTOWN",
+      ].join("\n");
+
+      const importRes = importStatement(alexCtx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csvContent,
+      });
+
+      expect(importRes.setAsideCount).toBe(1);
+      const rows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
+      expect(rows).toHaveLength(1);
+      const targetRow = rows[0]!;
+      expect(targetRow.proposal).toBeNull();
+
+      const mockProvider = createMockProvider({
+        proposals: [
+          {
+            index: 0,
+            rowId: targetRow.id,
+            postedOn: "2026-09-30",
+            amountCents: -3600,
+            description: "BWS NEWTOWN",
+            confidence: 0.95,
+            explanation: "Adjusted 31 Sept to last day of month 30 Sept",
+          },
+        ],
+      });
+
+      const interpretCtx: InterpretSetAsideRowsContext = {
+        ...alexCtx,
+        provider: mockProvider,
+        providerIsLocal: true,
+      };
+
+      const result = await interpretSetAsideRows(interpretCtx, {
+        batchId: importRes.batchId,
+      });
+
+      expect(result.interpretedCount).toBe(1);
+      expect(result.proposals).toHaveLength(1);
+      expect(result.proposals[0]?.proposal.postedOn).toBe("2026-09-30");
+      expect(result.proposals[0]?.proposal.amountCents).toBe(-3600);
+      expect(result.proposals[0]?.proposal.description).toBe("BWS NEWTOWN");
+
+      // Verify row proposal in UOW
+      const updatedRow = uow.state.importRows.find((r) => r.id === targetRow.id);
+      expect(updatedRow?.proposal).not.toBeNull();
+      const parsed = JSON.parse(updatedRow!.proposal!);
+      expect(parsed.postedOn).toBe("2026-09-30");
+      expect(parsed.amountCents).toBe(-3600);
+      expect(parsed.description).toBe("BWS NEWTOWN");
+    });
+
+    it("refuses to send private account rows to a cloud provider", async () => {
+      const { alexCtx, alexPrivateAccountId } = setup();
+
+      const csvContent = [
+        "Date,Amount,Description",
+        "31/09/2026,-50.00,PRIVATE STORE",
+      ].join("\n");
+
+      const importRes = importStatement(alexCtx, {
+        accountId: alexPrivateAccountId,
+        format: "commbank_csv",
+        content: csvContent,
+      });
+
+      const mockProvider = createMockProvider({ proposals: [] });
+      const interpretCtx: InterpretSetAsideRowsContext = {
+        ...alexCtx,
+        provider: mockProvider,
+        providerIsLocal: false,
+        providerCloudRows: true, // even with cloudRows opt-in, private account is strictly forbidden!
+      };
+
+      await expect(
+        interpretSetAsideRows(interpretCtx, { batchId: importRes.batchId }),
+      ).rejects.toThrowError(
+        new AppError(
+          "PermissionDenied",
+          "Cannot send private account rows to a cloud LLM provider",
+        ),
+      );
+    });
+
+    it("refuses cloud provider without cloud_rows opt-in", async () => {
+      const { alexCtx, sharedAccountId } = setup();
+
+      const csvContent = [
+        "Date,Amount,Description",
+        "31/09/2026,-36.00,BWS NEWTOWN",
+      ].join("\n");
+
+      const importRes = importStatement(alexCtx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csvContent,
+      });
+
+      const mockProvider = createMockProvider({ proposals: [] });
+      const interpretCtx: InterpretSetAsideRowsContext = {
+        ...alexCtx,
+        provider: mockProvider,
+        providerIsLocal: false,
+        providerCloudRows: false, // no opt-in
+      };
+
+      await expect(
+        interpretSetAsideRows(interpretCtx, { batchId: importRes.batchId }),
+      ).rejects.toThrowError(
+        new AppError(
+          "PermissionDenied",
+          "Cloud provider not permitted for row interpretation without cloud_rows opt-in",
+        ),
+      );
+    });
+
+    it("permits cloud provider with cloud_rows opt-in on shared account", async () => {
+      const { alexCtx, sharedAccountId } = setup();
+
+      const csvContent = [
+        "Date,Amount,Description",
+        "31/09/2026,-36.00,BWS NEWTOWN",
+      ].join("\n");
+
+      const importRes = importStatement(alexCtx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csvContent,
+      });
+
+      const mockProvider = createMockProvider({
+        proposals: [
+          {
+            index: 0,
+            postedOn: "2026-09-30",
+            amountCents: -3600,
+            description: "BWS NEWTOWN",
+          },
+        ],
+      });
+
+      const interpretCtx: InterpretSetAsideRowsContext = {
+        ...alexCtx,
+        provider: mockProvider,
+        providerIsLocal: false,
+        providerCloudRows: true, // opt-in enabled
+      };
+
+      const result = await interpretSetAsideRows(interpretCtx, {
+        batchId: importRes.batchId,
+      });
+      expect(result.interpretedCount).toBe(1);
+    });
+
+    it("interprets multiple set-aside rows in batch mapping proposals by index and rowId", async () => {
+      const { alexCtx, sharedAccountId, uow } = setup();
+
+      const csvContent = [
+        "Date,Amount,Description",
+        "31/09/2026,-36.00,BWS NEWTOWN",
+        "31/11/2026,-42.50,COLES EXPRESS",
+      ].join("\n");
+
+      const importRes = importStatement(alexCtx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csvContent,
+      });
+
+      const setAsideRows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
+      expect(setAsideRows).toHaveLength(2);
+      const [row0, row1] = setAsideRows;
+
+      const mockProvider = createMockProvider({
+        proposals: [
+          // row 0 mapped by rowId
+          {
+            rowId: row0.id,
+            postedOn: "2026-09-30",
+            amountCents: -3600,
+            description: "BWS NEWTOWN",
+            confidence: 0.95,
+          },
+          // duplicate proposal for row 0 (should be deduplicated)
+          {
+            rowId: row0.id,
+            postedOn: "2026-09-30",
+            amountCents: -3600,
+            description: "BWS NEWTOWN DUPE",
+            confidence: 0.5,
+          },
+          // row 1 mapped by index
+          {
+            index: 1,
+            postedOn: "2026-11-30",
+            amountCents: -4250,
+            description: "COLES EXPRESS",
+            confidence: 0.9,
+          },
+        ],
+      });
+
+      const interpretCtx: InterpretSetAsideRowsContext = {
+        ...alexCtx,
+        provider: mockProvider,
+        providerIsLocal: true,
+      };
+
+      const result = await interpretSetAsideRows(interpretCtx, {
+        batchId: importRes.batchId,
+      });
+
+      expect(result.interpretedCount).toBe(2);
+      expect(result.proposals).toHaveLength(2);
+
+      const updatedRow0 = uow.state.importRows.find((r) => r.id === row0.id);
+      const updatedRow1 = uow.state.importRows.find((r) => r.id === row1.id);
+
+      expect(updatedRow0?.proposal).not.toBeNull();
+      const prop0 = JSON.parse(updatedRow0!.proposal!);
+      expect(prop0.description).toBe("BWS NEWTOWN");
+      expect(prop0.amountCents).toBe(-3600);
+      expect(prop0.postedOn).toBe("2026-09-30");
+
+      expect(updatedRow1?.proposal).not.toBeNull();
+      const prop1 = JSON.parse(updatedRow1!.proposal!);
+      expect(prop1.description).toBe("COLES EXPRESS");
+      expect(prop1.amountCents).toBe(-4250);
+      expect(prop1.postedOn).toBe("2026-11-30");
+    });
+
+    it("catches LLM malformed JSON or schema failure", async () => {
+      const { alexCtx, sharedAccountId } = setup();
+
+      const csvContent = [
+        "Date,Amount,Description",
+        "31/09/2026,-36.00,BWS NEWTOWN",
+      ].join("\n");
+
+      const importRes = importStatement(alexCtx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csvContent,
+      });
+
+      const failingProvider: LlmProvider = {
+        generateStructured: async () => {
+          throw new Error("Invalid JSON returned from model");
+        },
+      };
+
+      const interpretCtx: InterpretSetAsideRowsContext = {
+        ...alexCtx,
+        provider: failingProvider,
+        providerIsLocal: true,
+      };
+
+      await expect(
+        interpretSetAsideRows(interpretCtx, { batchId: importRes.batchId }),
+      ).rejects.toThrowError(AppError);
+    });
+
+    it("confirms proposal, committing transaction to ledger through original batch", async () => {
+      const { alexCtx, sharedAccountId, uow } = setup();
+
+      const csvContent = [
+        "Date,Amount,Description",
+        "31/09/2026,-36.00,BWS NEWTOWN",
+      ].join("\n");
+
+      const importRes = importStatement(alexCtx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csvContent,
+      });
+
+      const rows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
+      const targetRow = rows[0]!;
+
+      const mockProvider = createMockProvider({
+        proposals: [
+          {
+            index: 0,
+            rowId: targetRow.id,
+            postedOn: "2026-09-30",
+            amountCents: -3600,
+            description: "BWS NEWTOWN",
+          },
+        ],
+      });
+
+      await interpretSetAsideRows(
+        { ...alexCtx, provider: mockProvider, providerIsLocal: true },
+        { batchId: importRes.batchId },
+      );
+
+      // Confirm proposal
+      const confirmRes = confirmSetAsideProposal(alexCtx, { rowId: targetRow.id });
+      expect(confirmRes.transactionId).toBeDefined();
+
+      // Transaction committed to ledger with batch id
+      const txn = uow.state.transactions.find((t) => t.id === confirmRes.transactionId);
+      expect(txn).toBeDefined();
+      expect(txn?.postedOn).toBe("2026-09-30");
+      expect(txn?.amountCents).toBe(-3600);
+      expect(txn?.descriptionRaw).toBe("BWS NEWTOWN");
+      expect(txn?.importId).toBe(importRes.batchId);
+
+      // Row status is committed and reason cleared
+      const row = uow.state.importRows.find((r) => r.id === targetRow.id);
+      expect(row?.status).toBe("committed");
+      expect(row?.reason).toBeNull();
+
+      // Batch newCount incremented
+      const batch = uow.state.importBatches.find((b) => b.id === importRes.batchId);
+      expect(batch?.newCount).toBe(1);
+
+      // Review item auto-resolved
+      const ri = uow.state.reviewItems.find(
+        (item) => item.dedupeKey === `import.set_aside:${importRes.batchId}`,
+      );
+      expect(ri?.resolvedAt).not.toBeNull();
+      expect(ri?.resolution).toBe("all rows resolved");
+    });
+
+    it("throws Validation when confirming a row that is not set_aside", async () => {
+      const { alexCtx, sharedAccountId, uow } = setup();
+
+      const csvContent = [
+        "Date,Amount,Description",
+        "31/09/2026,-36.00,BWS NEWTOWN",
+      ].join("\n");
+
+      const importRes = importStatement(alexCtx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csvContent,
+      });
+
+      const rows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
+      const targetRow = rows[0]!;
+
+      // Mark row as already discarded
+      uow.state.importRows = uow.state.importRows.map((r) =>
+        r.id === targetRow.id ? { ...r, status: "discarded", proposal: JSON.stringify({ postedOn: "2026-09-30", amountCents: -3600, description: "BWS" }) } : r,
+      );
+
+      expect(() =>
+        confirmSetAsideProposal(alexCtx, { rowId: targetRow.id }),
+      ).toThrowError(/Cannot confirm proposal for row with status "discarded"/);
+    });
+
+    it("discards row with proposal and resolves review item", async () => {
+      const { alexCtx, sharedAccountId, uow } = setup();
+
+      const csvContent = [
+        "Date,Amount,Description",
+        "31/09/2026,-36.00,BWS NEWTOWN",
+      ].join("\n");
+
+      const importRes = importStatement(alexCtx, {
+        accountId: sharedAccountId,
+        format: "commbank_csv",
+        content: csvContent,
+      });
+
+      const rows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
+      const targetRow = rows[0]!;
+
+      const mockProvider = createMockProvider({
+        proposals: [
+          {
+            index: 0,
+            rowId: targetRow.id,
+            postedOn: "2026-09-30",
+            amountCents: -3600,
+            description: "BWS NEWTOWN",
+          },
+        ],
+      });
+
+      await interpretSetAsideRows(
+        { ...alexCtx, provider: mockProvider, providerIsLocal: true },
+        { batchId: importRes.batchId },
+      );
+
+      discardSetAsideRow(alexCtx, { rowId: targetRow.id, reason: "User discarded" });
+
+      const row = uow.state.importRows.find((r) => r.id === targetRow.id);
+      expect(row?.status).toBe("discarded");
+
+      const ri = uow.state.reviewItems.find(
+        (item) => item.dedupeKey === `import.set_aside:${importRes.batchId}`,
+      );
+      expect(ri?.resolvedAt).not.toBeNull();
+      expect(ri?.resolution).toBe("all rows resolved");
     });
   });
 });

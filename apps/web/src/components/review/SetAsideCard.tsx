@@ -5,7 +5,7 @@ import {
   type ReviewSetAsideRow,
   reviewAction,
 } from "../../api.ts";
-import { parseCents } from "../../lib/money.ts";
+import { formatCents, parseCents } from "../../lib/money.ts";
 import { Button } from "../ui/button.tsx";
 import { DateInput } from "../ui/date-input.tsx";
 import { ReviewCardFrame, useReviewAction } from "./ReviewCardFrame.tsx";
@@ -54,6 +54,53 @@ function SetAsideRow({
         Row {row.rowNumber}: <code className="break-all">{row.rawLine}</code>
         {row.reason === null ? null : <> · {row.reason}</>}
       </p>
+      {row.proposal && (
+        <div className="mt-2 rounded-md border border-primary/20 bg-primary/5 p-2 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span className="font-semibold text-primary">AI proposal:</span>{" "}
+              <span>{row.proposal.postedOn}</span> ·{" "}
+              <span>{formatCents(row.proposal.amountCents)}</span> ·{" "}
+              <span className="font-medium">{row.proposal.description}</span>
+              {row.proposal.confidence != null && (
+                <span className="ml-1 text-muted-foreground">
+                  ({Math.round(row.proposal.confidence * 100)}% sure)
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  void run(() => reviewAction(card.id, "confirm-proposal", { rowId: row.id }))
+                }
+              >
+                Confirm
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => {
+                  if (row.proposal) {
+                    setPostedOn(row.proposal.postedOn);
+                    setAmount((row.proposal.amountCents / 100).toFixed(2));
+                    setDescription(row.proposal.description);
+                  }
+                }}
+              >
+                Edit
+              </Button>
+            </div>
+          </div>
+          {row.proposal.explanation && (
+            <p className="m-0 mt-1 text-muted-foreground">{row.proposal.explanation}</p>
+          )}
+        </div>
+      )}
       <div className="mt-2 grid gap-2 sm:grid-cols-[9rem_8rem_1fr]">
         <div>
           <label htmlFor={`${id}-date`} className="block text-xs text-muted-foreground">
@@ -123,11 +170,22 @@ export function SetAsideCard({
   const { run, busy, error } = useReviewAction();
   return (
     <ReviewCardFrame card={card} error={error}>
-      <p className="m-0 mt-1">
-        {detail.rows.length} {detail.rows.length === 1 ? "row" : "rows"} of{" "}
-        <span className="font-medium">{detail.source ?? "an import"}</span>
-        {detail.accountName === null ? null : <> into {detail.accountName}</>} could not be read.
-      </p>
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+        <p className="m-0">
+          {detail.rows.length} {detail.rows.length === 1 ? "row" : "rows"} of{" "}
+          <span className="font-medium">{detail.source ?? "an import"}</span>
+          {detail.accountName === null ? null : <> into {detail.accountName}</>} could not be read.
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => void run(() => reviewAction(card.id, "interpret-rows"))}
+        >
+          Ask Pangolin to read these
+        </Button>
+      </div>
       <ul className="m-0 mt-2 list-none space-y-2 p-0">
         {detail.rows.map((row) => (
           <SetAsideRow key={row.id} card={card} row={row} run={run} busy={busy} />

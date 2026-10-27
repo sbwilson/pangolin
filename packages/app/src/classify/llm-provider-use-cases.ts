@@ -19,6 +19,10 @@ import {
   type CategoriseCategoryOption,
   type CategoriseRequestItem,
 } from "./categorise-request.ts";
+import {
+  buildRowInterpretRequest,
+  type RowInterpretRequestItem,
+} from "../imports/row-interpret-request.ts";
 
 export interface LlmUseCaseContext extends UseCaseContext {
   readonly authSecret?: string | undefined;
@@ -450,7 +454,7 @@ export interface LlmRequestPreviewResult {
   readonly prompt: string;
   readonly schemaName: string;
   readonly schemaDescription?: string | undefined;
-  readonly sampleItems: readonly CategoriseRequestItem[];
+  readonly sampleItems: readonly (CategoriseRequestItem | RowInterpretRequestItem)[];
 }
 
 export function getLlmRequestPreview(
@@ -472,6 +476,41 @@ export function getLlmRequestPreview(
 
     const isLocal = provider?.isLocal ?? false;
     const model = provider?.model;
+
+    if (parsed.purpose === "row_interpret") {
+      const sampleItems: RowInterpretRequestItem[] = [
+        {
+          index: 0,
+          rawLine: "31/09/2026, BWS NEWTOWN, -36.00",
+          reason: "Invalid date: 31/09/2026",
+          isPrivate: false,
+        },
+        {
+          index: 1,
+          rawLine: "15/10/2026, SYDNEY WATER PAYMENT, 142.50",
+          reason: null,
+          isPrivate: false,
+        },
+      ];
+
+      const structuredPrompt = buildRowInterpretRequest({
+        items: sampleItems,
+        isLocal: provider ? provider.isLocal : true,
+        cloudRows: true,
+        model,
+      });
+
+      return {
+        provider,
+        isLocal: provider ? provider.isLocal : true,
+        model,
+        systemPrompt: structuredPrompt.systemPrompt,
+        prompt: structuredPrompt.prompt,
+        schemaName: structuredPrompt.schemaName,
+        schemaDescription: structuredPrompt.schemaDescription,
+        sampleItems,
+      };
+    }
 
     // Categories
     const categoriesList = repos.categories.list(ctx.viewer);

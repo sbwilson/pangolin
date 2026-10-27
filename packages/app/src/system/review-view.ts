@@ -17,6 +17,7 @@ import {
   IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW,
   IMPORT_TRANSFER_AMBIGUOUS_REVIEW,
 } from "../imports/match-transfers.ts";
+import { rowInterpretProposalSchema } from "../imports/row-interpret-request.ts";
 import { IMPORT_SET_ASIDE_REVIEW, listSetAsideRowsForBatch } from "../imports/set-aside.ts";
 import type { ReadRepos, ReviewItemRow } from "../ports/unit-of-work.ts";
 import { redact } from "../redact.ts";
@@ -36,12 +37,22 @@ export interface ReviewTransaction {
   readonly payeeName: string | null;
 }
 
+/** Proposed transaction fix for a set-aside row (AD-6). */
+export interface ReviewSetAsideRowProposal {
+  readonly postedOn: string;
+  readonly amountCents: number;
+  readonly description: string;
+  readonly confidence?: number | null | undefined;
+  readonly explanation?: string | null | undefined;
+}
+
 /** One set-aside row of an import batch. */
 export interface ReviewSetAsideRow {
   readonly id: string;
   readonly rowNumber: number;
   readonly rawLine: string;
   readonly reason: string | null;
+  readonly proposal: ReviewSetAsideRowProposal | null;
 }
 
 /** Open suggestion details for an unclassified split (story 5.4). */
@@ -261,12 +272,33 @@ export function listReviewCards(
 
 function setAsideRows(ctx: UseCaseContext, batchId: string): ReviewSetAsideRow[] {
   try {
-    return listSetAsideRowsForBatch(ctx, batchId).map((r) => ({
-      id: r.id,
-      rowNumber: r.rowNumber,
-      rawLine: r.rawLine,
-      reason: r.reason,
-    }));
+    return listSetAsideRowsForBatch(ctx, batchId).map((r) => {
+      let proposal: ReviewSetAsideRowProposal | null = null;
+      if (r.proposal) {
+        try {
+          const parsed = JSON.parse(r.proposal);
+          const validated = rowInterpretProposalSchema.safeParse(parsed);
+          if (validated.success) {
+            proposal = {
+              postedOn: validated.data.postedOn,
+              amountCents: validated.data.amountCents,
+              description: validated.data.description,
+              confidence: validated.data.confidence ?? null,
+              explanation: validated.data.explanation ?? null,
+            };
+          }
+        } catch {
+          proposal = null;
+        }
+      }
+      return {
+        id: r.id,
+        rowNumber: r.rowNumber,
+        rawLine: r.rawLine,
+        reason: r.reason,
+        proposal,
+      };
+    });
   } catch (error) {
     if (error instanceof AppError && error.code === "NotFound") return [];
     throw error;

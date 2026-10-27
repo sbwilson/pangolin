@@ -384,6 +384,7 @@ export type ReviewSuggestion = NonNullable<
   Extract<ReviewDetail, { type: "transaction" }>["suggestion"]
 >;
 export type ReviewSetAsideRow = Extract<ReviewDetail, { type: "batch" }>["rows"][number];
+export type ReviewSetAsideRowProposal = NonNullable<ReviewSetAsideRow["proposal"]>;
 
 /** The nav badge and partner chip: numbers only. */
 export type ReviewCounts = InferResponseType<typeof api.api.review.count.$get, 200>;
@@ -414,6 +415,8 @@ export type ReviewAction =
   | "dismiss-handoff"
   | "fix-row"
   | "discard-row"
+  | "interpret-rows"
+  | "confirm-proposal"
   | "dismiss-notice"
   | "revoke-links";
 

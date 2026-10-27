@@ -509,7 +509,7 @@ function importRowRepo(working: MemoryState, check: () => void): ImportRowRepo {
       ) {
         throw new Error("UNIQUE constraint failed: import_row.batch_id, import_row.row_number");
       }
-      working.importRows.push(row);
+      working.importRows.push({ ...row, proposal: row.proposal ?? null });
     },
     insertMany: (rows) => {
       check();
@@ -522,7 +522,7 @@ function importRowRepo(working: MemoryState, check: () => void): ImportRowRepo {
         ) {
           throw new Error("UNIQUE constraint failed: import_row.batch_id, import_row.row_number");
         }
-        working.importRows.push(row);
+        working.importRows.push({ ...row, proposal: row.proposal ?? null });
       }
     },
     listForBatch: (viewer, batchId) => {
@@ -556,6 +556,18 @@ function importRowRepo(working: MemoryState, check: () => void): ImportRowRepo {
         ...r,
         status,
         ...(reason !== undefined ? { reason } : {}),
+        updatedAt: at,
+      };
+      return true;
+    },
+    updateProposal: (id, proposal, at) => {
+      check();
+      const index = working.importRows.findIndex((r) => r.id === id);
+      const r = working.importRows[index];
+      if (index === -1 || !r) return false;
+      working.importRows[index] = {
+        ...r,
+        proposal,
         updatedAt: at,
       };
       return true;

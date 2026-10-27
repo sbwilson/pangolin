@@ -19,6 +19,7 @@ import {
   fixedClockAt,
   getTransaction,
   hideTransactionName,
+  importStatement,
   personViewer,
   raiseReviewItem,
   type SuggestionRow,
@@ -3719,5 +3720,181 @@ describe("suggestion review routes", () => {
 
     expect(getTransaction(sys, { id: txn1 }).splits[0]!.categorySource).toBe("llm");
     expect(getTransaction(sys, { id: txn2 }).splits[0]!.categorySource).toBe("llm");
+  });
+
+  it("POST /api/review/:id/confirm-proposal commits proposed transaction and returns 204", async () => {
+    const db = openDb();
+    const { sys, d, joint } = seed(db);
+    const app = createApp(d);
+
+    const csv = `01/09/2026,-50.00,"GROCER",1000.00
+not-a-date,-12.00,"BOOKSTORE",988.00`;
+
+    const importRes = importStatement(sys, {
+      accountId: joint,
+      format: "commbank_csv",
+      content: csv,
+    });
+
+    const item = d.uow.read((r) =>
+      r.reviewItems.listOpenFor(sys.viewer).find((ri) => ri.dedupeKey === `import.set_aside:${importRes.batchId}`),
+    );
+    expect(item).toBeDefined();
+
+    const rows = d.uow.read((r) => r.importRows.listForBatch(sys.viewer, importRes.batchId));
+    const setAsideRow = rows.find((r) => r.status === "set_aside");
+    expect(setAsideRow).toBeDefined();
+
+    // Attach a proposal to the set-aside row
+    write(sys, (tx) => {
+      tx.importRows.updateProposal(
+        setAsideRow!.id,
+        JSON.stringify({
+          postedOn: "2026-09-02",
+          amountCents: -1200,
+          description: "BOOKSTORE",
+        }),
+        "2026-09-27T12:00:00Z",
+      );
+    });
+
+    // Confirm proposal
+    const res = await app.request(`/api/review/${item!.id}/confirm-proposal`, {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ rowId: setAsideRow!.id }),
+    });
+    expect(res.status).toBe(204);
+
+    // Verify row committed
+    const updatedRow = d.uow.read((r) => r.importRows.find(sys.viewer, setAsideRow!.id));
+    expect(updatedRow?.status).toBe("committed");
+
+    // Re-confirming returns 404 because review item is resolved
+    const again = await app.request(`/api/review/${item!.id}/confirm-proposal`, {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ rowId: setAsideRow!.id }),
+    });
+    expect(again.status).toBe(404);
+  });
+
+  it("POST /api/review/:id/interpret-rows returns 404 for unknown item", async () => {
+    const db = openDb();
+    const { d } = seed(db);
+    const app = createApp(d);
+
+    const res = await app.request("/api/review/missing-id/interpret-rows", {
+      method: "POST",
+      headers: json,
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /api/review/:id/interpret-rows interprets set-aside rows and returns 200 with proposals", async () => {
+    const db = openDb();
+    const { sys, d, joint } = seed(db);
+    const app = createApp(d);
+
+    // 1. Create a local provider and assign it to row_interpret
+    const createRes = await app.request("/api/llm/providers", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({
+        name: "Local Ollama",
+        kind: "openai",
+        baseUrl: "http://127.0.0.1:11434/v1",
+        model: "llama3.2",
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const provider = (await createRes.json()) as { id: string };
+
+    const assignRes = await app.request("/api/llm/purposes/row_interpret", {
+      method: "PUT",
+      headers: json,
+      body: JSON.stringify({ providerId: provider.id }),
+    });
+    expect(assignRes.status).toBe(200);
+
+    // 2. Import CSV with a set-aside row
+    const csv = `01/09/2026,-50.00,"GROCER",1000.00
+not-a-date,-12.00,"BOOKSTORE",988.00`;
+
+    const importRes = importStatement(sys, {
+      accountId: joint,
+      format: "commbank_csv",
+      content: csv,
+    });
+
+    const item = d.uow.read((r) =>
+      r.reviewItems.listOpenFor(sys.viewer).find((ri) => ri.dedupeKey === `import.set_aside:${importRes.batchId}`),
+    );
+    expect(item).toBeDefined();
+
+    const rows = d.uow.read((r) => r.importRows.listForBatch(sys.viewer, importRes.batchId));
+    const setAsideRow = rows.find((r) => r.status === "set_aside");
+    expect(setAsideRow).toBeDefined();
+
+    // 3. Mock globalThis.fetch to return structured proposals
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    proposals: [
+                      {
+                        index: 0,
+                        rowId: setAsideRow!.id,
+                        postedOn: "2026-09-02",
+                        amountCents: -1200,
+                        description: "BOOKSTORE",
+                        confidence: 0.9,
+                        explanation: "Cleaned merchant name and corrected date",
+                      },
+                    ],
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        )) as typeof fetch;
+
+      const res = await app.request(`/api/review/${item!.id}/interpret-rows`, {
+        method: "POST",
+        headers: json,
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        interpretedCount: number;
+        proposals: Array<{ rowId: string; proposal: any }>;
+      };
+      expect(body.interpretedCount).toBe(1);
+      expect(body.proposals).toHaveLength(1);
+      expect(body.proposals[0]?.rowId).toBe(setAsideRow!.id);
+      expect(body.proposals[0]?.proposal).toMatchObject({
+        rowId: setAsideRow!.id,
+        postedOn: "2026-09-02",
+        amountCents: -1200,
+        description: "BOOKSTORE",
+        confidence: 0.9,
+        explanation: "Cleaned merchant name and corrected date",
+      });
+
+      // Verify row proposal was stored in database
+      const updatedRow = d.uow.read((r) => r.importRows.find(sys.viewer, setAsideRow!.id));
+      expect(updatedRow?.proposal).not.toBeNull();
+      const stored = JSON.parse(updatedRow!.proposal!);
+      expect(stored.postedOn).toBe("2026-09-02");
+      expect(stored.amountCents).toBe(-1200);
+      expect(stored.description).toBe("BOOKSTORE");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

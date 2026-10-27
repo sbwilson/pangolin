@@ -28,11 +28,16 @@ import {
   transferAmbiguousPrivateKey,
 } from "../imports/match-transfers.ts";
 import {
+  confirmSetAsideProposal,
   type DiscardSetAsideRowInput,
   discardSetAsideRow,
   type FixSetAsideRowInput,
+  type FixSetAsideRowResult,
   fixSetAsideRow,
   IMPORT_SET_ASIDE_REVIEW,
+  type InterpretSetAsideRowsContext,
+  type InterpretSetAsideRowsResult,
+  interpretSetAsideRows,
   listSetAsideRowsForBatch,
 } from "../imports/set-aside.ts";
 import { idInput } from "../inputs.ts";
@@ -330,6 +335,36 @@ export function discardSetAsideRowItem(
   if (rowId === undefined) throw new AppError("Validation", "rowId is required");
   requireRowOf(ctx, item, rowId);
   discardSetAsideRow(ctx, rest);
+}
+
+export type InterpretSetAsideRowsItemInput = { readonly id: string };
+
+/** Interprets set-aside rows for a batch using AI (`imports.interpretSetAsideRows`). */
+export async function interpretSetAsideRowsItem(
+  ctx: InterpretSetAsideRowsContext,
+  input: InterpretSetAsideRowsItemInput,
+): Promise<InterpretSetAsideRowsResult> {
+  const item = openItem(ctx, input.id, [IMPORT_SET_ASIDE_REVIEW.kind]);
+  const batchId = entityId(item, "import_batch");
+  return await interpretSetAsideRows(ctx, { batchId });
+}
+
+export type ConfirmSetAsideProposalItemInput = {
+  readonly id: string;
+  readonly rowId: string;
+};
+
+/** Confirms an AI proposal on a set-aside row and commits it to the ledger. */
+export function confirmSetAsideProposalItem(
+  ctx: UseCaseContext,
+  input: ConfirmSetAsideProposalItemInput,
+): FixSetAsideRowResult {
+  if (!input.rowId) {
+    throw new AppError("Validation", "rowId is required");
+  }
+  const item = openItem(ctx, input.id, [IMPORT_SET_ASIDE_REVIEW.kind]);
+  requireRowOf(ctx, item, input.rowId);
+  return confirmSetAsideProposal(ctx, { rowId: input.rowId });
 }
 
 // ---------------------------------------------------------------------------------- notices

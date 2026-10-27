@@ -185,6 +185,7 @@ export function createImportRowRepo(orm: Orm, check: () => void): ImportRowRepo 
           rawLine: importRow.rawLine,
           status: importRow.status,
           reason: importRow.reason,
+          proposal: importRow.proposal,
           pdfPage: importRow.pdfPage,
           createdAt: importRow.createdAt,
           updatedAt: importRow.updatedAt,
@@ -208,6 +209,7 @@ export function createImportRowRepo(orm: Orm, check: () => void): ImportRowRepo 
           rawLine: importRow.rawLine,
           status: importRow.status,
           reason: importRow.reason,
+          proposal: importRow.proposal,
           pdfPage: importRow.pdfPage,
           createdAt: importRow.createdAt,
           updatedAt: importRow.updatedAt,
@@ -233,6 +235,16 @@ export function createImportRowRepo(orm: Orm, check: () => void): ImportRowRepo 
         updateData.reason = reason;
       }
       const result = orm.update(importRow).set(updateData).where(eq(importRow.id, id)).run();
+      return result.changes > 0;
+    },
+
+    updateProposal: (id, proposal, at) => {
+      check();
+      const result = orm
+        .update(importRow)
+        .set({ proposal, updatedAt: at })
+        .where(eq(importRow.id, id))
+        .run();
       return result.changes > 0;
     },
   };

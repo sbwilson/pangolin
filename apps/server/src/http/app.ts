@@ -20,6 +20,7 @@ import {
   cashFlowTotals,
   checkSignUp,
   closeAccount,
+  confirmSetAsideProposalItem,
   countBatchReviewItems,
   countReviewItems,
   createAccount,
@@ -70,6 +71,7 @@ import {
   type IdGenerator,
   type ImportStatementInput,
   importStatement,
+  interpretSetAsideRowsItem,
   issueInitialRecoveryCodes,
   issueReEnrolmentLink,
   issueSetupLink,
@@ -886,6 +888,17 @@ export function createApi(deps: ApiDeps) {
       writable();
       const id = c.req.param("id");
       discardSetAsideRowItem(ctx(c), await objectBody(c, { id }));
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/interpret-rows", async (c) => {
+      writable();
+      const result = await interpretSetAsideRowsItem(withLlm(c), { id: c.req.param("id") });
+      return c.json(result, 200);
+    })
+    .post("/api/review/:id/confirm-proposal", async (c) => {
+      writable();
+      const id = c.req.param("id");
+      confirmSetAsideProposalItem(ctx(c), await objectBody(c, { id }));
       return c.body(null, 204);
     })
     .post("/api/review/:id/dismiss-notice", (c) => {

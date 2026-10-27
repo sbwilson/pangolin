@@ -247,6 +247,11 @@ export const MANIFEST: readonly ManifestEntry[] = [
     params: { id: "notice" },
     body: () => ({ rowId: "01J0000000000000000000ROW1" }),
   }),
+  write("POST", "/api/review/:id/interpret-rows", { params: { id: "notice" } }),
+  write("POST", "/api/review/:id/confirm-proposal", {
+    params: { id: "notice" },
+    body: () => ({ rowId: "01J0000000000000000000ROW1" }),
+  }),
   write("POST", "/api/review/:id/dismiss-notice", { params: { id: "notice" } }),
   write("POST", "/api/review/:id/revoke-links", { params: { id: "notice" } }),
 

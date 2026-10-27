@@ -373,4 +373,14 @@ describe("llm-provider-use-cases", () => {
     expect(preview.prompt).not.toContain("PRIVATE SECRET ITEM");
     expect(preview.sampleItems.every((item) => item.isPrivate === false)).toBe(true);
   });
+
+  it("getLlmRequestPreview supports purpose: 'row_interpret' with schema and sample items", () => {
+    const { ctx } = setup();
+    const preview = getLlmRequestPreview(ctx, { purpose: "row_interpret" });
+    expect(preview.schemaName).toBe("row_interpret");
+    expect(preview.prompt).toContain("BWS NEWTOWN");
+    expect(preview.prompt).toContain("SYDNEY WATER PAYMENT");
+    expect(preview.sampleItems.length).toBeGreaterThan(0);
+    expect(preview.sampleItems.every((item) => item.isPrivate === false)).toBe(true);
+  });
 });

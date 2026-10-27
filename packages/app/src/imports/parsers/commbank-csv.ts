@@ -1,4 +1,5 @@
 import { toCents } from "@pangolin/shared";
+import { Temporal } from "@pangolin/shared/temporal";
 import type {
   ParsedStatementRow,
   SetAsideStatementRow,
@@ -46,6 +47,13 @@ export function parseBuiltinCommBankCsv(content: string): StatementParseResult {
       const month = dateMatch[2].padStart(2, "0");
       const year = dateMatch[3];
       const postedOn = `${year}-${month}-${day}`;
+      try {
+        Temporal.PlainDate.from(postedOn);
+      } catch (err) {
+        throw new Error(`CSV row ${fileLineNumber} has invalid date: "${firstCol}"`, {
+          cause: err,
+        });
+      }
 
       const amountStr = fields[1]?.trim() ?? "";
       let amountCents: number;

@@ -69,10 +69,11 @@ describe("committed migrations", () => {
       "0020_batch_opening_balance",
       "0021_llm_provider",
       "0022_suggestion",
+      "0023_import_row_proposal",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 23 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 23 });
-    expect(schemaVersion(db)).toBe(23);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 24 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 24 });
+    expect(schemaVersion(db)).toBe(24);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });
@@ -203,6 +204,20 @@ describe("committed migrations", () => {
     expect(suggestionCols).toContain("outcome");
     expect(suggestionCols).toContain("created_at");
     expect(suggestionCols).toContain("resolved_at");
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+
+  it("adds proposal column to import_row when 0022 upgrades to 0023", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 23));
+    expect(schemaVersion(db)).toBe(23);
+    expect(migrate(db, migrations.slice(0, 24)).applied).toEqual(["0023_import_row_proposal"]);
+    expect(schemaVersion(db)).toBe(24);
+
+    const rowCols = (
+      db.pragma("table_info(import_row)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(rowCols).toContain("proposal");
     expect(db.pragma("foreign_key_check")).toEqual([]);
   });
 

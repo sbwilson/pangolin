@@ -42,12 +42,14 @@ import { write } from "../write.ts";
 import {
   acceptHandoffItem,
   acceptRuleOfferItem,
+  confirmSetAsideProposalItem,
   discardSetAsideRowItem,
   dismissHandoffItem,
   dismissNoticeItem,
   dismissRuleOfferItem,
   dismissTransferItem,
   fixSetAsideRowItem,
+  interpretSetAsideRowsItem,
   keepDuplicateItem,
   linkTransferItem,
   removeDuplicateItem,
@@ -486,6 +488,70 @@ describe("review actions", () => {
       description: "BOOKSTORE",
     });
     discardSetAsideRowItem(w.B, { id: card?.id as string, rowId: rows[1]?.id as string });
+    expect(listReviewCards(w.B).some((c) => c.kind === "import.set_aside")).toBe(false);
+  });
+
+  it("exposes proposals on set-aside rows and confirms proposal via review action", async () => {
+    const w = setup();
+    importStatement(w.B, {
+      accountId: w.joint,
+      format: "commbank_csv",
+      content: `${CSV}`,
+    });
+
+    const card = listReviewCards(w.B).find((c) => c.kind === "import.set_aside");
+    expect(card).toBeDefined();
+    const rowsBefore = card?.detail.type === "batch" ? card.detail.rows : [];
+    expect(rowsBefore).toHaveLength(1);
+    expect(rowsBefore[0]?.proposal).toBeNull();
+
+    // Mock LLM provider for row interpret
+    const mockProvider = {
+      generateStructured: async () => ({
+        data: {
+          proposals: [
+            {
+              index: 0,
+              rowId: rowsBefore[0]?.id,
+              postedOn: "2026-09-02",
+              amountCents: -1200,
+              description: "BOOKSTORE PROPOSED",
+              confidence: 0.92,
+            },
+          ],
+        },
+        raw: "{}",
+        usage: { promptTokens: 5, completionTokens: 5, totalTokens: 10 },
+        model: "mock-model",
+      }),
+    };
+
+    const interpretRes = await interpretSetAsideRowsItem(
+      { ...w.B, provider: mockProvider as never, providerIsLocal: true },
+      { id: card!.id },
+    );
+    expect(interpretRes.interpretedCount).toBe(1);
+
+    // Now listReviewCards should expose the parsed proposal
+    const cardAfter = listReviewCards(w.B).find((c) => c.kind === "import.set_aside");
+    const rowsAfter = cardAfter?.detail.type === "batch" ? cardAfter.detail.rows : [];
+    expect(rowsAfter).toHaveLength(1);
+    expect(rowsAfter[0]?.proposal).toEqual({
+      postedOn: "2026-09-02",
+      amountCents: -1200,
+      description: "BOOKSTORE PROPOSED",
+      confidence: 0.92,
+      explanation: null,
+    });
+
+    // Confirm the proposal
+    const fixResult = confirmSetAsideProposalItem(w.B, {
+      id: card!.id,
+      rowId: rowsAfter[0]!.id,
+    });
+    expect(fixResult.transactionId).toBeDefined();
+
+    // Card should now be gone because all rows in batch reached terminal status
     expect(listReviewCards(w.B).some((c) => c.kind === "import.set_aside")).toBe(false);
   });
 

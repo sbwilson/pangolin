@@ -435,6 +435,19 @@ export { parseBuiltinQif } from "./imports/parsers/qif.ts";
 export { parseBuiltinUbankCsv } from "./imports/parsers/ubank-csv.ts";
 export { parseBuiltinUpCsv } from "./imports/parsers/up-csv.ts";
 export {
+  type BuildRowInterpretRequestInput,
+  buildRowInterpretRequest,
+  ROW_INTERPRET_PROMPT_VERSION,
+  type RowInterpretOutput,
+  type RowInterpretProposal,
+  type RowInterpretRequestItem,
+  rowInterpretOutputSchema,
+  rowInterpretProposalSchema,
+} from "./imports/row-interpret-request.ts";
+export {
+  type ConfirmSetAsideProposalInput,
+  confirmSetAsideProposal,
+  confirmSetAsideProposalInput,
   type DiscardSetAsideRowInput,
   type DiscardSetAsideRowResult,
   discardSetAsideRow,
@@ -444,6 +457,11 @@ export {
   fixSetAsideRow,
   fixSetAsideRowInput,
   IMPORT_SET_ASIDE_REVIEW,
+  type InterpretSetAsideRowsContext,
+  type InterpretSetAsideRowsInput,
+  type InterpretSetAsideRowsResult,
+  interpretSetAsideRows,
+  interpretSetAsideRowsInput,
   type ListSetAsideRowsInput,
   listSetAsideRowsForBatch,
   listSetAsideRowsInput,
@@ -931,6 +949,8 @@ export {
   type BulkAcceptSuggestionsInput,
   type BulkAcceptSuggestionsResult,
   bulkAcceptSuggestions,
+  type ConfirmSetAsideProposalItemInput,
+  confirmSetAsideProposalItem,
   type DiscardSetAsideRowItemInput,
   type DismissSuggestionItemInput,
   discardSetAsideRowItem,
@@ -941,6 +961,8 @@ export {
   dismissTransferItem,
   type FixSetAsideRowItemInput,
   fixSetAsideRowItem,
+  type InterpretSetAsideRowsItemInput,
+  interpretSetAsideRowsItem,
   keepDuplicateItem,
   type LinkTransferItemInput,
   linkTransferItem,
@@ -976,6 +998,7 @@ export {
   type ReviewCounts,
   type ReviewDetail,
   type ReviewSetAsideRow,
+  type ReviewSetAsideRowProposal,
   type ReviewSuggestion,
   type ReviewTransaction,
 } from "./system/review-view.ts";

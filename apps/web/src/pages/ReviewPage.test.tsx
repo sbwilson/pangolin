@@ -72,7 +72,7 @@ const ALL: ReviewCard[] = [
       type: "batch",
       source: "commbank_csv",
       accountName: "Joint everyday",
-      rows: [{ id: "row-1", rowNumber: 3, rawLine: "bad,line", reason: "Bad date" }],
+      rows: [{ id: "row-1", rowNumber: 3, rawLine: "bad,line", reason: "Bad date", proposal: null }],
     },
   }),
   card({
@@ -125,7 +125,7 @@ describe("ReviewPage", () => {
       "import.probable_duplicate": ["Keep both", "Remove this one"],
       "import.transfer_ambiguous": ["Yes, it's a transfer", "No, leave them"],
       "import.transfer_ambiguous_private": ["Yes, it's a transfer", "No, leave them"],
-      "import.set_aside": ["Save row 3", "Discard row 3"],
+      "import.set_aside": ["Ask Pangolin to read these", "Save row 3", "Discard row 3"],
       "imports.handoff": ["Import", "Discard file"],
       "identity.partner-reset": ["Got it", "Revoke the link"],
       "identity.recovery-code-used": ["Got it"],
@@ -288,6 +288,68 @@ describe("ReviewPage", () => {
     await user.click(within(el).getByRole("button", { name: "Discard row 3" }));
     expect(api.reviewAction).toHaveBeenLastCalledWith("item-import.set_aside", "discard-row", {
       rowId: "row-1",
+    });
+  });
+
+  it("renders AI proposal beside raw line with Confirm, Edit prefill, and triggers Ask Pangolin to read these", async () => {
+    const user = userEvent.setup();
+    const setAsideCardWithProposal: ReviewCard = {
+      id: "item-import.set_aside",
+      kind: "import.set_aside",
+      createdAt: "2026-10-20T10:00:00.000Z",
+      accountId: null,
+      detail: {
+        type: "batch",
+        source: "commbank_csv",
+        accountName: "Joint everyday",
+        rows: [
+          {
+            id: "row-prop-1",
+            rowNumber: 1,
+            rawLine: "31/09/2026,-36.00,BWS NEWTOWN",
+            reason: "Bad date",
+            proposal: {
+              postedOn: "2026-09-30",
+              amountCents: -3600,
+              description: "BWS NEWTOWN",
+              confidence: 0.95,
+              explanation: "Adjusted 31 Sept to last day 30 Sept",
+            },
+          },
+        ],
+      },
+    };
+
+    vi.mocked(api.fetchReviewItems).mockResolvedValue([setAsideCardWithProposal]);
+    renderPage();
+
+    const el = await cardOf("import.set_aside");
+
+    // 1. Trigger "Ask Pangolin to read these"
+    const interpretBtn = within(el).getByRole("button", { name: "Ask Pangolin to read these" });
+    await user.click(interpretBtn);
+    expect(api.reviewAction).toHaveBeenLastCalledWith("item-import.set_aside", "interpret-rows");
+
+    // 2. Proposal box is displayed
+    expect(within(el).getByText("AI proposal:")).toBeTruthy();
+    expect(within(el).getByText("2026-09-30")).toBeTruthy();
+    expect(within(el).getByText("-$36.00")).toBeTruthy();
+    expect(within(el).getByText("BWS NEWTOWN")).toBeTruthy();
+    expect(within(el).getByText("(95% sure)")).toBeTruthy();
+    expect(within(el).getByText("Adjusted 31 Sept to last day 30 Sept")).toBeTruthy();
+
+    // 3. Edit prefill: clicking Edit fills the date, amount, description inputs
+    const editBtn = within(el).getByRole("button", { name: "Edit" });
+    await user.click(editBtn);
+    expect((within(el).getByLabelText("Date") as HTMLInputElement).value).toBe("2026-09-30");
+    expect((within(el).getByLabelText("Amount") as HTMLInputElement).value).toBe("-36.00");
+    expect((within(el).getByLabelText("Description") as HTMLInputElement).value).toBe("BWS NEWTOWN");
+
+    // 4. Confirm proposal
+    const confirmBtn = within(el).getByRole("button", { name: "Confirm" });
+    await user.click(confirmBtn);
+    expect(api.reviewAction).toHaveBeenLastCalledWith("item-import.set_aside", "confirm-proposal", {
+      rowId: "row-prop-1",
     });
   });
 

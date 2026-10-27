@@ -1612,6 +1612,7 @@ export interface ImportRowRow {
   readonly rawLine: string;
   readonly status: ImportRowStatus;
   readonly reason: string | null;
+  readonly proposal: string | null;
   readonly pdfPage: number | null;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -1669,6 +1670,7 @@ export interface ImportRowRepo {
   listForBatch(viewer: Viewer, batchId: string): ImportRowRow[];
   find(viewer: Viewer, id: string): ImportRowRow | undefined;
   updateStatus(id: string, status: ImportRowStatus, at: string, reason?: string | null): boolean;
+  updateProposal(id: string, proposal: string | null, at: string): boolean;
 }
 
 export const IMPORT_HANDOFF_STATUSES = ["pending", "imported", "dismissed"] as const;
