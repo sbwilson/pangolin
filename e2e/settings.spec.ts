@@ -95,13 +95,14 @@ test("mobile viewport displays scrollable chips and hides desktop rail", async (
     await expect(desktopNav).toBeHidden();
 
     const chips = mobileNav.getByRole("link");
-    await expect(chips).toHaveCount(7);
+    await expect(chips).toHaveCount(8);
     await expect(mobileNav.getByRole("link", { name: "Appearance" })).toBeVisible();
     await expect(mobileNav.getByRole("link", { name: "Sign-in & security" })).toBeVisible();
     await expect(mobileNav.getByRole("link", { name: "Signed-in devices" })).toBeVisible();
     await expect(mobileNav.getByRole("link", { name: "Partner" })).toBeVisible();
     await expect(mobileNav.getByRole("link", { name: "Household" })).toBeVisible();
     await expect(mobileNav.getByRole("link", { name: "Accounts" })).toBeVisible();
+    await expect(mobileNav.getByRole("link", { name: "LLM providers" })).toBeVisible();
     await expect(mobileNav.getByRole("link", { name: "System status" })).toBeVisible();
 
     await mobileNav.getByRole("link", { name: "Sign-in & security" }).click();
