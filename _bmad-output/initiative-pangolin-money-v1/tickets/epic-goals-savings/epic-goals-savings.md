@@ -36,11 +36,11 @@ goal (kind, emergency fund), goal_rule, goal_allocation, allocation_stage, goal_
 - goals — _bmad-output/specs/spec-pangolin-money/budgets-goals-forecasting.md, sections Goals and savings allocation, Goal priorities and stages, Reconciling goals with the savings account, Covering an expense
 - decision — _bmad-output/specs/spec-pangolin-money/decisions.md, section Periods where spend exceeds income
 - data model — _bmad-output/specs/spec-pangolin-money/data-model.md, Tables (Planning `goal`, `goal_rule`, `goal_drawdown`, `goal_adjustment`, `planning_setting`)
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-11, AD-13, AD-14, AD-17, AD-19, AD-22, AD-24, AD-26
-- ux — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Component Patterns (Planning), Needs review item kinds, State Patterns (Cover an expense), Voice and Tone, Flow 6, Flow 10
-- design — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md, section Components (Planning)
-- mockups — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-goals.html, key-cover-expense.html, key-cover-expense-phone.html, key-needs-review.html
-- change — _bmad-output/planning-artifacts/sprint-change-proposal-2026-10-05.md, sections 4.1 Decisions (D7, D8) and E-9
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-11, AD-13, AD-14, AD-17, AD-19, AD-22, AD-24, AD-26
+- ux — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Component Patterns (Planning), Needs review item kinds, State Patterns (Cover an expense), Voice and Tone, Flow 6, Flow 10
+- design — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md, section Components (Planning)
+- mockups — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-goals.html, key-cover-expense.html, key-cover-expense-phone.html, key-needs-review.html
+- change — _bmad-output/v6-archive/planning-artifacts/sprint-change-proposal-2026-10-05.md, sections 4.1 Decisions (D7, D8) and E-9
 
 ## Notes
 

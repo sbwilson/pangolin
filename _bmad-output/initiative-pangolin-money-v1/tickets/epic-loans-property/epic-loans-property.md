@@ -36,11 +36,11 @@ Each of us sees what our loans cost and what our properties really earn, from fi
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-11, CAP-20, and Non-goals (automatic interest/principal splitting)
 - property — _bmad-output/specs/spec-pangolin-money/investments-super-tax.md, section Investment property
 - data model — _bmad-output/specs/spec-pangolin-money/data-model.md, Tables (Accounts `loan_terms`, `loan_rate_change`, `loan_interest_entry`; Property `property`)
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-5, AD-11, AD-13, AD-19, AD-22, AD-23, and Capability → Architecture Map (CAP-11, CAP-20)
-- ux — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Loan Detail, Property Detail, State Patterns (Accounts & loans), Flow 2
-- design — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md, section Components (Accounts & loans)
-- mockups — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-loan-detail.html, key-property-detail.html, key-accounts.html
-- change — _bmad-output/planning-artifacts/sprint-change-proposal-2026-10-05.md, sections 4.1 Decisions (D1, D3, D6) and E-10
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-5, AD-11, AD-13, AD-19, AD-22, AD-23, and Capability → Architecture Map (CAP-11, CAP-20)
+- ux — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Loan Detail, Property Detail, State Patterns (Accounts & loans), Flow 2
+- design — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md, section Components (Accounts & loans)
+- mockups — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-loan-detail.html, key-property-detail.html, key-accounts.html
+- change — _bmad-output/v6-archive/planning-artifacts/sprint-change-proposal-2026-10-05.md, sections 4.1 Decisions (D1, D3, D6) and E-10
 
 ## Notes
 

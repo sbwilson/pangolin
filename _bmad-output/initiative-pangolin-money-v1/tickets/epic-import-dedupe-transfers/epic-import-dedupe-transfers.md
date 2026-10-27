@@ -52,10 +52,10 @@ packages/importers and the import, payee-matching, rules and transfer stages in 
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-1, CAP-2
 - pipeline — _bmad-output/specs/spec-pangolin-money/import-pipeline.md, including section Hand-off to the partner
 - categories — _bmad-output/specs/spec-pangolin-money/categorisation.md, section Default categories
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-5, AD-10, AD-12, AD-15, AD-17, AD-19, AD-20, AD-21, AD-22, AD-23
-- ux — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Needs review item kinds, State Patterns (Import), Interaction Primitives (Import popover), Flow 4
-- mockups — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-import-popover.html, key-needs-review.html
-- change — _bmad-output/planning-artifacts/sprint-change-proposal-2026-10-05.md, section E-6
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-5, AD-10, AD-12, AD-15, AD-17, AD-19, AD-20, AD-21, AD-22, AD-23
+- ux — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Needs review item kinds, State Patterns (Import), Interaction Primitives (Import popover), Flow 4
+- mockups — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-import-popover.html, key-needs-review.html
+- change — _bmad-output/v6-archive/planning-artifacts/sprint-change-proposal-2026-10-05.md, section E-6
 
 ## Notes
 

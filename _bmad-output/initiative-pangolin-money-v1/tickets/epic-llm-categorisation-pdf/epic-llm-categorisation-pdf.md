@@ -53,10 +53,10 @@ packages/llm and PDF extraction in packages/importers. CAP-2 part: LLM suggestio
 - llm — _bmad-output/specs/spec-pangolin-money/categorisation.md, section Providers
 - set-aside rows — _bmad-output/specs/spec-pangolin-money/import-pipeline.md, step 1 (Parse)
 - pdf — _bmad-output/specs/spec-pangolin-money/import-pipeline.md, section PDF statements
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-6, AD-8, AD-9, AD-10, AD-17, AD-18, AD-21
-- ux — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Interaction Primitives (Import popover, steps 5 and 6), Needs review item kinds, Component Patterns (Accounts, settings, auth & feedback)
-- mockups — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-settings.html, key-needs-review.html, key-import-popover.html
-- change — _bmad-output/planning-artifacts/sprint-change-proposal-2026-10-05.md, section E-8
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-6, AD-8, AD-9, AD-10, AD-17, AD-18, AD-21
+- ux — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Interaction Primitives (Import popover, steps 5 and 6), Needs review item kinds, Component Patterns (Accounts, settings, auth & feedback)
+- mockups — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-settings.html, key-needs-review.html, key-import-popover.html
+- change — _bmad-output/v6-archive/planning-artifacts/sprint-change-proposal-2026-10-05.md, section E-8
 
 ## Notes
 

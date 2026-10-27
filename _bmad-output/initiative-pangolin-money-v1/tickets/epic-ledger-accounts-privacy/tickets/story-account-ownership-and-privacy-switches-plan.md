@@ -12,7 +12,7 @@ lenses_ran: ['blind-hunter', 'edge-case-hunter', 'verification-gap', 'intent-ali
 review_loop_iteration: 1
 baseline_revision: '3ed41f1c815f1a01539d5f52eb903fb7dfbb5c53'
 context:
-  - '{project-root}/_bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md'
+  - '{project-root}/_bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md'
 ---
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">

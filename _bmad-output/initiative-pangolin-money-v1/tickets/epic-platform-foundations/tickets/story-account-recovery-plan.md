@@ -13,9 +13,9 @@ lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 0
 followup_review_recommended: true
 context:
-  - '{project-root}/_bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md'
+  - '{project-root}/_bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md'
   - '{project-root}/_bmad-output/specs/spec-pangolin-money/security-and-recovery.md'
-  - '{project-root}/_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-passkey-login-plan.md'
+  - '{project-root}/_bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-foundations/tickets/story-passkey-login-plan.md'
 warnings: [oversized]
 deferred:
   - summary: >-

@@ -16,7 +16,7 @@ lenses_ran:
   - 'intent-alignment'
 review_loop_iteration: 0
 context:
-  - '_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/epic-app-shell-settings-theming.md'
+  - '_bmad-output/initiative-pangolin-money-v1/tickets/epic-app-shell-settings-theming/epic-app-shell-settings-theming.md'
   - 'e2e/settings.spec.ts'
   - 'e2e/routing.spec.ts'
 ---

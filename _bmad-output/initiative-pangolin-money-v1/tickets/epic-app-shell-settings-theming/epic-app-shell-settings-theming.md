@@ -48,11 +48,11 @@ The `apps/web` shell (sidebar, tab bar, header with the Import button slot; the 
 - constraint — _bmad-output/specs/spec-pangolin-money/SPEC.md, section Constraints (WCAG 2.2 AA)
 - milestones — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, section Milestones (M1)
 - data model — _bmad-output/specs/spec-pangolin-money/data-model.md, People (`person_preference`)
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-5, AD-9, AD-22, AD-27, and Consistency Conventions (Web security, Frontend state, Accessibility, Theming, Routes)
-- ux — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Information Architecture, Component Patterns (Accounts, settings, auth & feedback), State Patterns (Settings & auth), Accessibility Floor, Theming, Responsive & Platform
-- design — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md, sections Colors (Theme sets), Components (Shell, Settings & auth)
-- mockups — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-settings.html, key-sign-in.html, color-themes-1.html
-- change — _bmad-output/planning-artifacts/sprint-change-proposal-2026-10-05.md, sections 2.4 Technical impact and E-10
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-5, AD-9, AD-22, AD-27, and Consistency Conventions (Web security, Frontend state, Accessibility, Theming, Routes)
+- ux — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Information Architecture, Component Patterns (Accounts, settings, auth & feedback), State Patterns (Settings & auth), Accessibility Floor, Theming, Responsive & Platform
+- design — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md, sections Colors (Theme sets), Components (Shell, Settings & auth)
+- mockups — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-settings.html, key-sign-in.html, color-themes-1.html
+- change — _bmad-output/v6-archive/planning-artifacts/sprint-change-proposal-2026-10-05.md, sections 2.4 Technical impact and E-10
 
 ## Notes
 

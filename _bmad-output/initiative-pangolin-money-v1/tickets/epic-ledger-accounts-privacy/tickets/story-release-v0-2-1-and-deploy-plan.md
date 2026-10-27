@@ -51,7 +51,7 @@ context:
 - `.github/workflows/release.yml`, `.github/scripts/*`, `deploy/release-workflow.test.ts`, `deploy/release-scripts.test.ts` -- the release machinery; pre-flight runs the two tests.
 - Changes since `v0.2.0` (`git log v0.2.0..develop`): stories 2.14–2.18 plus docs commits. `packages/db/migrations` ends at `0010`, no diff since the tag.
 - `story-release-and-deploy-plan.md` -- the v0.2.0 plan; same agent/human split.
-- `_bmad-output/implementation-artifacts/deferred-work.md` -- deferrals that stay unfixed in v0.2.1.
+- `_bmad-output/v6-archive/implementation-artifacts/deferred-work.md` -- deferrals that stay unfixed in v0.2.1.
 - New: `docs/release-v0.2.1.md`.
 
 ## Tasks & Acceptance

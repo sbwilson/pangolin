@@ -34,12 +34,12 @@ The web app (router, table, list, editors, account screens), search (FTS5), CSV 
 - parent — _bmad-output/initiative-pangolin-money-v1/initiative-pangolin-money-v1.md
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-3, CAP-14, CAP-18
 - data model — _bmad-output/specs/spec-pangolin-money/data-model.md, Privacy enforcement
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-4, AD-5, AD-7, AD-9, AD-10, and Consistency Conventions (Frontend state, API, Tests, Web security, Accessibility, Routes)
-- core — _bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/epic-ledger-accounts-privacy.md, its Notes' decisions
-- ux — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Information Architecture, Component Patterns (Transactions & review), State Patterns (Transactions & review)
-- design — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md, Components › Transactions & review, Components › Accounts & loans
-- mockups — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-transactions.html, key-accounts.html
-- change — _bmad-output/planning-artifacts/sprint-change-proposal-2026-10-05.md, sections E-3, E-4, E-5
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-4, AD-5, AD-7, AD-9, AD-10, and Consistency Conventions (Frontend state, API, Tests, Web security, Accessibility, Routes)
+- core — _bmad-output/initiative-pangolin-money-v1/tickets/epic-ledger-accounts-privacy/epic-ledger-accounts-privacy.md, its Notes' decisions
+- ux — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Information Architecture, Component Patterns (Transactions & review), State Patterns (Transactions & review)
+- design — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md, Components › Transactions & review, Components › Accounts & loans
+- mockups — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-transactions.html, key-accounts.html
+- change — _bmad-output/v6-archive/planning-artifacts/sprint-change-proposal-2026-10-05.md, sections E-3, E-4, E-5
 
 ## Notes
 

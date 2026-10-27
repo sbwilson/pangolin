@@ -16,8 +16,8 @@ lenses_ran:
   - 'intent-alignment'
 review_loop_iteration: 0
 context:
-  - '_bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md'
-  - '_bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md'
+  - '_bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md'
+  - '_bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md'
 ---
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">

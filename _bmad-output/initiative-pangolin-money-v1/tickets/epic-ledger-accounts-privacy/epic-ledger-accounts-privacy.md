@@ -37,7 +37,7 @@ The ledger and classification tables in data-model.md, except import_*, rule and
 
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-3, CAP-14, CAP-18, CAP-16
 - data model — _bmad-output/specs/spec-pangolin-money/data-model.md, sections Conventions, Tables, Privacy enforcement
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-4, AD-5, AD-7, AD-10, AD-15, AD-17, AD-18, AD-19, AD-20, AD-22, AD-26
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-4, AD-5, AD-7, AD-10, AD-15, AD-17, AD-18, AD-19, AD-20, AD-22, AD-26
 - categories — _bmad-output/specs/spec-pangolin-money/categorisation.md, the default categories
 
 ## Notes

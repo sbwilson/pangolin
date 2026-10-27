@@ -52,7 +52,7 @@ context:
 - `deploy/release-workflow.test.ts`, `release-scripts.test.ts` -- tests that cover the release machinery.
 - `packages/db/src/manifest.ts`, `manifest.test.ts`, `apps/server/src/backup/snapshot.test.ts` -- manifest format 2 and the format-1 reads.
 - `docs/m0-gate-rehearsal.md` -- the shape of an evidence record.
-- `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md` -- the dev-VM run lessons and open items.
+- `_bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-hardening/epic-platform-hardening-retrospective.md` -- the dev-VM run lessons and open items.
 - New: `docs/release-v0.2.0.md` (the checklist and evidence record, filled in as steps complete).
 
 ## Tasks & Acceptance

@@ -32,10 +32,10 @@ Projection services and their views, the per-account low-balance threshold, and 
 
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-8
 - forecasting — _bmad-output/specs/spec-pangolin-money/budgets-goals-forecasting.md, section Forecasting
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-11, AD-12, AD-14, AD-19, AD-23, AD-25, and Capability → Architecture Map (CAP-20, `domain/amortise`)
-- ux — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Component Patterns (Planning), Flow 7
-- mockups — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-forecast.html
-- change — _bmad-output/planning-artifacts/sprint-change-proposal-2026-10-05.md, section E-9
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-11, AD-12, AD-14, AD-19, AD-23, AD-25, and Capability → Architecture Map (CAP-20, `domain/amortise`)
+- ux — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Component Patterns (Planning), Flow 7
+- mockups — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-forecast.html
+- change — _bmad-output/v6-archive/planning-artifacts/sprint-change-proposal-2026-10-05.md, section E-9
 
 ## Notes
 

@@ -13,7 +13,7 @@ lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 0
 followup_review_recommended: true
 context:
-  - '{project-root}/_bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md'
+  - '{project-root}/_bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md'
   - '{project-root}/_bmad-output/specs/spec-pangolin-money/categorisation.md'
 warnings: [oversized]
 deferred:
@@ -24,7 +24,7 @@ deferred:
       need for shared dates. The spine's Invariants diagram draws no tools/* arrows. Fixing it
       means editing the architecture spine, which is outside this build.
     location: >-
-      _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md
+      _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md
     severity: low
 ---
 

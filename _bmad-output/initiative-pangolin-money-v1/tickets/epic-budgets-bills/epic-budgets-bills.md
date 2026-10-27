@@ -33,10 +33,10 @@ Budgets and recurring_series, with their UI, the limit suggestion and the `over_
 
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-4, CAP-5
 - budgets — _bmad-output/specs/spec-pangolin-money/budgets-goals-forecasting.md, sections Budgets and Recurring bills
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-11, AD-14, AD-17, AD-22, AD-23, AD-25
-- ux — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Component Patterns (Planning), Needs review item kinds, Flow 5
-- mockups — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-budgets.html
-- change — _bmad-output/planning-artifacts/sprint-change-proposal-2026-10-05.md, section E-9
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-11, AD-14, AD-17, AD-22, AD-23, AD-25
+- ux — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Component Patterns (Planning), Needs review item kinds, Flow 5
+- mockups — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-budgets.html
+- change — _bmad-output/v6-archive/planning-artifacts/sprint-change-proposal-2026-10-05.md, section E-9
 
 ## Notes
 

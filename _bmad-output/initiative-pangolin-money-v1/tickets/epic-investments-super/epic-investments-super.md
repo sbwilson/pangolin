@@ -34,7 +34,7 @@ The Invest and Super tables, packages/connectors, and the investment and super v
 
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-9, CAP-10
 - investments — _bmad-output/specs/spec-pangolin-money/investments-super-tax.md, sections ETFs and Super
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-10, AD-11, AD-13, AD-19, AD-20, AD-25
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-10, AD-11, AD-13, AD-19, AD-20, AD-25
 
 ## Notes
 

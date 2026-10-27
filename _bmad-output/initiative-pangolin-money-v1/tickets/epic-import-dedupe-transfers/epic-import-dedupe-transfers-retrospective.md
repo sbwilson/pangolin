@@ -12,7 +12,7 @@ headless: false
 
 **Tickets (11), from `tickets.py status`:** 3.1 to 3.10 are `built` (state `review`, nobody has called them done); 3.11 (Release v0.2.4) was closed `done` on 2026-10-21 (`5e8e94c`) before this run. `pending_tickets` is empty, so nothing forces the machine verdict. The user first declined to retro with 3.11 open, then closed it.
 
-**Un-ticketed follow-ups built inside the epic's window** (plans in `_bmad-output/implementation-artifacts/`, not in the tree): derived opening-balance snapshots, join check and `opening-balance` command (`3d6a901`, `plan-m1-opening-balance.md`); ledger balance line in `m1-report` (`1253a8f`, `plan-m1-closing-balance.md`); e2e fixes `e41b6d4`, `30f1256`, `f495879`.
+**Un-ticketed follow-ups built inside the epic's window** (plans in `_bmad-output/v6-archive/implementation-artifacts/`, not in the tree): derived opening-balance snapshots, join check and `opening-balance` command (`3d6a901`, `plan-m1-opening-balance.md`); ledger balance line in `m1-report` (`1253a8f`, `plan-m1-closing-balance.md`); e2e fixes `e41b6d4`, `30f1256`, `f495879`.
 
 **Plan ranges** (each plan's `baseline_revision` to the next baseline in history order; one commit per ticket except where noted; git evidence JSON for each range was derived with `git_evidence.py`):
 

@@ -45,8 +45,8 @@ Source: the epic 1 retrospective findings (References). Each line maps to CAP-16
 ## References
 
 - parent — _bmad-output/initiative-pangolin-money-v1/initiative-pangolin-money-v1.md
-- retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, findings S6 to S11 and action items 3, 8 and 9
-- deferred — _bmad-output/implementation-artifacts/deferred-work.md, the release concurrency entry from story 1.18
+- retrospective — _bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-foundations/epic-platform-foundations-retrospective.md, findings S6 to S11 and action items 3, 8 and 9
+- deferred — _bmad-output/v6-archive/implementation-artifacts/deferred-work.md, the release concurrency entry from story 1.18
 - ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Install and upgrade, CI/CD
 - security — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md
 

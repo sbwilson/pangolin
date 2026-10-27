@@ -11,7 +11,7 @@ covers = ["CAP-16"]
 after = []
 hitl = false
 risk = "medium"
-references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, Design Paradigm, AD-1, AD-2, Consistency Conventions (Migrations, Tables, Health and upgrade)", "stack — _bmad-output/specs/spec-pangolin-money/tech-stack.md, Repo layout"]
+references = ["spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, Design Paradigm, AD-1, AD-2, Consistency Conventions (Migrations, Tables, Health and upgrade)", "stack — _bmad-output/specs/spec-pangolin-money/tech-stack.md, Repo layout"]
 plan_checkpoint = true
 done_checkpoint = true
 
@@ -26,7 +26,7 @@ after = [1]
 hitl = true
 risk = "high"
 unknown = "Rocky Linux and Ubuntu paths are written but only Debian is proven here; other distros are deferred per the spine."
-references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Host, Configuration, Install and upgrade", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-27, Consistency Conventions (Outbound allowlist, Environments)"]
+references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Host, Configuration, Install and upgrade", "spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-27, Consistency Conventions (Outbound allowlist, Environments)"]
 plan_checkpoint = true
 done_checkpoint = true
 
@@ -40,7 +40,7 @@ covers = []
 after = [1]
 hitl = false
 risk = "low"
-references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-5, AD-12, AD-13, AD-14"]
+references = ["spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-5, AD-12, AD-13, AD-14"]
 
 [[entry]]
 id = 3
@@ -52,7 +52,7 @@ covers = ["CAP-15", "CAP-16"]
 after = [1]
 hitl = false
 risk = "medium"
-references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-1, AD-2, AD-6, Consistency Conventions (Use cases, Errors, Audit)"]
+references = ["spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-1, AD-2, AD-6, Consistency Conventions (Use cases, Errors, Audit)"]
 
 [[entry]]
 id = 7
@@ -64,7 +64,7 @@ covers = ["CAP-16"]
 after = [2, 3]
 hitl = false
 risk = "medium"
-references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-15", "ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Synthetic data and offline CI", "llm tests — _bmad-output/specs/spec-pangolin-money/categorisation.md, Providers (Tests)"]
+references = ["spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-15", "ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Synthetic data and offline CI", "llm tests — _bmad-output/specs/spec-pangolin-money/categorisation.md, Providers (Tests)"]
 
 [[entry]]
 id = 4
@@ -76,7 +76,7 @@ covers = ["CAP-16"]
 after = [3]
 hitl = false
 risk = "medium"
-references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-9, AD-17"]
+references = ["spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-9, AD-17"]
 
 [[entry]]
 id = 5
@@ -88,7 +88,7 @@ covers = ["CAP-15"]
 after = [3]
 hitl = false
 risk = "high"
-references = ["security — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md, Threats and mitigations", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, Consistency Conventions (Re-authentication, Web security)"]
+references = ["security — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md, Threats and mitigations", "spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, Consistency Conventions (Re-authentication, Web security)"]
 
 [[entry]]
 id = 6
@@ -100,7 +100,7 @@ covers = ["CAP-15"]
 after = [4, 5]
 hitl = false
 risk = "medium"
-references = ["security — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md, Account recovery", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-17, AD-27"]
+references = ["security — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md, Account recovery", "spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-17, AD-27"]
 
 [[entry]]
 id = 9
@@ -112,7 +112,7 @@ covers = ["CAP-15", "CAP-16"]
 after = [4, 6, 8]
 hitl = false
 risk = "medium"
-references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-16"]
+references = ["spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-16"]
 
 [[entry]]
 id = 10
@@ -124,7 +124,7 @@ covers = ["CAP-16"]
 after = [4, 7, 8, 9]
 hitl = true
 risk = "high"
-references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Backups and restore", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-16, AD-19, AD-27"]
+references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Backups and restore", "spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-16, AD-19, AD-27"]
 plan_checkpoint = true
 done_checkpoint = true
 
@@ -138,7 +138,7 @@ covers = ["CAP-16"]
 after = [9, 10]
 hitl = true
 risk = "medium"
-references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Install and upgrade, CI/CD", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, Consistency Conventions (Health and upgrade)"]
+references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Install and upgrade, CI/CD", "spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, Consistency Conventions (Health and upgrade)"]
 done_checkpoint = true
 
 [[entry]]
@@ -162,7 +162,7 @@ covers = ["CAP-16"]
 after = [10]
 hitl = false
 risk = "medium"
-references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Backups and restore", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-16, AD-19", "deferred — _bmad-output/implementation-artifacts/deferred-work.md, the backup check, drill and stale-warning entries"]
+references = ["ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Backups and restore", "spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-8, AD-16, AD-19", "deferred — _bmad-output/v6-archive/implementation-artifacts/deferred-work.md, the backup check, drill and stale-warning entries"]
 
 [[entry]]
 id = 13
@@ -186,7 +186,7 @@ covers = ["CAP-16"]
 after = [13]
 hitl = false
 risk = "high"
-references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, findings S1, S2 and S3", "ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Install and upgrade"]
+references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-foundations/epic-platform-foundations-retrospective.md, findings S1, S2 and S3", "ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, Install and upgrade"]
 
 [[entry]]
 id = 16
@@ -198,7 +198,7 @@ covers = ["CAP-15", "CAP-16"]
 after = [13]
 hitl = false
 risk = "high"
-references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, finding S4 and the human decision of 2026-10-02", "security — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md, Account recovery"]
+references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-foundations/epic-platform-foundations-retrospective.md, finding S4 and the human decision of 2026-10-02", "security — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md, Account recovery"]
 
 [[entry]]
 id = 17
@@ -210,7 +210,7 @@ covers = ["CAP-15", "CAP-16"]
 after = [13]
 hitl = false
 risk = "medium"
-references = ["spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-27", "retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, finding R4 and the human decision of 2026-10-02", "cli plan — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/story-cli-and-admin-socket-plan.md, residual risk"]
+references = ["spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-27", "retrospective — _bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-foundations/epic-platform-foundations-retrospective.md, finding R4 and the human decision of 2026-10-02", "cli plan — _bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-foundations/tickets/story-cli-and-admin-socket-plan.md, residual risk"]
 
 [[entry]]
 id = 18
@@ -222,4 +222,4 @@ covers = ["CAP-16"]
 after = [13]
 hitl = false
 risk = "medium"
-references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md, findings R3 and R5", "ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, CI/CD", "spine — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, Consistency Conventions (Migrations, Health and upgrade)"]
+references = ["retrospective — _bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-foundations/epic-platform-foundations-retrospective.md, findings R3 and R5", "ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, CI/CD", "spine — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, Consistency Conventions (Migrations, Health and upgrade)"]

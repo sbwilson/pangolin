@@ -46,9 +46,9 @@ Capability boundaries, ordered by milestone. Each milestone gate is the Done-whe
 - constraint — _bmad-output/specs/spec-pangolin-money/SPEC.md, section Constraints (privacy, outbound allowlist, single writer, integer money, WCAG 2.2 AA)
 - milestones — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, section Milestones
 - diagrams — _bmad-output/specs/spec-pangolin-money/architecture-diagrams.md
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, all ADs
-- ux — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md and DESIGN.md
-- change — _bmad-output/planning-artifacts/sprint-change-proposal-2026-10-05.md, section 4.4 Epics and stories
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, all ADs
+- ux — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md and DESIGN.md
+- change — _bmad-output/v6-archive/planning-artifacts/sprint-change-proposal-2026-10-05.md, section 4.4 Epics and stories
 
 ## Notes
 

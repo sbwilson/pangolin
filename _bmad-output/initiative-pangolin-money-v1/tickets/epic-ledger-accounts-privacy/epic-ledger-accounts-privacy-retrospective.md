@@ -18,7 +18,7 @@ A short pass after the third. Two commits landed since it: `2f8fc91` (this retro
 
 ### Fourth pass: Epic summary
 
-All 26 tickets stay at `built`; `pending_tickets` is empty. The fix is not a ticket: it has a plan (`_bmad-output/implementation-artifacts/plan-q1-one-closed-state.md`, baseline `2f8fc91`, built, two build-time review passes) and one commit.
+All 26 tickets stay at `built`; `pending_tickets` is empty. The fix is not a ticket: it has a plan (`_bmad-output/v6-archive/implementation-artifacts/plan-q1-one-closed-state.md`, baseline `2f8fc91`, built, two build-time review passes) and one commit.
 
 | Item | Range | Commit | Files | +/− |
 |---|---|---|---|---|
@@ -434,7 +434,7 @@ Proposed, not applied. Remediation is for the dev loop; spec reconciliations are
 
 ## First pass (2026-10-05): Epic summary
 
-**Epic:** `epic-ledger-accounts-privacy` (epic 2, "Ledger core and privacy"), folder `_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/`, epic file `epic-ledger-accounts-privacy.md`. Covers CAP-3, CAP-18 and CAP-14; risk high. Its Done when has five items, so the verdict criteria are **declared**.
+**Epic:** `epic-ledger-accounts-privacy` (epic 2, "Ledger core and privacy"), folder `_bmad-output/initiative-pangolin-money-v1/tickets/epic-ledger-accounts-privacy/`, epic file `epic-ledger-accounts-privacy.md`. Covers CAP-3, CAP-18 and CAP-14; risk high. Its Done when has five items, so the verdict criteria are **declared**.
 
 **Run:** interactive, with a standard pass and no special weighting (the user's choice).
 
@@ -512,7 +512,7 @@ The per-range commit counts add up to 48, which matches the overall range. No co
 - **2.7:** `packages/app/src/ledger/hidden-names-transfers.test.ts` +308, `app.test.ts` +172, `packages/app/src/ledger/hide-name.ts` +140, plan +109, `transfer-groups.ts` +104.
 - **2.9:** `packages/db/src/manifest.test.ts` +198/−2, `packages/db/src/manifest.ts` +161/−13, plan +110, `e2e/routing.spec.ts` +43/−6, `apps/server/src/backup/snapshot.test.ts` +13.
 - **2.8:** `seed.test.ts` +611/−46, `seed.ts` +497/−72, `tools/seed/src/modules/ledger-transactions.ts` +482, `tools/seed/src/modules/transfers-and-privacy.ts` +313, `e2e/ledger.spec.ts` +241/−29.
-- **2.10:** `apps/server/src/privacy/privacy.test.ts` +816, `privacy-harness.ts` +794, `route-manifest.ts` +469, plan +107, `_bmad-output/implementation-artifacts/deferred-work.md` +3.
+- **2.10:** `apps/server/src/privacy/privacy.test.ts` +816, `privacy-harness.ts` +794, `route-manifest.ts` +469, plan +107, `_bmad-output/v6-archive/implementation-artifacts/deferred-work.md` +3.
 - **2.11:** `classification-repos.test.ts` +277/−1,110, `packages/app/src/testing/repo-parity.test.ts` +1,119, `memory-uow.ts` +176/−90, `packages/shared/src/seed-references.test.ts` +163/−34, `packages/app/src/testing/accounts-parity.test.ts` +168/−15.
 - **2.12:** `docs/release-v0.2.0.md` +329/−23, plan +91/−1.
 
@@ -532,7 +532,7 @@ The raw JSON for each range is at `/private/tmp/claude-501/-Users-sim-dev-pangol
   - Only 2.9 has a Plan Change Log entry.
 - **Diff ranges.** All 13 are established (see above), and git_evidence ran on each range and on the overall range.
 - **Release artifacts.** The `v0.2.0` tag (at `e0d24d2`) and `docs/release-v0.2.0.md`, which records the release run, the upgrade, backup and restore evidence, and acceptance.
-- **Deferred findings.** `_bmad-output/implementation-artifacts/deferred-work.md` was updated by 2.7, 2.10 and 2.11. 2.11 marked the findings it closed.
+- **Deferred findings.** `_bmad-output/v6-archive/implementation-artifacts/deferred-work.md` was updated by 2.7, 2.10 and 2.11. 2.11 marked the findings it closed.
 - **Requirements source.** The initiative file has no Requirements section; it has Description, Outcome, Done when, Boundaries, References and Notes. The CAP ids are defined in `_bmad-output/specs/spec-pangolin-money/SPEC.md` (CAP-3 at line 36, CAP-14 at 69, CAP-16 at 75, CAP-18 at 81). That spec, together with `data-model.md` and the architecture spine, was edited after the epic's last commit (`c8c0d94`, `ca5645e`, both 2026-10-05). To judge the work against what the build was given, read it as of `3219563`.
 - **Session logs** in `~/.claude/projects/-Users-sim-dev-pangolin/`. References only; they were not read in full.
   - `9e54967e-245f-486f-a884-7f0dd80a26fd.jsonl` (about 7.0 MB, started 2026-10-03T21:48Z, last written 2026-10-05 17:41) is the main build session. It mentions every ticket, 2.1 to 2.13, and its folder holds 69 sub-agent logs, 90 of which mention the epic.
@@ -540,8 +540,8 @@ The raw JSON for each range is at `/private/tmp/claude-501/-Users-sim-dev-pangol
   - `43b2d2d1-cf4d-4c68-9b98-36363155e02e.jsonl` (about 10 MB, started 2026-10-02T20:47Z) names the epic folder: it is the inception and slicing session. 9 of its sub-agent logs mention the epic.
   - `b0b0aeb1-efc3-4319-a825-0471708973fc.jsonl` is the current session, started 2026-10-04T21:40Z. It mentions 2.11 and 2.12 and holds this retro.
   - `f52e5760-289b-41ae-a26b-79d3ff9d1ea5`: 3 of its sub-agent logs mention the epic.
-- **Previous retrospective (epic 1, the epic before epic 2 in the epics order):** `_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md` (2026-10-02, verdict accepted-with-open-items, criteria declared).
-- **Also present:** the epic 11 retrospective, `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/epic-platform-hardening-retrospective.md` (2026-10-03, accepted-with-open-items). Epic 11 comes after epics 2, 12 and 13 in the epics order, but its retro predates this epic's build, so its action items may also bear on epic 2.
+- **Previous retrospective (epic 1, the epic before epic 2 in the epics order):** `_bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-foundations/epic-platform-foundations-retrospective.md` (2026-10-02, verdict accepted-with-open-items, criteria declared).
+- **Also present:** the epic 11 retrospective, `_bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-hardening/epic-platform-hardening-retrospective.md` (2026-10-03, accepted-with-open-items). Epic 11 comes after epics 2, 12 and 13 in the epics order, but its retro predates this epic's build, so its action items may also bear on epic 2.
 
 **Missing or narrowed:**
 

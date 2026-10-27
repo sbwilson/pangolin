@@ -12,7 +12,7 @@ review_source: 'auto'
 lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 0
 context:
-  - '{project-root}/_bmad-output/implementation-artifacts/deferred-work.md'
+  - '{project-root}/_bmad-output/v6-archive/implementation-artifacts/deferred-work.md'
 ---
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">

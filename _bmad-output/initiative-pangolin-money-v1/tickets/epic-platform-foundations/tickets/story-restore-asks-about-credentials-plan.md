@@ -12,7 +12,7 @@ review_source: 'auto'
 lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 1
 context:
-  - '{project-root}/_bmad-output/initiative-pangolin-money-v1/epic-platform-foundations/epic-platform-foundations-retrospective.md'
+  - '{project-root}/_bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-foundations/epic-platform-foundations-retrospective.md'
   - '{project-root}/_bmad-output/specs/spec-pangolin-money/security-and-recovery.md'
 ---
 

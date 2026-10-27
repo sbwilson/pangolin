@@ -34,10 +34,10 @@ Reports and charts (ECharts) over splits. CAP-14 part: contribution and apportio
 
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-14, CAP-17
 - shared spending — _bmad-output/specs/spec-pangolin-money/budgets-goals-forecasting.md, section Shared spending and who paid
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-4, AD-7, AD-11, AD-13, AD-19, AD-23, and Consistency Conventions (Routes)
-- ux — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Information Architecture, Component Patterns (Shell & reports), State Patterns (Reports), Flow 9
-- mockups — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-cash-flow.html, key-cash-flow-phone.html, key-net-worth.html, key-spending.html
-- change — _bmad-output/planning-artifacts/sprint-change-proposal-2026-10-05.md, section E-7
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-4, AD-7, AD-11, AD-13, AD-19, AD-23, and Consistency Conventions (Routes)
+- ux — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Information Architecture, Component Patterns (Shell & reports), State Patterns (Reports), Flow 9
+- mockups — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-cash-flow.html, key-cash-flow-phone.html, key-net-worth.html, key-spending.html
+- change — _bmad-output/v6-archive/planning-artifacts/sprint-change-proposal-2026-10-05.md, section E-7
 
 ## Notes
 

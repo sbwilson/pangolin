@@ -12,7 +12,7 @@ review_source: 'auto'
 lenses_ran: ['blind-hunter', 'edge-case-hunter', 'verification-gap', 'intent-alignment']
 review_loop_iteration: 0
 context:
-  - '{project-root}/_bmad-output/implementation-artifacts/deferred-work.md'
+  - '{project-root}/_bmad-output/v6-archive/implementation-artifacts/deferred-work.md'
 ---
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
@@ -30,7 +30,7 @@ context:
 - Retain exact user-visible behaviors, URL contracts, search parameters, and report calculations.
 - Preserve all existing tests and ensure no regressions in Vitest or Playwright suites.
 - Follow WCAG 2.1.1 for scrollable containers (`tabIndex={0}`, `role="region"`, `aria-label`).
-- Mark resolved findings in `_bmad-output/implementation-artifacts/deferred-work.md` with their disposition.
+- Mark resolved findings in `_bmad-output/v6-archive/implementation-artifacts/deferred-work.md` with their disposition.
 
 **Never:**
 - Do not alter API schemas, route paths, or data contracts of report endpoints.
@@ -64,7 +64,7 @@ context:
 - `apps/web/src/pages/SpendingPage.tsx` -- Refactor to use `useReportQueries`.
 - `apps/web/src/components/SpendingCategoryBarsCard.tsx` -- Add `tabIndex={0}`, `role="region"`, and `aria-label` to `overflow-x-auto` container.
 - `apps/server/src/http/ledger-perf.test.ts` -- Add `sharedApportionment` 50k-row timing assertion (<= 300 ms).
-- `_bmad-output/implementation-artifacts/deferred-work.md` -- Record dispositions for resolved findings.
+- `_bmad-output/v6-archive/implementation-artifacts/deferred-work.md` -- Record dispositions for resolved findings.
 
 ## Tasks & Acceptance
 
@@ -77,7 +77,7 @@ context:
 - [x] `apps/web/src/hooks/useReportQueries.ts` & `apps/web/src/hooks/useReportQueries.test.tsx` -- Deduplicate report queries -- Create shared hook encapsulating common report queries, query keys, and fetchers.
 - [x] `apps/web/src/pages/CashFlowPage.tsx` & `apps/web/src/pages/SpendingPage.tsx` -- Adopt `useReportQueries` -- Replace repetitive inline `useQuery` blocks with the unified hook.
 - [x] `apps/server/src/http/ledger-perf.test.ts` -- Add shared apportionment perf test -- Assert `/api/reports/shared-apportionment` responds in <= 300 ms over 50k rows.
-- [x] `_bmad-output/implementation-artifacts/deferred-work.md` -- Update deferred work registry -- Update status of resolved review findings from Epic 4.
+- [x] `_bmad-output/v6-archive/implementation-artifacts/deferred-work.md` -- Update deferred work registry -- Update status of resolved review findings from Epic 4.
 - [x] Verification -- Run full suite -- Verify `check-boundaries.ts`, `biome check`, vitest test suites, and Playwright e2e tests pass cleanly.
 
 **Acceptance Criteria:**
@@ -97,7 +97,7 @@ context:
 - Improved accessibility in `NetWorthTrendTable` (`<th scope="row">` month cells, `tabIndex={0}`, `role="region"`, `aria-label="12-month net worth trend"`), `SpendingCategoryBarsCard` (`tabIndex={0}`, `role="region"`, `aria-label="Category spending breakdown"`), and `NetWorthAccountRow` (`aria-label={`Import statement for ${account.name}`}`).
 - Extracted unified report queries hook `useReportQueries` in `apps/web/src/hooks/useReportQueries.ts` and unit tested in `useReportQueries.test.tsx`. Adopted across `CashFlowPage.tsx` and `SpendingPage.tsx`.
 - Added 50,000-row performance timing test for `/api/reports/shared-apportionment` in `apps/server/src/http/ledger-perf.test.ts` (executes in ~132 ms <= 300 ms budget).
-- Marked Epic 4 review findings as fixed in `_bmad-output/implementation-artifacts/deferred-work.md`.
+- Marked Epic 4 review findings as fixed in `_bmad-output/v6-archive/implementation-artifacts/deferred-work.md`.
 - Ran full lint, typecheck, boundary, and test suites.
 
 ## Plan Change Log

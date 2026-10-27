@@ -23,7 +23,7 @@ The epic 1 retrospective listed seven suspected seams (S10 and the six in S11) f
 | 6 | S11e: `install.sh` re-run overwrites upgrade's files | **real** | `deploy/install.sh` | `deploy/install.test.ts`, `it.fails` "S11e: …" | deploy/ story |
 | 7 | S11f: `--backup-server ""` cannot disable backups | **real** | `deploy/install.sh` | `deploy/install.test.ts`, `it.fails` "S11f: …" | deploy/ story |
 
-`after: [2]` and "entry 7" below are `id`s in this epic's `tickets.toml` (`epic-platform-hardening/tickets.toml`): 2 is this spike, 7 the refactor sweep.
+`after: [2]` and "entry 7" below are `id`s in this epic's `tickets.toml` (`epic-platform-hardening/tickets/tickets.toml`): 2 is this spike, 7 the refactor sweep.
 
 No seam got the "unverified" verdict. Seam 4 (SIGKILL timing) and seam 5 (the rollback) were run against the real server and the real script, with a stub `docker`; neither ran in a real container (see Limits).
 

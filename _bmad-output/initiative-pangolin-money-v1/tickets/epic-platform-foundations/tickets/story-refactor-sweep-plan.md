@@ -47,8 +47,8 @@ context: []
 - `deploy/install.sh`, docs mentioning upgrade -- document `PANGOLIN_UPGRADE_TIMEOUT` where upgrade env is described.
 - `apps/server/src/auth/hooks.ts` -- after-hook records `/passkey/verify-authentication`; Playwright/e2e or server auth harness (`apps/server/src/testing/auth-harness.ts`) for the new rate-limit test.
 - `apps/server/src/jobs/backup.ts`, `backup.test.ts` -- handlers to re-run idempotently in tests.
-- `_bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md` -- Invariants diagram: add `tools/seed` → `shared` arrow.
-- `_bmad-output/implementation-artifacts/deferred-work.md` -- ledger of dispositions (append-only; do not edit existing entries, add a dated "1.12 sweep" section).
+- `_bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md` -- Invariants diagram: add `tools/seed` → `shared` arrow.
+- `_bmad-output/v6-archive/implementation-artifacts/deferred-work.md` -- ledger of dispositions (append-only; do not edit existing entries, add a dated "1.12 sweep" section).
 - Already resolved (record only): job handler timeout/abort (`runner.ts` `timeoutMs`, `ctx.signal`, `runner.test.ts:440`); `/healthz` already checks runner liveness (`packages/app/src/system/readiness.ts`), which covers the lease intent.
 
 ## Tasks & Acceptance

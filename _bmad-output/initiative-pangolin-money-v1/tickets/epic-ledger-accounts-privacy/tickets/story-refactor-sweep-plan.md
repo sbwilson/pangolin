@@ -12,7 +12,7 @@ review_source: 'auto'
 lenses_ran: [blind-hunter, edge-case-hunter, verification-gap, intent-alignment]
 review_loop_iteration: 0
 context:
-  - '{project-root}/_bmad-output/implementation-artifacts/deferred-work.md'
+  - '{project-root}/_bmad-output/v6-archive/implementation-artifacts/deferred-work.md'
 ---
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
@@ -50,7 +50,7 @@ context:
 - `apps/server/src/privacy/{privacy-harness.ts,privacy.test.ts}`, `apps/server/src/admin/seed.ts` (~517), `packages/db/src/ledger-repos.ts` (~342, ~354) -- `as never` casts.
 - `tools/seed/src/world.ts`, `apps/server/src/admin/seed.ts` (`checkReferences`), `README.md` or an env reference -- validator and env docs.
 - `biome.json` -- the read-rule restriction group repeated four times.
-- `_bmad-output/implementation-artifacts/deferred-work.md` -- the source of each item; mark done items.
+- `_bmad-output/v6-archive/implementation-artifacts/deferred-work.md` -- the source of each item; mark done items.
 
 ## Tasks & Acceptance
 

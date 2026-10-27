@@ -26,11 +26,11 @@ headless: false
 - **Unfinished tickets (`pending_tickets`):** None (`[]`). All 9 tickets are finished.
 - **Git Evidence Range:** `d1e1e7263afbab9153d150c44190cc2485bb35ec..34be09af54eae3f8f16a90e91c9acf778ab79e5c` (19 commits, 0 merges).
 - **Evidence Inventory:**
-  - Epic definition: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/epic-app-shell-settings-theming.md` (Contains declared Done when 1–5).
+  - Epic definition: `_bmad-output/initiative-pangolin-money-v1/tickets/epic-app-shell-settings-theming/epic-app-shell-settings-theming.md` (Contains declared Done when 1–5).
   - Initiative requirements: `_bmad-output/initiative-pangolin-money-v1/initiative-pangolin-money-v1.md` (Covers `CAP-21` and `CAP-16`).
-  - Ticket breakdown: `_bmad-output/initiative-pangolin-money-v1/epic-app-shell-settings-theming/tickets.toml`.
+  - Ticket breakdown: `_bmad-output/initiative-pangolin-money-v1/tickets/epic-app-shell-settings-theming/tickets/tickets.toml`.
   - Story plans: 9 plan files (`story-*-plan.md`), all with baselines, triage logs, verification records, and plan change logs.
-  - Previous retrospective: `_bmad-output/initiative-pangolin-money-v1/epic-ledger-workspace/epic-ledger-workspace-retrospective.md`.
+  - Previous retrospective: `_bmad-output/initiative-pangolin-money-v1/tickets/epic-ledger-workspace/epic-ledger-workspace-retrospective.md`.
   - Deployment record: `docs/release-v0.2.3.md` (fully populated with pre-flight, real-data check, CI release run, signed image digest, pang-dev upgrade, `/healthz`, status schema 15, and format 2 post-upgrade backup).
 
 ---

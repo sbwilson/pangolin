@@ -50,7 +50,7 @@ The seven seams (retro S10, S11) and where to look:
 6. **`install.sh` re-run overwrites `compose.yaml` and the CLI that `pangolin upgrade` installed.** `deploy/install.sh` `write_files`, `deploy/pangolin` upgrade (installs the image's compose.yaml and CLI). Check: in `deploy/install.test.ts`, upgrade-installed files, then a plain re-run of an older `install.sh`; which version wins?
 7. **`--backup-server ""` cannot disable backups.** `deploy/install.sh` `env_add`/`env_replace` for `PANGOLIN_BACKUP_REPOSITORY` and `--backup-server` parsing. Check: install with a backup server, re-run with `--backup-server ""`, read `.env`.
 
-Output: `_bmad-output/initiative-pangolin-money-v1/epic-platform-hardening/spike-check-the-suspected-seams-findings.md` — one section per seam: what was run, the evidence (trimmed output), verdict, and for real ones a proposed entry (type, title, one-sentence description and verify, `after`, deploy/ story or backlog).
+Output: `_bmad-output/initiative-pangolin-money-v1/tickets/epic-platform-hardening/tickets/spike-check-the-suspected-seams-findings.md` — one section per seam: what was run, the evidence (trimmed output), verdict, and for real ones a proposed entry (type, title, one-sentence description and verify, `after`, deploy/ story or backlog).
 
 ## Tasks & Acceptance
 

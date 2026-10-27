@@ -12,8 +12,8 @@ lenses_ran: ['blind-hunter', 'edge-case-hunter', 'verification-gap', 'intent-ali
 review_loop_iteration: 0
 baseline_revision: 'e8a92b8c562731038aefc5a4eaac82b613908376'
 context:
-  - '{project-root}/_bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md'
-  - '{project-root}/_bmad-output/initiative-pangolin-money-v1/epic-ledger-accounts-privacy/epic-ledger-accounts-privacy-retrospective.md'
+  - '{project-root}/_bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md'
+  - '{project-root}/_bmad-output/initiative-pangolin-money-v1/tickets/epic-ledger-accounts-privacy/epic-ledger-accounts-privacy-retrospective.md'
 ---
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">

@@ -38,7 +38,7 @@ Platform baseline: repo scaffold (pnpm workspace per tech-stack.md), CI/CD, depl
 - ops — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, all sections
 - security — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md
 - stack — _bmad-output/specs/spec-pangolin-money/tech-stack.md, sections Tech stack and Repo layout
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-1, AD-2, AD-6, AD-8, AD-9, AD-14, AD-15, AD-16, AD-17, AD-27, and Consistency Conventions
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-1, AD-2, AD-6, AD-8, AD-9, AD-14, AD-15, AD-16, AD-17, AD-27, and Consistency Conventions
 
 ## Notes
 

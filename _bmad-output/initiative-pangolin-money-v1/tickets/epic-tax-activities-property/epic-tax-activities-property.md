@@ -34,7 +34,7 @@ Tax reports, receipts (on epic-import-dedupe-transfers' attachment storage), and
 - spec — _bmad-output/specs/spec-pangolin-money/SPEC.md, CAP-12, CAP-13
 - tax — _bmad-output/specs/spec-pangolin-money/investments-super-tax.md, section Tax and activities
 - csv export — _bmad-output/specs/spec-pangolin-money/security-and-recovery.md, section Threats and mitigations
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-4, AD-13, AD-14, AD-21, AD-22, AD-23, AD-24
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-4, AD-13, AD-14, AD-21, AD-22, AD-23, AD-24
 
 ## Notes
 

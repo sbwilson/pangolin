@@ -37,11 +37,11 @@ We can sit down together and see what we can afford on our own real numbers, wit
 - home buying — _bmad-output/specs/spec-pangolin-money/home-buying.md
 - data model — _bmad-output/specs/spec-pangolin-money/data-model.md, Tables (Planning `home_plan`)
 - milestones — _bmad-output/specs/spec-pangolin-money/deployment-and-ops.md, section Milestones (M3 gate)
-- architecture — _bmad-output/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-7, AD-11, AD-13, AD-28
-- ux — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Home Buying Planner, Component Patterns (Planning, Saved plan row), State Patterns (Planning), Flow 1, Flow 3
-- design — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md, section Components (Planning)
-- mockups — _bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-home-buying.html, key-home-buying-phone.html
-- change — _bmad-output/planning-artifacts/sprint-change-proposal-2026-10-05.md, sections 4.1 Decisions (D4) and E-10
+- architecture — _bmad-output/v6-archive/planning-artifacts/architecture/architecture-pangolin-2026-09-27/ARCHITECTURE-SPINE.md, AD-3, AD-7, AD-11, AD-13, AD-28
+- ux — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/EXPERIENCE.md, sections Home Buying Planner, Component Patterns (Planning, Saved plan row), State Patterns (Planning), Flow 1, Flow 3
+- design — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md, section Components (Planning)
+- mockups — _bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/mockups/key-home-buying.html, key-home-buying-phone.html
+- change — _bmad-output/v6-archive/planning-artifacts/sprint-change-proposal-2026-10-05.md, sections 4.1 Decisions (D4) and E-10
 
 ## Notes
 

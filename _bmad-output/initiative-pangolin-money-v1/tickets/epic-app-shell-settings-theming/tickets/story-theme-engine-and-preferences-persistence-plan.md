@@ -16,7 +16,7 @@ lenses_ran:
   - 'intent-alignment'
 review_loop_iteration: 0
 context:
-  - '_bmad-output/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md'
+  - '_bmad-output/v6-archive/planning-artifacts/ux-designs/ux-pangolin-2026-10-05/DESIGN.md'
   - '_bmad-output/specs/spec-pangolin-money/data-model.md'
 ---
 
