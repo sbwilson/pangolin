@@ -380,6 +380,9 @@ export type ReviewTransaction = Extract<
   ReviewDetail,
   { type: "transaction" }
 >["candidates"][number];
+export type ReviewSuggestion = NonNullable<
+  Extract<ReviewDetail, { type: "transaction" }>["suggestion"]
+>;
 export type ReviewSetAsideRow = Extract<ReviewDetail, { type: "batch" }>["rows"][number];
 
 /** The nav badge and partner chip: numbers only. */
@@ -399,6 +402,8 @@ export async function fetchReviewCounts(): Promise<ReviewCounts> {
 
 /** The actions on a review item, one route each (`POST /api/review/:id/<action>`). */
 export type ReviewAction =
+  | "accept-suggestion"
+  | "dismiss-suggestion"
   | "accept-rule"
   | "dismiss-rule"
   | "keep-duplicate"
@@ -411,6 +416,21 @@ export type ReviewAction =
   | "discard-row"
   | "dismiss-notice"
   | "revoke-links";
+
+export interface BulkAcceptSuggestionsResult {
+  readonly acceptedCount: number;
+}
+
+/** Bulk accepts AI categorisation suggestions for the given review item IDs. */
+export async function bulkAcceptSuggestions(input: {
+  readonly ids: readonly string[];
+}): Promise<BulkAcceptSuggestionsResult> {
+  return await sendJson<BulkAcceptSuggestionsResult>(
+    "POST",
+    "/api/review/bulk-accept-suggestions",
+    input,
+  );
+}
 
 /** Runs one action on review item `id`; throws `ApiError` (an item already resolved is `NotFound`). */
 export async function reviewAction(

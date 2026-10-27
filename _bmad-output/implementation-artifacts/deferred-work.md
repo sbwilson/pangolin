@@ -511,3 +511,8 @@ Source plan for every entry: `_bmad-output/initiative-pangolin-money-v1/epic-pla
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-spending-insight/story-refactor-sweep-plan.md`
   summary: ProfitAndLossTable scroll container lacks keyboard accessibility (tabIndex={0}, role="region", aria-label) and uses <td> instead of <th scope="row"> for row headers.
   evidence: Review of story 4.10: pre-existing from story 4.5; NetWorthTrendTable and SpendingCategoryBarsCard were remediated in story 4.10, but ProfitAndLossTable retains the unlabelled scroll container.
+
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/epic-llm-categorisation-pdf/story-review-inbox-90-confidence-bulk-accept-card-and-suggestion-r-plan.md`
+  summary: Browser-level Playwright tests for review suggestion cards and bulk-accept flows on seeded ledger.
+  evidence: The seeded test ledger contains no open review items or mock LLM suggestions; full browser e2e testing requires a seeded review item fixture (deferred consistently with story 3.8).
+

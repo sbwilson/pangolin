@@ -82,3 +82,36 @@ test("an item that is already resolved answers 404", async ({ page }) => {
   });
   expect(status).toBe(404);
 });
+
+test("suggestion endpoints: accept, dismiss and bulk-accept return 404 on missing or already resolved items", async ({
+  page,
+}) => {
+  await signInWithPassword(page, loadAccount());
+  await expect(page.getByText("Signed in as Alex")).toBeVisible();
+
+  const acceptStatus = await page.evaluate(async () => {
+    const res = await fetch("/api/review/01J0000000000000000000ZZZZ/accept-suggestion", {
+      method: "POST",
+    });
+    return res.status;
+  });
+  expect(acceptStatus).toBe(404);
+
+  const dismissStatus = await page.evaluate(async () => {
+    const res = await fetch("/api/review/01J0000000000000000000ZZZZ/dismiss-suggestion", {
+      method: "POST",
+    });
+    return res.status;
+  });
+  expect(dismissStatus).toBe(404);
+
+  const bulkStatus = await page.evaluate(async () => {
+    const res = await fetch("/api/review/bulk-accept-suggestions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: ["01J0000000000000000000ZZZZ"] }),
+    });
+    return res.status;
+  });
+  expect(bulkStatus).toBe(404);
+});

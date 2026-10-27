@@ -3,6 +3,7 @@ import { HandoffCard } from "./HandoffCard.tsx";
 import { NoticeCard } from "./NoticeCard.tsx";
 import { ReadOnlyCard } from "./ReadOnlyCard.tsx";
 import { SetAsideCard } from "./SetAsideCard.tsx";
+import { AiSuggestionCard } from "./SuggestionCards.tsx";
 import {
   DuplicateCard,
   RuleOfferCard,
@@ -15,7 +16,12 @@ export function ReviewCardView({ card }: { readonly card: ReviewCard }) {
   const { detail } = card;
   switch (card.kind) {
     case "classify.unclassified":
-      if (detail.type === "transaction") return <UnclassifiedCard card={card} detail={detail} />;
+      if (detail.type === "transaction") {
+        if (detail.suggestion) {
+          return <AiSuggestionCard card={card} detail={detail} />;
+        }
+        return <UnclassifiedCard card={card} detail={detail} />;
+      }
       break;
     case "classify.rule_offer":
       if (detail.type === "transaction") return <RuleOfferCard card={card} detail={detail} />;

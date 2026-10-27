@@ -44,6 +44,18 @@ export interface ReviewSetAsideRow {
   readonly reason: string | null;
 }
 
+/** Open suggestion details for an unclassified split (story 5.4). */
+export interface ReviewSuggestion {
+  readonly id: string;
+  readonly splitId: string;
+  readonly field: string;
+  readonly suggestedValue: string;
+  readonly categoryName: string | null;
+  readonly confidence: number | null;
+  readonly payeeName: string | null;
+  readonly websiteDomain: string | null;
+}
+
 /** What a card knows of the thing its item is about; `none` for a kind with nothing to add. */
 export type ReviewDetail =
   | {
@@ -52,6 +64,7 @@ export type ReviewDetail =
       readonly transaction: ReviewTransaction | null;
       /** Unlinked opposite-amount transactions within three days (transfer ambiguity only). */
       readonly candidates: readonly ReviewTransaction[];
+      readonly suggestion?: ReviewSuggestion | null;
     }
   | {
       readonly type: "batch";
@@ -147,7 +160,29 @@ function detailOf(repos: ReadRepos, ctx: UseCaseContext, row: ReviewItemRow): Re
         row.kind === IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW.kind)
         ? candidatesFor(repos, ctx, transaction)
         : [];
-    return { type: "transaction", transaction, candidates };
+    let suggestion: ReviewSuggestion | null = null;
+    if (
+      transaction !== null &&
+      row.kind === CLASSIFY_UNCLASSIFIED_REVIEW.kind &&
+      id !== undefined
+    ) {
+      const open = repos.suggestions
+        .listForTransaction(ctx.viewer, id)
+        .find((s) => s.resolvedAt === null && s.outcome === "open" && s.field === "category");
+      if (open !== undefined) {
+        suggestion = {
+          id: open.id,
+          splitId: open.splitId,
+          field: open.field,
+          suggestedValue: open.suggestedValue,
+          categoryName: repos.categories.find(ctx.viewer, open.suggestedValue)?.name ?? null,
+          confidence: open.confidence,
+          payeeName: open.payeeName,
+          websiteDomain: open.websiteDomain,
+        };
+      }
+    }
+    return { type: "transaction", transaction, candidates, suggestion };
   }
   switch (row.kind) {
     case IMPORT_SET_ASIDE_REVIEW.kind: {

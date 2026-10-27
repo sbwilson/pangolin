@@ -185,26 +185,42 @@ export function setSplitField(ctx: UseCaseContext, input: SetSplitFieldInput): S
       before: auditSnapshot(stored, tagsBefore),
       after: auditSnapshot(storedTransaction(tx, ctx.viewer, before.id), tagsAfter),
     });
-    if (field === "category" && source === "user" && value !== null && old.categoryId !== value) {
-      const resolved = resolveReviewItem(tx, audit, ctx, {
-        dedupeKey: `classify.unclassified:${before.id}`,
-        resolution: "user categorized",
-      });
-      if (resolved) {
-        raiseReviewItem(tx, audit, ctx, {
-          kind: CLASSIFY_RULE_OFFER_REVIEW,
-          entityRef: transactionEntityRef(before.id),
-          dedupeKey: `classify.rule_offer:${before.id}`,
-          accountId: before.accountId,
+    if (field === "category" && value !== null) {
+      if (source === "user" && old.categoryId !== value) {
+        const resolved = resolveReviewItem(tx, audit, ctx, {
+          dedupeKey: `classify.unclassified:${before.id}`,
+          resolution: "user categorized",
+        });
+        if (resolved) {
+          raiseReviewItem(tx, audit, ctx, {
+            kind: CLASSIFY_RULE_OFFER_REVIEW,
+            entityRef: transactionEntityRef(before.id),
+            dedupeKey: `classify.rule_offer:${before.id}`,
+            accountId: before.accountId,
+          });
+        }
+      } else if (source === "llm") {
+        resolveReviewItem(tx, audit, ctx, {
+          dedupeKey: `classify.unclassified:${before.id}`,
+          resolution: "llm suggestion accepted",
         });
       }
     }
     const openSuggestion = tx.suggestions.findOpenForSplit(old.id, field);
     if (openSuggestion) {
-      const isMatch = source === "llm" || (value !== null && String(value) === openSuggestion.suggestedValue);
+      const isMatch =
+        source === "llm" || (value !== null && String(value) === openSuggestion.suggestedValue);
       const outcome = isMatch ? "accepted" : "superseded";
       const resolvedAt = formatInstant(ctx.clock.now());
       tx.suggestions.resolveOpen(old.id, field, outcome, resolvedAt);
+      audit({
+        entity: "suggestion",
+        entityId: openSuggestion.id,
+        accountId: openSuggestion.accountId,
+        action: "update",
+        before: openSuggestion,
+        after: { ...openSuggestion, outcome, resolvedAt },
+      });
     }
     for (const listener of listeners) {
       listener(tx, audit, { transactionId: before.id, splitId: old.id, field, value, source });

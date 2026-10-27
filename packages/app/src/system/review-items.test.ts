@@ -1,12 +1,23 @@
 import { type Id, idSchema } from "@pangolin/shared";
 import { Temporal } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
+import { createCategory } from "../classify/categories.ts";
+import { createCategoryGroup } from "../classify/category-groups.ts";
+import { CLASSIFY_UNCLASSIFIED_REVIEW } from "../classify/rules.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
+import { createTransaction } from "../ledger/create-transaction.ts";
+import { getTransaction } from "../ledger/get-transaction.ts";
+import type { SuggestionRow } from "../ports/unit-of-work.ts";
 import { systemViewer } from "../system-viewer.ts";
 import { manualClock, memoryContext } from "../testing/fixtures.ts";
 import { personViewer } from "../viewer.ts";
 import { write } from "../write.ts";
+import {
+  acceptSuggestionItem,
+  bulkAcceptSuggestions,
+  dismissSuggestionItem,
+} from "./review-actions.ts";
 import {
   defineReviewKind,
   JOB_DEAD_REVIEW,
@@ -17,6 +28,7 @@ import {
   resolveReviewItem,
   resolveReviewItemsForEntity,
 } from "./review-items.ts";
+import { listReviewCards } from "./review-view.ts";
 
 const personA = idSchema("Person").parse("01J0000000000000000000000A");
 const personB = idSchema("Person").parse("01J0000000000000000000000B");
@@ -298,5 +310,438 @@ describe("listReviewItems", () => {
   it("rejects unknown input", () => {
     const { ctx } = seeded();
     expect(() => listReviewItems(ctx, { all: true } as never)).toThrow(AppError);
+  });
+});
+
+describe("suggestion review actions", () => {
+  function suggestionFixture() {
+    const clock = manualClock("2026-09-27T00:00:00Z");
+    const made = memoryContext(systemViewer("job:test"), clock);
+    made.uow.state.people = [
+      {
+        id: personA,
+        userId: null,
+        displayName: "Alex",
+        colour: "#000000",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+      },
+      {
+        id: personB,
+        userId: null,
+        displayName: "Sam",
+        colour: "#000000",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+      },
+    ];
+    made.uow.state.accounts.push(
+      {
+        id: "pub1" as Id<"Account">,
+        name: "Joint everyday",
+        type: "transaction",
+        currency: "AUD",
+        isPrivate: false,
+        institutionId: null,
+        openedOn: null,
+        closedOn: null,
+        isSavings: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "priv1" as Id<"Account">,
+        name: "Alex private",
+        type: "transaction",
+        currency: "AUD",
+        isPrivate: true,
+        institutionId: null,
+        openedOn: null,
+        closedOn: null,
+        isSavings: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    );
+    made.uow.state.accountOwners.push(
+      {
+        accountId: "pub1" as Id<"Account">,
+        personId: personA,
+        shareBp: 5000,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        accountId: "pub1" as Id<"Account">,
+        personId: personB,
+        shareBp: 5000,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        accountId: "priv1" as Id<"Account">,
+        personId: personA,
+        shareBp: 10000,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    );
+
+    const ctxA = { ...made.ctx, viewer: personViewer(personA, now) };
+    const ctxB = { ...made.ctx, viewer: personViewer(personB, now) };
+
+    const grp = createCategoryGroup(ctxA, { name: "Living", kind: "expense" });
+    const cat = createCategory(ctxA, { groupId: grp.id, name: "Groceries", isFixedCost: false });
+
+    return { ...made, clock, ctxA, ctxB, catId: cat.id };
+  }
+
+  it("accepts an AI suggestion: sets category with source llm, marks suggestion accepted, and resolves review item", () => {
+    const f = suggestionFixture();
+    const txnId = createTransaction(f.ctxA, {
+      accountId: "pub1",
+      postedOn: "2026-09-27",
+      amountCents: -5000,
+      description: "Woolworths",
+    });
+    const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+
+    const sugId = f.ctx.newId<"Suggestion">();
+    const sugRow: SuggestionRow = {
+      id: sugId,
+      accountId: "pub1" as Id<"Account">,
+      transactionId: txnId,
+      splitId,
+      source: "llm",
+      field: "category",
+      suggestedValue: f.catId,
+      payeeName: "Woolworths",
+      websiteDomain: "woolworths.com.au",
+      taxCategoryId: null,
+      activityId: null,
+      confidence: 0.95,
+      model: "test-model",
+      promptVersion: "1",
+      outcome: "open",
+      createdAt: "2026-09-27T00:00:00Z",
+      resolvedAt: null,
+    };
+    f.uow.state.suggestions.push(sugRow);
+
+    const reviewItemId = raise(f.ctx, {
+      kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+      entityRef: `transaction:${txnId}`,
+      dedupeKey: `classify.unclassified:${txnId}`,
+      accountId: "pub1",
+    }).id;
+
+    // Verify card attaches suggestion details in listReviewCards
+    const cardsBefore = listReviewCards(f.ctxA);
+    const card = cardsBefore.find((c) => c.id === reviewItemId);
+    expect(card).toBeDefined();
+    expect(card?.detail.type).toBe("transaction");
+    if (card?.detail.type === "transaction") {
+      expect(card.detail.suggestion).toBeDefined();
+      expect(card.detail.suggestion?.confidence).toBe(0.95);
+      expect(card.detail.suggestion?.categoryName).toBe("Groceries");
+    }
+
+    // Accept suggestion
+    acceptSuggestionItem(f.ctxA, { id: reviewItemId });
+
+    // Verify split category and provenance
+    const updatedTxn = getTransaction(f.ctxA, { id: txnId });
+    expect(updatedTxn.splits[0]!.categoryId).toBe(f.catId);
+    expect(updatedTxn.splits[0]!.categorySource).toBe("llm");
+
+    // Verify suggestion outcome and resolvedAt
+    const updatedSug = f.uow.state.suggestions.find((s) => s.id === sugId);
+    expect(updatedSug?.outcome).toBe("accepted");
+    expect(updatedSug?.resolvedAt).not.toBeNull();
+
+    // Verify review item resolved
+    const cardsAfter = listReviewCards(f.ctxA);
+    expect(cardsAfter.some((c) => c.id === reviewItemId)).toBe(false);
+  });
+
+  it("dismisses an AI suggestion: marks suggestion rejected, leaves split unclassified and review item open", () => {
+    const f = suggestionFixture();
+    const txnId = createTransaction(f.ctxA, {
+      accountId: "pub1",
+      postedOn: "2026-09-27",
+      amountCents: -3500,
+      description: "Coles",
+    });
+    const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+
+    const sugId = f.ctx.newId<"Suggestion">();
+    const sugRow: SuggestionRow = {
+      id: sugId,
+      accountId: "pub1" as Id<"Account">,
+      transactionId: txnId,
+      splitId,
+      source: "llm",
+      field: "category",
+      suggestedValue: f.catId,
+      payeeName: "Coles",
+      websiteDomain: "coles.com.au",
+      taxCategoryId: null,
+      activityId: null,
+      confidence: 0.75,
+      model: "test-model",
+      promptVersion: "1",
+      outcome: "open",
+      createdAt: "2026-09-27T00:00:00Z",
+      resolvedAt: null,
+    };
+    f.uow.state.suggestions.push(sugRow);
+
+    const reviewItemId = raise(f.ctx, {
+      kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+      entityRef: `transaction:${txnId}`,
+      dedupeKey: `classify.unclassified:${txnId}`,
+      accountId: "pub1",
+    }).id;
+
+    // Dismiss suggestion
+    dismissSuggestionItem(f.ctxA, { id: reviewItemId });
+
+    // Verify suggestion outcome rejected
+    const updatedSug = f.uow.state.suggestions.find((s) => s.id === sugId);
+    expect(updatedSug?.outcome).toBe("rejected");
+    expect(updatedSug?.resolvedAt).not.toBeNull();
+
+    // Verify split remains unclassified
+    const currentTxn = getTransaction(f.ctxA, { id: txnId });
+    expect(currentTxn.splits[0]!.categoryId).toBeNull();
+
+    // Verify review item remains open, but no longer has open suggestion
+    const cardsAfter = listReviewCards(f.ctxA);
+    const card = cardsAfter.find((c) => c.id === reviewItemId);
+    expect(card).toBeDefined();
+    if (card?.detail.type === "transaction") {
+      expect(card.detail.suggestion).toBeNull();
+    }
+  });
+
+  it("bulk-accepts multiple high-confidence suggestions", () => {
+    const f = suggestionFixture();
+    const txn1Id = createTransaction(f.ctxA, {
+      accountId: "pub1",
+      postedOn: "2026-09-27",
+      amountCents: -5000,
+      description: "Store 1",
+    });
+    const txn2Id = createTransaction(f.ctxA, {
+      accountId: "pub1",
+      postedOn: "2026-09-27",
+      amountCents: -7000,
+      description: "Store 2",
+    });
+    const split1Id = getTransaction(f.ctxA, { id: txn1Id }).splits[0]!.id;
+    const split2Id = getTransaction(f.ctxA, { id: txn2Id }).splits[0]!.id;
+
+    const sug1 = f.ctx.newId<"Suggestion">();
+    const sug2 = f.ctx.newId<"Suggestion">();
+    f.uow.state.suggestions.push(
+      {
+        id: sug1,
+        accountId: "pub1" as Id<"Account">,
+        transactionId: txn1Id,
+        splitId: split1Id,
+        source: "llm",
+        field: "category",
+        suggestedValue: f.catId,
+        payeeName: "Store 1",
+        websiteDomain: null,
+        taxCategoryId: null,
+        activityId: null,
+        confidence: 0.94,
+        model: "test-model",
+        promptVersion: "1",
+        outcome: "open",
+        createdAt: "2026-09-27T00:00:00Z",
+        resolvedAt: null,
+      },
+      {
+        id: sug2,
+        accountId: "pub1" as Id<"Account">,
+        transactionId: txn2Id,
+        splitId: split2Id,
+        source: "llm",
+        field: "category",
+        suggestedValue: f.catId,
+        payeeName: "Store 2",
+        websiteDomain: null,
+        taxCategoryId: null,
+        activityId: null,
+        confidence: 0.98,
+        model: "test-model",
+        promptVersion: "1",
+        outcome: "open",
+        createdAt: "2026-09-27T00:00:00Z",
+        resolvedAt: null,
+      },
+    );
+
+    const item1 = raise(f.ctx, {
+      kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+      entityRef: `transaction:${txn1Id}`,
+      dedupeKey: `classify.unclassified:${txn1Id}`,
+      accountId: "pub1",
+    }).id;
+    const item2 = raise(f.ctx, {
+      kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+      entityRef: `transaction:${txn2Id}`,
+      dedupeKey: `classify.unclassified:${txn2Id}`,
+      accountId: "pub1",
+    }).id;
+
+    const result = bulkAcceptSuggestions(f.ctxA, { ids: [item1, item2] });
+    expect(result.acceptedCount).toBe(2);
+
+    expect(getTransaction(f.ctxA, { id: txn1Id }).splits[0]!.categorySource).toBe("llm");
+    expect(getTransaction(f.ctxA, { id: txn2Id }).splits[0]!.categorySource).toBe("llm");
+    expect(f.uow.state.suggestions.find((s) => s.id === sug1)?.outcome).toBe("accepted");
+    expect(f.uow.state.suggestions.find((s) => s.id === sug2)?.outcome).toBe("accepted");
+  });
+
+  it("enforces privacy: partner B cannot see, accept, or dismiss private suggestions of partner A", () => {
+    const f = suggestionFixture();
+    const txnId = createTransaction(f.ctxA, {
+      accountId: "priv1",
+      postedOn: "2026-09-27",
+      amountCents: -9900,
+      description: "Secret Gift Shop",
+    });
+    const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+
+    const sugId = f.ctx.newId<"Suggestion">();
+    f.uow.state.suggestions.push({
+      id: sugId,
+      accountId: "priv1" as Id<"Account">,
+      transactionId: txnId,
+      splitId,
+      source: "llm",
+      field: "category",
+      suggestedValue: f.catId,
+      payeeName: "Secret Gift",
+      websiteDomain: null,
+      taxCategoryId: null,
+      activityId: null,
+      confidence: 0.95,
+      model: "test-model",
+      promptVersion: "1",
+      outcome: "open",
+      createdAt: "2026-09-27T00:00:00Z",
+      resolvedAt: null,
+    });
+
+    const privItem = raise(f.ctx, {
+      kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+      entityRef: `transaction:${txnId}`,
+      dedupeKey: `classify.unclassified:${txnId}`,
+      accountId: "priv1",
+    }).id;
+
+    // Partner B cannot see card in review list
+    expect(listReviewCards(f.ctxB).some((c) => c.id === privItem)).toBe(false);
+
+    // Partner B cannot accept or dismiss A's private item
+    expect(() => acceptSuggestionItem(f.ctxB, { id: privItem })).toThrow(AppError);
+    expect(() => dismissSuggestionItem(f.ctxB, { id: privItem })).toThrow(AppError);
+    expect(() => bulkAcceptSuggestions(f.ctxB, { ids: [privItem] })).toThrow(AppError);
+  });
+
+  it("handles duplicate review item IDs in bulkAcceptSuggestions without throwing", () => {
+    const f = suggestionFixture();
+    const txnId = createTransaction(f.ctxA, {
+      accountId: "pub1",
+      postedOn: "2026-09-27",
+      amountCents: -5000,
+      description: "Store Duplicate",
+    });
+    const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+
+    f.uow.state.suggestions.push({
+      id: f.ctx.newId<"Suggestion">(),
+      accountId: "pub1" as Id<"Account">,
+      transactionId: txnId,
+      splitId,
+      source: "llm",
+      field: "category",
+      suggestedValue: f.catId,
+      payeeName: "Store",
+      websiteDomain: null,
+      taxCategoryId: null,
+      activityId: null,
+      confidence: 0.95,
+      model: "test-model",
+      promptVersion: "1",
+      outcome: "open",
+      createdAt: "2026-09-27T00:00:00Z",
+      resolvedAt: null,
+    });
+
+    const item = raise(f.ctx, {
+      kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+      entityRef: `transaction:${txnId}`,
+      dedupeKey: `classify.unclassified:${txnId}`,
+      accountId: "pub1",
+    }).id;
+
+    const result = bulkAcceptSuggestions(f.ctxA, { ids: [item, item] });
+    expect(result.acceptedCount).toBe(1);
+  });
+
+  it("throws Conflict when accepting suggestion if split already set by user provenance", () => {
+    const f = suggestionFixture();
+    const txnId = createTransaction(f.ctxA, {
+      accountId: "pub1",
+      postedOn: "2026-09-27",
+      amountCents: -5000,
+      description: "Store User Set",
+    });
+    const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+
+    // Simulate split already set by user
+    f.uow.transaction((tx) => {
+      tx.transactions.updateSplit({
+        ...tx.transactions.findVisible(f.ctxA.viewer, txnId, "2026-09-27")!.splits[0]!,
+        categoryId: f.catId,
+        categorySource: "user",
+      });
+    });
+
+    f.uow.state.suggestions.push({
+      id: f.ctx.newId<"Suggestion">(),
+      accountId: "pub1" as Id<"Account">,
+      transactionId: txnId,
+      splitId,
+      source: "llm",
+      field: "category",
+      suggestedValue: f.catId,
+      payeeName: "Store",
+      websiteDomain: null,
+      taxCategoryId: null,
+      activityId: null,
+      confidence: 0.95,
+      model: "test-model",
+      promptVersion: "1",
+      outcome: "open",
+      createdAt: "2026-09-27T00:00:00Z",
+      resolvedAt: null,
+    });
+
+    const item = raise(f.ctx, {
+      kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+      entityRef: `transaction:${txnId}`,
+      dedupeKey: `classify.unclassified:${txnId}`,
+      accountId: "pub1",
+    }).id;
+
+    expect(() => acceptSuggestionItem(f.ctxA, { id: item })).toThrow(AppError);
   });
 });

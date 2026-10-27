@@ -124,11 +124,7 @@ const write = (
   extra: Partial<Omit<PersonEntry, "kind" | "method" | "path" | "access">> = {},
 ): PersonEntry => ({ kind: "person", method, path, access: "write", ...extra });
 
-const system = (
-  methodOrPath: string,
-  pathOrReason: string,
-  maybeReason?: string,
-): SystemEntry => {
+const system = (methodOrPath: string, pathOrReason: string, maybeReason?: string): SystemEntry => {
   if (maybeReason !== undefined) {
     return {
       kind: "system",
@@ -163,13 +159,37 @@ export const MANIFEST: readonly ManifestEntry[] = [
   write("PATCH", "/api/system/household", { body: () => ({ sharedAttribution: "even" }) }),
 
   // LLM provider configuration and request preview (AD-6).
-  system("GET", "/api/llm/settings", "Safe read model of configured providers and purpose assignments; API keys omitted."),
-  system("POST", "/api/llm/providers", "Configure a new LLM provider; safe read model returned, keys encrypted at rest."),
-  system("PUT", "/api/llm/providers/:id", "Update an LLM provider; safe read model returned, keys encrypted at rest."),
-  system("DELETE", "/api/llm/providers/:id", "Delete an LLM provider and cascades purpose assignments."),
-  system("POST", "/api/llm/providers/:id/test", "Test provider connectivity with ping prompt; no credentials returned."),
+  system(
+    "GET",
+    "/api/llm/settings",
+    "Safe read model of configured providers and purpose assignments; API keys omitted.",
+  ),
+  system(
+    "POST",
+    "/api/llm/providers",
+    "Configure a new LLM provider; safe read model returned, keys encrypted at rest.",
+  ),
+  system(
+    "PUT",
+    "/api/llm/providers/:id",
+    "Update an LLM provider; safe read model returned, keys encrypted at rest.",
+  ),
+  system(
+    "DELETE",
+    "/api/llm/providers/:id",
+    "Delete an LLM provider and cascades purpose assignments.",
+  ),
+  system(
+    "POST",
+    "/api/llm/providers/:id/test",
+    "Test provider connectivity with ping prompt; no credentials returned.",
+  ),
   system("PUT", "/api/llm/purposes/:purpose", "Assign LLM capability to provider."),
-  system("POST", "/api/llm/preview", "Sample request preview for categorisation using public transactions; no private account data."),
+  system(
+    "POST",
+    "/api/llm/preview",
+    "Sample request preview for categorisation using public transactions; no private account data.",
+  ),
 
   read("/api/identity/me"),
   read("/api/identity/preferences"),
@@ -192,6 +212,12 @@ export const MANIFEST: readonly ManifestEntry[] = [
   // count are replayed as B in both worlds and must be identical bytes.
   read("/api/review"),
   read("/api/review/count"),
+  write("POST", "/api/review/bulk-accept-suggestions", {
+    bodyEntities: ["notice"],
+    body: (id) => ({ ids: [id("notice")] }),
+  }),
+  write("POST", "/api/review/:id/accept-suggestion", { params: { id: "notice" } }),
+  write("POST", "/api/review/:id/dismiss-suggestion", { params: { id: "notice" } }),
   write("POST", "/api/review/:id/accept-rule", { params: { id: "notice" } }),
   write("POST", "/api/review/:id/dismiss-rule", { params: { id: "notice" } }),
   write("POST", "/api/review/:id/keep-duplicate", { params: { id: "notice" } }),

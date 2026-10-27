@@ -18,6 +18,7 @@ vi.mock("../api.ts", async (importOriginal) => ({
   fetchReviewItems: vi.fn(),
   fetchReviewCounts: vi.fn(),
   reviewAction: vi.fn(),
+  bulkAcceptSuggestions: vi.fn(),
   listAccounts: vi.fn(),
 }));
 
@@ -25,6 +26,7 @@ afterEach(cleanup);
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(api.reviewAction).mockResolvedValue(undefined);
+  vi.mocked(api.bulkAcceptSuggestions).mockResolvedValue({ acceptedCount: 2 });
   vi.mocked(api.fetchReviewCounts).mockResolvedValue({ open: 0, partner: null });
   vi.mocked(api.listAccounts).mockResolvedValue([
     { id: "acc-1", name: "Sam everyday" },
@@ -302,5 +304,174 @@ describe("ReviewPage", () => {
     await waitFor(() =>
       expect(vi.mocked(api.fetchReviewItems).mock.calls.length).toBeGreaterThan(1),
     );
+  });
+
+  it("batches high-confidence suggestions (≥ 90%) into BulkAcceptCard, toggles unticking into individual card, and accepts all", async () => {
+    const user = userEvent.setup();
+    const high1: ReviewCard = {
+      id: "sug-high-1",
+      kind: "classify.unclassified",
+      createdAt: "2026-10-20T10:00:00.000Z",
+      accountId: "a1",
+      detail: {
+        type: "transaction",
+        transaction: txn({ id: "t-high-1", description: "Woolworths", amountCents: -5420 }),
+        candidates: [],
+        suggestion: {
+          id: "s1",
+          splitId: "sp1",
+          field: "category",
+          suggestedValue: "groceries",
+          categoryName: "Groceries",
+          confidence: 0.95,
+          payeeName: "Woolworths",
+          websiteDomain: "woolworths.com.au",
+        },
+      },
+    };
+    const high2: ReviewCard = {
+      id: "sug-high-2",
+      kind: "classify.unclassified",
+      createdAt: "2026-10-20T10:01:00.000Z",
+      accountId: "a1",
+      detail: {
+        type: "transaction",
+        transaction: txn({ id: "t-high-2", description: "BWS Liquor", amountCents: -3200 }),
+        candidates: [],
+        suggestion: {
+          id: "s2",
+          splitId: "sp2",
+          field: "category",
+          suggestedValue: "alcohol",
+          categoryName: "Alcohol",
+          confidence: 0.92,
+          payeeName: "BWS",
+          websiteDomain: "bws.com.au",
+        },
+      },
+    };
+
+    vi.mocked(api.fetchReviewItems).mockResolvedValue([high1, high2]);
+    renderPage();
+
+    // Verify BulkAcceptCard renders with 2 items pre-ticked
+    const bulkCard = await screen.findByRole("listitem", { name: "Bulk accept suggestions" });
+    expect(bulkCard).toBeTruthy();
+    expect(within(bulkCard).getByText("2 more we're very sure about")).toBeTruthy();
+    expect(within(bulkCard).getByText("Very sure · 90%+")).toBeTruthy();
+
+    const checkboxes = within(bulkCard).getAllByRole("checkbox");
+    expect(checkboxes).toHaveLength(2);
+    expect((checkboxes[0] as HTMLInputElement).checked).toBe(true);
+    expect((checkboxes[1] as HTMLInputElement).checked).toBe(true);
+
+    // Untick first row: Woolworths
+    await user.click(checkboxes[0]!);
+
+    // Now Woolworths moves out into an individual AiSuggestionCard below
+    await waitFor(() => {
+      expect(within(bulkCard).getAllByRole("checkbox")).toHaveLength(1);
+    });
+    // Remaining in bulk card is BWS
+    expect(within(bulkCard).getByText(/BWS Liquor/)).toBeTruthy();
+
+    // Woolworths now appears below as an individual card with confidence meter and Accept/Dismiss
+    const woolworthsCard = screen.getByRole("listitem", { name: "Needs a category" });
+    expect(within(woolworthsCard).getByText("Woolworths")).toBeTruthy();
+    expect(within(woolworthsCard).getByText("Suggested category:")).toBeTruthy();
+    expect(within(woolworthsCard).getByText("Groceries")).toBeTruthy();
+    expect(within(woolworthsCard).getByText("Very sure · 90%+")).toBeTruthy();
+    expect(within(woolworthsCard).getByRole("button", { name: "Accept" })).toBeTruthy();
+    expect(within(woolworthsCard).getByRole("button", { name: "Dismiss" })).toBeTruthy();
+
+    // Accept all in bulk card: accepts remaining ticked items (sug-high-2)
+    const acceptAllBtn = within(bulkCard).getByRole("button", { name: "Accept all" });
+    await user.click(acceptAllBtn);
+    expect(api.bulkAcceptSuggestions).toHaveBeenCalledWith({ ids: ["sug-high-2"] });
+  });
+
+  it("renders low/medium confidence suggestions as individual cards and executes accept and dismiss", async () => {
+    const user = userEvent.setup();
+    const lowSug: ReviewCard = {
+      id: "sug-low-1",
+      kind: "classify.unclassified",
+      createdAt: "2026-10-20T10:00:00.000Z",
+      accountId: "a1",
+      detail: {
+        type: "transaction",
+        transaction: txn({ id: "t-low-1", description: "Corner Cafe", amountCents: -1450 }),
+        candidates: [],
+        suggestion: {
+          id: "s-low",
+          splitId: "sp-low",
+          field: "category",
+          suggestedValue: "dining",
+          categoryName: "Eating out",
+          confidence: 0.78,
+          payeeName: "Corner Cafe",
+          websiteDomain: null,
+        },
+      },
+    };
+
+    vi.mocked(api.fetchReviewItems).mockResolvedValue([lowSug]);
+    renderPage();
+
+    // Verify it renders as an individual card with "Fairly sure · 78%"
+    const cardEl = await screen.findByRole("listitem", { name: "Needs a category" });
+    expect(within(cardEl).getByText("Corner Cafe")).toBeTruthy();
+    expect(within(cardEl).getByText("Eating out")).toBeTruthy();
+    expect(within(cardEl).getByText("Fairly sure · 78%")).toBeTruthy();
+
+    const acceptBtn = within(cardEl).getByRole("button", { name: "Accept" });
+    const dismissBtn = within(cardEl).getByRole("button", { name: "Dismiss" });
+    expect(acceptBtn).toBeTruthy();
+    expect(dismissBtn).toBeTruthy();
+
+    // Click Accept
+    await user.click(acceptBtn);
+    expect(api.reviewAction).toHaveBeenCalledWith("sug-low-1", "accept-suggestion");
+
+    // Click Dismiss
+    await user.click(dismissBtn);
+    expect(api.reviewAction).toHaveBeenCalledWith("sug-low-1", "dismiss-suggestion");
+  });
+
+  it("renders a single high-confidence suggestion as an individual card and not bulk accept", async () => {
+    const singleHigh: ReviewCard = {
+      id: "sug-single-1",
+      kind: "classify.unclassified",
+      createdAt: "2026-10-20T10:00:00.000Z",
+      accountId: "a1",
+      detail: {
+        type: "transaction",
+        transaction: txn({ id: "t-single-1", description: "Bunnings", amountCents: -8500 }),
+        candidates: [],
+        suggestion: {
+          id: "s-bunnings",
+          splitId: "sp-bunnings",
+          field: "category",
+          suggestedValue: "hardware",
+          categoryName: "Hardware",
+          confidence: 0.94,
+          payeeName: "Bunnings",
+          websiteDomain: "bunnings.com.au",
+        },
+      },
+    };
+
+    vi.mocked(api.fetchReviewItems).mockResolvedValue([singleHigh]);
+    renderPage();
+
+    // No BulkAcceptCard should exist
+    expect(screen.queryByRole("listitem", { name: "Bulk accept suggestions" })).toBeNull();
+
+    // Individual card with "Very sure · 90%+"
+    const cardEl = await screen.findByRole("listitem", { name: "Needs a category" });
+    expect(within(cardEl).getByText("Bunnings")).toBeTruthy();
+    expect(within(cardEl).getByText("Hardware")).toBeTruthy();
+    expect(within(cardEl).getByText("Very sure · 90%+")).toBeTruthy();
+    expect(within(cardEl).getByRole("button", { name: "Accept" })).toBeTruthy();
+    expect(within(cardEl).getByRole("button", { name: "Dismiss" })).toBeTruthy();
   });
 });

@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  CLASSIFY_UNCLASSIFIED_REVIEW,
   closeAccount,
   createAccount,
   createActivity,
@@ -16,11 +17,15 @@ import {
   createTransferGroup,
   deleteTransaction,
   fixedClockAt,
+  getTransaction,
   hideTransactionName,
   personViewer,
+  raiseReviewItem,
+  type SuggestionRow,
   systemClock,
   type UnitOfWork,
   type UseCaseContext,
+  write,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import { fakeAttachmentStore } from "@pangolin/app/testing/attachment-store";
@@ -3464,5 +3469,255 @@ describe("LLM provider endpoints (/api/llm/*)", () => {
     const finalSettings = (await finalSettingsRes.json()) as any;
     expect(finalSettings.providers).toHaveLength(1);
     expect(finalSettings.providers[0].id).toBe(createdLocal.id);
+  });
+});
+
+describe("suggestion review routes", () => {
+  const alex = "01J0000000000000000000000A";
+  const json = { Origin: ORIGIN, "Content-Type": "application/json", Cookie: SESSION_COOKIE };
+
+  function seed(db: Db) {
+    addPerson(db);
+    const d = deps(db);
+    const sys: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const make = (name: string, isPrivate: boolean) =>
+      createAccount(sys, {
+        name,
+        type: "transaction",
+        currency: "AUD",
+        isPrivate,
+        owners: [{ personId: alex, shareBp: 10000 }],
+      });
+    const joint = make("Joint", false);
+    const grp = createCategoryGroup(sys, { name: "Living", kind: "expense" });
+    const cat = createCategory(sys, { groupId: grp.id, name: "Groceries", isFixedCost: false });
+    return { sys, d, joint, catId: cat.id };
+  }
+
+  it("POST /api/review/:id/accept-suggestion accepts suggestion, resolves item, and returns 204", async () => {
+    const db = openDb();
+    const { sys, d, joint, catId } = seed(db);
+    const app = createApp(d);
+
+    const txnId = createTransaction(sys, {
+      accountId: joint,
+      postedOn: "2026-09-27",
+      amountCents: -5000,
+      description: "Supermarket",
+    });
+    const splitId = getTransaction(sys, { id: txnId }).splits[0]!.id;
+
+    const sugId = d.newId<"Suggestion">();
+    write(sys, (tx) => {
+      tx.suggestions.insert({
+        id: sugId,
+        accountId: joint,
+        transactionId: txnId,
+        splitId,
+        source: "llm",
+        field: "category",
+        suggestedValue: catId,
+        payeeName: "Supermarket",
+        websiteDomain: null,
+        taxCategoryId: null,
+        activityId: null,
+        confidence: 0.95,
+        model: "test-model",
+        promptVersion: "1",
+        outcome: "open",
+        createdAt: "2026-09-27T00:00:00Z",
+        resolvedAt: null,
+      });
+    });
+
+    const item = write(sys, (tx, audit) =>
+      raiseReviewItem(tx, audit, sys, {
+        kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+        entityRef: `transaction:${txnId}`,
+        dedupeKey: `classify.unclassified:${txnId}`,
+        accountId: joint,
+      }),
+    );
+
+    // Accept suggestion
+    const res = await app.request(`/api/review/${item.id}/accept-suggestion`, {
+      method: "POST",
+      headers: json,
+    });
+    expect(res.status).toBe(204);
+
+    // Verify split category was set with source 'llm'
+    const updated = getTransaction(sys, { id: txnId });
+    expect(updated.splits[0]!.categoryId).toBe(catId);
+    expect(updated.splits[0]!.categorySource).toBe("llm");
+
+    // Calling accept again returns 404
+    const again = await app.request(`/api/review/${item.id}/accept-suggestion`, {
+      method: "POST",
+      headers: json,
+    });
+    expect(again.status).toBe(404);
+  });
+
+  it("POST /api/review/:id/dismiss-suggestion rejects suggestion and returns 204", async () => {
+    const db = openDb();
+    const { sys, d, joint, catId } = seed(db);
+    const app = createApp(d);
+
+    const txnId = createTransaction(sys, {
+      accountId: joint,
+      postedOn: "2026-09-27",
+      amountCents: -3000,
+      description: "Corner Mart",
+    });
+    const splitId = getTransaction(sys, { id: txnId }).splits[0]!.id;
+
+    const sugId = d.newId<"Suggestion">();
+    write(sys, (tx) => {
+      tx.suggestions.insert({
+        id: sugId,
+        accountId: joint,
+        transactionId: txnId,
+        splitId,
+        source: "llm",
+        field: "category",
+        suggestedValue: catId,
+        payeeName: "Corner Mart",
+        websiteDomain: null,
+        taxCategoryId: null,
+        activityId: null,
+        confidence: 0.8,
+        model: "test-model",
+        promptVersion: "1",
+        outcome: "open",
+        createdAt: "2026-09-27T00:00:00Z",
+        resolvedAt: null,
+      });
+    });
+
+    const item = write(sys, (tx, audit) =>
+      raiseReviewItem(tx, audit, sys, {
+        kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+        entityRef: `transaction:${txnId}`,
+        dedupeKey: `classify.unclassified:${txnId}`,
+        accountId: joint,
+      }),
+    );
+
+    // Dismiss suggestion
+    const res = await app.request(`/api/review/${item.id}/dismiss-suggestion`, {
+      method: "POST",
+      headers: json,
+    });
+    expect(res.status).toBe(204);
+
+    // Split remains unclassified
+    expect(getTransaction(sys, { id: txnId }).splits[0]!.categoryId).toBeNull();
+
+    // Calling dismiss again returns 404
+    const again = await app.request(`/api/review/${item.id}/dismiss-suggestion`, {
+      method: "POST",
+      headers: json,
+    });
+    expect(again.status).toBe(404);
+  });
+
+  it("POST /api/review/bulk-accept-suggestions accepts multiple items and returns 200", async () => {
+    const db = openDb();
+    const { sys, d, joint, catId } = seed(db);
+    const app = createApp(d);
+
+    const txn1 = createTransaction(sys, {
+      accountId: joint,
+      postedOn: "2026-09-27",
+      amountCents: -2000,
+      description: "Shop A",
+    });
+    const txn2 = createTransaction(sys, {
+      accountId: joint,
+      postedOn: "2026-09-27",
+      amountCents: -4000,
+      description: "Shop B",
+    });
+
+    const split1 = getTransaction(sys, { id: txn1 }).splits[0]!.id;
+    const split2 = getTransaction(sys, { id: txn2 }).splits[0]!.id;
+
+    write(sys, (tx) => {
+      tx.suggestions.insertMany([
+        {
+          id: d.newId<"Suggestion">(),
+          accountId: joint,
+          transactionId: txn1,
+          splitId: split1,
+          source: "llm",
+          field: "category",
+          suggestedValue: catId,
+          payeeName: "Shop A",
+          websiteDomain: null,
+          taxCategoryId: null,
+          activityId: null,
+          confidence: 0.95,
+          model: "test-model",
+          promptVersion: "1",
+          outcome: "open",
+          createdAt: "2026-09-27T00:00:00Z",
+          resolvedAt: null,
+        },
+        {
+          id: d.newId<"Suggestion">(),
+          accountId: joint,
+          transactionId: txn2,
+          splitId: split2,
+          source: "llm",
+          field: "category",
+          suggestedValue: catId,
+          payeeName: "Shop B",
+          websiteDomain: null,
+          taxCategoryId: null,
+          activityId: null,
+          confidence: 0.98,
+          model: "test-model",
+          promptVersion: "1",
+          outcome: "open",
+          createdAt: "2026-09-27T00:00:00Z",
+          resolvedAt: null,
+        },
+      ]);
+    });
+
+    const item1 = write(sys, (tx, audit) =>
+      raiseReviewItem(tx, audit, sys, {
+        kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+        entityRef: `transaction:${txn1}`,
+        dedupeKey: `classify.unclassified:${txn1}`,
+        accountId: joint,
+      }),
+    );
+    const item2 = write(sys, (tx, audit) =>
+      raiseReviewItem(tx, audit, sys, {
+        kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+        entityRef: `transaction:${txn2}`,
+        dedupeKey: `classify.unclassified:${txn2}`,
+        accountId: joint,
+      }),
+    );
+
+    const res = await app.request("/api/review/bulk-accept-suggestions", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ ids: [item1.id, item2.id] }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ acceptedCount: 2 });
+
+    expect(getTransaction(sys, { id: txn1 }).splits[0]!.categorySource).toBe("llm");
+    expect(getTransaction(sys, { id: txn2 }).splits[0]!.categorySource).toBe("llm");
   });
 });

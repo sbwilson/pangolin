@@ -105,6 +105,24 @@ export {
   updateCategoryInput,
 } from "./classify/categories.ts";
 export {
+  CATEGORISE_BATCH_SIZE,
+  type CategoriseTransactionsContext,
+  type CategoriseTransactionsInput,
+  type CategoriseTransactionsResult,
+  categoriseTransactions,
+} from "./classify/categorise-engine.ts";
+export {
+  type BuildCategorisationRequestInput,
+  buildCategorisationRequest,
+  CATEGORISE_PROMPT_VERSION,
+  type CategoriseCategoryOption,
+  type CategoriseOutput,
+  type CategoriseRequestItem,
+  type CategoriseSuggestion,
+  categoriseOutputSchema,
+  categoriseSuggestionSchema,
+} from "./classify/categorise-request.ts";
+export {
   type CreateCategoryGroupInput,
   createCategoryGroup,
   createCategoryGroupInput,
@@ -121,46 +139,10 @@ export {
   loadClassificationContext,
 } from "./classify/classify-transaction.ts";
 export {
-  CATEGORISE_BATCH_SIZE,
-  type CategoriseTransactionsContext,
-  type CategoriseTransactionsInput,
-  type CategoriseTransactionsResult,
-  categoriseTransactions,
-} from "./classify/categorise-engine.ts";
-export {
-  CATEGORISE_PROMPT_VERSION,
-  type BuildCategorisationRequestInput,
-  type CategoriseCategoryOption,
-  type CategoriseOutput,
-  type CategoriseRequestItem,
-  type CategoriseSuggestion,
-  buildCategorisationRequest,
-  categoriseOutputSchema,
-  categoriseSuggestionSchema,
-} from "./classify/categorise-request.ts";
-export {
-  type LlmUseCaseContext,
-  type LlmSettingsResult,
-  type CreateLlmProviderInput,
-  type UpdateLlmProviderInput,
-  type AssignLlmPurposeInput,
-  type TestLlmProviderInput,
-  type TestLlmProviderResult,
-  type GetLlmRequestPreviewInput,
-  type LlmRequestPreviewResult,
-  createLlmProviderInputSchema,
-  updateLlmProviderInputSchema,
-  assignLlmPurposeInputSchema,
-  toSafeView,
-  extractApiKeyLast4,
-  getLlmSettings,
-  createLlmProvider,
-  updateLlmProvider,
-  deleteLlmProvider,
-  assignLlmPurpose,
-  testLlmProvider,
-  getLlmRequestPreview,
-} from "./classify/llm-provider-use-cases.ts";
+  DEFAULT_CATEGORIES,
+  DEFAULT_TAX_CATEGORIES,
+  seedDefaults,
+} from "./classify/defaults.ts";
 export {
   type FewShotSearchInput,
   fewShotSearch,
@@ -168,10 +150,28 @@ export {
   searchFewShot,
 } from "./classify/few-shot-search.ts";
 export {
-  DEFAULT_CATEGORIES,
-  DEFAULT_TAX_CATEGORIES,
-  seedDefaults,
-} from "./classify/defaults.ts";
+  type AssignLlmPurposeInput,
+  assignLlmPurpose,
+  assignLlmPurposeInputSchema,
+  type CreateLlmProviderInput,
+  createLlmProvider,
+  createLlmProviderInputSchema,
+  deleteLlmProvider,
+  extractApiKeyLast4,
+  type GetLlmRequestPreviewInput,
+  getLlmRequestPreview,
+  getLlmSettings,
+  type LlmRequestPreviewResult,
+  type LlmSettingsResult,
+  type LlmUseCaseContext,
+  type TestLlmProviderInput,
+  type TestLlmProviderResult,
+  testLlmProvider,
+  toSafeView,
+  type UpdateLlmProviderInput,
+  updateLlmProvider,
+  updateLlmProviderInputSchema,
+} from "./classify/llm-provider-use-cases.ts";
 export {
   type CreatePayeeAliasInput,
   type CreatePayeeInput,
@@ -693,6 +693,7 @@ export {
   type CategoryGroupRow,
   type CategoryRepo,
   type CategoryRow,
+  type FewShotExample,
   type HandoffStatus,
   IMPORT_BATCH_STATUSES,
   IMPORT_HANDOFF_STATUSES,
@@ -733,7 +734,6 @@ export {
   type SuggestionRepo,
   type SuggestionRow,
   type SuggestionSource,
-  type FewShotExample,
   type TagRepo,
   type TagRow,
   type TaxCategoryRepo,
@@ -924,13 +924,20 @@ export {
 export {
   type AcceptHandoffItemInput,
   type AcceptRuleOfferItemInput,
+  type AcceptSuggestionItemInput,
   acceptHandoffItem,
   acceptRuleOfferItem,
+  acceptSuggestionItem,
+  type BulkAcceptSuggestionsInput,
+  type BulkAcceptSuggestionsResult,
+  bulkAcceptSuggestions,
   type DiscardSetAsideRowItemInput,
+  type DismissSuggestionItemInput,
   discardSetAsideRowItem,
   dismissHandoffItem,
   dismissNoticeItem,
   dismissRuleOfferItem,
+  dismissSuggestionItem,
   dismissTransferItem,
   type FixSetAsideRowItemInput,
   fixSetAsideRowItem,
@@ -969,6 +976,7 @@ export {
   type ReviewCounts,
   type ReviewDetail,
   type ReviewSetAsideRow,
+  type ReviewSuggestion,
   type ReviewTransaction,
 } from "./system/review-view.ts";
 export {

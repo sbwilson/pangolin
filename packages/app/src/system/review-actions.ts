@@ -3,11 +3,13 @@
 // changing or that use case; an id that is unknown, finished or not the viewer's is `NotFound`
 // (the same answer for all three, AD-3), and one of another kind is `NotFound` too.
 import { shiftDay, TRANSFER_WINDOW_DAYS } from "@pangolin/domain";
+import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import {
   type AcceptRuleOfferInput,
   acceptRuleOffer,
   CLASSIFY_RULE_OFFER_REVIEW,
+  CLASSIFY_UNCLASSIFIED_REVIEW,
   dismissRuleOffer,
 } from "../classify/rules.ts";
 import type { AttachmentContext, UseCaseContext } from "../context.ts";
@@ -34,6 +36,7 @@ import {
   listSetAsideRowsForBatch,
 } from "../imports/set-aside.ts";
 import { idInput } from "../inputs.ts";
+import { setSplitField } from "../ledger/set-split-field.ts";
 import { createTransferGroup } from "../ledger/transfer-groups.ts";
 import type { ReviewItemRow, TxRepos, UnitOfWork } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
@@ -98,6 +101,118 @@ export function acceptRuleOfferItem(ctx: UseCaseContext, input: AcceptRuleOfferI
 export function dismissRuleOfferItem(ctx: UseCaseContext, input: { readonly id: string }): void {
   const item = openItem(ctx, input.id, [CLASSIFY_RULE_OFFER_REVIEW.kind]);
   dismissRuleOffer(ctx, { transactionId: transactionOf(item) });
+}
+
+// ------------------------------------------------------------------------------ suggestions
+
+export const acceptSuggestionItemInput = z.object({ id: idInput }).strict();
+export type AcceptSuggestionItemInput = z.input<typeof acceptSuggestionItemInput>;
+
+/**
+ * Accepts an AI categorisation suggestion (`classify.acceptSuggestionItem`).
+ * Resolves the suggestion via `ledger.setSplitField` with `source: 'llm'`,
+ * marks the suggestion as `accepted`, and resolves the unclassified review item.
+ */
+export function acceptSuggestionItem(ctx: UseCaseContext, input: AcceptSuggestionItemInput): void {
+  const { id } = parseInput(acceptSuggestionItemInput, input);
+  const item = openItem(ctx, id, [CLASSIFY_UNCLASSIFIED_REVIEW.kind]);
+  const transactionId = transactionOf(item);
+
+  const openSuggestion = ctx.uow.read((repos) =>
+    repos.suggestions
+      .listForTransaction(ctx.viewer, transactionId)
+      .find((s) => s.resolvedAt === null && s.outcome === "open" && s.field === "category"),
+  );
+  if (openSuggestion === undefined) {
+    throw new AppError("NotFound", "Suggestion not found");
+  }
+
+  const result = setSplitField(ctx, {
+    transactionId,
+    splitId: openSuggestion.splitId,
+    field: "category",
+    value: openSuggestion.suggestedValue,
+    source: "llm",
+  });
+  if (!result.applied) {
+    throw new AppError("Conflict", result.reason ?? "Suggestion could not be applied");
+  }
+}
+
+export const dismissSuggestionItemInput = z.object({ id: idInput }).strict();
+export type DismissSuggestionItemInput = z.input<typeof dismissSuggestionItemInput>;
+
+/**
+ * Dismisses an AI categorisation suggestion (`classify.dismissSuggestionItem`).
+ * Marks the suggestion as `rejected` with `resolvedAt = now` and an audit record;
+ * the underlying transaction split remains unclassified and the review item stays open.
+ */
+export function dismissSuggestionItem(
+  ctx: UseCaseContext,
+  input: DismissSuggestionItemInput,
+): void {
+  const { id } = parseInput(dismissSuggestionItemInput, input);
+  const item = openItem(ctx, id, [CLASSIFY_UNCLASSIFIED_REVIEW.kind]);
+  const transactionId = transactionOf(item);
+
+  const openSuggestion = ctx.uow.read((repos) =>
+    repos.suggestions
+      .listForTransaction(ctx.viewer, transactionId)
+      .find((s) => s.resolvedAt === null && s.outcome === "open" && s.field === "category"),
+  );
+  if (openSuggestion === undefined) {
+    throw new AppError("NotFound", "Suggestion not found");
+  }
+
+  write(ctx, (tx, audit) => {
+    const now = formatInstant(ctx.clock.now());
+    const resolved = tx.suggestions.resolveOpen(
+      openSuggestion.splitId,
+      openSuggestion.field,
+      "rejected",
+      now,
+    );
+    if (!resolved) {
+      throw new AppError("NotFound", "Suggestion not found");
+    }
+    audit({
+      entity: "suggestion",
+      entityId: openSuggestion.id,
+      accountId: openSuggestion.accountId,
+      action: "update",
+      before: openSuggestion,
+      after: { ...openSuggestion, outcome: "rejected", resolvedAt: now },
+    });
+  });
+}
+
+export const bulkAcceptSuggestionsInput = z
+  .object({
+    ids: z.array(idInput),
+  })
+  .strict();
+export type BulkAcceptSuggestionsInput = z.input<typeof bulkAcceptSuggestionsInput>;
+
+export interface BulkAcceptSuggestionsResult {
+  readonly acceptedCount: number;
+}
+
+/**
+ * Accepts multiple high-confidence AI suggestions in batch.
+ * Applies each suggestion via `setSplitField(..., 'llm')`.
+ */
+export function bulkAcceptSuggestions(
+  ctx: UseCaseContext,
+  input: BulkAcceptSuggestionsInput,
+): BulkAcceptSuggestionsResult {
+  const { ids } = parseInput(bulkAcceptSuggestionsInput, input);
+  const uniqueIds = Array.from(new Set(ids));
+  let acceptedCount = 0;
+  for (const id of uniqueIds) {
+    acceptSuggestionItem(ctx, { id });
+    acceptedCount++;
+  }
+  return { acceptedCount };
 }
 
 // ------------------------------------------------------------------------------- duplicates

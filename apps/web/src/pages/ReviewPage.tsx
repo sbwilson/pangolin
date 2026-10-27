@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchReviewItems } from "../api.ts";
-import { REVIEW_KEY, ReviewCardView } from "../components/review/index.ts";
+import { useState } from "react";
+import { fetchReviewItems, type ReviewCard } from "../api.ts";
+import { BulkAcceptCard, REVIEW_KEY, ReviewCardView } from "../components/review/index.ts";
 import { useReviewCounts } from "../components/review/useReviewCounts.ts";
 
 /** "1 thing needs you", "3 things need you". */
@@ -8,15 +9,39 @@ export function reviewHeading(count: number): string {
   return count === 1 ? "1 thing needs you" : `${count} things need you`;
 }
 
+function isHighConfidenceSuggestion(card: ReviewCard): boolean {
+  return (
+    card.kind === "classify.unclassified" &&
+    card.detail.type === "transaction" &&
+    card.detail.suggestion != null &&
+    (card.detail.suggestion.confidence ?? 0) >= 0.9
+  );
+}
+
 /**
  * Needs review: every open item the signed-in person may see, oldest first, one card per item
- * with the actions its kind allows. The partner chip is a number only: how many items both of
- * them can see are still open.
+ * with the actions its kind allows. High-confidence suggestions (≥ 90%) batch into a bulk-accept
+ * card when 2+ exist. The partner chip is a number only: how many items both of them can see are
+ * still open.
  */
 export function ReviewPage() {
   const items = useQuery({ queryKey: REVIEW_KEY, queryFn: fetchReviewItems, retry: false });
   const counts = useReviewCounts();
   const partner = counts.data?.partner ?? null;
+  const [untickedIds, setUntickedIds] = useState<Set<string>>(new Set());
+
+  const allItems = items.data ?? [];
+  const highConfidenceSuggestions = allItems.filter(isHighConfidenceSuggestion);
+  const hasBulkCard = highConfidenceSuggestions.length >= 2;
+  const bulkItems = hasBulkCard
+    ? highConfidenceSuggestions.filter((c) => !untickedIds.has(c.id))
+    : [];
+  const bulkItemIds = new Set(bulkItems.map((c) => c.id));
+  const individualCards = allItems.filter((c) => !bulkItemIds.has(c.id));
+
+  const handleUntick = (id: string) => {
+    setUntickedIds((prev) => new Set([...prev, id]));
+  };
 
   return (
     <section aria-labelledby="review">
@@ -43,7 +68,10 @@ export function ReviewPage() {
       {items.data?.length === 0 ? <p>Nothing needs you. Nice.</p> : null}
       {items.data === undefined || items.data.length === 0 ? null : (
         <ul className="m-0 mt-3 list-none space-y-2 p-0">
-          {items.data.map((card) => (
+          {bulkItems.length > 0 ? (
+            <BulkAcceptCard items={bulkItems} onUntick={handleUntick} />
+          ) : null}
+          {individualCards.map((card) => (
             <ReviewCardView key={card.id} card={card} />
           ))}
         </ul>

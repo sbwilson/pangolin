@@ -3,21 +3,16 @@ import { join } from "node:path";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { serveStatic } from "@hono/node-server/serve-static";
 import {
-  AnthropicAdapter,
-  OpenAiAdapter,
-  decryptApiKey,
-  encryptApiKey,
-  isLanAddress,
-} from "@pangolin/llm";
-import {
   AppError,
   type AttachmentContext,
   type AttachmentStore,
   acceptHandoffItem,
   acceptRuleOfferItem,
+  acceptSuggestionItem,
   assignLlmPurpose,
   backupStatus,
   balanceAsOf,
+  bulkAcceptSuggestions,
   type CashFlowTotalsInput,
   type Clock,
   type CodeHasher,
@@ -53,6 +48,7 @@ import {
   dismissHandoffItem,
   dismissNoticeItem,
   dismissRuleOfferItem,
+  dismissSuggestionItem,
   dismissTransferItem,
   ERROR_CODES,
   type ErrorCode,
@@ -79,6 +75,9 @@ import {
   issueSetupLink,
   keepDuplicateItem,
   type LeaksInput,
+  type LlmProviderRow,
+  type LlmPurpose,
+  type LlmUseCaseContext,
   leaks,
   leaveHousehold,
   linkTransferItem,
@@ -127,11 +126,8 @@ import {
   setSplitTags,
   sharedShare,
   spending,
-  testLlmProvider,
-  type LlmProviderRow,
-  type LlmPurpose,
-  type LlmUseCaseContext,
   type TokenPort,
+  testLlmProvider,
   type UnitOfWork,
   type UseCaseContext,
   unhideTransactionName,
@@ -149,6 +145,13 @@ import {
   updateTaxCategory,
   updateTransaction,
 } from "@pangolin/app";
+import {
+  AnthropicAdapter,
+  decryptApiKey,
+  encryptApiKey,
+  isLanAddress,
+  OpenAiAdapter,
+} from "@pangolin/llm";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
@@ -813,6 +816,22 @@ export function createApi(deps: ApiDeps) {
     .get("/api/review/count", (c) => {
       // Numbers only: the viewer's open count, and how many items both partners see.
       return c.json(countReviewItems(ctx(c), {}), 200);
+    })
+    .post("/api/review/bulk-accept-suggestions", async (c) => {
+      writable();
+      const body = await objectBody<{ ids: string[] }>(c);
+      const result = bulkAcceptSuggestions(ctx(c), body);
+      return c.json(result, 200);
+    })
+    .post("/api/review/:id/accept-suggestion", (c) => {
+      writable();
+      acceptSuggestionItem(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/dismiss-suggestion", (c) => {
+      writable();
+      dismissSuggestionItem(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
     })
     .post("/api/review/:id/accept-rule", async (c) => {
       writable();

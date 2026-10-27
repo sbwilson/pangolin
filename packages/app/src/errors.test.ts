@@ -11,6 +11,7 @@ describe("AppError", () => {
       "Unauthenticated",
       "ReauthRequired",
       "RateLimited",
+      "PermissionDenied",
     ]);
   });
 
