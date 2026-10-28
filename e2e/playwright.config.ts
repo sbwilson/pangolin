@@ -62,9 +62,11 @@ export default defineConfig({
         // Reads the ledger that ledger.spec seeds (once, into an empty ledger), so it runs after
         // the rest of the suite rather than in file order. import.spec runs here too, after
         // accounts.spec: it creates an account and imports into it, which would make the seed refuse.
+        // pdf-import.spec belongs here as well: it needs the stack's `llm` profile (the mock
+        // provider), imports into its own account, and resolves its review item before axe runs.
         {
           name: "accounts",
-          testMatch: ["accounts.spec.ts", "import.spec.ts"],
+          testMatch: ["accounts.spec.ts", "import.spec.ts", "pdf-import.spec.ts"],
           dependencies: ["reports"],
           use: chrome,
         },

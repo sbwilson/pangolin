@@ -202,6 +202,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@pangolin/importers':
+        specifier: workspace:*
+        version: link:../../packages/importers
       better-sqlite3:
         specifier: 13.0.3
         version: 13.0.3
@@ -221,9 +224,6 @@ importers:
       '@pangolin/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@pangolin/importers':
-        specifier: workspace:*
-        version: link:../../packages/importers
       '@pangolin/llm':
         specifier: workspace:*
         version: link:../../packages/llm
@@ -278,6 +278,9 @@ importers:
       hono:
         specifier: 4.13.9
         version: 4.13.9
+      pdfjs-dist:
+        specifier: ^6.4.299
+        version: 6.4.299
       react:
         specifier: 19.3.0
         version: 19.3.0

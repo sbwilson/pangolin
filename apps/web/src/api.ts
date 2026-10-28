@@ -385,6 +385,8 @@ export type ReviewSuggestion = NonNullable<
 >;
 export type ReviewSetAsideRow = Extract<ReviewDetail, { type: "batch" }>["rows"][number];
 export type ReviewSetAsideRowProposal = NonNullable<ReviewSetAsideRow["proposal"]>;
+export type ReviewPdfRow = Extract<ReviewDetail, { type: "pdf_batch" }>["rows"][number];
+export type ReviewPdfRowCorrection = ReviewPdfRow["corrected"];
 
 /** The nav badge and partner chip: numbers only. */
 export type ReviewCounts = InferResponseType<typeof api.api.review.count.$get, 200>;
@@ -417,8 +419,25 @@ export type ReviewAction =
   | "discard-row"
   | "interpret-rows"
   | "confirm-proposal"
+  | "correct-pdf-row"
+  | "recheck-pdf"
   | "dismiss-notice"
   | "revoke-links";
+
+/** The outcome of a Re-check: `ok` false carries the exact remaining error (HTTP 200). */
+export interface PdfRecheckResult {
+  readonly batchId: string;
+  readonly ok: boolean;
+  readonly error: string | null;
+}
+
+/**
+ * Re-runs the deterministic PDF checks (no LLM). A passing batch turns ready and its card
+ * disappears on the next fetch; a failing one reports its exact error and stays open.
+ */
+export async function recheckPdfReviewItem(id: string): Promise<PdfRecheckResult> {
+  return await postJson<PdfRecheckResult>(`/api/review/${encodeURIComponent(id)}/recheck-pdf`, {});
+}
 
 export interface BulkAcceptSuggestionsResult {
   readonly acceptedCount: number;
@@ -909,6 +928,34 @@ export async function importFile(input: {
   readonly content: string;
 }): Promise<ImportResult> {
   return await postJson<ImportResult>("/api/import", input);
+}
+
+/**
+ * What a PDF upload reports: a batch that passed the deterministic checks is `ready` with its
+ * rows staged — never committed — and its file kept encrypted (AD-21).
+ */
+export interface PdfImportResult {
+  readonly batchId: string;
+  readonly status: string;
+  readonly rowCount: number;
+  readonly newCount: number;
+  readonly dupCount: number;
+  readonly reconcileStatus: string;
+  readonly reconcileGapCents: number;
+  readonly openingBalanceCents?: number | null | undefined;
+  readonly closingBalanceCents?: number | null | undefined;
+}
+
+/**
+ * Uploads a statement PDF (base64) for LLM extraction plus deterministic verification. A passing
+ * batch ends `ready` with rows staged; a failing one throws `ApiError` carrying the exact gap
+ * after the batch was staged and its review item raised.
+ */
+export async function importPdfFile(input: {
+  readonly accountId: string;
+  readonly content: string;
+}): Promise<PdfImportResult> {
+  return await postJson<PdfImportResult>("/api/import/pdf", input);
 }
 
 /** Hands statement text to the partner, who picks the account. The reply names no account or batch. */

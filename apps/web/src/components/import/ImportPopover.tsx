@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   type AccountView,
@@ -6,7 +7,9 @@ import {
   handOffFile,
   type ImportResult,
   importFile,
+  importPdfFile,
   listAccounts,
+  type PdfImportResult,
 } from "../../api.ts";
 import {
   BANKS,
@@ -14,6 +17,7 @@ import {
   chooseFormat,
   fileProblem,
   needsBank,
+  PDF_FORMAT,
 } from "../../lib/import-format.ts";
 import { useSignedIn } from "../../session.tsx";
 import { Button } from "../ui/button.tsx";
@@ -21,7 +25,7 @@ import { NativeSelect } from "../ui/select.tsx";
 import { AccountPicker, HANDOFF_VALUE } from "./AccountPicker.tsx";
 import { DropZone } from "./DropZone.tsx";
 import { ExportTips } from "./ExportTips.tsx";
-import { ImportSummary } from "./ImportSummary.tsx";
+import { ImportSummary, PdfImportSummary } from "./ImportSummary.tsx";
 
 export interface ImportPopoverProps {
   readonly open: boolean;
@@ -34,8 +38,9 @@ type Phase =
   | { readonly kind: "idle" }
   | { readonly kind: "pending" }
   | { readonly kind: "imported"; readonly result: ImportResult }
+  | { readonly kind: "verified"; readonly result: PdfImportResult }
   | { readonly kind: "handed-off"; readonly to: string }
-  | { readonly kind: "error"; readonly message: string };
+  | { readonly kind: "error"; readonly message: string; readonly pdf?: boolean };
 
 async function readText(file: File): Promise<string> {
   if (typeof file.text === "function") return await file.text();
@@ -45,6 +50,17 @@ async function readText(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("Could not read the file"));
     reader.readAsText(file);
   });
+}
+
+/** The file's bytes as base64: the PDF upload body is JSON, never multipart. */
+async function readBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
 }
 
 const FOCUSABLE =
@@ -118,21 +134,35 @@ export function ImportPopover({ open, accountId, onClose }: ImportPopoverProps) 
     if (file === null || problem !== null || target === "") return;
     const choice = chooseFormat(file.name, bank);
     if (!choice.ok) return;
+    const isPdf = choice.format === PDF_FORMAT;
+    if (isPdf && target === HANDOFF_VALUE) {
+      setPhase({
+        kind: "error",
+        message: "A statement PDF goes into one of your accounts, not to your partner.",
+      });
+      return;
+    }
     setPhase({ kind: "pending" });
     try {
-      const content = await readText(file);
-      if (target === HANDOFF_VALUE) {
-        if (me.partner === null) throw new Error("There is no one to hand this to");
-        await handOffFile({
-          recipientId: me.partner.personId,
-          filename: file.name,
-          format: choice.format,
-          content,
-        });
-        setPhase({ kind: "handed-off", to: me.partner.displayName });
+      if (isPdf) {
+        const content = await readBase64(file);
+        const result = await importPdfFile({ accountId: target, content });
+        setPhase({ kind: "verified", result });
       } else {
-        const result = await importFile({ accountId: target, format: choice.format, content });
-        setPhase({ kind: "imported", result });
+        const content = await readText(file);
+        if (target === HANDOFF_VALUE) {
+          if (me.partner === null) throw new Error("There is no one to hand this to");
+          await handOffFile({
+            recipientId: me.partner.personId,
+            filename: file.name,
+            format: choice.format,
+            content,
+          });
+          setPhase({ kind: "handed-off", to: me.partner.displayName });
+        } else {
+          const result = await importFile({ accountId: target, format: choice.format, content });
+          setPhase({ kind: "imported", result });
+        }
       }
       setFile(null);
       await queryClient.invalidateQueries();
@@ -140,6 +170,7 @@ export function ImportPopover({ open, accountId, onClose }: ImportPopoverProps) 
       setPhase({
         kind: "error",
         message: err instanceof ApiError || err instanceof Error ? err.message : "Import failed",
+        ...(isPdf ? { pdf: true } : {}),
       });
     }
   };
@@ -189,7 +220,7 @@ export function ImportPopover({ open, accountId, onClose }: ImportPopoverProps) 
             Import a bank file
           </h2>
           <p className="text-[13.5px] text-muted-foreground">
-            CSV, OFX or QIF. Your data stays on this server.
+            CSV, OFX, QIF or PDF. Your data stays on this server.
           </p>
         </div>
 
@@ -237,13 +268,27 @@ export function ImportPopover({ open, accountId, onClose }: ImportPopoverProps) 
           {phase.kind === "imported" ? (
             <ImportSummary result={phase.result} onNavigate={close} />
           ) : null}
+          {phase.kind === "verified" ? <PdfImportSummary result={phase.result} /> : null}
           {phase.kind === "handed-off" ? (
             <p className="text-sm font-semibold">
               Handed to {phase.to}. It&apos;ll wait in their Needs review.
             </p>
           ) : null}
           {phase.kind === "error" ? (
-            <p className="text-sm text-destructive">{phase.message}</p>
+            <div className="space-y-1">
+              <p className="text-sm text-destructive">{phase.message}</p>
+              {phase.pdf === true ? (
+                <p>
+                  <Link
+                    to="/review"
+                    onClick={close}
+                    className="font-semibold text-primary underline"
+                  >
+                    Needs review
+                  </Link>
+                </p>
+              ) : null}
+            </div>
           ) : null}
         </div>
 
@@ -251,7 +296,9 @@ export function ImportPopover({ open, accountId, onClose }: ImportPopoverProps) 
           <span className="text-xs text-muted-foreground">Esc to close</span>
           <div className="flex gap-2">
             <Button type="button" variant="outline" disabled={pending} onClick={close}>
-              {phase.kind === "imported" || phase.kind === "handed-off" ? "Done" : "Cancel"}
+              {phase.kind === "imported" || phase.kind === "verified" || phase.kind === "handed-off"
+                ? "Done"
+                : "Cancel"}
             </Button>
             <Button type="button" disabled={!canImport} onClick={() => void run()}>
               Import

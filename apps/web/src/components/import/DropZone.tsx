@@ -52,7 +52,7 @@ export function DropZone({ file, disabled = false, onFile }: DropZoneProps) {
       {file === null ? (
         <>
           <span className="font-semibold">Drop a bank file here</span>
-          <span className="text-muted-foreground">or choose a file (CSV, OFX or QIF)</span>
+          <span className="text-muted-foreground">or choose a file (CSV, OFX, QIF or PDF)</span>
         </>
       ) : (
         <>

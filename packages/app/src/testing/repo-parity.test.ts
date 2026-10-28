@@ -1930,6 +1930,77 @@ function scenario(
     ];
   });
 
+  // A PDF batch's statement file (story 8, AD-21): the batch link holds the file.
+  const pdfAtt = { ...att1, id: newId<"Attachment">(), name: "n3" };
+  const pdfBatchId = newId<"ImportBatch">();
+  step("pdfBatch.unknownAttachment", (r) =>
+    r.importBatches.insert({
+      id: newId<"ImportBatch">(),
+      accountId: shared,
+      source: "statement_pdf",
+      fileSha256: "pdf-unknown-att",
+      rowCount: 0,
+      newCount: 0,
+      dupCount: 0,
+      status: "failed",
+      importedByPersonId: null,
+      undoneAt: null,
+      reconcileStatus: "gap",
+      reconcileGapCents: 1,
+      openingBalanceCents: null,
+      closingBalanceCents: null,
+      firstPostedOn: null,
+      lastPostedOn: null,
+      attachmentId: "nobody" as Id<"Attachment">,
+      statementMeta: null,
+      createdAt: T,
+      updatedAt: T,
+    }),
+  );
+  step("pdfBatch.link", (r) => {
+    r.attachments.insert(pdfAtt);
+    r.importBatches.insert({
+      id: pdfBatchId,
+      accountId: shared,
+      source: "statement_pdf",
+      fileSha256: "pdf-sha",
+      rowCount: 0,
+      newCount: 0,
+      dupCount: 0,
+      status: "failed",
+      importedByPersonId: null,
+      undoneAt: null,
+      reconcileStatus: "gap",
+      reconcileGapCents: 1,
+      openingBalanceCents: null,
+      closingBalanceCents: null,
+      firstPostedOn: null,
+      lastPostedOn: null,
+      attachmentId: pdfAtt.id,
+      statementMeta:
+        '{"startDate":"2026-09-01","endDate":"2026-09-30","accountNumberLast4":"1234"}',
+      createdAt: T,
+      updatedAt: T,
+    });
+  });
+  out["pdfBatch.keptWhileBatchLinks"] = tx((r) => [
+    r.attachments.deleteIfUnlinked(pdfAtt.id),
+    r.importBatches.find(system, pdfBatchId)?.attachmentId === pdfAtt.id,
+    r.importBatches.find(system, pdfBatchId)?.statementMeta,
+  ]);
+  out["pdfBatch.keptWhenUndone"] = tx((r) => [
+    r.importBatches.markUndone(pdfBatchId, T2),
+    r.attachments.deleteIfUnlinked(pdfAtt.id),
+  ]);
+  out["pdfBatch.deleteForAccount"] = tx((r) => {
+    const ids = r.importBatches.deleteForAccount(shared);
+    return [
+      ids.includes(pdfAtt.id),
+      r.importBatches.find(system, pdfBatchId) === undefined,
+      r.attachments.deleteIfUnlinked(pdfAtt.id),
+    ];
+  });
+
   return out;
 }
 
@@ -1939,6 +2010,7 @@ describe("ledger and classification schema on SQLite", () => {
     expect(out["txn.duplicateFingerprint"]).toBe("error:UNIQUE");
     expect(out["txn.duplicateExternalId"]).toBe("error:UNIQUE");
     expect(out["handoff.unknownAttachment"]).toBe("error:FOREIGN KEY");
+    expect(out["pdfBatch.unknownAttachment"]).toBe("error:FOREIGN KEY");
     expect(out["handoff.attachmentTwice"]).toBe("error:UNIQUE");
     expect(out["handoff.toSelf"]).toBe("error:CHECK");
     expect(out["handoff.importedWithoutBatch"]).toBe("error:CHECK");

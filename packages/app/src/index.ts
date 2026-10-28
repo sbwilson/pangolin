@@ -435,16 +435,6 @@ export { parseBuiltinQif } from "./imports/parsers/qif.ts";
 export { parseBuiltinUbankCsv } from "./imports/parsers/ubank-csv.ts";
 export { parseBuiltinUpCsv } from "./imports/parsers/up-csv.ts";
 export {
-  type BuildRowInterpretRequestInput,
-  buildRowInterpretRequest,
-  ROW_INTERPRET_PROMPT_VERSION,
-  type RowInterpretOutput,
-  type RowInterpretProposal,
-  type RowInterpretRequestItem,
-  rowInterpretOutputSchema,
-  rowInterpretProposalSchema,
-} from "./imports/row-interpret-request.ts";
-export {
   type BuildPdfExtractRequestInput,
   buildPdfExtractRequest,
   PDF_EXTRACT_PROMPT_VERSION,
@@ -454,6 +444,42 @@ export {
   pdfExtractRowSchema,
 } from "./imports/pdf-extract-request.ts";
 export {
+  type ExtractAndImportPdfStatementInput,
+  type ExtractAndImportPdfStatementOptions,
+  type ExtractAndImportPdfStatementResult,
+  type ExtractedPdfPageItem,
+  extractAndImportPdfStatement,
+  extractAndImportPdfStatementInput,
+  type PdfImportContext,
+  type PdfTextExtractionPayload,
+  type PdfTextExtractor,
+  type VisionModelClassifier,
+} from "./imports/pdf-import.ts";
+export {
+  type CorrectPdfRowInput,
+  correctPdfRow,
+  correctPdfRowInput,
+  IMPORT_PDF_FAILED_REVIEW,
+  type ListPdfRowsInput,
+  listPdfRowsForBatch,
+  listPdfRowsInput,
+  type PdfReviewRow,
+  type PdfRowProposal,
+  type PdfStatementFile,
+  type PdfStatementMeta,
+  pdfFailedDedupeKey,
+  pdfFailedEntityRef,
+  pdfRowProposalSchema,
+  pdfRowValues,
+  pdfStatementMetaJson,
+  pdfStatementMetaSchema,
+  type RecheckPdfStatementInput,
+  type RecheckPdfStatementResult,
+  readPdfStatementFile,
+  recheckPdfStatement,
+  recheckPdfStatementInput,
+} from "./imports/pdf-review.ts";
+export {
   type StatementVerificationFailure,
   type StatementVerificationInput,
   type StatementVerificationResult,
@@ -462,17 +488,15 @@ export {
   verifyStatementBalances,
 } from "./imports/pdf-verify.ts";
 export {
-  type ExtractAndImportPdfStatementInput,
-  type ExtractAndImportPdfStatementOptions,
-  type ExtractAndImportPdfStatementResult,
-  type ExtractedPdfPageItem,
-  type PdfImportContext,
-  type PdfTextExtractionPayload,
-  type PdfTextExtractor,
-  type VisionModelClassifier,
-  extractAndImportPdfStatement,
-  extractAndImportPdfStatementInput,
-} from "./imports/pdf-import.ts";
+  type BuildRowInterpretRequestInput,
+  buildRowInterpretRequest,
+  ROW_INTERPRET_PROMPT_VERSION,
+  type RowInterpretOutput,
+  type RowInterpretProposal,
+  type RowInterpretRequestItem,
+  rowInterpretOutputSchema,
+  rowInterpretProposalSchema,
+} from "./imports/row-interpret-request.ts";
 export {
   type ConfirmSetAsideProposalInput,
   confirmSetAsideProposal,
@@ -979,7 +1003,9 @@ export {
   type BulkAcceptSuggestionsResult,
   bulkAcceptSuggestions,
   type ConfirmSetAsideProposalItemInput,
+  type CorrectPdfRowItemInput,
   confirmSetAsideProposalItem,
+  correctPdfRowItem,
   type DiscardSetAsideRowItemInput,
   type DismissSuggestionItemInput,
   discardSetAsideRowItem,
@@ -995,6 +1021,7 @@ export {
   keepDuplicateItem,
   type LinkTransferItemInput,
   linkTransferItem,
+  recheckPdfItem,
   removeDuplicateItem,
   revokeLinksItem,
 } from "./system/review-actions.ts";
@@ -1026,6 +1053,8 @@ export {
   type ReviewCard,
   type ReviewCounts,
   type ReviewDetail,
+  type ReviewPdfRow,
+  type ReviewPdfRowCorrection,
   type ReviewSetAsideRow,
   type ReviewSetAsideRowProposal,
   type ReviewSuggestion,

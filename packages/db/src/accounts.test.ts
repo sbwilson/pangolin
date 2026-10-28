@@ -5,10 +5,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  acceptHandoff,
   balanceAsOf as accountBalanceAsOf,
   closeAccount,
   createAccount,
   createActivity,
+  createHandoff,
   createIdGenerator,
   createInstitution,
   createPayee,
@@ -44,6 +46,7 @@ import {
   write,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
+import { fakeAttachmentStore } from "@pangolin/app/testing/attachment-store";
 import type { Id } from "@pangolin/shared";
 import { Temporal } from "@pangolin/shared/temporal";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -1093,6 +1096,37 @@ describe("leaving the household (story 26)", () => {
     expect(auditFor("person", a).map((row) => row.action)).toEqual(["create", "leave"]);
     // A can no longer act.
     expect(() => leaveHousehold(leaver(a), { confirm: true })).toThrow(code("Unauthenticated"));
+  });
+
+  it("drops a received hand-off before deleting the private account that holds its batch", () => {
+    login(a, "user-a");
+    login(b, "user-b");
+    const attachments = fakeAttachmentStore();
+    const B = { ...as(b), attachments };
+    const bPriv = make(B, { name: "B private", isPrivate: true, owners: own(b) });
+    const { id: handoffId } = createHandoff(
+      { ...as(a), attachments },
+      {
+        recipientId: b,
+        filename: "september.csv",
+        format: "commbank_csv",
+        content: `Date,Amount,Description,Balance
+01/09/2026,-50.00,"MARKET",1000.00`,
+      },
+    );
+    acceptHandoff(B, { handoffId, accountId: bPriv });
+    expect(count("SELECT count(*) FROM import_batch WHERE account_id = ?", bPriv)).toBe(1);
+
+    // Before the ordering fix this aborted on SQLITE_CONSTRAINT_FOREIGNKEY: the hand-off's
+    // plain FK to its batch held the batch row alive through the private account's deletion.
+    leaveHousehold({ ...leaver(b), attachments }, { confirm: true });
+
+    expect(count("SELECT count(*) FROM account WHERE id = ?", bPriv)).toBe(0);
+    expect(count("SELECT count(*) FROM import_batch WHERE account_id = ?", bPriv)).toBe(0);
+    expect(count("SELECT count(*) FROM import_handoff WHERE id = ?", handoffId)).toBe(0);
+    expect(count("SELECT count(*) FROM attachment")).toBe(0);
+    // The released file is removed from the store once the leave has committed.
+    expect(attachments.files.size).toBe(0);
   });
 
   it("leaves with no private data: the shared accounts pass to the partner and nothing else changes", () => {

@@ -48,7 +48,7 @@ const UNSCOPED_REPOS: Readonly<Record<string, string>> = {
     "one row per check or drill: its kind, whether it passed and fixed words naming the check; no figure of the household's data",
   recoveryBundle: "whether the recovery bundle is confirmed",
   attachments:
-    "encrypted-file metadata (a keyed hash name, mime, size); no statement content, and a file is reached only through the hand-off that links it",
+    "encrypted-file metadata (a keyed hash name, mime, size); no statement content, and a file is reached only through the hand-off or import batch that links it",
   personPreferences:
     "a person's UI preferences (theme, mode), read and written by their own id; no ledger data",
   llmProviders: "household-wide LLM provider configuration and purpose assignments",
@@ -92,6 +92,8 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
   "PayeeAliasRepo.insert": "a new row; its scope is the creating person's",
   "RuleRepo.insert": "a new row; its scope is the creating person's",
   "ImportBatchRepo.insert": "a new batch; the use case checked the account with findVisible",
+  "ImportBatchRepo.deleteForAccount":
+    "write-only: a private account is hard-deleted and its batches go with it (the leave)",
   "ImportBatchRepo.updateCountsAndStatus": "the use case checked the account with findVisible",
   "ImportBatchRepo.markUndone": "the use case found the batch with find, as its importer, first",
   "ImportBatchRepo.listLiveTransactionIds":
@@ -100,6 +102,7 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
     "new rows; the use case checked the batch and account with findVisible",
   "ImportRowRepo.insert": "a new row; the use case checked the batch and account with findVisible",
   "ImportRowRepo.updateStatus": "the use case checked the row and account with findVisible",
+  "ImportRowRepo.updateProposal": "the use case checked the row and account with findVisible first",
   "SuggestionRepo.insert": "a new suggestion; the use case checked the account with findVisible",
   "SuggestionRepo.insertMany": "new suggestions; the use case checked the account with findVisible",
   "SuggestionRepo.findOpenForSplit":

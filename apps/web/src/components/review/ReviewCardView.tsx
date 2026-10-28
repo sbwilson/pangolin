@@ -1,6 +1,7 @@
 import type { ReviewCard } from "../../api.ts";
 import { HandoffCard } from "./HandoffCard.tsx";
 import { NoticeCard } from "./NoticeCard.tsx";
+import { PdfStatementCard } from "./PdfStatementCard.tsx";
 import { ReadOnlyCard } from "./ReadOnlyCard.tsx";
 import { SetAsideCard } from "./SetAsideCard.tsx";
 import { AiSuggestionCard } from "./SuggestionCards.tsx";
@@ -35,6 +36,9 @@ export function ReviewCardView({ card }: { readonly card: ReviewCard }) {
       break;
     case "import.set_aside":
       if (detail.type === "batch") return <SetAsideCard card={card} detail={detail} />;
+      break;
+    case "import.pdf_failed":
+      if (detail.type === "pdf_batch") return <PdfStatementCard card={card} detail={detail} />;
       break;
     case "imports.handoff":
       if (detail.type === "handoff") return <HandoffCard card={card} detail={detail} />;

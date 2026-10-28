@@ -3,6 +3,8 @@ import { Temporal } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.ts";
 import type { LlmProvider, StructuredPrompt, StructuredResponse } from "../ports/llm-provider.ts";
+import type { TxRepos, UnitOfWork } from "../ports/unit-of-work.ts";
+import { type FakeAttachmentStore, fakeAttachmentStore } from "../testing/attachment-store.ts";
 import { manualClock } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import { personViewer } from "../viewer.ts";
@@ -11,6 +13,7 @@ import {
   extractAndImportPdfStatement,
   type PdfImportContext,
   type PdfTextExtractionPayload,
+  type PdfTextExtractor,
 } from "./pdf-import.ts";
 
 const now = Temporal.Instant.from("2026-10-27T12:00:00.000Z");
@@ -92,11 +95,14 @@ function setup() {
     updatedAt: now.toString(),
   });
 
+  const attachments: FakeAttachmentStore = fakeAttachmentStore();
+
   const ctx: PdfImportContext = {
     viewer: alexViewer,
     clock,
     newId,
     uow,
+    attachments,
     providerIsLocal: true,
   };
 
@@ -121,6 +127,7 @@ function setup() {
     dummyPdf,
     defaultExtractor,
     uow,
+    attachments,
   };
 }
 
@@ -201,6 +208,27 @@ describe("extractAndImportPdfStatement", () => {
     expect(stagedRows[1]?.pdfPage).toBe(1);
     expect(stagedRows[0]?.status).toBe("staged");
     expect(stagedRows[0]?.reason).toBeNull();
+  });
+
+  it("stores the file when the extractor detaches the bytes it was handed (pdf.js worker transfer)", async () => {
+    const { ctx, accountId, dummyPdf, uow, attachments } = setup();
+    // The real pdf.js transfers the buffer into its worker, neutering the caller's view;
+    // the encrypted store still needs the file afterwards.
+    const detachingExtractor: PdfTextExtractor = async (data) => {
+      const buffer = data instanceof ArrayBuffer ? data : (data.buffer as ArrayBuffer);
+      structuredClone(buffer, { transfer: [buffer] });
+      return { pages: [{ pageNumber: 1, text: "page 1" }], hasTextLayer: true, pageCount: 1 };
+    };
+
+    const result = await extractAndImportPdfStatement(
+      { ...ctx, provider: createMockProvider({}), extractPdfTextPages: detachingExtractor },
+      { accountId, content: dummyPdf },
+    );
+
+    expect(result.status).toBe("ready");
+    const batch = uow.state.importBatches.find((b) => b.id === result.batchId);
+    expect(batch?.attachmentId ?? null).not.toBeNull();
+    expect(attachments.files.size).toBe(1);
   });
 
   it("blocks batch on 1-cent discrepancy with exact gap and throws AppError Validation", async () => {
@@ -873,5 +901,171 @@ describe("extractAndImportPdfStatement", () => {
     const activeBatches = uow.state.importBatches.filter((b) => b.undoneAt === null);
     expect(activeBatches).toHaveLength(1);
     expect(activeBatches[0]?.status).toBe("ready");
+  });
+
+  it("links the stored statement file to the batch and saves the header", async () => {
+    const { ctx, accountId, dummyPdf, defaultExtractor, uow, attachments } = setup();
+
+    const mockProvider = createMockProvider({});
+    const result = await extractAndImportPdfStatement(
+      { ...ctx, provider: mockProvider, extractPdfTextPages: defaultExtractor },
+      { accountId, content: dummyPdf, expectedAccountLast4: "1234" },
+    );
+
+    expect(uow.state.attachments).toHaveLength(1);
+    const attachment = uow.state.attachments[0];
+    expect(attachment?.mime).toBe("application/pdf");
+    expect(attachment?.bytes).toBe(dummyPdf.byteLength);
+
+    const batch = uow.state.importBatches.find((b) => b.id === result.batchId);
+    expect(batch?.attachmentId).toBe(attachment?.id);
+    expect(JSON.parse(batch?.statementMeta ?? "null")).toEqual({
+      startDate: "2024-09-01",
+      endDate: "2024-09-30",
+      accountNumberLast4: "1234",
+    });
+    expect(attachments.files.size).toBe(1);
+  });
+
+  it("raises an import.pdf_failed item with per-row proposals when verification fails", async () => {
+    const { ctx, accountId, dummyPdf, defaultExtractor, uow, attachments } = setup();
+
+    const mockProvider = createMockProvider({ closingBalanceCents: 103_001 });
+    await expect(
+      extractAndImportPdfStatement(
+        { ...ctx, provider: mockProvider, extractPdfTextPages: defaultExtractor },
+        { accountId, content: dummyPdf, expectedAccountLast4: "1234" },
+      ),
+    ).rejects.toThrowError(AppError);
+
+    const batch = uow.state.importBatches[0];
+    expect(batch?.status).toBe("failed");
+    expect(batch?.attachmentId).not.toBeNull();
+    expect(uow.state.attachments).toHaveLength(1);
+    expect(attachments.files.size).toBe(1);
+
+    const item = uow.state.reviewItems.find(
+      (r) => r.dedupeKey === `import.pdf_failed:${batch?.id}`,
+    );
+    expect(item).toBeDefined();
+    expect(item?.kind).toBe("import.pdf_failed");
+    expect(item?.entityRef).toBe(`import_batch:${batch?.id}`);
+    expect(item?.accountId).toBe(accountId);
+    expect(item?.resolvedAt).toBeNull();
+
+    const rows = uow.state.importRows;
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      const proposal = JSON.parse(row.proposal ?? "null");
+      expect(proposal).toMatchObject({
+        postedOn: expect.any(String),
+        amountCents: expect.any(Number),
+        description: expect.any(String),
+      });
+    }
+    expect(JSON.parse(rows[1]?.proposal ?? "null").amountCents).toBe(-2_000);
+  });
+
+  it("re-uploading a failed statement resolves the old item and reuses the stored file", async () => {
+    const { ctx, accountId, dummyPdf, defaultExtractor, uow, attachments } = setup();
+
+    const failingProvider = createMockProvider({ closingBalanceCents: 103_001 });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(
+        extractAndImportPdfStatement(
+          { ...ctx, provider: failingProvider, extractPdfTextPages: defaultExtractor },
+          { accountId, content: dummyPdf, expectedAccountLast4: "1234" },
+        ),
+      ).rejects.toThrowError(AppError);
+    }
+
+    const oldBatch = uow.state.importBatches.find((b) => b.undoneAt !== null);
+    const newBatch = uow.state.importBatches.find((b) => b.undoneAt === null);
+    expect(oldBatch).toBeDefined();
+    expect(newBatch).toBeDefined();
+    expect(newBatch?.id).not.toBe(oldBatch?.id);
+
+    const oldItem = uow.state.reviewItems.find(
+      (r) => r.dedupeKey === `import.pdf_failed:${oldBatch?.id}`,
+    );
+    expect(oldItem?.resolvedAt).not.toBeNull();
+    expect(oldItem?.resolution).toBe("replaced by a new upload");
+
+    const openItems = uow.state.reviewItems.filter((r) => r.resolvedAt === null);
+    expect(openItems).toHaveLength(1);
+    expect(openItems[0]?.dedupeKey).toBe(`import.pdf_failed:${newBatch?.id}`);
+
+    // Same content: one attachment row and one stored file across both attempts
+    expect(uow.state.attachments).toHaveLength(1);
+    expect(attachments.files.size).toBe(1);
+  });
+
+  it("a passing re-upload replaces the failed batch and resolves its review item", async () => {
+    const { ctx, accountId, dummyPdf, defaultExtractor, uow } = setup();
+
+    const failingProvider = createMockProvider({ closingBalanceCents: 103_001 });
+    await expect(
+      extractAndImportPdfStatement(
+        { ...ctx, provider: failingProvider, extractPdfTextPages: defaultExtractor },
+        { accountId, content: dummyPdf, expectedAccountLast4: "1234" },
+      ),
+    ).rejects.toThrowError(AppError);
+
+    const passingProvider = createMockProvider({ closingBalanceCents: 103_000 });
+    const result = await extractAndImportPdfStatement(
+      { ...ctx, provider: passingProvider, extractPdfTextPages: defaultExtractor },
+      { accountId, content: dummyPdf, expectedAccountLast4: "1234" },
+    );
+
+    expect(result.status).toBe("ready");
+    expect(uow.state.reviewItems.filter((r) => r.resolvedAt === null)).toHaveLength(0);
+    expect(uow.state.attachments).toHaveLength(1);
+  });
+
+  it("removes the stored file when the staging write fails", async () => {
+    const { ctx, accountId, dummyPdf, defaultExtractor, uow, attachments } = setup();
+
+    let failedOnce = false;
+    const flakyUow = {
+      ...uow,
+      transaction<T>(fn: (tx: TxRepos) => T): T {
+        if (!failedOnce) {
+          failedOnce = true;
+          throw new Error("database is locked");
+        }
+        return uow.transaction(fn);
+      },
+    } as UnitOfWork;
+
+    const mockProvider = createMockProvider({});
+    await expect(
+      extractAndImportPdfStatement(
+        { ...ctx, uow: flakyUow, provider: mockProvider, extractPdfTextPages: defaultExtractor },
+        { accountId, content: dummyPdf, expectedAccountLast4: "1234" },
+      ),
+    ).rejects.toThrowError("database is locked");
+
+    expect(attachments.files.size).toBe(0);
+    expect(uow.state.attachments).toHaveLength(0);
+    expect(uow.state.importBatches).toHaveLength(0);
+  });
+
+  it("rejects when no LLM provider is configured before running the extractor", async () => {
+    const { ctx, accountId, dummyPdf } = setup();
+
+    let extractorCalled = false;
+    await expect(
+      extractAndImportPdfStatement(
+        {
+          ...ctx,
+          extractPdfTextPages: async () => {
+            extractorCalled = true;
+            return { pages: [], hasTextLayer: true, pageCount: 0 };
+          },
+        },
+        { accountId, content: dummyPdf },
+      ),
+    ).rejects.toThrowError("No LLM provider configured for PDF extraction");
+    expect(extractorCalled).toBe(false);
   });
 });

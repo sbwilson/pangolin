@@ -7,6 +7,7 @@ import {
   type StructuredPrompt,
   type StructuredResponse,
 } from "@pangolin/app";
+import { fakeAttachmentStore } from "@pangolin/app/testing/attachment-store";
 import { memoryUnitOfWork } from "@pangolin/app/testing/memory-uow";
 import type { Id } from "@pangolin/shared";
 import { Temporal } from "@pangolin/shared/temporal";
@@ -226,11 +227,13 @@ describe("End-to-end integration: extractAndImportPdfStatement with real pdf.js"
       },
     };
 
+    const attachments = fakeAttachmentStore();
     const ctx: PdfImportContext = {
       viewer,
       clock: { now: () => now, today: () => Temporal.PlainDate.from("2026-10-27") },
       newId,
       uow,
+      attachments,
       provider: mockLlm,
       providerIsLocal: true,
       extractPdfTextPages,
@@ -256,5 +259,10 @@ describe("End-to-end integration: extractAndImportPdfStatement with real pdf.js"
     expect(rows).toHaveLength(2);
     expect(rows[0]?.pdfPage).toBe(1);
     expect(rows[0]?.status).toBe("staged");
+
+    // The statement file is stored (AD-21) and reachable only through the batch's link.
+    expect(batch?.attachmentId ?? null).not.toBeNull();
+    expect(uow.state.attachments.find((a) => a.id === batch?.attachmentId)).toBeDefined();
+    expect(attachments.files.size).toBe(1);
   });
 });

@@ -389,7 +389,8 @@ function importBatchRepo(working: MemoryState, check: () => void): ImportBatchRe
           "UNIQUE constraint failed: import_batch.account_id, import_batch.file_sha256",
         );
       }
-      working.importBatches.push(row);
+      references(working.attachments, row.attachmentId ?? null, "import_batch.attachment_id");
+      working.importBatches.push({ attachmentId: null, statementMeta: null, ...row });
     },
     find: (viewer, id) => {
       requireViewer(viewer);
@@ -475,6 +476,18 @@ function importBatchRepo(working: MemoryState, check: () => void): ImportBatchRe
         .filter((t) => t.importId === batchId && !working.deleted.has(t.id))
         .map((t) => t.id)
         .sort(byText);
+    },
+    deleteForAccount: (accountId) => {
+      check();
+      const ids = working.importBatches.flatMap((b) =>
+        b.accountId === accountId && b.attachmentId != null ? [b.attachmentId] : [],
+      );
+      const batchIds = new Set(
+        working.importBatches.filter((b) => b.accountId === accountId).map((b) => b.id),
+      );
+      working.importRows = working.importRows.filter((r) => !batchIds.has(r.batchId));
+      working.importBatches = working.importBatches.filter((b) => b.accountId !== accountId);
+      return ids;
     },
     latestImportFor: (viewer, accountId) => {
       requireViewer(viewer);
@@ -597,6 +610,7 @@ function attachmentRepo(working: MemoryState, check: () => void): AttachmentRepo
       const row = working.attachments.find((a) => a.id === id);
       if (row === undefined) return undefined;
       if (working.importHandoffs.some((h) => h.attachmentId === id)) return undefined;
+      if (working.importBatches.some((b) => b.attachmentId === id)) return undefined;
       working.attachments = working.attachments.filter((a) => a.id !== id);
       return row.name;
     },
@@ -3605,6 +3619,7 @@ export function memoryUnitOfWork(
           findForRecipient: importHandoffRepo(uow.state, check).findForRecipient,
           listForSender: importHandoffRepo(uow.state, check).listForSender,
         },
+        attachments: { find: (id) => attachmentRepo(uow.state, check).find(id) },
         llmProviders: {
           findById: (id) => llmProviderRepo(uow.state, check).findById(id),
           findSafe: (id) => llmProviderRepo(uow.state, check).findSafe(id),

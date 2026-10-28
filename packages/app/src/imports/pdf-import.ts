@@ -2,23 +2,32 @@ import { createHash } from "node:crypto";
 import type { Id } from "@pangolin/shared";
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
-import type { UseCaseContext } from "../context.ts";
+import type { AttachmentContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { idInput } from "../inputs.ts";
 import type { LlmProvider } from "../ports/llm-provider.ts";
 import type {
+  AttachmentRow,
   ImportBatchRow,
   ImportBatchStatus,
   ImportRowRow,
   LlmProviderRow,
   ReconcileStatus,
+  TxRepos,
 } from "../ports/unit-of-work.ts";
+import { raiseReviewItem, resolveReviewItem } from "../system/review-items.ts";
 import { write } from "../write.ts";
 import {
   buildPdfExtractRequest,
   type PdfExtractPage,
   type PdfExtractRow,
 } from "./pdf-extract-request.ts";
+import {
+  IMPORT_PDF_FAILED_REVIEW,
+  pdfFailedDedupeKey,
+  pdfFailedEntityRef,
+  pdfStatementMetaJson,
+} from "./pdf-review.ts";
 import { type StatementVerificationResult, verifyStatementBalances } from "./pdf-verify.ts";
 
 export interface ExtractedPdfPageItem {
@@ -57,7 +66,7 @@ export const extractAndImportPdfStatementInput = z.object({
 
 export type ExtractAndImportPdfStatementInput = z.input<typeof extractAndImportPdfStatementInput>;
 
-export interface PdfImportContext extends UseCaseContext {
+export interface PdfImportContext extends AttachmentContext {
   readonly provider?: LlmProvider | undefined;
   readonly providerIsLocal?: boolean | undefined;
   readonly providerCloudPdf?: boolean | undefined;
@@ -92,6 +101,48 @@ export interface ExtractAndImportPdfStatementResult {
 function defaultIsVisionCapable(model: string): boolean {
   if (!model) return false;
   return /gpt-4o|gpt-4-turbo|gpt-4-vision|claude-3|gemini|llava|pixtral|vision|\bvl\b/i.test(model);
+}
+
+/** The deduped `attachment` row for `name`, created on first sight (the createHandoff pattern). */
+function ensureAttachmentRow(
+  tx: TxRepos,
+  ctx: PdfImportContext,
+  name: string,
+  bytes: number,
+  at: string,
+): Id<"Attachment"> {
+  const existing = tx.attachments.findByName(name);
+  if (existing !== undefined) return existing.id;
+  const row: AttachmentRow = {
+    id: ctx.newId<"Attachment">(),
+    name,
+    mime: "application/pdf",
+    bytes,
+    createdAt: at,
+  };
+  tx.attachments.insert(row);
+  return row.id;
+}
+
+/** After a failed write: delete the file again unless another row links the same content. */
+function removeUnlinkedAttachment(ctx: AttachmentContext, name: string): void {
+  try {
+    const orphan = write(ctx, (tx) => tx.attachments.findByName(name) === undefined);
+    if (orphan) ctx.attachments.remove(name);
+  } catch {
+    // Best effort: the original error is the one to report.
+  }
+}
+
+function rowProposalJson(row: PdfExtractRow): string {
+  return JSON.stringify({
+    postedOn: row.postedOn,
+    amountCents: row.amountCents,
+    description: row.description,
+    ...(row.runningBalanceCents === null || row.runningBalanceCents === undefined
+      ? {}
+      : { runningBalanceCents: row.runningBalanceCents }),
+  });
 }
 
 /**
@@ -202,7 +253,9 @@ export async function extractAndImportPdfStatement(
 
   let extraction: PdfTextExtractionPayload;
   try {
-    extraction = await textExtractor(uint8);
+    // pdf.js transfers the bytes it is handed to its worker, detaching the caller's buffer;
+    // the encrypted store below needs the file, so the extractor gets a copy.
+    extraction = await textExtractor(uint8.slice(0));
   } catch (err) {
     if (err instanceof AppError) {
       throw err;
@@ -317,82 +370,114 @@ export async function extractAndImportPdfStatement(
     ? allExtractedRows.reduce((max, r) => (r.postedOn > max ? r.postedOn : max), firstRow.postedOn)
     : null;
 
-  // 6. DB staging and batch status assignment (AD-1, AD-2)
+  // 6. Store the encrypted statement file (AD-21) before staging, then stage (AD-1, AD-2).
+  const attachmentName = ctx.attachments.put(uint8);
+  const statementMeta = pdfStatementMetaJson({
+    startDate: statementStartDate,
+    endDate: statementEndDate,
+    accountNumberLast4: statementAccountLast4,
+  });
+
   if (!verification.ok) {
     // Failing verification blocks the batch with status = "failed" and reconcileStatus = "gap"
-    const racedNonFailedBatch = write(ctx, (tx, audit) => {
-      const at = formatInstant(ctx.clock.now());
+    let racedNonFailedBatch: ImportBatchRow | null = null;
+    try {
+      racedNonFailedBatch = write(ctx, (tx, audit) => {
+        const at = formatInstant(ctx.clock.now());
 
-      // If an existing failed batch exists, replace it to avoid unique constraint collisions
-      const existing = tx.importBatches.findByAccountAndFileSha(ctx.viewer, account.id, fileSha256);
-      if (existing && existing.undoneAt === null) {
-        if (existing.status !== "failed") {
-          return existing;
+        // If an existing failed batch exists, replace it to avoid unique constraint collisions
+        const existing = tx.importBatches.findByAccountAndFileSha(
+          ctx.viewer,
+          account.id,
+          fileSha256,
+        );
+        if (existing && existing.undoneAt === null) {
+          if (existing.status !== "failed") {
+            return existing;
+          }
+          tx.importBatches.markUndone(existing.id, at);
+          // The replaced attempt's review item closes with it (AD-17).
+          resolveReviewItem(tx, audit, ctx, {
+            dedupeKey: pdfFailedDedupeKey(existing.id),
+            resolution: "replaced by a new upload",
+          });
+          audit({
+            entity: "import_batch",
+            entityId: existing.id,
+            accountId: existing.accountId,
+            action: "update",
+            before: existing,
+            after: { ...existing, undoneAt: at, updatedAt: at },
+          });
         }
-        tx.importBatches.markUndone(existing.id, at);
-        audit({
-          entity: "import_batch",
-          entityId: existing.id,
-          accountId: existing.accountId,
-          action: "update",
-          before: existing,
-          after: { ...existing, undoneAt: at, updatedAt: at },
-        });
-      }
 
-      const batchId = ctx.newId<"ImportBatch">();
+        const batchId = ctx.newId<"ImportBatch">();
+        const attachmentId = ensureAttachmentRow(tx, ctx, attachmentName, uint8.byteLength, at);
 
-      const batchRow: ImportBatchRow = {
-        id: batchId,
-        accountId: account.id,
-        source: "statement_pdf",
-        fileSha256,
-        rowCount: allExtractedRows.length,
-        newCount: 0,
-        dupCount: 0,
-        status: "failed",
-        importedByPersonId: ctx.viewer.kind === "person" ? ctx.viewer.personId : null,
-        undoneAt: null,
-        reconcileStatus: "gap",
-        reconcileGapCents: verification.gapCents,
-        openingBalanceCents: statementOpeningBalanceCents,
-        closingBalanceCents: statementClosingBalanceCents,
-        firstPostedOn: minPostedOn,
-        lastPostedOn: maxPostedOn,
-        createdAt: at,
-        updatedAt: at,
-      };
-      tx.importBatches.insert(batchRow);
-
-      const stagedRows: ImportRowRow[] = allExtractedRows.map((r, idx) => {
-        const rowNum = idx + 1;
-        return {
-          id: ctx.newId<"ImportRow">(),
-          batchId,
-          rowNumber: rowNum,
-          rawLine: `${r.postedOn}, ${r.description}, ${r.amountCents}`,
-          status: "staged",
-          reason: verification.error,
-          proposal: null,
-          pdfPage: r.pageNumber,
+        const batchRow: ImportBatchRow = {
+          id: batchId,
+          accountId: account.id,
+          source: "statement_pdf",
+          fileSha256,
+          rowCount: allExtractedRows.length,
+          newCount: 0,
+          dupCount: 0,
+          status: "failed",
+          importedByPersonId: ctx.viewer.kind === "person" ? ctx.viewer.personId : null,
+          undoneAt: null,
+          reconcileStatus: "gap",
+          reconcileGapCents: verification.gapCents,
+          openingBalanceCents: statementOpeningBalanceCents,
+          closingBalanceCents: statementClosingBalanceCents,
+          firstPostedOn: minPostedOn,
+          lastPostedOn: maxPostedOn,
+          attachmentId,
+          statementMeta,
           createdAt: at,
           updatedAt: at,
         };
-      });
-      tx.importRows.insertMany(stagedRows);
+        tx.importBatches.insert(batchRow);
 
-      audit({
-        entity: "import_batch",
-        entityId: batchId,
-        action: "create",
-        before: null,
-        after: batchRow,
-      });
+        const stagedRows: ImportRowRow[] = allExtractedRows.map((r, idx) => {
+          const rowNum = idx + 1;
+          return {
+            id: ctx.newId<"ImportRow">(),
+            batchId,
+            rowNumber: rowNum,
+            rawLine: `${r.postedOn}, ${r.description}, ${r.amountCents}`,
+            status: "staged",
+            reason: verification.error,
+            proposal: rowProposalJson(r),
+            pdfPage: r.pageNumber,
+            createdAt: at,
+            updatedAt: at,
+          };
+        });
+        tx.importRows.insertMany(stagedRows);
 
-      return null;
-    });
+        audit({
+          entity: "import_batch",
+          entityId: batchId,
+          action: "create",
+          before: null,
+          after: batchRow,
+        });
+        raiseReviewItem(tx, audit, ctx, {
+          kind: IMPORT_PDF_FAILED_REVIEW,
+          entityRef: pdfFailedEntityRef(batchId),
+          dedupeKey: pdfFailedDedupeKey(batchId),
+          accountId: account.id,
+        });
+
+        return null;
+      });
+    } catch (error) {
+      removeUnlinkedAttachment(ctx, attachmentName);
+      throw error;
+    }
 
     if (racedNonFailedBatch) {
+      removeUnlinkedAttachment(ctx, attachmentName);
       return {
         batchId: racedNonFailedBatch.id,
         status: racedNonFailedBatch.status,
@@ -410,93 +495,105 @@ export async function extractAndImportPdfStatement(
   }
 
   // Passing verification stages the batch with status = "ready", reconcileStatus = "ok"
-  return write(ctx, (tx, audit) => {
-    const at = formatInstant(ctx.clock.now());
-    const existing = tx.importBatches.findByAccountAndFileSha(ctx.viewer, account.id, fileSha256);
-    if (existing && existing.undoneAt === null) {
-      if (existing.status !== "failed") {
-        return {
-          batchId: existing.id,
-          status: existing.status,
-          rowCount: existing.rowCount,
-          newCount: 0,
-          dupCount: existing.rowCount,
-          reconcileStatus: existing.reconcileStatus ?? "ok",
-          reconcileGapCents: existing.reconcileGapCents ?? 0,
-          openingBalanceCents: existing.openingBalanceCents,
-          closingBalanceCents: existing.closingBalanceCents,
-          verification,
-        };
+  try {
+    return write(ctx, (tx, audit) => {
+      const at = formatInstant(ctx.clock.now());
+      const existing = tx.importBatches.findByAccountAndFileSha(ctx.viewer, account.id, fileSha256);
+      if (existing && existing.undoneAt === null) {
+        if (existing.status !== "failed") {
+          return {
+            batchId: existing.id,
+            status: existing.status,
+            rowCount: existing.rowCount,
+            newCount: 0,
+            dupCount: existing.rowCount,
+            reconcileStatus: existing.reconcileStatus ?? "ok",
+            reconcileGapCents: existing.reconcileGapCents ?? 0,
+            openingBalanceCents: existing.openingBalanceCents,
+            closingBalanceCents: existing.closingBalanceCents,
+            verification,
+          };
+        }
+        // If previous attempt had failed, replace it
+        tx.importBatches.markUndone(existing.id, at);
+        resolveReviewItem(tx, audit, ctx, {
+          dedupeKey: pdfFailedDedupeKey(existing.id),
+          resolution: "replaced by a new upload",
+        });
+        audit({
+          entity: "import_batch",
+          entityId: existing.id,
+          accountId: existing.accountId,
+          action: "update",
+          before: existing,
+          after: { ...existing, undoneAt: at, updatedAt: at },
+        });
       }
-      // If previous attempt had failed, replace it
-      tx.importBatches.markUndone(existing.id, at);
+
+      const batchId = ctx.newId<"ImportBatch">();
+      const attachmentId = ensureAttachmentRow(tx, ctx, attachmentName, uint8.byteLength, at);
+
+      const batchRow: ImportBatchRow = {
+        id: batchId,
+        accountId: account.id,
+        source: "statement_pdf",
+        fileSha256,
+        rowCount: allExtractedRows.length,
+        newCount: allExtractedRows.length,
+        dupCount: 0,
+        status: "ready",
+        importedByPersonId: ctx.viewer.kind === "person" ? ctx.viewer.personId : null,
+        undoneAt: null,
+        reconcileStatus: "ok",
+        reconcileGapCents: 0,
+        openingBalanceCents: verification.openingBalanceCents,
+        closingBalanceCents: verification.closingBalanceCents,
+        firstPostedOn: minPostedOn,
+        lastPostedOn: maxPostedOn,
+        attachmentId,
+        statementMeta,
+        createdAt: at,
+        updatedAt: at,
+      };
+      tx.importBatches.insert(batchRow);
+
+      const stagedRows: ImportRowRow[] = allExtractedRows.map((r, idx) => ({
+        id: ctx.newId<"ImportRow">(),
+        batchId,
+        rowNumber: idx + 1,
+        rawLine: `${r.postedOn}, ${r.description}, ${r.amountCents}`,
+        status: "staged",
+        reason: null,
+        proposal: null,
+        pdfPage: r.pageNumber,
+        createdAt: at,
+        updatedAt: at,
+      }));
+      tx.importRows.insertMany(stagedRows);
+
       audit({
         entity: "import_batch",
-        entityId: existing.id,
-        accountId: existing.accountId,
-        action: "update",
-        before: existing,
-        after: { ...existing, undoneAt: at, updatedAt: at },
+        entityId: batchId,
+        action: "create",
+        before: null,
+        after: batchRow,
       });
-    }
 
-    const batchId = ctx.newId<"ImportBatch">();
-
-    const batchRow: ImportBatchRow = {
-      id: batchId,
-      accountId: account.id,
-      source: "statement_pdf",
-      fileSha256,
-      rowCount: allExtractedRows.length,
-      newCount: allExtractedRows.length,
-      dupCount: 0,
-      status: "ready",
-      importedByPersonId: ctx.viewer.kind === "person" ? ctx.viewer.personId : null,
-      undoneAt: null,
-      reconcileStatus: "ok",
-      reconcileGapCents: 0,
-      openingBalanceCents: verification.openingBalanceCents,
-      closingBalanceCents: verification.closingBalanceCents,
-      firstPostedOn: minPostedOn,
-      lastPostedOn: maxPostedOn,
-      createdAt: at,
-      updatedAt: at,
-    };
-    tx.importBatches.insert(batchRow);
-
-    const stagedRows: ImportRowRow[] = allExtractedRows.map((r, idx) => ({
-      id: ctx.newId<"ImportRow">(),
-      batchId,
-      rowNumber: idx + 1,
-      rawLine: `${r.postedOn}, ${r.description}, ${r.amountCents}`,
-      status: "staged",
-      reason: null,
-      proposal: null,
-      pdfPage: r.pageNumber,
-      createdAt: at,
-      updatedAt: at,
-    }));
-    tx.importRows.insertMany(stagedRows);
-
-    audit({
-      entity: "import_batch",
-      entityId: batchId,
-      action: "create",
-      before: null,
-      after: batchRow,
+      return {
+        batchId,
+        status: "ready",
+        rowCount: allExtractedRows.length,
+        newCount: allExtractedRows.length,
+        dupCount: 0,
+        reconcileStatus: "ok",
+        reconcileGapCents: 0,
+        openingBalanceCents: verification.openingBalanceCents,
+        closingBalanceCents: verification.closingBalanceCents,
+        verification,
+      };
     });
-
-    return {
-      batchId,
-      status: "ready",
-      rowCount: allExtractedRows.length,
-      newCount: allExtractedRows.length,
-      dupCount: 0,
-      reconcileStatus: "ok",
-      reconcileGapCents: 0,
-      openingBalanceCents: verification.openingBalanceCents,
-      closingBalanceCents: verification.closingBalanceCents,
-      verification,
-    };
-  });
+  } catch (error) {
+    removeUnlinkedAttachment(ctx, attachmentName);
+    throw error;
+  }
 }

@@ -37,7 +37,8 @@ export interface LeaveHouseholdContext extends UseCaseContext {
  *  - drops every hand-off the leaver sent or received, and, after the commit, the encrypted
  *    files no other hand-off still links;
  *  - hard-deletes each private account of the leaver, with its transactions, splits, split tags,
- *    snapshots, owner rows, transfer-group links, account-scoped review items and audit rows. The
+ *    snapshots, owner rows, transfer-group links, account-scoped review items, import batches and
+ *    their rows (and, after the commit, the statement files no other row links) and audit rows. The
  *    surviving side of a transfer is unlinked and kept (decision 81);
  *  - makes the partner the sole owner of every other account the leaver owned (the shared
  *    accounts and their expenses stay), through an owner swap that does not touch
@@ -70,12 +71,17 @@ export function leaveHousehold(ctx: LeaveHouseholdContext, input: LeaveHousehold
 
     liftHidings(tx, audit, accounts, leaver.id, at);
     deleteScopedRows(tx, leaver.id);
+    const orphanFiles: string[] = [];
+    // Hand-offs go first: `import_handoff.batch_id` is a plain FK, so a hand-off the leaver
+    // accepted into a private account would hold its batch row alive through the account's
+    // deletion below (SQLITE_CONSTRAINT_FOREIGNKEY).
+    orphanFiles.push(...dropHandoffsOf(tx, audit, ctx, leaver.id));
     for (const owned of tx.accounts.ownedBy(leaver.id)) {
-      if (owned.row.isPrivate) deleteAccountRows(tx, audit, accounts, owned.row.id, at);
+      if (owned.row.isPrivate)
+        deleteAccountRows(tx, audit, accounts, owned.row.id, at, orphanFiles);
       else handOver(tx, audit, owned.row, partner.id, at);
     }
     tx.reviewItems.deleteForPerson(leaver.id);
-    const orphanFiles = dropHandoffsOf(tx, audit, ctx, leaver.id);
     if (orphanFiles.length > 0 && ctx.attachments === undefined) {
       // Rolls the leave back rather than leave ciphertext nobody can reach.
       throw new Error("leaveHousehold: files to remove but no attachment store in the context");
@@ -224,7 +230,8 @@ function handOver(
 /**
  * The cascade of a private account's delete: transfer-group links (the other side of a transfer
  * is kept and unlinked, audited as its owner's, decision 81), account-scoped review items,
- * balance snapshots, transactions with their splits and split tags, the owner rows and the
+ * balance snapshots, transactions with their splits and split tags, the import batches and their
+ * rows (a batch's statement file, no longer linked, joins `orphanFiles`), the owner rows and the
  * account, then every audit row of the account. The account's use cases never delete one (a
  * closed account is archived); this is internal to the leave and deliberately not exported.
  */
@@ -234,6 +241,7 @@ function deleteAccountRows(
   accounts: Accounts,
   accountId: string,
   at: string,
+  orphanFiles: string[],
 ): void {
   const groups = tx.transferGroups.idsInAccount(accountId);
   for (const groupId of groups) {
@@ -262,6 +270,11 @@ function deleteAccountRows(
   tx.reviewItems.deleteForAccount(accountId);
   tx.balanceSnapshots.deleteForAccount(accountId);
   tx.transactions.deleteForAccount(accountId);
+  for (const attachmentId of tx.importBatches.deleteForAccount(accountId)) {
+    // The batch row is gone; the file goes with it unless another row still links it.
+    const name = tx.attachments.deleteIfUnlinked(attachmentId);
+    if (name !== undefined) orphanFiles.push(name);
+  }
   for (const groupId of groups) {
     if (!tx.transferGroups.delete(groupId)) {
       throw new Error(`Transfer group ${groupId} vanished during an account's deletion`);

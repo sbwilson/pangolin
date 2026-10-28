@@ -17,6 +17,11 @@ import {
   IMPORT_TRANSFER_AMBIGUOUS_PRIVATE_REVIEW,
   IMPORT_TRANSFER_AMBIGUOUS_REVIEW,
 } from "../imports/match-transfers.ts";
+import {
+  IMPORT_PDF_FAILED_REVIEW,
+  listPdfRowsForBatch,
+  pdfRowValues,
+} from "../imports/pdf-review.ts";
 import { rowInterpretProposalSchema } from "../imports/row-interpret-request.ts";
 import { IMPORT_SET_ASIDE_REVIEW, listSetAsideRowsForBatch } from "../imports/set-aside.ts";
 import type { ReadRepos, ReviewItemRow } from "../ports/unit-of-work.ts";
@@ -55,6 +60,25 @@ export interface ReviewSetAsideRow {
   readonly proposal: ReviewSetAsideRowProposal | null;
 }
 
+/** Corrected values of an extracted statement row, as a card edits them. */
+export interface ReviewPdfRowCorrection {
+  readonly postedOn: string;
+  readonly amountCents: number;
+  readonly description: string;
+  readonly runningBalanceCents: number | null;
+}
+
+/** One staged row of a failed PDF statement batch, beside its page. */
+export interface ReviewPdfRow {
+  readonly id: string;
+  readonly rowNumber: number;
+  readonly pdfPage: number | null;
+  readonly rawLine: string;
+  readonly reason: string | null;
+  /** The corrected values once saved, else the extraction as it was read. */
+  readonly corrected: ReviewPdfRowCorrection;
+}
+
 /** Open suggestion details for an unclassified split (story 5.4). */
 export interface ReviewSuggestion {
   readonly id: string;
@@ -82,6 +106,14 @@ export type ReviewDetail =
       readonly source: string | null;
       readonly accountName: string | null;
       readonly rows: readonly ReviewSetAsideRow[];
+    }
+  | {
+      readonly type: "pdf_batch";
+      readonly batchId: string;
+      readonly accountName: string | null;
+      readonly gapCents: number;
+      readonly error: string | null;
+      readonly rows: readonly ReviewPdfRow[];
     }
   | {
       readonly type: "handoff";
@@ -211,6 +243,21 @@ function detailOf(repos: ReadRepos, ctx: UseCaseContext, row: ReviewItemRow): Re
         rows: [],
       };
     }
+    case IMPORT_PDF_FAILED_REVIEW.kind: {
+      const batchId = refId(row.entityRef, "import_batch") ?? "";
+      const batch = repos.importBatches.find(ctx.viewer, batchId);
+      return {
+        type: "pdf_batch",
+        batchId,
+        accountName:
+          batch === undefined
+            ? null
+            : (repos.accounts.findVisible(ctx.viewer, batch.accountId)?.name ?? null),
+        gapCents: batch?.reconcileGapCents ?? 0,
+        error: null,
+        rows: [],
+      };
+    }
     case IMPORT_HANDOFF_REVIEW.kind: {
       const handoff = repos.importHandoffs.findForRecipient(
         ctx.viewer,
@@ -263,6 +310,15 @@ export function listReviewCards(
     })),
   );
   return listed.map(({ row, card }): ReviewCard => {
+    if (
+      row.kind === IMPORT_PDF_FAILED_REVIEW.kind &&
+      card.detail.type === "pdf_batch" &&
+      card.detail.batchId !== ""
+    ) {
+      const rows = pdfRows(ctx, card.detail.batchId);
+      const reason = rows.find((r) => r.reason !== null)?.reason ?? null;
+      return { ...card, detail: { ...card.detail, rows, error: reason } };
+    }
     const batchId =
       row.kind === IMPORT_SET_ASIDE_REVIEW.kind ? refId(row.entityRef, "import_batch") : undefined;
     if (batchId === undefined || card.detail.type !== "batch") return card;
@@ -297,6 +353,33 @@ function setAsideRows(ctx: UseCaseContext, batchId: string): ReviewSetAsideRow[]
         rawLine: r.rawLine,
         reason: r.reason,
         proposal,
+      };
+    });
+  } catch (error) {
+    if (error instanceof AppError && error.code === "NotFound") return [];
+    throw error;
+  }
+}
+
+function pdfRows(ctx: UseCaseContext, batchId: string): ReviewPdfRow[] {
+  try {
+    return listPdfRowsForBatch(ctx, batchId).map((r) => {
+      const values = pdfRowValues(r);
+      return {
+        id: r.id,
+        rowNumber: r.rowNumber,
+        pdfPage: r.pdfPage,
+        rawLine: r.rawLine,
+        reason: r.reason,
+        corrected:
+          values === null
+            ? { postedOn: "", amountCents: 0, description: r.rawLine, runningBalanceCents: null }
+            : {
+                postedOn: values.postedOn,
+                amountCents: values.amountCents,
+                description: values.description,
+                runningBalanceCents: values.runningBalanceCents ?? null,
+              },
       };
     });
   } catch (error) {

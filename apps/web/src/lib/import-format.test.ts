@@ -6,6 +6,7 @@ import {
   formatSize,
   MAX_IMPORT_BYTES,
   needsBank,
+  PDF_FORMAT,
 } from "./import-format.ts";
 
 describe("fileExtension", () => {
@@ -34,14 +35,18 @@ describe("chooseFormat", () => {
       expect(chooseFormat("a.csv", bank)).toEqual({ ok: true, format: bank, ext: ".csv" });
     }
   });
+  it("reads PDF as the statement-PDF marker", () => {
+    expect(chooseFormat("a.pdf", "up_csv")).toEqual({
+      ok: true,
+      format: PDF_FORMAT,
+      ext: ".pdf",
+    });
+    expect(chooseFormat("Statement.PDF", "commbank_csv")).toMatchObject({ ok: true });
+  });
   it("refuses anything else by name", () => {
     expect(chooseFormat("a.xlsx", "commbank_csv")).toEqual({
       ok: false,
-      message: "We can't read .xlsx files. Try CSV, OFX or QIF.",
-    });
-    expect(chooseFormat("a.pdf", "commbank_csv")).toMatchObject({
-      ok: false,
-      message: "We can't read .pdf files. Try CSV, OFX or QIF.",
+      message: "We can't read .xlsx files. Try CSV, OFX, QIF or PDF.",
     });
     expect(chooseFormat("noext", "commbank_csv")).toMatchObject({ ok: false });
   });
@@ -52,6 +57,10 @@ describe("fileProblem", () => {
     expect(fileProblem({ name: "a.csv", size: MAX_IMPORT_BYTES })).toBeNull();
     expect(fileProblem({ name: "a.csv", size: MAX_IMPORT_BYTES + 1 })).toMatch(/over 10 MiB/);
   });
+  it("accepts a PDF and sizes it like the rest", () => {
+    expect(fileProblem({ name: "a.pdf", size: MAX_IMPORT_BYTES })).toBeNull();
+    expect(fileProblem({ name: "a.pdf", size: MAX_IMPORT_BYTES + 1 })).toMatch(/over 10 MiB/);
+  });
   it("names an unsupported type first", () => {
     expect(fileProblem({ name: "a.xlsx", size: MAX_IMPORT_BYTES + 1 })).toMatch(/\.xlsx/);
   });
@@ -61,6 +70,7 @@ describe("needsBank and formatSize", () => {
   it("asks for a bank for CSV only", () => {
     expect(needsBank("a.csv")).toBe(true);
     expect(needsBank("a.ofx")).toBe(false);
+    expect(needsBank("a.pdf")).toBe(false);
   });
   it("formats sizes", () => {
     expect(formatSize(500)).toBe("500 B");

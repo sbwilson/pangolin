@@ -28,6 +28,13 @@ import {
   transferAmbiguousPrivateKey,
 } from "../imports/match-transfers.ts";
 import {
+  type CorrectPdfRowInput,
+  correctPdfRow,
+  IMPORT_PDF_FAILED_REVIEW,
+  type RecheckPdfStatementResult,
+  recheckPdfStatement,
+} from "../imports/pdf-review.ts";
+import {
   confirmSetAsideProposal,
   type DiscardSetAsideRowInput,
   discardSetAsideRow,
@@ -365,6 +372,35 @@ export function confirmSetAsideProposalItem(
   const item = openItem(ctx, input.id, [IMPORT_SET_ASIDE_REVIEW.kind]);
   requireRowOf(ctx, item, input.rowId);
   return confirmSetAsideProposal(ctx, { rowId: input.rowId });
+}
+
+// ------------------------------------------------------------------------------ PDF statements
+
+export type CorrectPdfRowItemInput = { readonly id: string } & CorrectPdfRowInput;
+
+/** Records a correction on one staged row of a failed PDF statement batch (`imports.correctPdfRow`). */
+export function correctPdfRowItem(ctx: UseCaseContext, input: CorrectPdfRowItemInput): void {
+  const { id, ...rest } = input;
+  // The lookup is the guard: a resolved or invisible item is a NotFound before any write.
+  const item = openItem(ctx, id, [IMPORT_PDF_FAILED_REVIEW.kind]);
+  const batchId = entityId(item, "import_batch");
+  const belongs = ctx.uow
+    .read((repos) => repos.importRows.listForBatch(ctx.viewer, batchId))
+    .some((row) => row.id === input.rowId);
+  if (!belongs) throw new AppError("NotFound", "Import row not found");
+  correctPdfRow(ctx, rest);
+}
+
+/**
+ * Re-runs the deterministic checks on a failed PDF statement batch (`imports.recheckPdfStatement`).
+ * A passing batch becomes `ready` and its item resolves; a failing one reports its exact error.
+ */
+export function recheckPdfItem(
+  ctx: UseCaseContext,
+  input: { readonly id: string },
+): RecheckPdfStatementResult {
+  const item = openItem(ctx, input.id, [IMPORT_PDF_FAILED_REVIEW.kind]);
+  return recheckPdfStatement(ctx, { batchId: entityId(item, "import_batch") });
 }
 
 // ---------------------------------------------------------------------------------- notices

@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "req_mock-pdf-ok"
+  },
+  "body": "{\"id\":\"chatcmpl-mock-pdf-ok\",\"object\":\"chat.completion\",\"created\":1784073600,\"model\":\"mock-pdf-ok\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"accountNumberLast4\\\":\\\"1234\\\",\\\"startDate\\\":\\\"2024-09-01\\\",\\\"endDate\\\":\\\"2024-09-30\\\",\\\"openingBalanceCents\\\":100000,\\\"closingBalanceCents\\\":158000,\\\"rows\\\":[{\\\"postedOn\\\":\\\"2024-09-02\\\",\\\"description\\\":\\\"SALARY PAYMENT\\\",\\\"amountCents\\\":50000,\\\"runningBalanceCents\\\":150000,\\\"pageNumber\\\":1},{\\\"postedOn\\\":\\\"2024-09-05\\\",\\\"description\\\":\\\"WOOLWORTHS SYDNEY\\\",\\\"amountCents\\\":-2000,\\\"runningBalanceCents\\\":148000,\\\"pageNumber\\\":1},{\\\"postedOn\\\":\\\"2024-09-20\\\",\\\"description\\\":\\\"PAYME RECURRING\\\",\\\"amountCents\\\":10000,\\\"runningBalanceCents\\\":158000,\\\"pageNumber\\\":1}]}\",\"refusal\":null},\"logprobs\":null,\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":512,\"completion_tokens\":120,\"total_tokens\":632},\"system_fingerprint\":\"fp_mock\"}"
+}

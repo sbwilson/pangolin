@@ -397,6 +397,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               findForRecipient: repos.importHandoffs.findForRecipient,
               listForSender: repos.importHandoffs.listForSender,
             },
+            attachments: { find: repos.attachments.find },
             llmProviders: {
               findById: repos.llmProviders.findById,
               findSafe: repos.llmProviders.findSafe,

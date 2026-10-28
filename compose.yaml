@@ -46,6 +46,16 @@ services:
     volumes:
       - restic-repo:/data
 
+  # A replay LLM for the PDF-statement e2e: answers `/v1/chat/completions` from the fixtures
+  # under `tools/mock-llm/fixtures/`, chosen by the request's `model`. No real network calls.
+  mock-llm:
+    image: node:26-trixie-slim
+    profiles: [llm]
+    command: node /app/src/cli.ts --port 4111 --host 0.0.0.0
+    volumes:
+      - ./tools/mock-llm:/app:ro
+    restart: unless-stopped
+
 volumes:
   pangolin-data:
   restic-repo:

@@ -17,6 +17,7 @@ const KIND_LABEL: Readonly<Record<string, string>> = {
   "import.transfer_ambiguous_private": "Possible transfer",
   "import.set_aside": "Rows set aside",
   "import.balance_gap": "Balance gap",
+  "import.pdf_failed": "Statement PDF not verified",
   "imports.handoff": "File from your partner",
   "identity.partner-reset": "Account recovery",
   "identity.recovery-code-used": "Recovery code used",

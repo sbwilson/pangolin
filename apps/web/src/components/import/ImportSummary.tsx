@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import type { ImportResult } from "../../api.ts";
+import type { ImportResult, PdfImportResult } from "../../api.ts";
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
@@ -23,6 +23,28 @@ export function summaryText(result: ImportResult): string {
 /** The link's text: "1 needs review", "3 need review". */
 export const reviewLinkText = (count: number): string =>
   `${count} ${plural(count, "needs", "need")} review`;
+
+/**
+ * The result line for a finished PDF statement upload: a passing batch is verified and staged —
+ * it never says "imported", because nothing was committed (a ready batch waits for review).
+ */
+export function pdfSummaryText(result: PdfImportResult): string {
+  if (result.newCount === 0 && result.dupCount > 0)
+    return "Nothing new. That statement is already verified and staged.";
+  return `${result.newCount} ${plural(result.newCount, "row", "rows")} verified and staged.`;
+}
+
+export interface PdfImportSummaryProps {
+  readonly result: PdfImportResult;
+}
+
+export function PdfImportSummary({ result }: PdfImportSummaryProps) {
+  return (
+    <div className="space-y-1 text-sm" data-testid="import-summary">
+      <p className="font-semibold">{pdfSummaryText(result)}</p>
+    </div>
+  );
+}
 
 export interface ImportSummaryProps {
   readonly result: ImportResult;

@@ -1591,6 +1591,16 @@ export interface ImportBatchRow {
   /** The earliest and latest `postedOn` of the file's rows; null with no rows, or before 0019. */
   readonly firstPostedOn: string | null;
   readonly lastPostedOn: string | null;
+  /**
+   * The encrypted statement file behind a PDF batch (AD-21), read only through this row;
+   * null for every other source and for batches from before migration 0024.
+   */
+  readonly attachmentId?: Id<"Attachment"> | null;
+  /**
+   * A PDF batch's extraction header as JSON (`startDate`, `endDate`, `accountNumberLast4`),
+   * kept so Re-check needs no second LLM pass; null unless the source is `statement_pdf`.
+   */
+  readonly statementMeta?: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -1657,6 +1667,11 @@ export interface ImportBatchRepo {
   /** The IDs of the live (not soft-deleted) transactions with `importId` = `batchId`, by ID. */
   listLiveTransactionIds(batchId: string): string[];
   /**
+   * Hard-deletes the account's batches and their rows, as its private account is hard-deleted,
+   * and returns the attachment ids the batches linked, so the caller can unlink their files.
+   */
+  deleteForAccount(accountId: string): Id<"Attachment">[];
+  /**
    * The newest live `postedOn` across the account's non-undone committed batches, with the
    * newest such batch's source and creation time; undefined when the account is not visible to
    * `viewer` or no such batch has a live transaction.
@@ -1686,14 +1701,14 @@ export interface AttachmentRow {
   readonly createdAt: string;
 }
 
-/** Write-only: a file is reached through the hand-off that links it, never by name. */
+/** Write-only: a file is reached through the hand-off or import batch that links it, never by name. */
 export interface AttachmentRepo {
   insert(row: AttachmentRow): void;
   findByName(name: string): AttachmentRow | undefined;
   find(id: string): AttachmentRow | undefined;
   /**
-   * Deletes the attachment when no hand-off links it, returning its store name; undefined when
-   * it is still linked or does not exist.
+   * Deletes the attachment when neither a hand-off nor an import batch links it, returning its
+   * store name; undefined when it is still linked or does not exist.
    */
   deleteIfUnlinked(id: string): string | undefined;
 }
@@ -1896,6 +1911,7 @@ export interface ReadRepos {
   >;
   readonly importRows: Pick<ImportRowRepo, "listForBatch" | "find">;
   readonly importHandoffs: Pick<ImportHandoffRepo, "findForRecipient" | "listForSender">;
+  readonly attachments: Pick<AttachmentRepo, "find">;
   readonly llmProviders: Pick<
     LlmProviderRepo,
     | "findById"

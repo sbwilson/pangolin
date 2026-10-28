@@ -91,7 +91,7 @@ jobs:
           sudo chown 1000:1000 "$secrets/restic-password"
           # Compose reads .env for every later command, including the host's pangolin wrapper.
           {
-            echo "COMPOSE_PROFILES=backup"
+            echo "COMPOSE_PROFILES=backup,llm"
             echo "PANGOLIN_BACKUP_REPOSITORY=rest:http://restic:8000/pangolin"
             echo "PANGOLIN_RESTIC_PASSWORD_HOST_FILE=$secrets/restic-password"
             echo "PANGOLIN_PUBLIC_URL=http://localhost:3000"
@@ -186,6 +186,12 @@ jobs:
           E2E_CONFIRM_BUNDLE_COMMAND: docker compose exec -T pangolin node dist/cli.js confirm-bundle
           # Once both partners have signed up, the ledger spec seeds the demo accounts onto them.
           E2E_SEED_COMMAND: docker compose exec -T pangolin node dist/cli.js seed
+          # The PDF-statement spec points the provider at the stack's replay mock-llm (compose
+          # DNS name: reachable from the server container, not from this host).
+          E2E_LLM_BASE_URL: http://mock-llm:4111
+          # Lists each stored attachment's file name and first four bytes in hex, so the spec
+          # can prove the file at rest is a 64-hex HMAC name holding no %PDF magic (AD-21).
+          E2E_ATTACHMENTS_COMMAND: docker compose exec -T pangolin sh -c 'for f in /data/attachments/*; do [ -e "$f" ] || continue; printf "%s %s\n" "${f##*/}" "$(od -An -tx1 -N4 "$f" | tr -d " \n")"; done'
       - name: Back up the end-to-end household (pangolin backup over the admin socket)
         run: |
           out=$(docker compose exec -T pangolin node dist/cli.js backup)

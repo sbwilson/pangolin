@@ -23,6 +23,11 @@ import {
   transferAmbiguousKey,
   transferAmbiguousPrivateKey,
 } from "../imports/match-transfers.ts";
+import {
+  IMPORT_PDF_FAILED_REVIEW,
+  pdfFailedDedupeKey,
+  pdfFailedEntityRef,
+} from "../imports/pdf-review.ts";
 import { createTransaction } from "../ledger/create-transaction.ts";
 import { getTransaction } from "../ledger/get-transaction.ts";
 import { hideTransactionName } from "../ledger/hide-name.ts";
@@ -43,6 +48,7 @@ import {
   acceptHandoffItem,
   acceptRuleOfferItem,
   confirmSetAsideProposalItem,
+  correctPdfRowItem,
   discardSetAsideRowItem,
   dismissHandoffItem,
   dismissNoticeItem,
@@ -52,6 +58,7 @@ import {
   interpretSetAsideRowsItem,
   keepDuplicateItem,
   linkTransferItem,
+  recheckPdfItem,
   removeDuplicateItem,
   revokeLinksItem,
 } from "./review-actions.ts";
@@ -136,6 +143,75 @@ const code = (fn: () => unknown): string => {
 };
 
 const openIds = (ctx: UseCaseContext) => listReviewCards(ctx).map((c) => c.id);
+
+const PDF_GAP_REASON =
+  "Statement balance reconciliation failed: opening balance ($1000.00) + sum of transactions ($29.99) = $1029.99, differing from closing balance ($1030.00) by exact gap of 1 cents ($0.01)";
+
+function seedPdfFailed(w: ReturnType<typeof setup>, accountId: string) {
+  const batchId = "pdf-batch-1";
+  w.uow.state.importBatches.push({
+    id: batchId as never,
+    accountId: accountId as never,
+    source: "statement_pdf",
+    fileSha256: "b".repeat(64),
+    rowCount: 2,
+    newCount: 0,
+    dupCount: 0,
+    status: "failed",
+    importedByPersonId: w.a,
+    undoneAt: null,
+    reconcileStatus: "gap",
+    reconcileGapCents: 1,
+    openingBalanceCents: 100_000,
+    closingBalanceCents: 103_000,
+    firstPostedOn: "2024-09-02",
+    lastPostedOn: "2024-09-05",
+    attachmentId: null,
+    statementMeta: JSON.stringify({
+      startDate: "2024-09-01",
+      endDate: "2024-09-30",
+      accountNumberLast4: "1234",
+    }),
+    createdAt: "2026-10-20T12:00:00Z",
+    updatedAt: "2026-10-20T12:00:00Z",
+  });
+  const rowIds = ["pdf-row-1", "pdf-row-2"];
+  const seeded = [
+    {
+      postedOn: "2024-09-02",
+      description: "SALARY",
+      amountCents: 5_000,
+      runningBalanceCents: 105_000,
+    },
+    {
+      postedOn: "2024-09-05",
+      description: "WOOLWORTHS",
+      amountCents: -2_001,
+      runningBalanceCents: 103_000,
+    },
+  ];
+  w.uow.state.importRows.push(
+    ...seeded.map((r, idx) => ({
+      id: rowIds[idx] as never,
+      batchId: batchId as never,
+      rowNumber: idx + 1,
+      rawLine: `${r.postedOn}, ${r.description}, ${r.amountCents}`,
+      status: "staged" as const,
+      reason: PDF_GAP_REASON,
+      proposal: JSON.stringify(r),
+      pdfPage: 1,
+      createdAt: "2026-10-20T12:00:00Z",
+      updatedAt: "2026-10-20T12:00:00Z",
+    })),
+  );
+  const id = w.raise({
+    kind: IMPORT_PDF_FAILED_REVIEW,
+    entityRef: pdfFailedEntityRef(batchId),
+    dedupeKey: pdfFailedDedupeKey(batchId),
+    accountId,
+  });
+  return { batchId, rowIds, id };
+}
 
 describe("review cards", () => {
   it("lists one card per item, oldest first, with the detail of each kind", () => {
@@ -286,6 +362,26 @@ describe("review cards", () => {
     expect(JSON.stringify(card)).not.toContain("Surprise");
     expect(JSON.stringify(card)).toContain("Hidden");
     expect(JSON.stringify(listReviewCards(w.A))).toContain("Surprise gift");
+  });
+
+  it("shows a failed PDF statement card with its staged rows and gap", () => {
+    const w = setup();
+    seedPdfFailed(w, w.joint);
+    const card = listReviewCards(w.B).find((c) => c.kind === "import.pdf_failed");
+    expect(card?.detail).toMatchObject({
+      type: "pdf_batch",
+      accountName: "Joint everyday",
+      gapCents: 1,
+    });
+    if (card?.detail.type !== "pdf_batch") throw new Error("expected a pdf_batch detail");
+    expect(card.detail.error).toContain("exact gap of 1 cents");
+    expect(card.detail.rows).toHaveLength(2);
+    expect(card.detail.rows[1]?.corrected).toEqual({
+      postedOn: "2024-09-05",
+      amountCents: -2_001,
+      description: "WOOLWORTHS",
+      runningBalanceCents: 103_000,
+    });
   });
 
   it("needs a signed-in person", () => {
@@ -587,5 +683,20 @@ describe("review actions", () => {
     expect(() => checkReEnrolmentLink({ ...w.sys, tokens }, { token: link.token })).toThrow();
     expect(openIds(w.B)).not.toContain(real?.id);
     expect(openIds(w.B)).toEqual([]);
+  });
+
+  it("corrects a PDF row and re-checks the batch without a second LLM pass", () => {
+    const w = setup();
+    const { batchId, rowIds, id } = seedPdfFailed(w, w.joint);
+
+    expect(recheckPdfItem(w.A, { id }).ok).toBe(false);
+    expect(listReviewCards(w.A).some((c) => c.kind === "import.pdf_failed")).toBe(true);
+
+    correctPdfRowItem(w.A, { id, rowId: rowIds[1] as never, amountCents: -2_000 });
+    expect(recheckPdfItem(w.A, { id })).toMatchObject({ ok: true, error: null });
+
+    expect(w.uow.state.importBatches.find((b) => b.id === batchId)?.status).toBe("ready");
+    expect(w.uow.state.importRows.every((r) => r.reason === null)).toBe(true);
+    expect(listReviewCards(w.A).some((c) => c.kind === "import.pdf_failed")).toBe(false);
   });
 });

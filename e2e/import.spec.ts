@@ -58,7 +58,7 @@ test("imports a file from the header popover, reports nothing new on a repeat, a
     buffer: Buffer.from("not a statement"),
   });
   await expect(dialog.getByRole("alert")).toHaveText(
-    "We can't read .xlsx files. Try CSV, OFX or QIF.",
+    "We can't read .xlsx files. Try CSV, OFX, QIF or PDF.",
   );
   await expect(submit).toBeDisabled();
 

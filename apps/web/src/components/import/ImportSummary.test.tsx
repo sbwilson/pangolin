@@ -7,8 +7,8 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ImportResult } from "../../api.ts";
-import { ImportSummary, reviewLinkText, summaryText } from "./ImportSummary.tsx";
+import type { ImportResult, PdfImportResult } from "../../api.ts";
+import { ImportSummary, pdfSummaryText, reviewLinkText, summaryText } from "./ImportSummary.tsx";
 
 afterEach(cleanup);
 
@@ -39,6 +39,31 @@ describe("summaryText", () => {
     [{}, "Nothing to import. That file had no transactions."],
   ] as [Partial<ImportResult>, string][])("%j reads %s", (over, text) => {
     expect(summaryText(result(over))).toBe(text);
+  });
+});
+
+describe("pdfSummaryText", () => {
+  const pdf = (over: Partial<PdfImportResult>): PdfImportResult => ({
+    batchId: "b",
+    status: "ready",
+    rowCount: 0,
+    newCount: 0,
+    dupCount: 0,
+    reconcileStatus: "ok",
+    reconcileGapCents: 0,
+    ...over,
+  });
+
+  it("says verified and staged, never imported", () => {
+    expect(pdfSummaryText(pdf({ newCount: 3 }))).toBe("3 rows verified and staged.");
+    expect(pdfSummaryText(pdf({ newCount: 1 }))).toBe("1 row verified and staged.");
+    expect(pdfSummaryText(pdf({ newCount: 3 }))).not.toMatch(/imported/i);
+  });
+
+  it("says nothing is new when the same statement was already staged", () => {
+    expect(pdfSummaryText(pdf({ dupCount: 3 }))).toBe(
+      "Nothing new. That statement is already verified and staged.",
+    );
   });
 });
 

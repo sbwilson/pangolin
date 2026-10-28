@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { account } from "./account.ts";
+import { attachment } from "./attachment.ts";
 import { person } from "./person.ts";
 
 /** `ok | gap | unavailable`; null on a batch from before migration 0019. */
@@ -36,6 +37,10 @@ export const importBatch = sqliteTable(
     closingBalanceCents: integer("closing_balance_cents"),
     firstPostedOn: text("first_posted_on"),
     lastPostedOn: text("last_posted_on"),
+    /** The encrypted statement file behind a PDF batch (AD-21): read only through this row. */
+    attachmentId: text("attachment_id").references(() => attachment.id),
+    /** A PDF batch's extraction header as JSON (`startDate`, `endDate`, `accountNumberLast4`). */
+    statementMeta: text("statement_meta"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

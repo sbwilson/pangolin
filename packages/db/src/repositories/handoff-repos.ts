@@ -8,6 +8,7 @@ import type {
 import { and, asc, eq, or, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { attachment } from "../schema/attachment.ts";
+import { importBatch } from "../schema/import-batch.ts";
 import { importHandoff } from "../schema/import-handoff.ts";
 
 type Orm = BetterSQLite3Database;
@@ -40,6 +41,7 @@ export function createAttachmentRepo(orm: Orm, check: () => void): AttachmentRep
           and(
             eq(attachment.id, id),
             sql`NOT EXISTS (SELECT 1 FROM ${importHandoff} WHERE ${importHandoff.attachmentId} = ${attachment.id})`,
+            sql`NOT EXISTS (SELECT 1 FROM ${importBatch} WHERE ${importBatch.attachmentId} = ${attachment.id})`,
           ),
         )
         .run();

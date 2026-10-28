@@ -19,22 +19,30 @@ export function fileExtension(name: string): string {
   return dot <= 0 || dot === name.length - 1 ? "" : name.slice(dot).toLowerCase();
 }
 
+/** The marker a `.pdf` file gets: it goes to the PDF route, not the text `format` of `/api/import`. */
+export const PDF_FORMAT = "statement_pdf";
+
 export type FormatChoice =
-  | { readonly ok: true; readonly format: ImportFormat; readonly ext: string }
+  | {
+      readonly ok: true;
+      readonly format: ImportFormat | typeof PDF_FORMAT;
+      readonly ext: string;
+    }
   | { readonly ok: false; readonly message: string };
 
-/** The format for a file name: OFX and QIF from the extension, CSV from the chosen bank. */
+/** The format for a file name: OFX, QIF and PDF from the extension, CSV from the chosen bank. */
 export function chooseFormat(filename: string, bank: BankId): FormatChoice {
   const ext = fileExtension(filename);
   if (ext === ".ofx") return { ok: true, format: "commbank_ofx", ext };
   if (ext === ".qif") return { ok: true, format: "qif", ext };
   if (ext === ".csv") return { ok: true, format: bank, ext };
+  if (ext === ".pdf") return { ok: true, format: PDF_FORMAT, ext };
   return {
     ok: false,
     message:
       ext === ""
-        ? "We can't read that file. Try CSV, OFX or QIF."
-        : `We can't read ${ext} files. Try CSV, OFX or QIF.`,
+        ? "We can't read that file. Try CSV, OFX, QIF or PDF."
+        : `We can't read ${ext} files. Try CSV, OFX, QIF or PDF.`,
   };
 }
 

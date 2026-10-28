@@ -70,10 +70,11 @@ describe("committed migrations", () => {
       "0021_llm_provider",
       "0022_suggestion",
       "0023_import_row_proposal",
+      "0024_pdf_batch_attachment",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 24 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 24 });
-    expect(schemaVersion(db)).toBe(24);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 25 });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 25 });
+    expect(schemaVersion(db)).toBe(25);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });
@@ -219,6 +220,29 @@ describe("committed migrations", () => {
     ).map((c) => c.name);
     expect(rowCols).toContain("proposal");
     expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+
+  it("adds the attachment and statement_meta columns to import_batch when 0023 upgrades to 0024", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 24));
+    expect(schemaVersion(db)).toBe(24);
+    expect(migrate(db, migrations.slice(0, 25)).applied).toEqual(["0024_pdf_batch_attachment"]);
+    expect(schemaVersion(db)).toBe(25);
+
+    const batchCols = (
+      db.pragma("table_info(import_batch)") as { name: string; notnull: number }[]
+    ).filter((c) => c.name === "attachment_id" || c.name === "statement_meta");
+    expect(batchCols.map((c) => c.name).sort()).toEqual(["attachment_id", "statement_meta"]);
+    expect(batchCols.every((c) => c.notnull === 0)).toBe(true);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+    db.exec(`
+      INSERT INTO account (id, name, type, currency, is_private, created_at, updated_at) VALUES ('A1','Joint','transaction','AUD',0,'t','t');
+    `);
+    expect(() =>
+      db.exec(
+        "INSERT INTO import_batch (id, account_id, source, file_sha256, status, attachment_id, created_at, updated_at) VALUES ('B1','A1','statement_pdf','s1','failed','nope','t','t')",
+      ),
+    ).toThrow(/FOREIGN KEY/);
   });
 
   it("backfills the posted-date span of existing batches, leaving reconcile_status null", () => {

@@ -30,7 +30,8 @@ export type Entity =
   | "institution"
   | "categoryGroup"
   | "category"
-  | "taxCategory";
+  | "taxCategory"
+  | "importBatch";
 
 /** The entities partner A can own privately; the others are household-wide. */
 export const PRIVATE_ENTITIES: readonly Entity[] = [
@@ -43,6 +44,7 @@ export const PRIVATE_ENTITIES: readonly Entity[] = [
   "activity",
   "transferGroup",
   "notice",
+  "importBatch",
 ];
 
 /**
@@ -252,6 +254,11 @@ export const MANIFEST: readonly ManifestEntry[] = [
     params: { id: "notice" },
     body: () => ({ rowId: "01J0000000000000000000ROW1" }),
   }),
+  write("POST", "/api/review/:id/correct-pdf-row", {
+    params: { id: "notice" },
+    body: () => ({ rowId: "01J0000000000000000000ROW1", amountCents: -100 }),
+  }),
+  write("POST", "/api/review/:id/recheck-pdf", { params: { id: "notice" } }),
   write("POST", "/api/review/:id/dismiss-notice", { params: { id: "notice" } }),
   write("POST", "/api/review/:id/revoke-links", { params: { id: "notice" } }),
 
@@ -274,6 +281,16 @@ export const MANIFEST: readonly ManifestEntry[] = [
       content: "Date,Amount,Description,Balance\n01/07/2026,-1.00,PRIVACY PROBE,10.00",
     }),
   }),
+  write("POST", "/api/import/pdf", {
+    bodyEntities: ["account"],
+    body: (id) => ({
+      accountId: id("account"),
+      content: Buffer.from("%PDF-1.4 PRIVACY PROBE", "utf8").toString("base64"),
+    }),
+  }),
+  // A stored statement PDF, read only through its batch row (AD-21): A's batch id must answer the
+  // same 404 as an id that never existed.
+  read("/api/import/pdf/:batchId/file", { params: { batchId: "importBatch" } }),
 
   // Cash flow (epic 4): money in, out and kept by flowKind (AD-23). A transfer to A's private
   // account is a transfer for B whatever its type, so B's figures never depend on A's data. The

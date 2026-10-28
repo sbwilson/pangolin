@@ -20,6 +20,7 @@ import { ImportButton, ImportProvider, useImport } from "./index.ts";
 vi.mock("../../api.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../api.ts")>()),
   importFile: vi.fn(),
+  importPdfFile: vi.fn(),
   handOffFile: vi.fn(),
   listAccounts: vi.fn(),
 }));
@@ -239,20 +240,75 @@ describe("ImportPopover", () => {
     expect(within(status).queryByRole("link")).toBeNull();
   });
 
-  it.each(["statement.xlsx", "statement.pdf"])(
-    "refuses %s and keeps Import disabled",
-    async (name) => {
-      const user = userEvent.setup();
-      renderApp();
-      await openPopover(user);
-      await fill(user, file(name), "a-mine");
-      const ext = name.slice(name.lastIndexOf("."));
-      expect(screen.getByRole("alert").textContent).toBe(
-        `We can't read ${ext} files. Try CSV, OFX or QIF.`,
-      );
-      expect((importButton() as HTMLButtonElement).disabled).toBe(true);
-    },
-  );
+  it("refuses .xlsx and keeps Import disabled", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await openPopover(user);
+    await fill(user, file("statement.xlsx"), "a-mine");
+    expect(screen.getByRole("alert").textContent).toBe(
+      "We can't read .xlsx files. Try CSV, OFX, QIF or PDF.",
+    );
+    expect((importButton() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("uploads a PDF as base64 and reports it verified and staged", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.importPdfFile).mockResolvedValue({
+      batchId: "b-pdf",
+      status: "ready",
+      rowCount: 3,
+      newCount: 3,
+      dupCount: 0,
+      reconcileStatus: "ok",
+      reconcileGapCents: 0,
+    });
+    renderApp();
+    await openPopover(user);
+    await fill(user, file("statement.pdf", "%PDF-1.4"), "a-mine");
+    await user.click(importButton());
+
+    const status = await screen.findByTestId("import-status");
+    expect(status.textContent).toBe("3 rows verified and staged.");
+    expect(status.textContent).not.toMatch(/imported/i);
+    expect(api.importPdfFile).toHaveBeenCalledWith({
+      accountId: "a-mine",
+      content: Buffer.from("%PDF-1.4", "utf8").toString("base64"),
+    });
+    expect(api.importFile).not.toHaveBeenCalled();
+  });
+
+  it("shows the exact gap and a Needs review link when verification fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.importPdfFile).mockRejectedValue(
+      new ApiError(
+        400,
+        "Validation",
+        "Statement balance reconciliation failed: ... exact gap of 1 cents ($0.01)",
+      ),
+    );
+    const router = renderApp();
+    await openPopover(user);
+    await fill(user, file("statement.pdf", "%PDF-1.4"), "a-mine");
+    await user.click(importButton());
+
+    const status = await screen.findByTestId("import-status");
+    expect(status.textContent).toContain("exact gap of 1 cents");
+    await user.click(within(status).getByRole("link", { name: "Needs review" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/review"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps a PDF out of the hand-off", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await openPopover(user);
+    await fill(user, file("statement.pdf", "%PDF-1.4"), "handoff");
+    await user.click(importButton());
+    expect((await screen.findByTestId("import-status")).textContent).toBe(
+      "A statement PDF goes into one of your accounts, not to your partner.",
+    );
+    expect(api.importPdfFile).not.toHaveBeenCalled();
+  });
 
   it("refuses a file over 10 MiB", async () => {
     const user = userEvent.setup();

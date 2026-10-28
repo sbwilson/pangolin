@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  type AttachmentRow,
   CLASSIFY_UNCLASSIFIED_REVIEW,
   closeAccount,
   createAccount,
@@ -19,7 +20,9 @@ import {
   fixedClockAt,
   getTransaction,
   hideTransactionName,
+  type ImportBatchRow,
   importStatement,
+  type PdfTextExtractor,
   personViewer,
   raiseReviewItem,
   type SuggestionRow,
@@ -29,7 +32,10 @@ import {
   write,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
-import { fakeAttachmentStore } from "@pangolin/app/testing/attachment-store";
+import {
+  type FakeAttachmentStore,
+  fakeAttachmentStore,
+} from "@pangolin/app/testing/attachment-store";
 import {
   createSystemHealthRepo,
   createUnitOfWork,
@@ -3288,6 +3294,289 @@ describe("POST /api/import and /api/handoffs", () => {
   });
 });
 
+describe("POST /api/import/pdf and the PDF review routes", () => {
+  const json = { Origin: ORIGIN, "Content-Type": "application/json", Cookie: SESSION_COOKIE };
+  const pdfBytes = Buffer.from("%PDF-1.4 mock statement body", "utf8");
+  const pdfBase64 = pdfBytes.toString("base64");
+
+  const pageJson = {
+    accountNumberLast4: "1234",
+    startDate: "2024-09-01",
+    endDate: "2024-09-30",
+    openingBalanceCents: 100_000,
+    closingBalanceCents: 158_000,
+    rows: [
+      {
+        postedOn: "2024-09-02",
+        description: "SALARY",
+        amountCents: 50_000,
+        runningBalanceCents: 150_000,
+        pageNumber: 1,
+      },
+      {
+        postedOn: "2024-09-05",
+        description: "WOOLWORTHS",
+        amountCents: -2_000,
+        runningBalanceCents: 148_000,
+        pageNumber: 1,
+      },
+      {
+        postedOn: "2024-09-20",
+        description: "PAYME",
+        amountCents: 10_000,
+        runningBalanceCents: 158_000,
+        pageNumber: 1,
+      },
+    ],
+  };
+  const gapPageJson = {
+    ...pageJson,
+    rows: [pageJson.rows[0]!, { ...pageJson.rows[1]!, amountCents: -2_001 }, pageJson.rows[2]!],
+  };
+
+  const fakeExtractor: PdfTextExtractor = async () => ({
+    pages: [{ pageNumber: 1, text: "Mock statement page one" }],
+    hasTextLayer: true,
+    pageCount: 1,
+  });
+
+  function mockFetchData(data: unknown): () => void {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(data) } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })) as typeof fetch;
+    return () => {
+      globalThis.fetch = original;
+    };
+  }
+
+  function seed(db: Db, extractor: PdfTextExtractor = fakeExtractor) {
+    addPerson(db);
+    const d = deps(db);
+    const sys: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const mine = createAccount(sys, {
+      name: "Alex checking",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: true,
+      owners: [{ personId: "01J0000000000000000000000A", shareBp: 10000 }],
+    });
+    const app = createApp({ ...d, extractPdfTextPages: extractor });
+    return { d, sys, mine, app };
+  }
+
+  async function configurePdfProvider(app: ReturnType<typeof seed>["app"]): Promise<void> {
+    const createRes = await app.request("/api/llm/providers", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({
+        name: "Local Ollama",
+        kind: "openai",
+        baseUrl: "http://127.0.0.1:11434/v1",
+        model: "llama3.2",
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const provider = (await createRes.json()) as { id: string };
+    const assign = await app.request("/api/llm/purposes/pdf_extract", {
+      method: "PUT",
+      headers: json,
+      body: JSON.stringify({ providerId: provider.id }),
+    });
+    expect(assign.status).toBe(200);
+  }
+
+  it("uploads a valid PDF, links the stored file, and serves it back", async () => {
+    const db = openDb();
+    const { d, mine, app } = seed(db);
+    await configurePdfProvider(app);
+    const reset = mockFetchData(pageJson);
+    let status: number;
+    try {
+      const res = await app.request("/api/import/pdf", {
+        method: "POST",
+        headers: json,
+        body: JSON.stringify({ accountId: mine, content: pdfBase64 }),
+      });
+      status = res.status;
+      expect(await res.json()).toMatchObject({
+        status: "ready",
+        rowCount: 3,
+        newCount: 3,
+        reconcileStatus: "ok",
+      });
+    } finally {
+      reset();
+    }
+    expect(status).toBe(200);
+
+    const batchRow = db
+      .prepare("SELECT id, attachment_id AS attachmentId FROM import_batch")
+      .get() as { id: string; attachmentId: string | null };
+    expect(batchRow.attachmentId).not.toBeNull();
+    const name = db.prepare("SELECT name FROM attachment").pluck().get() as string;
+    expect(name).toMatch(/^[0-9a-f]{64}$/);
+    expect((d.attachments as FakeAttachmentStore).files.size).toBe(1);
+
+    const file = await app.request(`/api/import/pdf/${batchRow.id}/file`, {
+      headers: { Cookie: SESSION_COOKIE },
+    });
+    expect(file.status).toBe(200);
+    expect(file.headers.get("content-type")).toBe("application/pdf");
+    expect(Buffer.from(await file.arrayBuffer()).toString("utf8")).toBe(
+      "%PDF-1.4 mock statement body",
+    );
+  });
+
+  it("fails a gap upload with 400, raises the card, and recovers after a correction", async () => {
+    const db = openDb();
+    const { mine, app } = seed(db);
+    await configurePdfProvider(app);
+    const reset = mockFetchData(gapPageJson);
+    let message = "";
+    try {
+      const res = await app.request("/api/import/pdf", {
+        method: "POST",
+        headers: json,
+        body: JSON.stringify({ accountId: mine, content: pdfBase64 }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: { code: string; message: string } };
+      expect(body.error.code).toBe("Validation");
+      message = body.error.message;
+    } finally {
+      reset();
+    }
+    expect(message).toContain("exact gap of 1 cents");
+
+    const review = await app.request("/api/review", { headers: { Cookie: SESSION_COOKIE } });
+    const { items } = (await review.json()) as {
+      items: Array<{
+        id: string;
+        kind: string;
+        detail: { type: string; rows?: Array<{ id: string; rowNumber: number }> };
+      }>;
+    };
+    const card = items.find((i) => i.kind === "import.pdf_failed");
+    expect(card).toBeDefined();
+    expect(card?.detail.type).toBe("pdf_batch");
+    expect(card?.detail.rows).toHaveLength(3);
+
+    const wrongRow = (card?.detail.rows ?? []).find((r) => r.rowNumber === 2);
+    const correct = await app.request(`/api/review/${card?.id}/correct-pdf-row`, {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ rowId: wrongRow?.id, amountCents: -2_000 }),
+    });
+    expect(correct.status).toBe(204);
+
+    const recheck = await app.request(`/api/review/${card?.id}/recheck-pdf`, {
+      method: "POST",
+      headers: json,
+    });
+    expect(recheck.status).toBe(200);
+    expect(await recheck.json()).toMatchObject({ ok: true, error: null });
+
+    const after = await app.request("/api/review", { headers: { Cookie: SESSION_COOKIE } });
+    const afterItems = (await after.json()) as { items: Array<{ kind: string }> };
+    expect(afterItems.items.some((i) => i.kind === "import.pdf_failed")).toBe(false);
+    expect(db.prepare("SELECT status FROM import_batch").pluck().get()).toBe("ready");
+  });
+
+  it("refuses an oversize PDF and a missing provider before extraction", async () => {
+    const db = openDb();
+    let extracted = false;
+    const { mine, app } = seed(db, async () => {
+      extracted = true;
+      return { pages: [], hasTextLayer: true, pageCount: 0 };
+    });
+    const over = Buffer.alloc(10 * 1024 * 1024 + 1, 0x25).toString("base64");
+    const sizeRes = await app.request("/api/import/pdf", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ accountId: mine, content: over }),
+    });
+    expect(sizeRes.status).toBe(400);
+    expect(((await sizeRes.json()) as { error: { message: string } }).error.message).toContain(
+      "too large",
+    );
+
+    const noProvider = await app.request("/api/import/pdf", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ accountId: mine, content: pdfBase64 }),
+    });
+    expect(noProvider.status).toBe(400);
+    expect(((await noProvider.json()) as { error: { message: string } }).error.message).toContain(
+      "No LLM provider configured",
+    );
+    expect(extracted).toBe(false);
+  });
+
+  it("serves nothing for a batch the viewer cannot see, and 404s an unknown id", async () => {
+    const db = openDb();
+    const { d, sys, app } = seed(db);
+    const sam = createPerson(sys, { displayName: "Sam", colour: "#000000" });
+    const theirs = createAccount(sys, {
+      name: "Sam private",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: true,
+      owners: [{ personId: sam, shareBp: 10000 }],
+    });
+    const name = "f".repeat(64);
+    const attachmentRow: AttachmentRow = {
+      id: d.newId<"Attachment">(),
+      name,
+      mime: "application/pdf",
+      bytes: 8,
+      createdAt: "2026-09-27T00:00:00Z",
+    };
+    const batchRow: ImportBatchRow = {
+      id: d.newId<"ImportBatch">(),
+      accountId: theirs,
+      source: "statement_pdf",
+      fileSha256: "a".repeat(64),
+      rowCount: 0,
+      newCount: 0,
+      dupCount: 0,
+      status: "failed",
+      importedByPersonId: sam,
+      undoneAt: null,
+      reconcileStatus: "gap",
+      reconcileGapCents: 1,
+      openingBalanceCents: null,
+      closingBalanceCents: null,
+      firstPostedOn: null,
+      lastPostedOn: null,
+      attachmentId: attachmentRow.id,
+      statementMeta: null,
+      createdAt: "2026-09-27T00:00:00Z",
+      updatedAt: "2026-09-27T00:00:00Z",
+    };
+    sys.uow.transaction((tx) => {
+      tx.attachments.insert(attachmentRow);
+      tx.importBatches.insert(batchRow);
+    });
+
+    const hidden = await app.request(`/api/import/pdf/${batchRow.id}/file`, {
+      headers: { Cookie: SESSION_COOKIE },
+    });
+    expect(hidden.status).toBe(404);
+    const unknown = await app.request("/api/import/pdf/nosuchbatch/file", {
+      headers: { Cookie: SESSION_COOKIE },
+    });
+    expect(unknown.status).toBe(404);
+  });
+});
+
 describe("LLM provider endpoints (/api/llm/*)", () => {
   const signedIn = { headers: { origin: ORIGIN, cookie: SESSION_COOKIE } };
   const staleAuth = (db: Db) =>
@@ -3737,7 +4026,9 @@ not-a-date,-12.00,"BOOKSTORE",988.00`;
     });
 
     const item = d.uow.read((r) =>
-      r.reviewItems.listOpenFor(sys.viewer).find((ri) => ri.dedupeKey === `import.set_aside:${importRes.batchId}`),
+      r.reviewItems
+        .listOpenFor(sys.viewer)
+        .find((ri) => ri.dedupeKey === `import.set_aside:${importRes.batchId}`),
     );
     expect(item).toBeDefined();
 
@@ -3828,7 +4119,9 @@ not-a-date,-12.00,"BOOKSTORE",988.00`;
     });
 
     const item = d.uow.read((r) =>
-      r.reviewItems.listOpenFor(sys.viewer).find((ri) => ri.dedupeKey === `import.set_aside:${importRes.batchId}`),
+      r.reviewItems
+        .listOpenFor(sys.viewer)
+        .find((ri) => ri.dedupeKey === `import.set_aside:${importRes.batchId}`),
     );
     expect(item).toBeDefined();
 

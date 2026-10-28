@@ -1,4 +1,5 @@
 import type { ImportBatchRepo, ImportBatchRow, ImportRowRepo, ImportRowRow } from "@pangolin/app";
+import type { Id } from "@pangolin/shared";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { visibleAccountId } from "../privacy.ts";
@@ -131,6 +132,25 @@ export function createImportBatchRepo(
     listLiveTransactionIds: (batchId) => {
       check();
       return reads.liveIds(batchId);
+    },
+
+    deleteForAccount: (accountId) => {
+      check();
+      const linked = orm
+        .select({ attachmentId: importBatch.attachmentId })
+        .from(importBatch)
+        .where(eq(importBatch.accountId, accountId))
+        .all();
+      orm
+        .delete(importRow)
+        .where(
+          sql`${importRow.batchId} IN (SELECT id FROM import_batch WHERE account_id = ${accountId})`,
+        )
+        .run();
+      orm.delete(importBatch).where(eq(importBatch.accountId, accountId)).run();
+      return linked.flatMap((b) =>
+        b.attachmentId === null ? [] : [b.attachmentId as Id<"Attachment">],
+      );
     },
 
     latestImportFor: (viewer, accountId) => {

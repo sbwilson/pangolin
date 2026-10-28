@@ -183,6 +183,7 @@ export interface PrivateIds {
   readonly activity: string[];
   readonly transferGroup: string[];
   readonly notice: string[];
+  readonly importBatch: string[];
 }
 
 export interface World {
@@ -325,6 +326,13 @@ function collectPrivateIds(db: Db, a: string): PrivateIds {
       a,
       a,
     ),
+    importBatch: none
+      ? []
+      : column(
+          db,
+          `SELECT id FROM import_batch WHERE account_id IN (${inAccounts}) ORDER BY id`,
+          ...accounts,
+        ),
   };
 }
 
@@ -659,6 +667,12 @@ function sharedProbeData(db: Db, b: UseCaseContext, aId: string): Shared {
   const jointSavings = accounts.find((account) => account.name === "Joint savings");
   if (joint === undefined || jointSavings === undefined)
     throw new Error("The seed has no joint accounts");
+  // B's batch row on the joint account: the slot for the statement file route (no attachment —
+  // its bytes are exercised in `app.test.ts`). Identical in every world.
+  db.prepare(
+    `INSERT INTO import_batch (id, account_id, source, file_sha256, row_count, new_count, dup_count, status, created_at, updated_at)
+     VALUES ('01J00000000000000000B00CH1', ?, 'commbank_csv', ?, 0, 0, 0, 'ready', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')`,
+  ).run(joint.id, "c".repeat(64));
   const first = createTransaction(b, {
     accountId: joint.id,
     postedOn: "2026-07-10",
@@ -728,6 +742,7 @@ function sharedProbeData(db: Db, b: UseCaseContext, aId: string): Shared {
     taxCategory: [listTaxCategories(b)[0]?.id as string],
     institution: [listInstitutions(b)[0]?.id as string],
     notice: [notice?.id as string],
+    importBatch: ["01J00000000000000000B00CH1"],
   };
 }
 
@@ -787,6 +802,11 @@ function applyDelta(db: Db, a: UseCaseContext, aId: string, shared: Shared) {
   const savings = make(A_NAMES.renamedFrom, "savings");
   const closed = make("Delta closed private", "transaction");
   const deleted = make("Delta deleted private", "transaction");
+  // A's batch row on its private account: B must get the same 404 as for an id that never was.
+  db.prepare(
+    `INSERT INTO import_batch (id, account_id, source, file_sha256, row_count, new_count, dup_count, status, created_at, updated_at)
+     VALUES ('01J00000000000000000A00CH1', ?, 'commbank_csv', ?, 0, 0, 0, 'ready', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')`,
+  ).run(cash, "a".repeat(64));
 
   const tag = createTag(a, { name: A_NAMES.tag, originAccountId: cash });
   const payee = createPayee(a, { name: A_NAMES.payee, originAccountId: cash });

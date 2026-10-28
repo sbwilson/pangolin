@@ -13,6 +13,7 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@pangolin/importers": "workspace:*",
     "better-sqlite3": "13.0.3"
   },
   "devDependencies": {
@@ -21,7 +22,6 @@
     "@pangolin/app": "workspace:*",
     "@pangolin/connectors": "workspace:*",
     "@pangolin/db": "workspace:*",
-    "@pangolin/importers": "workspace:*",
     "@pangolin/llm": "workspace:*",
     "better-auth": "1.7.6",
     "esbuild": "0.28.2",

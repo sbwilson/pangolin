@@ -21,6 +21,7 @@ import {
   checkSignUp,
   closeAccount,
   confirmSetAsideProposalItem,
+  correctPdfRowItem,
   countBatchReviewItems,
   countReviewItems,
   createAccount,
@@ -53,8 +54,10 @@ import {
   dismissTransferItem,
   ERROR_CODES,
   type ErrorCode,
+  type ExtractAndImportPdfStatementInput,
   enrolmentNeeds,
   exportTransactionsCsv,
+  extractAndImportPdfStatement,
   fixSetAsideRowItem,
   getAccount,
   getActivity,
@@ -101,6 +104,7 @@ import {
   me,
   merchants,
   netWorth,
+  type PdfTextExtractor,
   type ProfitAndLossInput,
   parseTransactionQuery,
   profitAndLoss,
@@ -108,6 +112,8 @@ import {
   type RecordBalanceSnapshotInput,
   type RunnerLiveness,
   readiness,
+  readPdfStatementFile,
+  recheckPdfItem,
   recordBalanceSnapshot,
   recoveryBundleConfirmed,
   recoveryBundleStatus,
@@ -147,6 +153,7 @@ import {
   updateTaxCategory,
   updateTransaction,
 } from "@pangolin/app";
+import { extractPdfTextPages } from "@pangolin/importers";
 import {
   AnthropicAdapter,
   decryptApiKey,
@@ -192,6 +199,8 @@ export interface ApiDeps {
   readonly bundleId?: string;
   /** The encrypted attachment store (AD-21): hand-off files and the household leave. */
   readonly attachments: AttachmentStore;
+  /** The PDF text-layer reader for statement uploads; injectable for tests. */
+  readonly extractPdfTextPages?: PdfTextExtractor;
   /** Auth secret used to encrypt/decrypt sensitive credentials such as LLM API keys. */
   readonly authSecret?: string | undefined;
 }
@@ -901,6 +910,17 @@ export function createApi(deps: ApiDeps) {
       confirmSetAsideProposalItem(ctx(c), await objectBody(c, { id }));
       return c.body(null, 204);
     })
+    .post("/api/review/:id/correct-pdf-row", async (c) => {
+      writable();
+      const id = c.req.param("id");
+      correctPdfRowItem(ctx(c), await objectBody(c, { id }));
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/recheck-pdf", (c) => {
+      writable();
+      // Passes: the batch turns ready and the item resolves. Fails: the exact error, no write.
+      return c.json(recheckPdfItem(ctx(c), { id: c.req.param("id") }), 200);
+    })
     .post("/api/review/:id/dismiss-notice", (c) => {
       writable();
       dismissNoticeItem(ctx(c), { id: c.req.param("id") });
@@ -919,6 +939,37 @@ export function createApi(deps: ApiDeps) {
       // Items the batch raised that are still open, not skipped duplicates.
       const needReviewCount = countBatchReviewItems(ctx(c), result.batchId);
       return c.json({ ...result, needReviewCount }, 200);
+    })
+    .post("/api/import/pdf", importBodyLimit, async (c) => {
+      // A base64 statement PDF: the use case stores it encrypted (AD-21) and verifies it
+      // deterministically; a failed verification answers 400 with the exact gap after staging.
+      writable();
+      const input = await objectBody<ExtractAndImportPdfStatementInput>(c);
+      // The use case reads `pdfData ?? content`, so the size guard decodes the same field.
+      const raw = input.pdfData ?? input.content;
+      const bytes =
+        typeof raw === "string"
+          ? Buffer.from(raw, "base64")
+          : Uint8Array.from(raw ?? new Uint8Array());
+      if (bytes.byteLength > MAX_STATEMENT_BYTES) {
+        throw new AppError("Validation", "The file is too large. The limit is 10 MiB.");
+      }
+      const result = await extractAndImportPdfStatement(
+        {
+          ...withLlm(c),
+          attachments: deps.attachments,
+          extractPdfTextPages: deps.extractPdfTextPages ?? extractPdfTextPages,
+        },
+        input,
+      );
+      return c.json(result, 200);
+    })
+    .get("/api/import/pdf/:batchId/file", (c) => {
+      // PDFs are read only through the batch row, viewer-scoped (AD-3, AD-21); never by name.
+      const file = readPdfStatementFile(withAttachments(c), {
+        batchId: c.req.param("batchId"),
+      });
+      return c.body(new Uint8Array(file.bytes), 200, { "Content-Type": file.contentType });
     })
     .post("/api/handoffs", importBodyLimit, async (c) => {
       // A file imported "for" the partner: stored encrypted; the reply carries no account or batch.
