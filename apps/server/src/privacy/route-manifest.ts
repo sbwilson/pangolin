@@ -462,6 +462,9 @@ export const MANIFEST: readonly ManifestEntry[] = [
     body: (id) => ({ name: "Privacy probe payee", originAccountId: id("account") }),
   }),
   read("/api/classify/payees/:id", { params: { id: "payee" } }),
+  // A stored merchant logo, read only through its own payee row (AD-21): a payee the viewer
+  // may not see answers the same 404 as one that never existed, and a logoless one 404s too.
+  read("/api/payees/:id/logo", { params: { id: "payee" } }),
   write("PATCH", "/api/classify/payees/:id", {
     params: { id: "payee" },
     body: () => ({ name: "Privacy probe payee" }),

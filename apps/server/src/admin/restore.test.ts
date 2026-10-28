@@ -28,7 +28,12 @@ import {
   packageMigrationsDir,
 } from "@pangolin/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type Config, DEFAULT_JOBS_CONFIG, defaultAuthConfig } from "../config.ts";
+import {
+  type Config,
+  DEFAULT_JOBS_CONFIG,
+  DEFAULT_LOGOS_CONFIG,
+  defaultAuthConfig,
+} from "../config.ts";
 import { createJobs, createRunner } from "../jobs/index.ts";
 import { addLogin } from "../testing/logins.ts";
 import { type StubRestic, stubRestic } from "../testing/restic.ts";
@@ -127,6 +132,7 @@ beforeEach(async () => {
     adminSocket: null,
     version: "test",
     backup: stub.config,
+    logos: DEFAULT_LOGOS_CONFIG,
   };
   out = [];
   const db = openDatabase(join(dataDir, "pangolin.sqlite"));

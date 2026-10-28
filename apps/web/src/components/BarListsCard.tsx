@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import type { MerchantsReport, ProfitAndLossReport } from "../api.ts";
 import { formatCents } from "../lib/money.ts";
+import { MerchantLogo } from "./MerchantLogo.tsx";
 import { formatPercentOfIncome } from "./ProfitAndLossTable.tsx";
 
 export interface BarListsCardProps {
@@ -46,6 +47,7 @@ export function BarListsCard({
       ? pnlCategory.income.rows.map((r) => ({
           id: r.id,
           name: r.id === null ? "Uncategorised" : (r.name ?? "Unnamed"),
+          logoAttachmentId: null,
           cents: r.cents,
           isUncat: r.id === null,
           filterType: "category" as const,
@@ -53,6 +55,7 @@ export function BarListsCard({
       : incomeMerchants.rows.map((r) => ({
           id: r.payeeId,
           name: r.payeeId === null ? "Unknown payee" : (r.payeeName ?? "Unnamed"),
+          logoAttachmentId: r.payeeId === null ? null : r.logoAttachmentId,
           cents: r.cents,
           isUncat: false,
           filterType: "merchant" as const,
@@ -67,6 +70,7 @@ export function BarListsCard({
       ? pnlGroup.expense.rows.map((r, idx) => ({
           id: r.id,
           name: r.id === null ? "Uncategorised" : (r.name ?? "Unnamed"),
+          logoAttachmentId: null,
           cents: r.cents,
           isUncat: r.id === null,
           colorClass:
@@ -81,6 +85,7 @@ export function BarListsCard({
         ? pnlCategory.expense.rows.map((r) => ({
             id: r.id,
             name: r.id === null ? "Uncategorised" : (r.name ?? "Unnamed"),
+            logoAttachmentId: null,
             cents: r.cents,
             isUncat: r.id === null,
             colorClass: r.id === null ? "fill-warning" : "fill-primary",
@@ -89,6 +94,7 @@ export function BarListsCard({
         : expenseMerchants.rows.map((r) => ({
             id: r.payeeId,
             name: r.payeeId === null ? "Unknown payee" : (r.payeeName ?? "Unnamed"),
+            logoAttachmentId: r.payeeId === null ? null : r.logoAttachmentId,
             cents: r.cents,
             isUncat: false,
             colorClass: "fill-primary",
@@ -165,13 +171,23 @@ export function BarListsCard({
                   data-testid={`income-bar-row-${item.id ?? "null"}`}
                 >
                   <div className="mb-1 flex items-center justify-between text-xs">
-                    <Link
-                      to="/transactions"
-                      search={searchParams}
-                      className="font-medium text-foreground hover:underline truncate max-w-[65%]"
-                    >
-                      {item.name}
-                    </Link>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      {item.filterType === "merchant" && item.id !== null ? (
+                        <MerchantLogo
+                          size="sm"
+                          payeeId={item.id}
+                          logoAttachmentId={item.logoAttachmentId}
+                          name={item.name}
+                        />
+                      ) : null}
+                      <Link
+                        to="/transactions"
+                        search={searchParams}
+                        className="font-medium text-foreground hover:underline truncate max-w-[65%]"
+                      >
+                        {item.name}
+                      </Link>
+                    </span>
                     <div className="flex items-center gap-2 tabular-nums">
                       <span className="font-semibold text-foreground">
                         {formatCents(item.cents)}
@@ -274,13 +290,23 @@ export function BarListsCard({
                   data-testid={`expense-bar-row-${item.id ?? "null"}`}
                 >
                   <div className="mb-1 flex items-center justify-between text-xs">
-                    <Link
-                      to="/transactions"
-                      search={searchParams}
-                      className="font-medium text-foreground hover:underline truncate max-w-[65%]"
-                    >
-                      {item.name}
-                    </Link>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      {item.filterType === "merchant" && item.id !== null ? (
+                        <MerchantLogo
+                          size="sm"
+                          payeeId={item.id}
+                          logoAttachmentId={item.logoAttachmentId}
+                          name={item.name}
+                        />
+                      ) : null}
+                      <Link
+                        to="/transactions"
+                        search={searchParams}
+                        className="font-medium text-foreground hover:underline truncate max-w-[65%]"
+                      >
+                        {item.name}
+                      </Link>
+                    </span>
                     <div className="flex items-center gap-2 tabular-nums">
                       <span className="font-semibold text-foreground">
                         {formatCents(item.cents)}

@@ -738,7 +738,7 @@ describe("registerSplitFieldListener", () => {
   it("is called once per changed write with the event, and not for refused or no-change writes", () => {
     const { a, of, cat, cat2, id, splitId } = prime();
     const events: SplitFieldWrite[] = [];
-    const unregister = registerSplitFieldListener((_tx, _audit, event) => events.push(event));
+    const unregister = registerSplitFieldListener((_ctx, _tx, _audit, event) => events.push(event));
     try {
       const base = { transactionId: id, splitId, field: "category" } as const;
       setSplitField(of(a), { ...base, value: cat, source: "rule" });

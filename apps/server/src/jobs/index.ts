@@ -10,13 +10,21 @@ import {
   closingBalanceSchedule,
   type JobKind,
   type JobRegistration,
+  LOGO_FETCH_JOB,
   nightlyBackupSchedule,
   type Schedule,
 } from "@pangolin/app";
 import { type BackupJobDeps, backupJobs } from "./backup.ts";
 import { closingBalanceJobs } from "./closing-balance.ts";
+import { type LogoJobDeps, logoJobs } from "./logo-fetch.ts";
 
 export { type BackupJobDeps, backupJobs } from "./backup.ts";
+export {
+  createLogoFetcher,
+  type LogoFetcherOptions,
+  type LogoJobDeps,
+  logoJobs,
+} from "./logo-fetch.ts";
 export {
   createRunner,
   DEFAULT_CONCURRENCY,
@@ -36,6 +44,7 @@ export const JOB_KINDS: readonly JobKind[] = [
   BACKUP_CHECK_JOB,
   BACKUP_DRILL_JOB,
   CLOSING_BALANCE_SYNC_JOB,
+  LOGO_FETCH_JOB,
 ];
 
 /** The kinds that reach outside the process; a restore cancels their pending jobs (AD-16). */
@@ -43,7 +52,7 @@ export const EXTERNAL_EFFECT_KINDS: readonly string[] = JOB_KINDS.filter(
   (kind) => kind.externalEffects,
 ).map((kind) => kind.kind);
 
-export interface JobsDeps extends BackupJobDeps {
+export interface JobsDeps extends BackupJobDeps, LogoJobDeps {
   /** The household time zone, for schedules at a time of day. */
   readonly timezone: string;
 }
@@ -61,7 +70,7 @@ export interface Jobs {
  */
 export function createJobs(deps: JobsDeps): Jobs {
   return {
-    kinds: [...backupJobs(deps), ...closingBalanceJobs()],
+    kinds: [...backupJobs(deps), ...closingBalanceJobs(), ...logoJobs(deps)],
     schedules: [
       closingBalanceSchedule(deps.timezone),
       ...(deps.backup.repository === null

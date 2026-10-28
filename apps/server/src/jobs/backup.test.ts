@@ -95,15 +95,16 @@ function jobRows() {
 }
 
 describe("the backup jobs", () => {
-  it("registers every kind, and only the push has external effects", () => {
+  it("registers every kind, and only the push and the logo fetch have external effects", () => {
     expect(JOB_KINDS.map((k) => k.kind)).toEqual([
       "backup-snapshot",
       "backup-push",
       "backup-check",
       "backup-drill",
       "closing-balance-sync",
+      "logo-fetch",
     ]);
-    expect(EXTERNAL_EFFECT_KINDS).toEqual(["backup-push"]);
+    expect(EXTERNAL_EFFECT_KINDS).toEqual(["backup-push", "logo-fetch"]);
     const jobs = createJobs({
       timezone: "UTC",
       dataDir,

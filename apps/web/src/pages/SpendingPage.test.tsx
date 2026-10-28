@@ -172,7 +172,9 @@ const merchantsIncomeReport = (range: { from: string; to: string }) => ({
   ...range,
   flow: "income" as const,
   totalCents: 500000,
-  rows: [{ payeeId: "payee-employer", payeeName: "Acme Corp", cents: 500000 }],
+  rows: [
+    { payeeId: "payee-employer", payeeName: "Acme Corp", logoAttachmentId: null, cents: 500000 },
+  ],
 });
 
 const merchantsExpenseReport = (range: { from: string; to: string }) => ({
@@ -180,9 +182,9 @@ const merchantsExpenseReport = (range: { from: string; to: string }) => ({
   flow: "expense" as const,
   totalCents: 444000,
   rows: [
-    { payeeId: "payee-landlord", payeeName: "Landlord", cents: 200000 },
-    { payeeId: "payee-airline", payeeName: "Qantas", cents: 164000 },
-    { payeeId: "payee-woolies", payeeName: "Woolworths", cents: 80000 },
+    { payeeId: "payee-landlord", payeeName: "Landlord", logoAttachmentId: null, cents: 200000 },
+    { payeeId: "payee-airline", payeeName: "Qantas", logoAttachmentId: null, cents: 164000 },
+    { payeeId: "payee-woolies", payeeName: "Woolworths", logoAttachmentId: "att1", cents: 80000 },
   ],
 });
 

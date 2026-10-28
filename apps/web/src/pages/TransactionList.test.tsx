@@ -1005,3 +1005,31 @@ describe("TransactionList CSV export", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });
+
+describe("TransactionList merchant logos", () => {
+  it("shows the logo box, the description initial, and nothing on hidden rows", async () => {
+    const withLogo = {
+      ...row,
+      id: "t-logo",
+      descriptionRaw: "Plumbco shop",
+      payeeId: "p1",
+      payeeName: "Plumbco",
+      logoAttachmentId: "att1",
+    } as unknown as LedgerTransaction;
+    const hidden = {
+      ...row,
+      id: "t-hidden",
+      nameHidden: true,
+      nameHiddenUntil: "2026-12-31T00:00:00.000Z",
+    } as unknown as LedgerTransaction;
+    vi.mocked(api.fetchTransactions).mockResolvedValue(list([withLogo, row, hidden]));
+    renderList();
+    await screen.findByText("Plumber");
+    const imgs = screen.getAllByTestId("merchant-logo-img");
+    expect(imgs).toHaveLength(1);
+    expect(imgs[0]?.getAttribute("src")).toBe("/api/payees/p1/logo");
+    const initials = screen.getAllByTestId("merchant-logo-initial");
+    expect(initials).toHaveLength(1);
+    expect(initials[0]?.textContent).toBe("P");
+  });
+});

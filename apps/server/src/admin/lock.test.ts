@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { packageMigrationsDir } from "@pangolin/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_BACKUP_CONFIG, DEFAULT_JOBS_CONFIG, defaultAuthConfig } from "../config.ts";
+import {
+  DEFAULT_BACKUP_CONFIG,
+  DEFAULT_JOBS_CONFIG,
+  DEFAULT_LOGOS_CONFIG,
+  defaultAuthConfig,
+} from "../config.ts";
 import { startServer } from "../server.ts";
 import { acquireDataDirLock, DataDirLocked } from "./lock.ts";
 
@@ -85,6 +90,7 @@ describe("acquireDataDirLock", () => {
           demo: false,
           jobs: DEFAULT_JOBS_CONFIG,
           backup: DEFAULT_BACKUP_CONFIG,
+          logos: DEFAULT_LOGOS_CONFIG,
           auth: defaultAuthConfig(dataDir),
           trustedProxies: [],
           adminSocket: null,

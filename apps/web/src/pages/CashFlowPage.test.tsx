@@ -151,7 +151,9 @@ const merchantsIncomeReport = (range: { from: string; to: string }) => ({
   ...range,
   flow: "income" as const,
   totalCents: 512345,
-  rows: [{ payeeId: "payee-employer", payeeName: "Acme Corp", cents: 500000 }],
+  rows: [
+    { payeeId: "payee-employer", payeeName: "Acme Corp", logoAttachmentId: null, cents: 500000 },
+  ],
 });
 
 const merchantsExpenseReport = (range: { from: string; to: string }) => ({
@@ -159,9 +161,9 @@ const merchantsExpenseReport = (range: { from: string; to: string }) => ({
   flow: "expense" as const,
   totalCents: 300000,
   rows: [
-    { payeeId: "payee-landlord", payeeName: "Landlord", cents: 200000 },
-    { payeeId: "payee-woolies", payeeName: "Woolworths", cents: 80000 },
-    { payeeId: null, payeeName: null, cents: 20000 },
+    { payeeId: "payee-landlord", payeeName: "Landlord", logoAttachmentId: null, cents: 200000 },
+    { payeeId: "payee-woolies", payeeName: "Woolworths", logoAttachmentId: null, cents: 80000 },
+    { payeeId: null, payeeName: null, logoAttachmentId: null, cents: 20000 },
   ],
 });
 
@@ -173,6 +175,9 @@ const transactionsReport = () => ({
       postedOn: "2026-08-10",
       amountCents: -5000,
       descriptionRaw: "Woolworths",
+      payeeId: null,
+      payeeName: null,
+      logoAttachmentId: null,
       status: "posted" as const,
       notes: null,
       nameHidden: false,
@@ -198,6 +203,9 @@ const transactionsReport = () => ({
       postedOn: "2026-08-12",
       amountCents: -12000,
       descriptionRaw: "Hidden until Aug 2026",
+      payeeId: null,
+      payeeName: null,
+      logoAttachmentId: null,
       status: "posted" as const,
       notes: null,
       nameHidden: true,

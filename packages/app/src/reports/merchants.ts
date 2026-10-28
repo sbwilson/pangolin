@@ -17,6 +17,8 @@ export type MerchantsInput = z.input<typeof merchantsInput>;
 export interface MerchantRow {
   readonly payeeId: string | null;
   readonly payeeName: string | null;
+  /** The payee's logo attachment; null under the same conditions as `payeeId`. */
+  readonly logoAttachmentId: string | null;
   readonly cents: number;
 }
 
@@ -46,6 +48,7 @@ export function merchants(ctx: UseCaseContext, input: MerchantsInput): Merchants
     sums.set(r.payeeId, {
       payeeId: r.payeeId,
       payeeName: r.payeeName,
+      logoAttachmentId: before?.logoAttachmentId ?? r.logoAttachmentId,
       cents: (before?.cents ?? 0) + r.cents,
     });
   }

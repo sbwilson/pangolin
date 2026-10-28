@@ -522,6 +522,7 @@ export function createPayeeRepo(orm: Orm, check: () => void): PayeeRepo {
           .set({
             name: row.name,
             websiteUrl: row.websiteUrl,
+            logoAttachmentId: row.logoAttachmentId,
             defaultCategoryId: row.defaultCategoryId,
             updatedAt: row.updatedAt,
           })

@@ -11,7 +11,9 @@ import {
   type PayeeRow,
   type TxRepos,
 } from "../ports/unit-of-work.ts";
-import { write } from "../write.ts";
+import { enqueueLogoFetch, payeeNeedsLogoFetch } from "../system/logos.ts";
+import { type Audit, write } from "../write.ts";
+import { normaliseDomain } from "./domain.ts";
 import { auditScope, nameInput, originInput, scopeFor } from "./scope.ts";
 
 const websiteInput = z
@@ -88,6 +90,9 @@ export function createPayee(ctx: UseCaseContext, input: CreatePayeeInput): Payee
       after: row,
       ...auditScope(scope.scopePersonId, scope.origin),
     });
+    // A shared payee born with a website gets its logo fetched (decision 3: a person
+    // supplying the address is as good a confirmation as accepting a suggestion).
+    if (payeeNeedsLogoFetch(row)) enqueueLogoFetch(tx, ctx, row.id);
     return row;
   });
 }
@@ -134,8 +139,50 @@ export function updatePayee(ctx: UseCaseContext, input: UpdatePayeeInput): Payee
       after,
       ...auditScope(before.scopePersonId, origin),
     });
+    // Only a NEWLY set website triggers a fetch: an edit from one address to another on a
+    // payee that already had one is not a new confirmation.
+    if (before.websiteUrl === null && payeeNeedsLogoFetch(after)) {
+      enqueueLogoFetch(tx, ctx, before.id);
+    }
     return after;
   });
+}
+
+/**
+ * `classify.attachLogoToPayee`: links a stored logo attachment onto its payee. The `payee`
+ * row is owned by `classify` (AD-10), so `system` calls this — inside its own write — instead
+ * of touching the row itself. The guards are re-checked here: a payee that went private, lost
+ * its website or gained a logo while the fetch ran, or whose stored website no longer
+ * normalises to a public host, links nothing. Returns whether the row was linked; the audit
+ * entry is the same `payee` update `classify`'s own writes make.
+ */
+export function attachLogoToPayee(
+  ctx: Pick<UseCaseContext, "viewer" | "clock">,
+  tx: TxRepos,
+  audit: Audit,
+  payeeId: string,
+  attachmentId: string,
+): boolean {
+  const before = tx.payees.find(ctx.viewer, payeeId);
+  if (before === undefined || !payeeNeedsLogoFetch(before)) return false;
+  // Final belt: only a website that still normalises to a public host may carry bytes.
+  if (normaliseDomain(before.websiteUrl) === null) return false;
+  const after: PayeeRow = {
+    ...before,
+    logoAttachmentId: attachmentId,
+    updatedAt: formatInstant(ctx.clock.now()),
+  };
+  if (!tx.payees.update(ctx.viewer, after)) throw new AppError("NotFound", "Payee not found");
+  const origin = tx.payees.originOf(ctx.viewer, before.id) ?? null;
+  audit({
+    entity: "payee",
+    entityId: before.id,
+    action: "update",
+    before,
+    after,
+    ...auditScope(before.scopePersonId, origin),
+  });
+  return true;
 }
 
 export const deletePayeeInput = z.object({ id: idInput }).strict();

@@ -1888,6 +1888,7 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
             categoryName: cat?.name ?? null,
             payeeId: shown.payeeId,
             payeeName: shown.payeeName,
+            logoAttachmentId: shown.logoAttachmentId,
             cents,
           });
         }
@@ -2909,12 +2910,15 @@ function payeeRepo(working: MemoryState, check: () => void): PayeeRepo {
           ...before,
           name: next.name,
           websiteUrl: next.websiteUrl,
+          logoAttachmentId: next.logoAttachmentId,
           defaultCategoryId: next.defaultCategoryId,
           updatedAt: next.updatedAt,
         }),
         {
-          checkReferences: (next) =>
-            references(working.categories, next.defaultCategoryId, "payee.default_category_id"),
+          checkReferences: (next) => {
+            references(working.categories, next.defaultCategoryId, "payee.default_category_id");
+            references(working.attachments, next.logoAttachmentId, "payee.logo_attachment_id");
+          },
         },
       ),
     softDelete: base.softDelete,

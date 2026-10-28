@@ -2,6 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils.ts";
 import type { CategorySummary, LedgerTransaction } from "../api.ts";
+import { MerchantLogo } from "../components/MerchantLogo.tsx";
 import { CategoryCombobox } from "../components/ui/category-combobox.tsx";
 import {
   Table,
@@ -227,6 +228,13 @@ function Row({
           </span>
         ) : (
           <span className="flex min-w-0 items-baseline gap-2">
+            <MerchantLogo
+              payeeId={txn.payeeId}
+              logoAttachmentId={txn.logoAttachmentId}
+              name={txn.payeeName}
+              description={txn.descriptionRaw}
+              className="self-center"
+            />
             <button
               type="button"
               className="min-w-0 truncate text-left"

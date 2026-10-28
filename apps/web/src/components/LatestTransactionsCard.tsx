@@ -3,6 +3,7 @@ import type { CategorySummary, LedgerTransaction } from "../api.ts";
 import { hiddenUntilLabel, longDay, WINK_LINE } from "../lib/hidden.ts";
 import { formatCents } from "../lib/money.ts";
 import { MascotIcon } from "./MascotLogo.tsx";
+import { MerchantLogo } from "./MerchantLogo.tsx";
 
 export interface LatestTransactionsCardProps {
   readonly transactions: readonly LedgerTransaction[];
@@ -83,6 +84,12 @@ export function LatestTransactionsCard({
                 ) : (
                   /* Standard transaction row */
                   <div className="flex min-w-0 items-center gap-3">
+                    <MerchantLogo
+                      payeeId={txn.payeeId}
+                      logoAttachmentId={txn.logoAttachmentId}
+                      name={txn.payeeName}
+                      description={txn.descriptionRaw}
+                    />
                     <div className="min-w-0">
                       <p className="m-0 truncate text-sm font-medium text-foreground">
                         {txn.descriptionRaw}

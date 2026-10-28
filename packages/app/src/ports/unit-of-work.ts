@@ -581,6 +581,8 @@ export interface FlowBreakdownRow {
   readonly categoryName: string | null;
   readonly payeeId: string | null;
   readonly payeeName: string | null;
+  /** The payee's logo attachment; null under the same conditions as `payeeId`. */
+  readonly logoAttachmentId: string | null;
   /** The sum for `income`, minus the sum for `expense`: money out is positive, as in 4.1. */
   readonly cents: number;
 }

@@ -177,6 +177,8 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
   const systemHealth = createSystemHealthRepo(db);
   // Created after the HTTP server is listening; `/healthz` reads it per request.
   let runner: Runner | undefined;
+  // Built below, once the secret is loaded; the job wiring reads it too.
+  let attachments: AttachmentStore = refusingAttachments;
 
   let app: ReturnType<typeof createApp>;
   let setupLinkFile: string | undefined;
@@ -184,8 +186,6 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
     let authn: Authn;
     // Demo mode never writes, so its recovery-code key is a throwaway.
     let codes = recoveryCodeHasher(randomBytes(32).toString("base64url"));
-    // Demo mode never writes, so it never stores a file either.
-    let attachments: AttachmentStore = refusingAttachments;
     let secret: string | undefined;
     if (demo) {
       // Demo mode: no sign-in; every request is the first seeded person, and writes still fail.
@@ -268,6 +268,9 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
           dataDir: config.dataDir,
           backup: config.backup,
           migrationsDir: options.migrationsDir,
+          attachments,
+          logosEnabled: config.logos.enabled,
+          egressProxyUrl: config.logos.egressProxyUrl,
         });
       runner = createRunner({
         uow,

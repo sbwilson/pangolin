@@ -3,6 +3,8 @@ import { Temporal } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import { createCategory } from "../classify/categories.ts";
 import { createCategoryGroup } from "../classify/category-groups.ts";
+import "../classify/domain-link.ts"; // installs the domain-link listener, as any @pangolin/app load does
+import { createPayee } from "../classify/payees.ts";
 import { CLASSIFY_UNCLASSIFIED_REVIEW } from "../classify/rules.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
@@ -743,5 +745,216 @@ describe("suggestion review actions", () => {
     }).id;
 
     expect(() => acceptSuggestionItem(f.ctxA, { id: item })).toThrow(AppError);
+  });
+
+  describe("accepting links the domain and asks for a logo", () => {
+    function pushSuggestion(
+      f: ReturnType<typeof suggestionFixture>,
+      txnId: Id<"Transaction">,
+      websiteDomain: string | null,
+    ) {
+      const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+      f.uow.state.suggestions.push({
+        id: f.ctx.newId<"Suggestion">(),
+        accountId: "pub1" as Id<"Account">,
+        transactionId: txnId,
+        splitId,
+        source: "llm",
+        field: "category",
+        suggestedValue: f.catId,
+        payeeName: "Shop",
+        websiteDomain,
+        taxCategoryId: null,
+        activityId: null,
+        confidence: 0.95,
+        model: "test-model",
+        promptVersion: "1",
+        outcome: "open",
+        createdAt: "2026-09-27T00:00:00Z",
+        resolvedAt: null,
+      });
+      return raise(f.ctx, {
+        kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+        entityRef: `transaction:${txnId}`,
+        dedupeKey: `classify.unclassified:${txnId}`,
+        accountId: "pub1",
+      }).id;
+    }
+
+    const logoJobs = (f: ReturnType<typeof suggestionFixture>) =>
+      f.uow.state.jobs.filter((j) => j.kind === "logo-fetch");
+
+    it("links the normalised website onto the payee and enqueues one net-lane job", () => {
+      const f = suggestionFixture();
+      const payee = createPayee(f.ctxA, { name: "Woolworths", originAccountId: "pub1" });
+      const txnId = createTransaction(f.ctxA, {
+        accountId: "pub1",
+        postedOn: "2026-09-27",
+        amountCents: -5000,
+        description: "Woolworths",
+        payeeId: payee.id,
+      });
+      const item = pushSuggestion(f, txnId, "https://www.Woolworths.com.au/store?x=1");
+
+      acceptSuggestionItem(f.ctxA, { id: item });
+
+      expect(f.uow.state.payees.find((p) => p.id === payee.id)?.websiteUrl).toBe(
+        "https://woolworths.com.au",
+      );
+      const jobs = logoJobs(f);
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]!.lane).toBe("net");
+      expect(jobs[0]!.dedupeKey).toBe(`logo:${payee.id}`);
+      expect(JSON.parse(jobs[0]!.payload)).toEqual({ payeeId: payee.id });
+    });
+
+    it("dedupes: a second accepted suggestion for the same payee adds no job", () => {
+      const f = suggestionFixture();
+      const payee = createPayee(f.ctxA, { name: "Woolworths", originAccountId: "pub1" });
+      const txn1 = createTransaction(f.ctxA, {
+        accountId: "pub1",
+        postedOn: "2026-09-27",
+        amountCents: -5000,
+        description: "Woolworths 1",
+        payeeId: payee.id,
+      });
+      const txn2 = createTransaction(f.ctxA, {
+        accountId: "pub1",
+        postedOn: "2026-09-27",
+        amountCents: -6000,
+        description: "Woolworths 2",
+        payeeId: payee.id,
+      });
+      acceptSuggestionItem(f.ctxA, { id: pushSuggestion(f, txn1, "woolworths.com.au") });
+      acceptSuggestionItem(f.ctxA, { id: pushSuggestion(f, txn2, "woolworths.com.au") });
+
+      expect(logoJobs(f)).toHaveLength(1);
+    });
+
+    it("keeps an existing website and still asks for a logo", () => {
+      const f = suggestionFixture();
+      const payee = createPayee(f.ctxA, {
+        name: "Woolworths",
+        originAccountId: "pub1",
+        websiteUrl: "https://existing.example.org",
+      });
+      // The create above already queued one job; clear it to watch the accept alone.
+      f.uow.state.jobs.length = 0;
+      const txnId = createTransaction(f.ctxA, {
+        accountId: "pub1",
+        postedOn: "2026-09-27",
+        amountCents: -5000,
+        description: "Woolworths",
+        payeeId: payee.id,
+      });
+      const item = pushSuggestion(f, txnId, "woolworths.com.au");
+
+      acceptSuggestionItem(f.ctxA, { id: item });
+
+      expect(f.uow.state.payees.find((p) => p.id === payee.id)?.websiteUrl).toBe(
+        "https://existing.example.org",
+      );
+      expect(logoJobs(f)).toHaveLength(1);
+    });
+
+    it("links a private payee's domain but enqueues no fetch", () => {
+      const f = suggestionFixture();
+      const payee = createPayee(f.ctxA, { name: "Secret Shop", originAccountId: "priv1" });
+      const txnId = createTransaction(f.ctxA, {
+        accountId: "priv1",
+        postedOn: "2026-09-27",
+        amountCents: -9900,
+        description: "Secret Shop",
+        payeeId: payee.id,
+      });
+      const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+      f.uow.state.suggestions.push({
+        id: f.ctx.newId<"Suggestion">(),
+        accountId: "priv1" as Id<"Account">,
+        transactionId: txnId,
+        splitId,
+        source: "llm",
+        field: "category",
+        suggestedValue: f.catId,
+        payeeName: "Secret Shop",
+        websiteDomain: "secret.example.net/path",
+        taxCategoryId: null,
+        activityId: null,
+        confidence: 0.95,
+        model: "test-model",
+        promptVersion: "1",
+        outcome: "open",
+        createdAt: "2026-09-27T00:00:00Z",
+        resolvedAt: null,
+      });
+      const item = raise(f.ctx, {
+        kind: CLASSIFY_UNCLASSIFIED_REVIEW,
+        entityRef: `transaction:${txnId}`,
+        dedupeKey: `classify.unclassified:${txnId}`,
+        accountId: "priv1",
+      }).id;
+
+      acceptSuggestionItem(f.ctxA, { id: item });
+
+      expect(f.uow.state.payees.find((p) => p.id === payee.id)?.websiteUrl).toBe(
+        "https://secret.example.net",
+      );
+      expect(logoJobs(f)).toHaveLength(0);
+    });
+
+    it("does nothing when the transaction has no payee or the domain is unusable", () => {
+      const f = suggestionFixture();
+      const txnId = createTransaction(f.ctxA, {
+        accountId: "pub1",
+        postedOn: "2026-09-27",
+        amountCents: -5000,
+        description: "Mystery",
+      });
+      acceptSuggestionItem(f.ctxA, { id: pushSuggestion(f, txnId, "mystery-brand.com") });
+      expect(f.uow.state.payees).toHaveLength(0);
+      expect(logoJobs(f)).toHaveLength(0);
+
+      const payee = createPayee(f.ctxA, { name: "Local Thing", originAccountId: "pub1" });
+      const txn2 = createTransaction(f.ctxA, {
+        accountId: "pub1",
+        postedOn: "2026-09-27",
+        amountCents: -4000,
+        description: "Local Thing",
+        payeeId: payee.id,
+      });
+      acceptSuggestionItem(f.ctxA, { id: pushSuggestion(f, txn2, "http://192.168.0.7/") });
+      expect(f.uow.state.payees.find((p) => p.id === payee.id)?.websiteUrl).toBeNull();
+      expect(logoJobs(f)).toHaveLength(0);
+    });
+
+    it("bulk accept enqueues one job per distinct payee", () => {
+      const f = suggestionFixture();
+      const payee1 = createPayee(f.ctxA, { name: "Store One", originAccountId: "pub1" });
+      const payee2 = createPayee(f.ctxA, { name: "Store Two", originAccountId: "pub1" });
+      const txn1 = createTransaction(f.ctxA, {
+        accountId: "pub1",
+        postedOn: "2026-09-27",
+        amountCents: -1000,
+        description: "Store One",
+        payeeId: payee1.id,
+      });
+      const txn2 = createTransaction(f.ctxA, {
+        accountId: "pub1",
+        postedOn: "2026-09-27",
+        amountCents: -2000,
+        description: "Store Two",
+        payeeId: payee2.id,
+      });
+      const item1 = pushSuggestion(f, txn1, "one.example.com");
+      const item2 = pushSuggestion(f, txn2, "two.example.com");
+
+      bulkAcceptSuggestions(f.ctxA, { ids: [item1, item2] });
+
+      expect(
+        logoJobs(f)
+          .map((j) => j.dedupeKey)
+          .sort(),
+      ).toEqual([`logo:${payee1.id}`, `logo:${payee2.id}`].sort());
+    });
   });
 });

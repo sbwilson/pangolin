@@ -40,6 +40,7 @@ import {
   type BackupConfig,
   DEFAULT_BACKUP_CONFIG,
   DEFAULT_JOBS_CONFIG,
+  DEFAULT_LOGOS_CONFIG,
   defaultAuthConfig,
 } from "./config.ts";
 import { type RunningServer, startServer } from "./server.ts";
@@ -76,6 +77,7 @@ async function boot(): Promise<RunningServer> {
       port: 0,
       demo: false,
       jobs: DEFAULT_JOBS_CONFIG,
+      logos: DEFAULT_LOGOS_CONFIG,
       backup,
       auth: { ...defaultAuthConfig(dataDir()), publicUrl: PUBLIC_URL },
       trustedProxies: [],

@@ -501,6 +501,12 @@ export interface LedgerTransaction {
   readonly amountCents: number;
   /** "Hidden until <date>" (short month) while the name is hidden from the viewer. */
   readonly descriptionRaw: string;
+  /** The payee on the row; null while the name is hidden or it is another person's scoped payee. */
+  readonly payeeId: string | null;
+  /** The payee's name; null under the same conditions as `payeeId`. */
+  readonly payeeName: string | null;
+  /** The payee's logo attachment; null under the same conditions as `payeeId`. */
+  readonly logoAttachmentId: string | null;
   readonly status: "pending" | "posted";
   readonly notes: string | null;
   /** True while the name is hidden from the signed-in person. */

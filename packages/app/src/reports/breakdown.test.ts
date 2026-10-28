@@ -208,20 +208,56 @@ describe.each([
     const { ids } = h;
     const forB = merchants(h.as(h.b), { ...SEPTEMBER, flow: "expense" });
     expect(forB.rows).toEqual([
-      { payeeId: null, payeeName: null, cents: 7000 + 6000 + 2500 },
-      { payeeId: ids.shop.id, payeeName: "Shop", cents: 12000 },
-      { payeeId: ids.cafe.id, payeeName: "Cafe", cents: 3000 },
+      { payeeId: null, payeeName: null, logoAttachmentId: null, cents: 7000 + 6000 + 2500 },
+      { payeeId: ids.shop.id, payeeName: "Shop", logoAttachmentId: null, cents: 12000 },
+      { payeeId: ids.cafe.id, payeeName: "Cafe", logoAttachmentId: null, cents: 3000 },
     ]);
     expect(forB.totalCents).toBe(cashFlowTotals(h.as(h.b), SEPTEMBER).moneyOutCents);
     const forA = merchants(h.as(h.a), { ...SEPTEMBER, flow: "expense" });
     expect(forA.rows).toEqual([
-      { payeeId: ids.shop.id, payeeName: "Shop", cents: 12000 },
-      { payeeId: ids.cafe.id, payeeName: "Cafe", cents: 10000 },
-      { payeeId: null, payeeName: null, cents: 6000 + 2500 },
+      { payeeId: ids.shop.id, payeeName: "Shop", logoAttachmentId: null, cents: 12000 },
+      { payeeId: ids.cafe.id, payeeName: "Cafe", logoAttachmentId: null, cents: 10000 },
+      { payeeId: null, payeeName: null, logoAttachmentId: null, cents: 6000 + 2500 },
     ]);
     expect(merchants(h.as(h.b), { ...SEPTEMBER, flow: "income" }).rows).toEqual([
-      { payeeId: null, payeeName: null, cents: 500000 },
-      { payeeId: ids.shop.id, payeeName: "Shop", cents: 4000 },
+      { payeeId: null, payeeName: null, logoAttachmentId: null, cents: 500000 },
+      { payeeId: ids.shop.id, payeeName: "Shop", logoAttachmentId: null, cents: 4000 },
+    ]);
+  });
+
+  it("carries the payee's logo, and nulls it where the payee is not visible", () => {
+    const h = household(makeUow());
+    const { ids } = h;
+    h.sys.uow.transaction((r) => {
+      for (const [attId, payeeId] of [
+        ["att-shop", ids.shop.id],
+        ["att-cafe", ids.cafe.id],
+      ] as const) {
+        const id = attId as Id<"Attachment">;
+        r.attachments.insert({
+          id,
+          name: `hash-${attId}`,
+          mime: "image/png",
+          bytes: 4,
+          createdAt: "2026-09-01T00:00:00.000Z",
+        });
+        const before = r.payees.find(h.sys.viewer, payeeId);
+        if (before !== undefined) {
+          r.payees.update(h.sys.viewer, { ...before, logoAttachmentId: id });
+        }
+      }
+    });
+    // A's own view: the hidden transaction keeps its payee, so both rows carry logos.
+    expect(merchants(h.as(h.a), { ...SEPTEMBER, flow: "expense" }).rows).toEqual([
+      { payeeId: ids.shop.id, payeeName: "Shop", logoAttachmentId: "att-shop", cents: 12000 },
+      { payeeId: ids.cafe.id, payeeName: "Cafe", logoAttachmentId: "att-cafe", cents: 10000 },
+      { payeeId: null, payeeName: null, logoAttachmentId: null, cents: 6000 + 2500 },
+    ]);
+    // For B A's hidden cafe transaction falls into the null bucket: its logo never crosses over.
+    expect(merchants(h.as(h.b), { ...SEPTEMBER, flow: "expense" }).rows).toEqual([
+      { payeeId: null, payeeName: null, logoAttachmentId: null, cents: 7000 + 6000 + 2500 },
+      { payeeId: ids.shop.id, payeeName: "Shop", logoAttachmentId: "att-shop", cents: 12000 },
+      { payeeId: ids.cafe.id, payeeName: "Cafe", logoAttachmentId: "att-cafe", cents: 3000 },
     ]);
   });
 

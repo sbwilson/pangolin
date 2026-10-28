@@ -486,6 +486,88 @@ describe("Categorisation Engine", () => {
     expect(first.resolvedAt).toBeNull();
   });
 
+  it("records the website domain normalised, and null for anything not public", async () => {
+    const env = setupTestEnvironment();
+    const domains = ["https://www.Bunnings.com.au/store?x=1", "http://192.168.0.7/", "coffee"];
+
+    const txnIds: Id<"Transaction">[] = [];
+    domains.forEach((_, i) => {
+      const txnId = env.newId<"Transaction">();
+      const splitId = env.newId<"Split">();
+      txnIds.push(txnId);
+      (env.uow.state.transactions as any).push({
+        id: txnId,
+        accountId: env.publicAccountId,
+        postedOn: "2026-10-26",
+        amountCents: -(1000 + i * 100),
+        descriptionRaw: `Merchant ${i}`,
+        fingerprint: `fp-norm-${i}`,
+        fingerprintVersion: 1,
+        status: "posted",
+        performedBy: null,
+        payeeId: null,
+        notes: null,
+        nameHiddenUntil: null,
+        nameHiddenBy: null,
+        transferGroupId: null,
+        needsReview: true,
+        searchId: 300 + i,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+        deletedAt: null,
+      });
+      env.uow.state.splits.push({
+        id: splitId,
+        transactionId: txnId,
+        amountCents: -(1000 + i * 100),
+        categoryId: null,
+        activityId: null,
+        beneficiary: "shared",
+        propertyId: null,
+        taxCategoryId: null,
+        deductibleBp: null,
+        memo: null,
+        categorySource: null,
+        activitySource: null,
+        taxCategorySource: null,
+        beneficiarySource: "user",
+        deductibleBpSource: null,
+        createdAt: now.toString(),
+        updatedAt: now.toString(),
+      });
+    });
+
+    const mockLlm = createMockLlm(() => ({
+      suggestions: domains.map((domain, idx) => ({
+        index: idx,
+        payee_name: `Merchant ${idx}`,
+        website_domain: domain,
+        category_id: env.categories.groceries,
+        confidence: 0.9,
+      })),
+    }));
+
+    const result = await categoriseTransactions(
+      {
+        viewer: env.alexViewer,
+        clock,
+        uow: env.uow,
+        newId: env.newId,
+        provider: mockLlm,
+        providerIsLocal: false,
+        providerModel: "cloud-gpt-4o",
+      },
+      { transactionIds: txnIds },
+    );
+
+    expect(result.recordedCount).toBe(3);
+    expect(result.suggestions.map((s) => s.websiteDomain)).toEqual([
+      "bunnings.com.au", // scheme, www, query and case all stripped
+      null, // IP literal: never stored
+      null, // single label: never stored
+    ]);
+  });
+
   it("refuses private account transactions before calling cloud provider", async () => {
     const env = setupTestEnvironment();
 

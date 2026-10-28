@@ -2489,7 +2489,7 @@ describe("GET /api/reports/cash-flow", () => {
       to: "2026-09-30",
       flow: "expense",
       totalCents: 4500,
-      rows: [{ payeeId: null, payeeName: null, cents: 4500 }],
+      rows: [{ payeeId: null, payeeName: null, logoAttachmentId: null, cents: 4500 }],
     });
     expect(await get(`/api/reports/leaks?${range}`)).toEqual({
       from: "2026-09-01",
@@ -4189,5 +4189,91 @@ not-a-date,-12.00,"BOOKSTORE",988.00`;
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+});
+
+describe("GET /api/payees/:id/logo", () => {
+  const alexId = "01J0000000000000000000000A";
+  const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47]);
+
+  /** Alex (the session) and Sam; a shared payee with a logo, Sam's scoped payee, a bare one. */
+  function seedLogo(db: Db) {
+    addPerson(db);
+    const d = deps(db);
+    const sys: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const sam = createPerson(sys, { displayName: "Sam", colour: "#000000" });
+    const joint = createAccount(sys, {
+      name: "Joint",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [
+        { personId: alexId, shareBp: 5000 },
+        { personId: sam, shareBp: 5000 },
+      ],
+    });
+    const samPrivate = createAccount(sys, {
+      name: "Sam private",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: true,
+      owners: [{ personId: sam, shareBp: 10000 }],
+    });
+    const attLogoId = d.newId<"Attachment">();
+    const name = (d.attachments as FakeAttachmentStore).put(PNG);
+    write(sys, (tx) =>
+      tx.attachments.insert({
+        id: attLogoId,
+        name,
+        mime: "image/png",
+        bytes: PNG.length,
+        createdAt: "2026-09-01T00:00:00.000Z",
+      }),
+    );
+    const shared = createPayee(sys, {
+      name: "Shop",
+      websiteUrl: "https://shop.example.com",
+      originAccountId: joint,
+    });
+    const privatePayee = createPayee(sys, {
+      name: "Sam clinic",
+      websiteUrl: "https://clinic.example.com",
+      originAccountId: samPrivate,
+    });
+    const bare = createPayee(sys, { name: "Cash", originAccountId: joint });
+    db.prepare("UPDATE payee SET logo_attachment_id = ? WHERE id IN (?, ?)").run(
+      attLogoId,
+      shared.id,
+      privatePayee.id,
+    );
+    return { d, app: createApp(d), shared, privatePayee, bare };
+  }
+
+  it("serves the stored bytes with the stored mime for a visible payee", async () => {
+    const db = openDb();
+    const { app, shared } = seedLogo(db);
+    const res = await app.request(`/api/payees/${shared.id}/logo`, signedIn);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/png");
+    expect(Array.from(new Uint8Array(await res.arrayBuffer()))).toEqual(Array.from(PNG));
+  });
+
+  it("answers 404 for a logoless payee and for an unknown id", async () => {
+    const db = openDb();
+    const { app, bare } = seedLogo(db);
+    expect((await app.request(`/api/payees/${bare.id}/logo`, signedIn)).status).toBe(404);
+    expect((await app.request("/api/payees/nosuchpayee/logo", signedIn)).status).toBe(404);
+  });
+
+  it("is 404 for another person's scoped payee, and 401 without a session", async () => {
+    const db = openDb();
+    const { app, privatePayee } = seedLogo(db);
+    expect((await app.request(`/api/payees/${privatePayee.id}/logo`, signedIn)).status).toBe(404);
+    expect((await app.request(`/api/payees/${privatePayee.id}/logo`)).status).toBe(401);
   });
 });

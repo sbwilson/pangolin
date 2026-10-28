@@ -11,6 +11,7 @@ import {
   type CategoriseCategoryOption,
   type CategoriseRequestItem,
 } from "./categorise-request.ts";
+import { normaliseDomain } from "./domain.ts";
 import { findFewShotExamples } from "./few-shot-search.ts";
 
 export const CATEGORISE_BATCH_SIZE = 20;
@@ -229,7 +230,9 @@ export async function categoriseTransactions(
         field: "category",
         suggestedValue: suggestionOutput.category_id,
         payeeName: suggestionOutput.payee_name ?? null,
-        websiteDomain: suggestionOutput.website_domain ?? null,
+        // Stored NORMALISED: bare public host or null (never scheme/www/path,
+        // never an IP literal or private host).
+        websiteDomain: normaliseDomain(suggestionOutput.website_domain),
         taxCategoryId,
         activityId,
         confidence: suggestionOutput.confidence,

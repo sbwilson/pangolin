@@ -143,6 +143,10 @@ export {
   DEFAULT_TAX_CATEGORIES,
   seedDefaults,
 } from "./classify/defaults.ts";
+export { normaliseDomain, payeeLogoUrl } from "./classify/domain.ts";
+// Loading the package installs the domain-link listener (merchant-domain story): it links an
+// accepted suggestion's domain and enqueues the logo fetch inside the accepting transaction.
+export { onSplitFieldWrite } from "./classify/domain-link.ts";
 export {
   type FewShotSearchInput,
   fewShotSearch,
@@ -667,6 +671,7 @@ export type {
   StructuredPrompt,
   StructuredResponse,
 } from "./ports/llm-provider.ts";
+export type { FetchedLogo, LogoFetcher } from "./ports/logo-fetcher.ts";
 export type {
   CsvColumnMapping,
   DateFormat,
@@ -968,6 +973,22 @@ export {
   runningJobsInput,
 } from "./system/job-status.ts";
 export { type ListAuditInput, listAudit, listAuditInput } from "./system/list-audit.ts";
+export {
+  enqueueLogoFetch,
+  LOGO_FETCH_JOB,
+  LOGO_MIMES,
+  logoDedupeKey,
+  MAX_LOGO_BYTES,
+  payeeNeedsLogoFetch,
+  type RecordPayeeLogoInput,
+  recordPayeeLogo,
+} from "./system/logos.ts";
+export {
+  type PayeeLogoFile,
+  type ReadPayeeLogoInput,
+  readPayeeLogo,
+  readPayeeLogoInput,
+} from "./system/payee-logo.ts";
 export {
   READINESS_CHECKS,
   type ReadinessCheck,

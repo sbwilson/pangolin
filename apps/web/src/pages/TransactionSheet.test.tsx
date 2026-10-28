@@ -69,6 +69,9 @@ const txn = (over: Partial<LedgerTransaction> = {}): LedgerTransaction => ({
   nameHiddenUntil: null,
   remainingCents: 0,
   splits: [split()],
+  payeeId: null,
+  payeeName: null,
+  logoAttachmentId: null,
   ...over,
 });
 

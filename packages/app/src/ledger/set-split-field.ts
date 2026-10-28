@@ -8,6 +8,7 @@ import {
   SPLIT_SOURCES,
   type SplitRow,
   type SplitSource,
+  type SuggestionOutcome,
   type TxRepos,
 } from "../ports/unit-of-work.ts";
 import { raiseReviewItem, resolveReviewItem } from "../system/review-items.ts";
@@ -69,15 +70,30 @@ export interface SplitFieldWrite {
   readonly field: SplitField;
   readonly value: string | number | null;
   readonly source: SplitSource;
+  /**
+   * The open suggestion this write closed (AD-10), when it closed one: its id, the merchant
+   * domain it carried, and the outcome it resolved to.
+   */
+  readonly closedSuggestion?: {
+    readonly id: string;
+    readonly websiteDomain: string | null;
+    readonly outcome: SuggestionOutcome;
+  };
 }
-export type SplitFieldListener = (tx: TxRepos, audit: Audit, event: SplitFieldWrite) => void;
+export type SplitFieldListener = (
+  ctx: UseCaseContext,
+  tx: TxRepos,
+  audit: Audit,
+  event: SplitFieldWrite,
+) => void;
 
 const listeners: SplitFieldListener[] = [];
 
 /**
  * The hook for closing open suggestions (AD-10) once `classify` has them: a listener runs inside
  * the write (so a throw rolls it back), after every changed field write. Returns an
- * unregister function. There are none yet.
+ * unregister function. Its first consumer is `classify/domain-link.ts`, which links a confirmed
+ * suggestion's merchant domain onto the payee in the same transaction.
  */
 export function registerSplitFieldListener(listener: SplitFieldListener): () => void {
   listeners.push(listener);
@@ -207,6 +223,7 @@ export function setSplitField(ctx: UseCaseContext, input: SetSplitFieldInput): S
       }
     }
     const openSuggestion = tx.suggestions.findOpenForSplit(old.id, field);
+    let closedSuggestion: SplitFieldWrite["closedSuggestion"];
     if (openSuggestion) {
       const isMatch =
         source === "llm" || (value !== null && String(value) === openSuggestion.suggestedValue);
@@ -221,9 +238,21 @@ export function setSplitField(ctx: UseCaseContext, input: SetSplitFieldInput): S
         before: openSuggestion,
         after: { ...openSuggestion, outcome, resolvedAt },
       });
+      closedSuggestion = {
+        id: openSuggestion.id,
+        websiteDomain: openSuggestion.websiteDomain,
+        outcome,
+      };
     }
     for (const listener of listeners) {
-      listener(tx, audit, { transactionId: before.id, splitId: old.id, field, value, source });
+      listener(ctx, tx, audit, {
+        transactionId: before.id,
+        splitId: old.id,
+        field,
+        value,
+        source,
+        ...(closedSuggestion === undefined ? {} : { closedSuggestion }),
+      });
     }
     return {
       applied: true,

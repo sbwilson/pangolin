@@ -107,6 +107,19 @@ const envSchema = z.object({
       ]),
     )
     .optional(),
+  /** Fetch merchant logos from the sites themselves. Off: queued jobs do nothing. */
+  PANGOLIN_LOGOS_ENABLED: z.stringbool().default(true),
+  /**
+   * Route the favicon fetches through this http(s) proxy. Empty: connect directly. Only
+   * `logo-fetch` uses it; LLM and backup traffic keep their own configuration.
+   */
+  PANGOLIN_EGRESS_PROXY_URL: z
+    .string()
+    .default("")
+    .transform((value) => (value.trim() === "" ? null : value.trim()))
+    .refine((value) => value === null || /^https?:\/\/\S+$/.test(value), {
+      message: "PANGOLIN_EGRESS_PROXY_URL must be an http or https URL",
+    }),
 });
 
 export interface BackupConfig {
@@ -123,6 +136,12 @@ export const DEFAULT_BACKUP_CONFIG: BackupConfig = {
   passwordFile: DEFAULT_RESTIC_PASSWORD_FILE,
   resticBin: "restic",
 };
+
+/** Logo fetching is on and unproxied unless the environment says otherwise. */
+export const DEFAULT_LOGOS_CONFIG = {
+  enabled: true,
+  egressProxyUrl: null,
+} as const;
 
 export interface JobsConfig {
   readonly concurrency: { readonly llm: number; readonly net: number; readonly local: number };
@@ -165,6 +184,11 @@ export interface Config {
   /** The release (`PANGOLIN_VERSION`); `dev` for local builds. */
   readonly version: string;
   readonly backup: BackupConfig;
+  /** Merchant logo fetching: the `logo-fetch` job's flag and egress proxy. */
+  readonly logos: {
+    readonly enabled: boolean;
+    readonly egressProxyUrl: string | null;
+  };
   /** The current recovery bundle's id (`PANGOLIN_RECOVERY_BUNDLE_ID`); undefined when unset. */
   readonly recoveryBundleId?: string;
 }
@@ -238,6 +262,10 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       repository: parsed.PANGOLIN_BACKUP_REPOSITORY,
       passwordFile: parsed.PANGOLIN_RESTIC_PASSWORD_FILE,
       resticBin: parsed.PANGOLIN_RESTIC_BIN,
+    },
+    logos: {
+      enabled: parsed.PANGOLIN_LOGOS_ENABLED,
+      egressProxyUrl: parsed.PANGOLIN_EGRESS_PROXY_URL,
     },
     ...(parsed.PANGOLIN_RECOVERY_BUNDLE_ID === undefined ||
     parsed.PANGOLIN_RECOVERY_BUNDLE_ID === ""

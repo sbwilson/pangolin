@@ -547,6 +547,9 @@ function flowBreakdown(
       categoryId: sql<string | null>`${split.categoryId}`.as("flow_category_id"),
       payeeId: sql<string | null>`${projection.payeeId}`.as("flow_payee_id"),
       payeeName: sql<string | null>`${projection.payeeName}`.as("flow_payee_name"),
+      logoAttachmentId: sql<string | null>`${projection.logoAttachmentId}`.as(
+        "flow_logo_attachment_id",
+      ),
     })
     .from(split)
     .innerJoin(transaction, eq(transaction.id, split.transactionId))
@@ -567,6 +570,7 @@ function flowBreakdown(
       categoryName: category.name,
       payeeId: flows.payeeId,
       payeeName: sql<string | null>`max(${flows.payeeName})`,
+      logoAttachmentId: sql<string | null>`max(${flows.logoAttachmentId})`,
       cents: sql<number>`(CASE ${flows.kind} WHEN 'income' THEN sum(${flows.amount}) ELSE -sum(${flows.amount}) END)`,
     })
     .from(flows)
@@ -584,6 +588,7 @@ function flowBreakdown(
     categoryName: r.categoryName ?? null,
     payeeId: r.payeeId ?? null,
     payeeName: r.payeeName ?? null,
+    logoAttachmentId: r.logoAttachmentId ?? null,
     cents: Number(r.cents) || 0,
   }));
 }

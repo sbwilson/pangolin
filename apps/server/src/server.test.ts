@@ -34,6 +34,7 @@ import { SEED_DISABLED } from "./admin/commands.ts";
 import {
   DEFAULT_BACKUP_CONFIG,
   DEFAULT_JOBS_CONFIG,
+  DEFAULT_LOGOS_CONFIG,
   defaultAuthConfig,
   type JobsConfig,
   loadConfig,
@@ -66,6 +67,7 @@ async function boot(
       demo: false,
       jobs: jobsConfig,
       backup: DEFAULT_BACKUP_CONFIG,
+      logos: DEFAULT_LOGOS_CONFIG,
       auth: defaultAuthConfig(dataDir()),
       trustedProxies: [],
       adminSocket: null,
@@ -483,6 +485,7 @@ describe("startServer in demo mode", () => {
         demo: true,
         jobs: DEFAULT_JOBS_CONFIG,
         backup: DEFAULT_BACKUP_CONFIG,
+        logos: DEFAULT_LOGOS_CONFIG,
         auth: defaultAuthConfig(dataDir()),
         trustedProxies: [],
         adminSocket: null,
@@ -612,6 +615,7 @@ describe("loadConfig", () => {
       adminSocket: "/run/pangolin/admin.sock",
       version: "dev",
       backup: DEFAULT_BACKUP_CONFIG,
+      logos: DEFAULT_LOGOS_CONFIG,
     });
     expect(loadConfig({}).auth).toEqual(defaultAuthConfig("/data"));
   });
@@ -772,6 +776,7 @@ describe("startServer admin socket", () => {
         demo,
         jobs: DEFAULT_JOBS_CONFIG,
         backup: DEFAULT_BACKUP_CONFIG,
+        logos: DEFAULT_LOGOS_CONFIG,
         auth: defaultAuthConfig(dataDir()),
         trustedProxies: [],
         adminSocket,

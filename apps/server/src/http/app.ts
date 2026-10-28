@@ -112,6 +112,7 @@ import {
   type RecordBalanceSnapshotInput,
   type RunnerLiveness,
   readiness,
+  readPayeeLogo,
   readPdfStatementFile,
   recheckPdfItem,
   recordBalanceSnapshot,
@@ -969,6 +970,12 @@ export function createApi(deps: ApiDeps) {
       const file = readPdfStatementFile(withAttachments(c), {
         batchId: c.req.param("batchId"),
       });
+      return c.body(new Uint8Array(file.bytes), 200, { "Content-Type": file.contentType });
+    })
+    .get("/api/payees/:id/logo", (c) => {
+      // Logos are read only through the payee row, viewer-scoped (AD-3, AD-21); the store name
+      // never reaches a client. A payee without a logo, or one the viewer cannot see, is 404.
+      const file = readPayeeLogo(withAttachments(c), { payeeId: c.req.param("id") });
       return c.body(new Uint8Array(file.bytes), 200, { "Content-Type": file.contentType });
     })
     .post("/api/handoffs", importBodyLimit, async (c) => {
