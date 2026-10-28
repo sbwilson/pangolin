@@ -9,6 +9,7 @@ import {
 import { centsToText, parseCents } from "../../lib/money.ts";
 import { Button } from "../ui/button.tsx";
 import { DateInput } from "../ui/date-input.tsx";
+import { INPUT_CLASS_RING_DISABLED } from "../ui/input-class.ts";
 import { ReviewCardFrame, useReviewAction } from "./ReviewCardFrame.tsx";
 
 // pdf.js only loads when a PDF card actually renders its page image: it stays out of the
@@ -18,9 +19,6 @@ const PdfPageCanvas = lazy(() =>
 );
 
 type PdfDetail = Extract<ReviewDetail, { type: "pdf_batch" }>;
-
-const INPUT =
-  "h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
 
 function PdfRow({
   card,
@@ -94,7 +92,7 @@ function PdfRow({
           <input
             id={`${id}-amount`}
             inputMode="decimal"
-            className={INPUT}
+            className={INPUT_CLASS_RING_DISABLED}
             value={amount}
             disabled={busy}
             onChange={(e) => setAmount(e.target.value)}
@@ -106,7 +104,7 @@ function PdfRow({
           </label>
           <input
             id={`${id}-description`}
-            className={INPUT}
+            className={INPUT_CLASS_RING_DISABLED}
             value={description}
             disabled={busy}
             onChange={(e) => setDescription(e.target.value)}

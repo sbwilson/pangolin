@@ -389,29 +389,21 @@ export function generateMockPdfStatement(options?: GenerateMockPdfStatementOptio
   const pagesId = currentId++;
   const fontId = currentId++;
 
-  const pageIds: number[] = [];
-  const contentIds: number[] = [];
-  for (let i = 0; i < totalPages; i++) {
-    pageIds.push(currentId++);
-    contentIds.push(currentId++);
-  }
+  const pages = pageTexts.map((lines) => ({ pageId: currentId++, contentId: currentId++, lines }));
 
   objects.push({ id: catalogId, body: `<< /Type /Catalog /Pages ${pagesId} 0 R >>` });
   objects.push({
     id: pagesId,
-    body: `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${totalPages} >>`,
+    body: `<< /Type /Pages /Kids [${pages.map((p) => `${p.pageId} 0 R`).join(" ")}] /Count ${totalPages} >>`,
   });
   objects.push({ id: fontId, body: "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>" });
 
-  for (let i = 0; i < totalPages; i++) {
-    const pId = pageIds[i]!;
-    const cId = contentIds[i]!;
+  for (const { pageId: pId, contentId: cId, lines } of pages) {
     objects.push({
       id: pId,
       body: `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${cId} 0 R >>`,
     });
 
-    const lines = pageTexts[i]!;
     let stream = "";
     if (lines.length > 0) {
       stream = "BT\n/F1 10 Tf\n50 740 Td\n";

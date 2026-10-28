@@ -1,11 +1,5 @@
 import { type FormEvent, useState } from "react";
-import {
-  ApiError,
-  issueInitialRecoveryCodes,
-  recoverWithCode,
-  reEnrol,
-  regenerateRecoveryCodes,
-} from "./api.ts";
+import { ApiError, issueInitialRecoveryCodes, recoverWithCode, reEnrol } from "./api.ts";
 
 function messageOf(caught: unknown): string {
   return caught instanceof ApiError ? caught.message : "Something went wrong. Try again.";
@@ -81,70 +75,6 @@ export function InitialRecoveryCodes({ onDone }: { onDone: () => void }) {
         <RecoveryCodeList codes={codes} onSaved={onDone} />
       )}
       {error === null ? null : <p role="alert">{error}</p>}
-    </section>
-  );
-}
-
-/** Home: replace every unused code with a new set (needs a recent sign-in). */
-export function RegenerateRecoveryCodes({
-  remaining,
-  onSignOut,
-  onDone,
-}: {
-  remaining: number;
-  onSignOut: () => void;
-  onDone: () => void;
-}) {
-  const [codes, setCodes] = useState<readonly string[] | null>(null);
-  const [error, setError] = useState<ApiError | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const regenerate = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      setCodes((await regenerateRecoveryCodes()).codes);
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught : new ApiError(0, "Internal", String(caught)));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <section aria-labelledby="recovery-codes">
-      <h2 id="recovery-codes">Recovery codes</h2>
-      {codes === null ? (
-        <>
-          <p>{remaining} unused recovery codes left.</p>
-          {remaining < 3 ? (
-            <p className="warning">
-              You are running out of recovery codes. Regenerate them to get a new set of 10.
-            </p>
-          ) : null}
-          <button type="button" onClick={regenerate} disabled={busy}>
-            Regenerate recovery codes
-          </button>
-        </>
-      ) : (
-        <RecoveryCodeList
-          codes={codes}
-          onSaved={() => {
-            setCodes(null);
-            onDone();
-          }}
-        />
-      )}
-      {error?.code === "ReauthRequired" ? (
-        <p role="alert">
-          For your security, sign in again to regenerate your codes.{" "}
-          <button type="button" onClick={onSignOut}>
-            Sign in again
-          </button>
-        </p>
-      ) : error !== null ? (
-        <p role="alert">{error.message}</p>
-      ) : null}
     </section>
   );
 }

@@ -16,6 +16,7 @@ import {
 import { Button } from "../components/ui/button.tsx";
 import { CategoryCombobox } from "../components/ui/category-combobox.tsx";
 import { DateInput } from "../components/ui/date-input.tsx";
+import { INPUT_CLASS } from "../components/ui/input-class.ts";
 import { NativeSelect } from "../components/ui/select.tsx";
 import { Sheet } from "../components/ui/sheet.tsx";
 import { TagPicker } from "../components/ui/tag-picker.tsx";
@@ -176,7 +177,7 @@ export function TransactionSheet({
                   id={`split-${draft.key}-amount`}
                   inputMode="decimal"
                   value={draft.amount}
-                  className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm tabular-nums"
+                  className={`${INPUT_CLASS} tabular-nums`}
                   onChange={(event) =>
                     setDrafts((all) =>
                       all.map((d) =>

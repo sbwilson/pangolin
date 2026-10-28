@@ -3,6 +3,7 @@ import { z } from "zod";
 import { CLASSIFY_RULE_OFFER_REVIEW } from "../classify/rules.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { classifyUnclassifiedDedupeKey } from "../imports/pdf-review.ts";
 import { idInput } from "../inputs.ts";
 import {
   SPLIT_SOURCES,
@@ -204,7 +205,7 @@ export function setSplitField(ctx: UseCaseContext, input: SetSplitFieldInput): S
     if (field === "category" && value !== null) {
       if (source === "user" && old.categoryId !== value) {
         const resolved = resolveReviewItem(tx, audit, ctx, {
-          dedupeKey: `classify.unclassified:${before.id}`,
+          dedupeKey: classifyUnclassifiedDedupeKey(before.id),
           resolution: "user categorized",
         });
         if (resolved) {
@@ -217,7 +218,7 @@ export function setSplitField(ctx: UseCaseContext, input: SetSplitFieldInput): S
         }
       } else if (source === "llm") {
         resolveReviewItem(tx, audit, ctx, {
-          dedupeKey: `classify.unclassified:${before.id}`,
+          dedupeKey: classifyUnclassifiedDedupeKey(before.id),
           resolution: "llm suggestion accepted",
         });
       }

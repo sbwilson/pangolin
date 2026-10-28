@@ -8,12 +8,10 @@ import {
 import { formatCents, parseCents } from "../../lib/money.ts";
 import { Button } from "../ui/button.tsx";
 import { DateInput } from "../ui/date-input.tsx";
+import { INPUT_CLASS_RING_DISABLED } from "../ui/input-class.ts";
 import { ReviewCardFrame, useReviewAction } from "./ReviewCardFrame.tsx";
 
 type BatchDetail = Extract<ReviewDetail, { type: "batch" }>;
-
-const INPUT =
-  "h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
 
 function SetAsideRow({
   card,
@@ -119,7 +117,7 @@ function SetAsideRow({
           <input
             id={`${id}-amount`}
             inputMode="decimal"
-            className={INPUT}
+            className={INPUT_CLASS_RING_DISABLED}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
           />
@@ -130,7 +128,7 @@ function SetAsideRow({
           </label>
           <input
             id={`${id}-description`}
-            className={INPUT}
+            className={INPUT_CLASS_RING_DISABLED}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />

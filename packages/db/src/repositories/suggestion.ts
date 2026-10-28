@@ -1,10 +1,8 @@
 import {
   type FewShotExample,
   parseSearch,
-  type SuggestionOutcome,
   type SuggestionRepo,
   type SuggestionRow,
-  type Viewer,
 } from "@pangolin/app";
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";

@@ -156,11 +156,16 @@ export function verifyStatementBalances(
 
   // 5. Check each printed running balance matches cumulative balance
   // Handle both chronological and reverse-chronological ordering
+  const firstRow = input.rows.at(0);
+  const lastRow = input.rows.at(-1);
   const isDescending =
-    input.rows.length >= 2 && input.rows[0]!.postedOn > input.rows[input.rows.length - 1]!.postedOn;
+    firstRow !== undefined && lastRow !== undefined && firstRow.postedOn > lastRow.postedOn;
+
+  // Narrowed above by the missing-balances check; captured so the closure sees `number`.
+  const openingBalanceCents = input.openingBalanceCents;
 
   function checkChaining(rowsToVerify: readonly VerifiableStatementRow[]) {
-    let cumulative = input.openingBalanceCents!;
+    let cumulative = openingBalanceCents;
     for (const row of rowsToVerify) {
       cumulative += row.amountCents;
       if (row.runningBalanceCents !== null && row.runningBalanceCents !== undefined) {

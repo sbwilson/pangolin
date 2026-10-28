@@ -1268,7 +1268,9 @@ describe("SettingsPage", () => {
 
       const section = document.getElementById("llm-providers");
       expect(section).toBeTruthy();
-      expect(within(section!).getByRole("heading", { name: "LLM providers" })).toBeTruthy();
+      expect(
+        within(section as HTMLElement).getByRole("heading", { name: "LLM providers" }),
+      ).toBeTruthy();
     });
 
     it("resolves initial #llm-providers hash on mount to set aria-current on LLM providers link", () => {

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.ts";
 import { createIdGenerator } from "../ids.ts";
 import type { LlmProvider, StructuredPrompt, StructuredResponse } from "../ports/llm-provider.ts";
-import type { LlmProviderRow } from "../ports/unit-of-work.ts";
 import { manualClock } from "../testing/fixtures.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import type { Viewer } from "../viewer.ts";
@@ -13,10 +12,16 @@ import {
   discardSetAsideRow,
   fixSetAsideRow,
   IMPORT_SET_ASIDE_REVIEW,
-  interpretSetAsideRows,
   type InterpretSetAsideRowsContext,
+  interpretSetAsideRows,
   listSetAsideRowsForBatch,
 } from "./set-aside.ts";
+
+/** Fails the test loudly when a row or field that must exist is absent, and narrows the type. */
+function defined<T>(value: T | null | undefined, what: string): T {
+  if (value === undefined || value === null) throw new Error(`expected ${what} to be defined`);
+  return value;
+}
 
 const now = Temporal.Instant.from("2026-10-20T12:00:00.000Z");
 const clock = manualClock("2026-10-20T12:00:00.000Z");
@@ -1166,7 +1171,9 @@ bad-date,-20.00,Row 2 Bad Date
   describe("row_interpret and proposal confirmation flow (AD-6)", () => {
     function createMockProvider(data: unknown): LlmProvider {
       return {
-        generateStructured: async <T>(_prompt: StructuredPrompt<T>): Promise<StructuredResponse<T>> => ({
+        generateStructured: async <T>(
+          _prompt: StructuredPrompt<T>,
+        ): Promise<StructuredResponse<T>> => ({
           data: data as T,
           raw: JSON.stringify(data),
           usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
@@ -1178,10 +1185,7 @@ bad-date,-20.00,Row 2 Bad Date
     it("interprets set-aside rows with local provider and saves proposal in import_row", async () => {
       const { alexCtx, sharedAccountId, uow } = setup();
 
-      const csvContent = [
-        "Date,Amount,Description",
-        "31/09/2026,-36.00,BWS NEWTOWN",
-      ].join("\n");
+      const csvContent = ["Date,Amount,Description", "31/09/2026,-36.00,BWS NEWTOWN"].join("\n");
 
       const importRes = importStatement(alexCtx, {
         accountId: sharedAccountId,
@@ -1192,7 +1196,7 @@ bad-date,-20.00,Row 2 Bad Date
       expect(importRes.setAsideCount).toBe(1);
       const rows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
       expect(rows).toHaveLength(1);
-      const targetRow = rows[0]!;
+      const targetRow = defined(rows[0], "set-aside row");
       expect(targetRow.proposal).toBeNull();
 
       const mockProvider = createMockProvider({
@@ -1226,9 +1230,12 @@ bad-date,-20.00,Row 2 Bad Date
       expect(result.proposals[0]?.proposal.description).toBe("BWS NEWTOWN");
 
       // Verify row proposal in UOW
-      const updatedRow = uow.state.importRows.find((r) => r.id === targetRow.id);
-      expect(updatedRow?.proposal).not.toBeNull();
-      const parsed = JSON.parse(updatedRow!.proposal!);
+      const updatedRow = defined(
+        uow.state.importRows.find((r) => r.id === targetRow.id),
+        "updated import row",
+      );
+      expect(updatedRow.proposal).not.toBeNull();
+      const parsed = JSON.parse(defined(updatedRow.proposal, "stored proposal"));
       expect(parsed.postedOn).toBe("2026-09-30");
       expect(parsed.amountCents).toBe(-3600);
       expect(parsed.description).toBe("BWS NEWTOWN");
@@ -1237,10 +1244,7 @@ bad-date,-20.00,Row 2 Bad Date
     it("refuses to send private account rows to a cloud provider", async () => {
       const { alexCtx, alexPrivateAccountId } = setup();
 
-      const csvContent = [
-        "Date,Amount,Description",
-        "31/09/2026,-50.00,PRIVATE STORE",
-      ].join("\n");
+      const csvContent = ["Date,Amount,Description", "31/09/2026,-50.00,PRIVATE STORE"].join("\n");
 
       const importRes = importStatement(alexCtx, {
         accountId: alexPrivateAccountId,
@@ -1269,10 +1273,7 @@ bad-date,-20.00,Row 2 Bad Date
     it("refuses cloud provider without cloud_rows opt-in", async () => {
       const { alexCtx, sharedAccountId } = setup();
 
-      const csvContent = [
-        "Date,Amount,Description",
-        "31/09/2026,-36.00,BWS NEWTOWN",
-      ].join("\n");
+      const csvContent = ["Date,Amount,Description", "31/09/2026,-36.00,BWS NEWTOWN"].join("\n");
 
       const importRes = importStatement(alexCtx, {
         accountId: sharedAccountId,
@@ -1301,10 +1302,7 @@ bad-date,-20.00,Row 2 Bad Date
     it("permits cloud provider with cloud_rows opt-in on shared account", async () => {
       const { alexCtx, sharedAccountId } = setup();
 
-      const csvContent = [
-        "Date,Amount,Description",
-        "31/09/2026,-36.00,BWS NEWTOWN",
-      ].join("\n");
+      const csvContent = ["Date,Amount,Description", "31/09/2026,-36.00,BWS NEWTOWN"].join("\n");
 
       const importRes = importStatement(alexCtx, {
         accountId: sharedAccountId,
@@ -1353,8 +1351,8 @@ bad-date,-20.00,Row 2 Bad Date
 
       const setAsideRows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
       expect(setAsideRows).toHaveLength(2);
-      const row0 = setAsideRows[0]!;
-      const row1 = setAsideRows[1]!;
+      const row0 = defined(setAsideRows[0], "set-aside row 0");
+      const row1 = defined(setAsideRows[1], "set-aside row 1");
 
       const mockProvider = createMockProvider({
         proposals: [
@@ -1398,17 +1396,23 @@ bad-date,-20.00,Row 2 Bad Date
       expect(result.interpretedCount).toBe(2);
       expect(result.proposals).toHaveLength(2);
 
-      const updatedRow0 = uow.state.importRows.find((r) => r.id === row0.id);
-      const updatedRow1 = uow.state.importRows.find((r) => r.id === row1.id);
+      const updatedRow0 = defined(
+        uow.state.importRows.find((r) => r.id === row0.id),
+        "updated import row 0",
+      );
+      const updatedRow1 = defined(
+        uow.state.importRows.find((r) => r.id === row1.id),
+        "updated import row 1",
+      );
 
-      expect(updatedRow0?.proposal).not.toBeNull();
-      const prop0 = JSON.parse(updatedRow0!.proposal!);
+      expect(updatedRow0.proposal).not.toBeNull();
+      const prop0 = JSON.parse(defined(updatedRow0.proposal, "stored proposal 0"));
       expect(prop0.description).toBe("BWS NEWTOWN");
       expect(prop0.amountCents).toBe(-3600);
       expect(prop0.postedOn).toBe("2026-09-30");
 
-      expect(updatedRow1?.proposal).not.toBeNull();
-      const prop1 = JSON.parse(updatedRow1!.proposal!);
+      expect(updatedRow1.proposal).not.toBeNull();
+      const prop1 = JSON.parse(defined(updatedRow1.proposal, "stored proposal 1"));
       expect(prop1.description).toBe("COLES EXPRESS");
       expect(prop1.amountCents).toBe(-4250);
       expect(prop1.postedOn).toBe("2026-11-30");
@@ -1417,10 +1421,7 @@ bad-date,-20.00,Row 2 Bad Date
     it("catches LLM malformed JSON or schema failure", async () => {
       const { alexCtx, sharedAccountId } = setup();
 
-      const csvContent = [
-        "Date,Amount,Description",
-        "31/09/2026,-36.00,BWS NEWTOWN",
-      ].join("\n");
+      const csvContent = ["Date,Amount,Description", "31/09/2026,-36.00,BWS NEWTOWN"].join("\n");
 
       const importRes = importStatement(alexCtx, {
         accountId: sharedAccountId,
@@ -1448,10 +1449,7 @@ bad-date,-20.00,Row 2 Bad Date
     it("confirms proposal, committing transaction to ledger through original batch", async () => {
       const { alexCtx, sharedAccountId, uow } = setup();
 
-      const csvContent = [
-        "Date,Amount,Description",
-        "31/09/2026,-36.00,BWS NEWTOWN",
-      ].join("\n");
+      const csvContent = ["Date,Amount,Description", "31/09/2026,-36.00,BWS NEWTOWN"].join("\n");
 
       const importRes = importStatement(alexCtx, {
         accountId: sharedAccountId,
@@ -1460,7 +1458,7 @@ bad-date,-20.00,Row 2 Bad Date
       });
 
       const rows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
-      const targetRow = rows[0]!;
+      const targetRow = defined(rows[0], "set-aside row");
 
       const mockProvider = createMockProvider({
         proposals: [
@@ -1511,10 +1509,7 @@ bad-date,-20.00,Row 2 Bad Date
     it("throws Validation when confirming a row that is not set_aside", async () => {
       const { alexCtx, sharedAccountId, uow } = setup();
 
-      const csvContent = [
-        "Date,Amount,Description",
-        "31/09/2026,-36.00,BWS NEWTOWN",
-      ].join("\n");
+      const csvContent = ["Date,Amount,Description", "31/09/2026,-36.00,BWS NEWTOWN"].join("\n");
 
       const importRes = importStatement(alexCtx, {
         accountId: sharedAccountId,
@@ -1523,25 +1518,32 @@ bad-date,-20.00,Row 2 Bad Date
       });
 
       const rows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
-      const targetRow = rows[0]!;
+      const targetRow = defined(rows[0], "set-aside row");
 
       // Mark row as already discarded
       uow.state.importRows = uow.state.importRows.map((r) =>
-        r.id === targetRow.id ? { ...r, status: "discarded", proposal: JSON.stringify({ postedOn: "2026-09-30", amountCents: -3600, description: "BWS" }) } : r,
+        r.id === targetRow.id
+          ? {
+              ...r,
+              status: "discarded",
+              proposal: JSON.stringify({
+                postedOn: "2026-09-30",
+                amountCents: -3600,
+                description: "BWS",
+              }),
+            }
+          : r,
       );
 
-      expect(() =>
-        confirmSetAsideProposal(alexCtx, { rowId: targetRow.id }),
-      ).toThrowError(/Cannot confirm proposal for row with status "discarded"/);
+      expect(() => confirmSetAsideProposal(alexCtx, { rowId: targetRow.id })).toThrowError(
+        /Cannot confirm proposal for row with status "discarded"/,
+      );
     });
 
     it("discards row with proposal and resolves review item", async () => {
       const { alexCtx, sharedAccountId, uow } = setup();
 
-      const csvContent = [
-        "Date,Amount,Description",
-        "31/09/2026,-36.00,BWS NEWTOWN",
-      ].join("\n");
+      const csvContent = ["Date,Amount,Description", "31/09/2026,-36.00,BWS NEWTOWN"].join("\n");
 
       const importRes = importStatement(alexCtx, {
         accountId: sharedAccountId,
@@ -1550,7 +1552,7 @@ bad-date,-20.00,Row 2 Bad Date
       });
 
       const rows = listSetAsideRowsForBatch(alexCtx, importRes.batchId);
-      const targetRow = rows[0]!;
+      const targetRow = defined(rows[0], "set-aside row");
 
       const mockProvider = createMockProvider({
         proposals: [

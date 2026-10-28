@@ -6,6 +6,8 @@ import { loadMigrations, migrate, packageMigrationsDir } from "./migrate.ts";
 import { openDatabase } from "./open.ts";
 import { createSystemHealthRepo } from "./system-health-repo.ts";
 
+const migrations = loadMigrations(packageMigrationsDir);
+
 let dir: string;
 let path: string;
 
@@ -13,7 +15,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "pangolin-health-"));
   path = join(dir, "test.sqlite");
   const db = openDatabase(path);
-  migrate(db, loadMigrations(packageMigrationsDir));
+  migrate(db, migrations);
   db.close();
 });
 
@@ -25,7 +27,7 @@ describe("system health repository", () => {
   it("reports the schema version and a writable database", () => {
     const db = openDatabase(path);
     const repo = createSystemHealthRepo(db);
-    expect(repo.schemaVersion()).toBe(25);
+    expect(repo.schemaVersion()).toBe(migrations.length);
     // A value unlike the real schema version, so a probe that changed it would show.
     db.pragma("user_version = 99");
     expect(repo.probeWrite()).toBe(true);
@@ -37,7 +39,7 @@ describe("system health repository", () => {
   it("reports a read-only database as not writable", () => {
     const db = openDatabase(path, { readonly: true });
     const repo = createSystemHealthRepo(db);
-    expect(repo.schemaVersion()).toBe(25);
+    expect(repo.schemaVersion()).toBe(migrations.length);
     expect(repo.probeWrite()).toBe(false);
     db.close();
   });

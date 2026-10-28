@@ -19,6 +19,12 @@ const personA = idSchema("Person").parse("01J0000000000000000000000A");
 const NOW = "2026-09-27T00:00:00Z";
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
+/** Fails the test loudly when a row that must exist is absent, and narrows the type. */
+function defined<T>(value: T | null | undefined, what: string): T {
+  if (value === undefined || value === null) throw new Error(`expected ${what} to be defined`);
+  return value;
+}
+
 function payeeRow(overrides: Partial<PayeeRow> = {}): PayeeRow {
   return {
     id: "payee-1" as Id<"Payee">,
@@ -68,16 +74,18 @@ describe("recordPayeeLogo", () => {
     );
 
     expect(id).toBeTruthy();
-    const attachment = f.uow.state.attachments[0]!;
+    const attachment = defined(f.uow.state.attachments[0], "attachment row");
     expect(attachment).toMatchObject({ mime: "image/png", bytes: PNG.length });
     expect(f.store.files.has(attachment.name)).toBe(true);
     expect(f.uow.state.payees[0]?.logoAttachmentId).toBe(id);
     // The link is audited exactly like classify's own payee updates.
-    const audit = f.uow.state.audit.find((a) => a.entity === "payee");
-    expect(audit).toBeDefined();
-    expect(audit!.action).toBe("update");
-    expect(JSON.parse(audit!.before as string)).toMatchObject({ logoAttachmentId: null });
-    expect(JSON.parse(audit!.after as string)).toMatchObject({ logoAttachmentId: id });
+    const audit = defined(
+      f.uow.state.audit.find((a) => a.entity === "payee"),
+      "payee audit row",
+    );
+    expect(audit.action).toBe("update");
+    expect(JSON.parse(audit.before as string)).toMatchObject({ logoAttachmentId: null });
+    expect(JSON.parse(audit.after as string)).toMatchObject({ logoAttachmentId: id });
   });
 
   it("links nothing and removes the file when the payee went private", () => {
@@ -180,7 +188,10 @@ describe("the logo-fetch retry policy (once-ever)", () => {
     write(f.ctx, (tx) => {
       enqueueLogoFetch(tx, f.ctx, "payee-1");
     });
-    const jobId = f.uow.state.jobs.find((j) => j.kind === "logo-fetch")!.id;
+    const jobId = defined(
+      f.uow.state.jobs.find((j) => j.kind === "logo-fetch"),
+      "queued logo job",
+    ).id;
     expect(LOGO_FETCH_JOB.retry.maxAttempts).toBe(1);
 
     const claimed = claimJob(f.ctx, { lane: "net", owner: "runner-a", leaseMs: 60_000 });
@@ -193,7 +204,10 @@ describe("the logo-fetch retry policy (once-ever)", () => {
       schedules: [],
     });
     expect(outcome).toBe("dead");
-    const row = f.uow.state.jobs.find((j) => j.id === jobId)!;
+    const row = defined(
+      f.uow.state.jobs.find((j) => j.id === jobId),
+      "logo job row",
+    );
     expect(row).toMatchObject({ status: "dead", attempts: 1 });
     // Nothing is pending: the failed fetch is never retried automatically.
     expect(claimJob(f.ctx, { lane: "net", owner: "runner-a", leaseMs: 60_000 })).toBeUndefined();

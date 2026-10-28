@@ -1,9 +1,13 @@
-import type { Id } from "@pangolin/shared";
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { requireRecentAuth } from "../identity/reauth.ts";
+import { buildPdfExtractRequest } from "../imports/pdf-extract-request.ts";
+import {
+  buildRowInterpretRequest,
+  type RowInterpretRequestItem,
+} from "../imports/row-interpret-request.ts";
 import type { LlmProvider, StructuredPrompt } from "../ports/llm-provider.ts";
 import {
   LLM_PURPOSES,
@@ -19,11 +23,6 @@ import {
   type CategoriseCategoryOption,
   type CategoriseRequestItem,
 } from "./categorise-request.ts";
-import {
-  buildRowInterpretRequest,
-  type RowInterpretRequestItem,
-} from "../imports/row-interpret-request.ts";
-import { buildPdfExtractRequest } from "../imports/pdf-extract-request.ts";
 
 export interface LlmUseCaseContext extends UseCaseContext {
   readonly authSecret?: string | undefined;
@@ -392,7 +391,7 @@ export async function testLlmProvider(
     if (ctx.decryptApiKey && ctx.authSecret) {
       try {
         apiKey = ctx.decryptApiKey(row.apiKeyCiphertext, ctx.authSecret);
-      } catch (err: unknown) {
+      } catch {
         return {
           ok: false,
           error: "Failed to decrypt API key for testing",
@@ -479,44 +478,47 @@ export function getLlmRequestPreview(
   const parsed = parseInput(getLlmRequestPreviewInputSchema, input ?? {});
 
   return ctx.uow.read((repos) => {
-    let provider: LlmProviderSafeView | null = null;
-    if (parsed.providerId) {
-      provider = repos.llmProviders.findSafe(parsed.providerId) ?? null;
-    } else {
-      provider = repos.llmProviders.findSafeForPurpose(parsed.purpose ?? "categorise") ?? null;
-    }
-
-    const isLocal = provider?.isLocal ?? false;
+    const provider = parsed.providerId
+      ? (repos.llmProviders.findSafe(parsed.providerId) ?? null)
+      : (repos.llmProviders.findSafeForPurpose(parsed.purpose ?? "categorise") ?? null);
     const model = provider?.model;
+
+    /** One assembly point for every purpose; branches only build sample + prompt. */
+    const preview = <T>(
+      structuredPrompt: StructuredPrompt<T>,
+      sampleItems: readonly LlmPreviewSampleItem[],
+      isLocal: boolean,
+    ): LlmRequestPreviewResult => ({
+      provider,
+      isLocal,
+      model,
+      systemPrompt: structuredPrompt.systemPrompt,
+      prompt: structuredPrompt.prompt,
+      schemaName: structuredPrompt.schemaName,
+      schemaDescription: structuredPrompt.schemaDescription,
+      sampleItems,
+    });
 
     if (parsed.purpose === "pdf_extract") {
       const sampleText =
         "Commonwealth Bank Statement\nAccount Number: **** **** **** 1234\nStatement Period: 2024-09-01 to 2024-09-30\nOpening Balance: $1,000.00\nClosing Balance: $1,030.00\n2024-09-02 SALARY PAYMENT $50.00 Balance: $1,050.00\n2024-09-05 COFFEE SHOP -$20.00 Balance: $1,030.00";
 
+      // The sample is synthetic, so it is treated as cloud-safe; with no
+      // provider configured the preview assumes a cloud endpoint.
+      const isLocal = provider?.isLocal ?? true;
       const structuredPrompt = buildPdfExtractRequest({
         pageNumber: 1,
         pageText: sampleText,
-        isLocal: provider ? provider.isLocal : true,
+        isLocal,
         cloudPdf: true,
         model,
       });
 
-      return {
-        provider,
-        isLocal: provider ? provider.isLocal : true,
-        model,
-        systemPrompt: structuredPrompt.systemPrompt,
-        prompt: structuredPrompt.prompt,
-        schemaName: structuredPrompt.schemaName,
-        schemaDescription: structuredPrompt.schemaDescription,
-        sampleItems: [
-          {
-            pageNumber: 1,
-            text: sampleText,
-            isPrivate: false,
-          },
-        ],
-      };
+      return preview(
+        structuredPrompt,
+        [{ pageNumber: 1, text: sampleText, isPrivate: false }],
+        isLocal,
+      );
     }
 
     if (parsed.purpose === "row_interpret") {
@@ -535,23 +537,15 @@ export function getLlmRequestPreview(
         },
       ];
 
+      const isLocal = provider?.isLocal ?? true;
       const structuredPrompt = buildRowInterpretRequest({
         items: sampleItems,
-        isLocal: provider ? provider.isLocal : true,
+        isLocal,
         cloudRows: true,
         model,
       });
 
-      return {
-        provider,
-        isLocal: provider ? provider.isLocal : true,
-        model,
-        systemPrompt: structuredPrompt.systemPrompt,
-        prompt: structuredPrompt.prompt,
-        schemaName: structuredPrompt.schemaName,
-        schemaDescription: structuredPrompt.schemaDescription,
-        sampleItems,
-      };
+      return preview(structuredPrompt, sampleItems, isLocal);
     }
 
     // Categories
@@ -610,6 +604,7 @@ export function getLlmRequestPreview(
       ];
     }
 
+    const isLocal = provider?.isLocal ?? false;
     const structuredPrompt = buildCategorisationRequest({
       items: sampleItems,
       categories,
@@ -618,15 +613,6 @@ export function getLlmRequestPreview(
       model,
     });
 
-    return {
-      provider,
-      isLocal,
-      model,
-      systemPrompt: structuredPrompt.systemPrompt,
-      prompt: structuredPrompt.prompt,
-      schemaName: structuredPrompt.schemaName,
-      schemaDescription: structuredPrompt.schemaDescription,
-      sampleItems,
-    };
+    return preview(structuredPrompt, sampleItems, isLocal);
   });
 }

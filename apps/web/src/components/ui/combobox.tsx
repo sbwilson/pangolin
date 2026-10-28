@@ -1,5 +1,6 @@
 import { type KeyboardEvent, useId, useMemo, useState } from "react";
 import { cn } from "@/lib/utils.ts";
+import { INPUT_CLASS_RING_DISABLED } from "./input-class.ts";
 
 /** One choice. Options with the same `group` sit under one heading, in the order given. */
 export interface ComboboxOption {
@@ -7,9 +8,6 @@ export interface ComboboxOption {
   readonly label: string;
   readonly group?: string;
 }
-
-const inputClass =
-  "h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
 
 /**
  * A filtering combobox over plain elements (the ARIA 1.2 pattern: a text input that owns a
@@ -117,7 +115,7 @@ export function Combobox({
         autoFocus={autoFocus}
         disabled={disabled}
         placeholder={placeholder}
-        className={inputClass}
+        className={INPUT_CLASS_RING_DISABLED}
         value={query ?? (clearOnSelect === true ? "" : selectedLabel)}
         onChange={(event) => {
           setQuery(event.target.value);

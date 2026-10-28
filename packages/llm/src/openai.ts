@@ -1,12 +1,6 @@
 import type { LlmProvider, StructuredPrompt, StructuredResponse } from "@pangolin/app";
-import {
-  LlmHttpError,
-  LlmMalformedJsonError,
-  LlmRateLimitError,
-  LlmRefusalError,
-  LlmTimeoutError,
-  LlmValidationError,
-} from "./errors.ts";
+import { LlmMalformedJsonError, LlmRefusalError, LlmValidationError } from "./errors.ts";
+import { buildEndpointUrl, postJson, throwHttpError } from "./http-helpers.ts";
 import { zodToJsonSchema } from "./schema-converter.ts";
 
 export interface OpenAiConfig {
@@ -43,53 +37,6 @@ interface OpenAiChatCompletionResponse {
     readonly completion_tokens?: number;
     readonly total_tokens?: number;
   };
-}
-
-function buildEndpointUrl(baseUrl: string, path: string): string {
-  const trimmed = baseUrl.replace(/\/+$/, "");
-  if (trimmed.endsWith("/v1")) {
-    return `${trimmed}${path.replace(/^\/v1/, "")}`;
-  }
-  return `${trimmed}${path}`;
-}
-
-function parseRetryAfter(headerValue: string | null): number | undefined {
-  if (headerValue === null) return undefined;
-  const trimmed = headerValue.trim();
-  if (trimmed === "") return undefined;
-  if (/^\d+(\.\d+)?$/.test(trimmed)) {
-    const seconds = Number.parseFloat(trimmed);
-    if (Number.isFinite(seconds) && seconds >= 0) {
-      return seconds;
-    }
-  }
-  const dateMs = Date.parse(trimmed);
-  if (!Number.isNaN(dateMs)) {
-    const diffSec = Math.max(0, Math.ceil((dateMs - Date.now()) / 1000));
-    return diffSec;
-  }
-  return undefined;
-}
-
-function extractErrorMessage(bodyText: string, fallback: string): string {
-  try {
-    const parsed = JSON.parse(bodyText) as {
-      error?: { message?: string } | string;
-      message?: string;
-    };
-    if (typeof parsed?.error === "object" && typeof parsed.error?.message === "string") {
-      return parsed.error.message;
-    }
-    if (typeof parsed?.error === "string") {
-      return parsed.error;
-    }
-    if (typeof parsed?.message === "string") {
-      return parsed.message;
-    }
-  } catch {
-    // ignore
-  }
-  return bodyText.length > 0 && bodyText.length < 256 ? bodyText : fallback;
 }
 
 export class OpenAiAdapter implements LlmProvider {
@@ -158,72 +105,19 @@ export class OpenAiAdapter implements LlmProvider {
       headers.authorization = `Bearer ${this.config.apiKey}`;
     }
 
-    const controller = new AbortController();
-    let timer: NodeJS.Timeout | undefined;
-    let didTimeout = false;
+    const response = await postJson({
+      fetchFn,
+      url,
+      headers,
+      body: JSON.stringify(requestBody),
+      timeoutMs,
+      timeoutMessage: `Request to OpenAI endpoint timed out after ${timeoutMs}ms`,
+      signal: prompt.signal,
+    });
+    const responseText = response.text;
 
-    if (timeoutMs !== undefined && timeoutMs > 0) {
-      timer = setTimeout(() => {
-        didTimeout = true;
-        controller.abort(new Error(`LLM request timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-    }
-
-    const onCallerAbort = () => {
-      controller.abort(prompt.signal?.reason);
-    };
-
-    if (prompt.signal !== undefined) {
-      if (prompt.signal.aborted) {
-        controller.abort(prompt.signal.reason);
-      } else {
-        prompt.signal.addEventListener("abort", onCallerAbort);
-      }
-    }
-
-    let responseStatus: number;
-    let responseHeaders: Headers;
-    let responseOk: boolean;
-    let responseText: string;
-
-    try {
-      const response = await fetchFn(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      });
-      responseStatus = response.status;
-      responseHeaders = response.headers;
-      responseOk = response.ok;
-      responseText = await response.text();
-    } catch (error: unknown) {
-      if (didTimeout || (controller.signal.aborted && didTimeout)) {
-        throw new LlmTimeoutError(
-          `Request to OpenAI endpoint timed out after ${timeoutMs}ms`,
-          timeoutMs,
-          { cause: error },
-        );
-      }
-      throw error;
-    } finally {
-      if (timer !== undefined) {
-        clearTimeout(timer);
-      }
-      if (prompt.signal !== undefined) {
-        prompt.signal.removeEventListener("abort", onCallerAbort);
-      }
-    }
-
-    if (responseStatus === 429) {
-      const retryAfter = parseRetryAfter(responseHeaders.get("retry-after"));
-      const message = extractErrorMessage(responseText, "Rate limit exceeded");
-      throw new LlmRateLimitError(message, retryAfter);
-    }
-
-    if (!responseOk) {
-      const message = extractErrorMessage(responseText, `HTTP error ${responseStatus}`);
-      throw new LlmHttpError(responseStatus, message, responseText);
+    if (!response.ok) {
+      throwHttpError(response);
     }
 
     let parsedResponse: OpenAiChatCompletionResponse;

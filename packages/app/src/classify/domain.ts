@@ -33,10 +33,8 @@ function stripUserinfo(raw: string): string {
 function isIpLiteral(host: string): boolean {
   if (host.startsWith("[")) return true;
   if (/^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/.test(host)) {
-    return host
-      .split(":")[0]!
-      .split(".")
-      .every((octet) => Number(octet) <= 255);
+    const [hostPart = ""] = host.split(":");
+    return hostPart.split(".").every((octet) => Number(octet) <= 255);
   }
   return false;
 }

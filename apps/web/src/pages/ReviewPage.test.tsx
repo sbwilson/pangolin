@@ -72,7 +72,9 @@ const ALL: ReviewCard[] = [
       type: "batch",
       source: "commbank_csv",
       accountName: "Joint everyday",
-      rows: [{ id: "row-1", rowNumber: 3, rawLine: "bad,line", reason: "Bad date", proposal: null }],
+      rows: [
+        { id: "row-1", rowNumber: 3, rawLine: "bad,line", reason: "Bad date", proposal: null },
+      ],
     },
   }),
   card({
@@ -343,7 +345,9 @@ describe("ReviewPage", () => {
     await user.click(editBtn);
     expect((within(el).getByLabelText("Date") as HTMLInputElement).value).toBe("2026-09-30");
     expect((within(el).getByLabelText("Amount") as HTMLInputElement).value).toBe("-36.00");
-    expect((within(el).getByLabelText("Description") as HTMLInputElement).value).toBe("BWS NEWTOWN");
+    expect((within(el).getByLabelText("Description") as HTMLInputElement).value).toBe(
+      "BWS NEWTOWN",
+    );
 
     // 4. Confirm proposal
     const confirmBtn = within(el).getByRole("button", { name: "Confirm" });
@@ -428,7 +432,7 @@ describe("ReviewPage", () => {
     expect((checkboxes[1] as HTMLInputElement).checked).toBe(true);
 
     // Untick first row: Woolworths
-    await user.click(checkboxes[0]!);
+    await user.click(checkboxes[0] as HTMLElement);
 
     // Now Woolworths moves out into an individual AiSuggestionCard below
     await waitFor(() => {

@@ -124,5 +124,3 @@ export async function runEval(provider: LlmProvider, options?: EvalOptions): Pro
     results,
   };
 }
-
-export { runEval as evaluateProvider };

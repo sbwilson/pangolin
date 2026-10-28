@@ -1,6 +1,6 @@
 import type { Id } from "@pangolin/shared";
 import { Temporal } from "@pangolin/shared/temporal";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.ts";
 import { createIdGenerator } from "../ids.ts";
 import { setSplitField } from "../ledger/set-split-field.ts";
@@ -78,55 +78,56 @@ function setupTestEnvironment() {
   );
 
   // Seed accounts (one public, one private to Alex)
-  (uow.state.accounts as any).push(
+  uow.state.accounts.push(
     {
       id: publicAccountId,
       name: "Everyday Joint",
-      type: "cash",
+      type: "transaction",
       currency: "AUD",
       isPrivate: false,
-      savingsPool: "shared",
       institutionId: null,
-      accountNumberLast4: "1234",
+      openedOn: null,
       closedOn: null,
+      isSavings: false,
       createdAt: now.toString(),
       updatedAt: now.toString(),
-      deletedAt: null,
     },
     {
       id: privateAccountId,
       name: "Alex Secret",
-      type: "cash",
+      type: "transaction",
       currency: "AUD",
       isPrivate: true,
-      savingsPool: alexPersonId,
       institutionId: null,
-      accountNumberLast4: "5678",
+      openedOn: null,
       closedOn: null,
+      isSavings: false,
       createdAt: now.toString(),
       updatedAt: now.toString(),
-      deletedAt: null,
     },
   );
 
-  (uow.state.accountOwners as any).push(
+  uow.state.accountOwners.push(
     {
-      id: newId<"AccountOwner">(),
       accountId: publicAccountId,
       personId: alexPersonId,
+      shareBp: 5000,
       createdAt: now.toString(),
+      updatedAt: now.toString(),
     },
     {
-      id: newId<"AccountOwner">(),
       accountId: publicAccountId,
       personId: samPersonId,
+      shareBp: 5000,
       createdAt: now.toString(),
+      updatedAt: now.toString(),
     },
     {
-      id: newId<"AccountOwner">(),
       accountId: privateAccountId,
       personId: alexPersonId,
+      shareBp: 10000,
       createdAt: now.toString(),
+      updatedAt: now.toString(),
     },
   );
 
@@ -138,11 +139,12 @@ function setupTestEnvironment() {
   const groupFood = newId<"CategoryGroup">();
   const groupTransport = newId<"CategoryGroup">();
 
-  (uow.state.categoryGroups as any).push(
+  uow.state.categoryGroups.push(
     {
       id: groupFood,
       name: "Food",
       kind: "expense",
+      sort: 0,
       createdAt: now.toString(),
       updatedAt: now.toString(),
     },
@@ -150,6 +152,7 @@ function setupTestEnvironment() {
       id: groupTransport,
       name: "Transport",
       kind: "expense",
+      sort: 1,
       createdAt: now.toString(),
       updatedAt: now.toString(),
     },
@@ -205,7 +208,7 @@ describe("Few-shot FTS5 search", () => {
     for (let i = 1; i <= 15; i++) {
       const txnId = env.newId<"Transaction">();
       const splitId = env.newId<"Split">();
-      (env.uow.state.transactions as any).push({
+      env.uow.state.transactions.push({
         id: txnId,
         accountId: env.publicAccountId,
         postedOn: `2026-10-${String(i).padStart(2, "0")}`,
@@ -214,6 +217,9 @@ describe("Few-shot FTS5 search", () => {
         fingerprint: `fp-${i}`,
         fingerprintVersion: 1,
         status: "posted",
+        externalId: null,
+        importId: null,
+        isHidden: false,
         performedBy: null,
         payeeId: null,
         notes: null,
@@ -221,10 +227,8 @@ describe("Few-shot FTS5 search", () => {
         nameHiddenBy: null,
         transferGroupId: null,
         needsReview: false,
-        searchId: i,
         createdAt: now.toString(),
         updatedAt: now.toString(),
-        deletedAt: null,
       });
       env.uow.state.splits.push({
         id: splitId,
@@ -262,7 +266,7 @@ describe("Few-shot FTS5 search", () => {
     // Past categorised transaction in private account
     const privTxnId = env.newId<"Transaction">();
     const privSplitId = env.newId<"Split">();
-    (env.uow.state.transactions as any).push({
+    env.uow.state.transactions.push({
       id: privTxnId,
       accountId: env.privateAccountId,
       postedOn: "2026-10-15",
@@ -271,6 +275,9 @@ describe("Few-shot FTS5 search", () => {
       fingerprint: "fp-priv",
       fingerprintVersion: 1,
       status: "posted",
+      externalId: null,
+      importId: null,
+      isHidden: false,
       performedBy: null,
       payeeId: null,
       notes: null,
@@ -278,10 +285,8 @@ describe("Few-shot FTS5 search", () => {
       nameHiddenBy: null,
       transferGroupId: null,
       needsReview: false,
-      searchId: 99,
       createdAt: now.toString(),
       updatedAt: now.toString(),
-      deletedAt: null,
     });
     env.uow.state.splits.push({
       id: privSplitId,
@@ -400,7 +405,7 @@ describe("Categorisation Engine", () => {
       const splitId = env.newId<"Split">();
       txnIds.push(txnId);
 
-      (env.uow.state.transactions as any).push({
+      env.uow.state.transactions.push({
         id: txnId,
         accountId: env.publicAccountId,
         postedOn: "2026-10-26",
@@ -409,6 +414,9 @@ describe("Categorisation Engine", () => {
         fingerprint: `fp-test-${i}`,
         fingerprintVersion: 1,
         status: "posted",
+        externalId: null,
+        importId: null,
+        isHidden: false,
         performedBy: null,
         payeeId: null,
         notes: null,
@@ -416,10 +424,8 @@ describe("Categorisation Engine", () => {
         nameHiddenBy: null,
         transferGroupId: null,
         needsReview: true,
-        searchId: 100 + i,
         createdAt: now.toString(),
         updatedAt: now.toString(),
-        deletedAt: null,
       });
 
       env.uow.state.splits.push({
@@ -443,7 +449,7 @@ describe("Categorisation Engine", () => {
       });
     }
 
-    const mockLlm = createMockLlm((prompt) => {
+    const mockLlm = createMockLlm((_prompt) => {
       // Return suggestions for all 15 items
       return {
         suggestions: Array.from({ length: 15 }, (_, idx) => ({
@@ -475,7 +481,7 @@ describe("Categorisation Engine", () => {
 
     // Verify recorded suggestion rows in uow.state.suggestions
     expect(env.uow.state.suggestions).toHaveLength(15);
-    const first = env.uow.state.suggestions[0]!;
+    const first = env.uow.state.suggestions[0] as SuggestionRow;
     expect(first.source).toBe("llm");
     expect(first.field).toBe("category");
     expect(first.suggestedValue).toBe(env.categories.groceries);
@@ -495,7 +501,7 @@ describe("Categorisation Engine", () => {
       const txnId = env.newId<"Transaction">();
       const splitId = env.newId<"Split">();
       txnIds.push(txnId);
-      (env.uow.state.transactions as any).push({
+      env.uow.state.transactions.push({
         id: txnId,
         accountId: env.publicAccountId,
         postedOn: "2026-10-26",
@@ -504,6 +510,9 @@ describe("Categorisation Engine", () => {
         fingerprint: `fp-norm-${i}`,
         fingerprintVersion: 1,
         status: "posted",
+        externalId: null,
+        importId: null,
+        isHidden: false,
         performedBy: null,
         payeeId: null,
         notes: null,
@@ -511,10 +520,8 @@ describe("Categorisation Engine", () => {
         nameHiddenBy: null,
         transferGroupId: null,
         needsReview: true,
-        searchId: 300 + i,
         createdAt: now.toString(),
         updatedAt: now.toString(),
-        deletedAt: null,
       });
       env.uow.state.splits.push({
         id: splitId,
@@ -573,7 +580,7 @@ describe("Categorisation Engine", () => {
 
     const privTxnId = env.newId<"Transaction">();
     const privSplitId = env.newId<"Split">();
-    (env.uow.state.transactions as any).push({
+    env.uow.state.transactions.push({
       id: privTxnId,
       accountId: env.privateAccountId,
       postedOn: "2026-10-26",
@@ -582,6 +589,9 @@ describe("Categorisation Engine", () => {
       fingerprint: "fp-priv-bill",
       fingerprintVersion: 1,
       status: "posted",
+      externalId: null,
+      importId: null,
+      isHidden: false,
       performedBy: null,
       payeeId: null,
       notes: null,
@@ -589,10 +599,8 @@ describe("Categorisation Engine", () => {
       nameHiddenBy: null,
       transferGroupId: null,
       needsReview: true,
-      searchId: 200,
       createdAt: now.toString(),
       updatedAt: now.toString(),
-      deletedAt: null,
     });
     env.uow.state.splits.push({
       id: privSplitId,
@@ -639,7 +647,7 @@ describe("Categorisation Engine", () => {
 
     const privTxnId = env.newId<"Transaction">();
     const privSplitId = env.newId<"Split">();
-    (env.uow.state.transactions as any).push({
+    env.uow.state.transactions.push({
       id: privTxnId,
       accountId: env.privateAccountId,
       postedOn: "2026-10-26",
@@ -648,6 +656,9 @@ describe("Categorisation Engine", () => {
       fingerprint: "fp-local-pharmacy",
       fingerprintVersion: 1,
       status: "posted",
+      externalId: null,
+      importId: null,
+      isHidden: false,
       performedBy: null,
       payeeId: null,
       notes: null,
@@ -655,10 +666,8 @@ describe("Categorisation Engine", () => {
       nameHiddenBy: null,
       transferGroupId: null,
       needsReview: true,
-      searchId: 201,
       createdAt: now.toString(),
       updatedAt: now.toString(),
-      deletedAt: null,
     });
     env.uow.state.splits.push({
       id: privSplitId,
@@ -712,7 +721,7 @@ describe("Categorisation Engine", () => {
 
     const txnId = env.newId<"Transaction">();
     const splitId = env.newId<"Split">();
-    (env.uow.state.transactions as any).push({
+    env.uow.state.transactions.push({
       id: txnId,
       accountId: env.publicAccountId,
       postedOn: "2026-10-26",
@@ -721,6 +730,9 @@ describe("Categorisation Engine", () => {
       fingerprint: "fp-unknown-store",
       fingerprintVersion: 1,
       status: "posted",
+      externalId: null,
+      importId: null,
+      isHidden: false,
       performedBy: null,
       payeeId: null,
       notes: null,
@@ -728,10 +740,8 @@ describe("Categorisation Engine", () => {
       nameHiddenBy: null,
       transferGroupId: null,
       needsReview: true,
-      searchId: 300,
       createdAt: now.toString(),
       updatedAt: now.toString(),
-      deletedAt: null,
     });
     env.uow.state.splits.push({
       id: splitId,
@@ -790,7 +800,7 @@ describe("Categorisation Engine", () => {
       const splitId = env.newId<"Split">();
       txnIds.push(txnId);
 
-      (env.uow.state.transactions as any).push({
+      env.uow.state.transactions.push({
         id: txnId,
         accountId: env.publicAccountId,
         postedOn: "2026-10-26",
@@ -799,6 +809,9 @@ describe("Categorisation Engine", () => {
         fingerprint: `fp-batch-${i}`,
         fingerprintVersion: 1,
         status: "posted",
+        externalId: null,
+        importId: null,
+        isHidden: false,
         performedBy: null,
         payeeId: null,
         notes: null,
@@ -806,10 +819,8 @@ describe("Categorisation Engine", () => {
         nameHiddenBy: null,
         transferGroupId: null,
         needsReview: true,
-        searchId: 400 + i,
         createdAt: now.toString(),
         updatedAt: now.toString(),
-        deletedAt: null,
       });
 
       env.uow.state.splits.push({
@@ -867,7 +878,7 @@ describe("Categorisation Engine", () => {
 
     const txnId = env.newId<"Transaction">();
     const splitId = env.newId<"Split">();
-    (env.uow.state.transactions as any).push({
+    env.uow.state.transactions.push({
       id: txnId,
       accountId: env.publicAccountId,
       postedOn: "2026-10-26",
@@ -876,6 +887,9 @@ describe("Categorisation Engine", () => {
       fingerprint: "fp-bunnings",
       fingerprintVersion: 1,
       status: "posted",
+      externalId: null,
+      importId: null,
+      isHidden: false,
       performedBy: null,
       payeeId: null,
       notes: null,
@@ -883,10 +897,8 @@ describe("Categorisation Engine", () => {
       nameHiddenBy: null,
       transferGroupId: null,
       needsReview: true,
-      searchId: 500,
       createdAt: now.toString(),
       updatedAt: now.toString(),
-      deletedAt: null,
     });
     env.uow.state.splits.push({
       id: splitId,
@@ -957,7 +969,7 @@ describe("Categorisation Engine", () => {
 
     const txnId = env.newId<"Transaction">();
     const splitId = env.newId<"Split">();
-    (env.uow.state.transactions as any).push({
+    env.uow.state.transactions.push({
       id: txnId,
       accountId: env.publicAccountId,
       postedOn: "2026-10-26",
@@ -966,6 +978,9 @@ describe("Categorisation Engine", () => {
       fingerprint: "fp-ampol",
       fingerprintVersion: 1,
       status: "posted",
+      externalId: null,
+      importId: null,
+      isHidden: false,
       performedBy: null,
       payeeId: null,
       notes: null,
@@ -973,10 +988,8 @@ describe("Categorisation Engine", () => {
       nameHiddenBy: null,
       transferGroupId: null,
       needsReview: true,
-      searchId: 501,
       createdAt: now.toString(),
       updatedAt: now.toString(),
-      deletedAt: null,
     });
     env.uow.state.splits.push({
       id: splitId,
@@ -1047,7 +1060,7 @@ describe("Categorisation Engine", () => {
     const txnId = env.newId<"Transaction">();
     const splitId = env.newId<"Split">();
 
-    (env.uow.state.transactions as any).push({
+    env.uow.state.transactions.push({
       id: txnId,
       accountId: env.publicAccountId,
       postedOn: "2026-10-26",
@@ -1056,6 +1069,9 @@ describe("Categorisation Engine", () => {
       fingerprint: "fp-re-cat",
       fingerprintVersion: 1,
       status: "posted",
+      externalId: null,
+      importId: null,
+      isHidden: false,
       performedBy: null,
       payeeId: null,
       notes: null,
@@ -1063,10 +1079,8 @@ describe("Categorisation Engine", () => {
       nameHiddenBy: null,
       transferGroupId: null,
       needsReview: true,
-      searchId: 601,
       createdAt: now.toString(),
       updatedAt: now.toString(),
-      deletedAt: null,
     });
     env.uow.state.splits.push({
       id: splitId,
@@ -1112,7 +1126,7 @@ describe("Categorisation Engine", () => {
     );
 
     expect(result1.recordedCount).toBe(1);
-    const firstSuggestion = result1.suggestions[0]!;
+    const firstSuggestion = result1.suggestions[0] as SuggestionRow;
     expect(firstSuggestion.outcome).toBe("open");
     expect(firstSuggestion.resolvedAt).toBeNull();
 
@@ -1143,7 +1157,7 @@ describe("Categorisation Engine", () => {
     );
 
     expect(result2.recordedCount).toBe(1);
-    const secondSuggestion = result2.suggestions[0]!;
+    const secondSuggestion = result2.suggestions[0] as SuggestionRow;
     expect(secondSuggestion.id).not.toBe(firstSuggestion.id);
     expect(secondSuggestion.outcome).toBe("open");
     expect(secondSuggestion.resolvedAt).toBeNull();

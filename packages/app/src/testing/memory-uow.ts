@@ -3272,7 +3272,9 @@ function suggestionRepo(working: MemoryState, check: () => void): SuggestionRepo
         ];
         if (!searchMatches(search.terms, fields)) continue;
 
-        const mainSplit = splitsWithCategory[0]!;
+        const mainSplit = splitsWithCategory[0];
+        // Unreachable: splitsWithCategory is filtered to non-empty rows with a category.
+        if (mainSplit === undefined || mainSplit.categoryId === null) continue;
         const cat = working.categories.find((c) => c.id === mainSplit.categoryId);
 
         seenTxnIds.add(t.id);
@@ -3281,7 +3283,7 @@ function suggestionRepo(working: MemoryState, check: () => void): SuggestionRepo
           description: t.descriptionRaw,
           amountCents: t.amountCents,
           postedOn: t.postedOn,
-          categoryId: mainSplit.categoryId!,
+          categoryId: mainSplit.categoryId,
           categoryName: cat?.name,
           payeeName: payee?.name ?? null,
         });

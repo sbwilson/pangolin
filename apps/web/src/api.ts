@@ -4,7 +4,11 @@ import type { TransactionsSearch } from "./routes/search.ts";
 
 export const api = hc<AppType>("/");
 
-export type Health =
+/**
+ * The mapped health view, not the raw response: `status: "ok"` becomes `healthy: true` and the
+ * `writable` flag is dropped, so it is not an `InferResponseType` derivation. Used only here.
+ */
+type Health =
   | { readonly healthy: true; readonly schemaVersion: number }
   | { readonly healthy: false; readonly schemaVersion: number | null };
 
@@ -18,10 +22,7 @@ export async function fetchHealth(): Promise<Health> {
 }
 
 /** A dead job as the status page shows it: kind and failure time only (AD-9). */
-export interface DeadJob {
-  readonly kind: string;
-  readonly failedAt: string;
-}
+type DeadJob = InferResponseType<(typeof api.api.system.jobs)["$get"], 200>["dead"][number];
 
 export async function fetchDeadJobs(): Promise<DeadJob[]> {
   const res = await api.api.system.jobs.$get();
@@ -30,27 +31,11 @@ export async function fetchDeadJobs(): Promise<DeadJob[]> {
   return body.dead;
 }
 
-/** A weekly repository check or monthly restore drill result (story 1.14). */
-export interface BackupVerification {
-  readonly at: string;
-  readonly ok: boolean;
-  readonly summary: string;
-}
-
 /** The last backup, its stale warning and the latest check and drill, as the page shows them. */
-export interface BackupStatus {
-  /** False when no backup repository is configured. */
-  readonly configured: boolean;
-  readonly last: {
-    readonly snapshotId: string;
-    readonly takenAt: string;
-    readonly pushedAt: string;
-  } | null;
-  /** The last good backup is older than 48 hours. */
-  readonly stale: boolean;
-  readonly check: BackupVerification | null;
-  readonly drill: BackupVerification | null;
-}
+type BackupStatus = InferResponseType<(typeof api.api.system.backup)["$get"], 200>;
+
+/** A weekly repository check or monthly restore drill result (story 1.14). */
+export type BackupVerification = NonNullable<BackupStatus["check"]>;
 
 export async function fetchBackupStatus(): Promise<BackupStatus> {
   const res = await api.api.system.backup.$get();
@@ -59,12 +44,10 @@ export async function fetchBackupStatus(): Promise<BackupStatus> {
 }
 
 /** Whether the current recovery bundle is confirmed stored safely (story 1.17). */
-export interface RecoveryBundleStatus {
-  /** True when confirmed, or when the server has no bundle id (nothing to confirm). */
-  readonly confirmed: boolean;
-  /** The bundle's id as printed in it; absent when the server has none. */
-  readonly bundleId?: string;
-}
+type RecoveryBundleStatus = InferResponseType<
+  (typeof api.api.system)["recovery-bundle"]["$get"],
+  200
+>;
 
 export async function fetchRecoveryBundle(): Promise<RecoveryBundleStatus> {
   const res = await api.api.system["recovery-bundle"].$get();
@@ -109,21 +92,16 @@ async function apiError(res: Response): Promise<ApiError> {
   );
 }
 
-export interface Me {
+type MeResponse = InferResponseType<(typeof api.api.identity.me)["$get"], 200>;
+
+/**
+ * The signed-in person. Derived from the route response; the `Id` brands erase to the plain
+ * strings the UI passes around, so `personId` (and `partner.personId`) stay `string`.
+ */
+export type Me = Omit<MeResponse, "personId" | "partner"> & {
   readonly personId: string;
-  readonly displayName: string;
-  readonly colour: string;
-  readonly authAt: string;
-  readonly canInvite: boolean;
-  readonly demo: boolean;
-  /** `incomplete` until the login has a passkey and a confirmed TOTP authenticator. */
-  readonly enrolment: "complete" | "incomplete";
-  readonly needs: readonly ("passkey" | "totp")[];
-  /** Whether recovery codes were ever issued (false until enrolment first completes), and how many are left. */
-  readonly recoveryCodes: { readonly issued: boolean; readonly remaining: number };
-  /** The other person with a login, whose access this person may reset. */
   readonly partner: { readonly personId: string; readonly displayName: string } | null;
-}
+};
 
 /** The signed-in person, or null when nobody is signed in. */
 export async function fetchMe(): Promise<Me | null> {
@@ -134,7 +112,7 @@ export async function fetchMe(): Promise<Me | null> {
   return (await res.json()) as Me;
 }
 
-export interface SignUpForm {
+interface SignUpForm {
   readonly token: string;
   readonly email: string;
   readonly password: string;
@@ -172,9 +150,7 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 /** 10 recovery codes, `XXXXX-XXXXX`, shown once. */
-export interface RecoveryCodes {
-  readonly codes: readonly string[];
-}
+type RecoveryCodes = InferResponseType<(typeof api.api.identity)["recovery-codes"]["$post"], 201>;
 
 /** The first set of recovery codes, right after enrolment first completes. Works once. */
 export async function issueInitialRecoveryCodes(): Promise<RecoveryCodes> {
@@ -194,7 +170,7 @@ export async function regenerateRecoveryCodes(): Promise<RecoveryCodes> {
  * A redemption's outcome. `signedIn` is false when it went through but no session could be
  * started: the person then signs in normally.
  */
-export interface Redeemed {
+interface Redeemed {
   readonly signedIn: boolean;
 }
 
@@ -287,7 +263,7 @@ export async function fetchProfitAndLoss(range: {
 }
 
 /** Spending over an inclusive range by group or category (the P&L expense section alone). */
-export type SpendingReport = InferResponseType<(typeof api.api.reports)["spending"]["$get"], 200>;
+type SpendingReport = InferResponseType<(typeof api.api.reports)["spending"]["$get"], 200>;
 
 export async function fetchSpending(range: {
   readonly from: string;
@@ -303,7 +279,6 @@ export async function fetchSpending(range: {
 
 /** Merchants over an inclusive range for one flow kind (income or expense). */
 export type MerchantsReport = InferResponseType<(typeof api.api.reports)["merchants"]["$get"], 200>;
-export type MerchantRow = MerchantsReport["rows"][number];
 
 export async function fetchMerchants(range: {
   readonly from: string;
@@ -336,7 +311,6 @@ export async function fetchLeaks(range: {
 export type NetWorthReport = InferResponseType<(typeof api.api.reports)["net-worth"]["$get"], 200>;
 export type NetWorthAccount = NetWorthReport["accounts"][number];
 export type NetWorthTrendPoint = NetWorthReport["trend"][number];
-export type NetWorthSubtotals = NetWorthReport["subtotals"];
 
 export async function fetchNetWorth(options?: { readonly asOf?: string }): Promise<NetWorthReport> {
   const query = options?.asOf ? { asOf: options.asOf } : {};
@@ -380,13 +354,8 @@ export type ReviewTransaction = Extract<
   ReviewDetail,
   { type: "transaction" }
 >["candidates"][number];
-export type ReviewSuggestion = NonNullable<
-  Extract<ReviewDetail, { type: "transaction" }>["suggestion"]
->;
 export type ReviewSetAsideRow = Extract<ReviewDetail, { type: "batch" }>["rows"][number];
-export type ReviewSetAsideRowProposal = NonNullable<ReviewSetAsideRow["proposal"]>;
 export type ReviewPdfRow = Extract<ReviewDetail, { type: "pdf_batch" }>["rows"][number];
-export type ReviewPdfRowCorrection = ReviewPdfRow["corrected"];
 
 /** The nav badge and partner chip: numbers only. */
 export type ReviewCounts = InferResponseType<typeof api.api.review.count.$get, 200>;
@@ -404,7 +373,7 @@ export async function fetchReviewCounts(): Promise<ReviewCounts> {
 }
 
 /** The actions on a review item, one route each (`POST /api/review/:id/<action>`). */
-export type ReviewAction =
+type ReviewAction =
   | "accept-suggestion"
   | "dismiss-suggestion"
   | "accept-rule"
@@ -425,7 +394,7 @@ export type ReviewAction =
   | "revoke-links";
 
 /** The outcome of a Re-check: `ok` false carries the exact remaining error (HTTP 200). */
-export interface PdfRecheckResult {
+interface PdfRecheckResult {
   readonly batchId: string;
   readonly ok: boolean;
   readonly error: string | null;
@@ -439,7 +408,7 @@ export async function recheckPdfReviewItem(id: string): Promise<PdfRecheckResult
   return await postJson<PdfRecheckResult>(`/api/review/${encodeURIComponent(id)}/recheck-pdf`, {});
 }
 
-export interface BulkAcceptSuggestionsResult {
+interface BulkAcceptSuggestionsResult {
   readonly acceptedCount: number;
 }
 
@@ -476,7 +445,7 @@ export interface LedgerTag {
 }
 
 /** Who last set a classified split field; `user` outranks the rest. */
-export type SplitSource = "user" | "rule" | "payee" | "activity" | "llm";
+type SplitSource = "user" | "rule" | "payee" | "activity" | "llm";
 
 /** One split of a transaction. `beneficiary` is `shared` or a person ID. */
 export interface LedgerSplit {
@@ -521,7 +490,7 @@ export interface LedgerTransaction {
 }
 
 /** Where a page sits in the whole filtered list; the server's numbers, never worked out here. */
-export interface TransactionPageInfo {
+interface TransactionPageInfo {
   readonly total: number;
   readonly pageCount: number;
   readonly page: number;
@@ -639,7 +608,7 @@ export async function updateNotes(id: string, notes: string | null): Promise<Led
 }
 
 /** One split as the editor sends it: an `id` updates that split, none adds a new one. */
-export interface SplitDraft {
+interface SplitDraft {
   readonly id?: string;
   readonly amountCents: number;
   readonly memo?: string | null;
@@ -659,7 +628,7 @@ export async function setSplits(
 }
 
 /** The outcome of one split-field write; `applied` is false when a higher-ranked source holds it. */
-export interface SplitFieldResult {
+interface SplitFieldResult {
   readonly applied: boolean;
   readonly changed: boolean;
   readonly reason?: string;
@@ -725,7 +694,7 @@ export type AccountType =
   | "vehicle"
   | "other";
 
-export interface AccountWarning {
+interface AccountWarning {
   readonly kind: "closing-balance";
   readonly balanceCents: number;
 }
@@ -819,7 +788,7 @@ export async function fetchInstitutions(): Promise<InstitutionSummary[]> {
 }
 
 /** What the create form sends: the server mints the ID and checks every rule. */
-export interface NewAccount {
+interface NewAccount {
   readonly name: string;
   readonly type: AccountType;
   readonly currency: string;
@@ -995,18 +964,18 @@ export interface LlmProviderSafeView {
   readonly updatedAt: string;
 }
 
-export interface LlmPurposeAssignmentRow {
+interface LlmPurposeAssignmentRow {
   readonly purpose: LlmPurpose;
   readonly providerId: string;
   readonly updatedAt: string;
 }
 
-export interface LlmSettingsResult {
+interface LlmSettingsResult {
   readonly providers: readonly LlmProviderSafeView[];
   readonly assignments: readonly LlmPurposeAssignmentRow[];
 }
 
-export interface CreateLlmProviderInput {
+interface CreateLlmProviderInput {
   readonly name: string;
   readonly kind: LlmProviderKind;
   readonly baseUrl: string;
@@ -1016,7 +985,7 @@ export interface CreateLlmProviderInput {
   readonly cloudRows?: boolean | undefined;
 }
 
-export interface UpdateLlmProviderInput {
+interface UpdateLlmProviderInput {
   readonly name?: string | undefined;
   readonly kind?: LlmProviderKind | undefined;
   readonly baseUrl?: string | undefined;
@@ -1026,13 +995,13 @@ export interface UpdateLlmProviderInput {
   readonly cloudRows?: boolean | undefined;
 }
 
-export interface TestLlmProviderResult {
+interface TestLlmProviderResult {
   readonly ok: boolean;
   readonly latencyMs?: number | undefined;
   readonly error?: string | undefined;
 }
 
-export interface LlmRequestPreviewItem {
+interface LlmRequestPreviewItem {
   readonly index: number;
   readonly description: string;
   readonly amountCents: number;
@@ -1040,7 +1009,7 @@ export interface LlmRequestPreviewItem {
   readonly isPrivate?: boolean | undefined;
 }
 
-export interface LlmRequestPreviewResult {
+interface LlmRequestPreviewResult {
   readonly provider: LlmProviderSafeView | null;
   readonly isLocal: boolean;
   readonly model?: string | undefined;

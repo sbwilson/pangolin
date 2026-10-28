@@ -50,6 +50,7 @@ import { parseBuiltinGenericCsv } from "./parsers/generic-csv.ts";
 import { parseBuiltinQif } from "./parsers/qif.ts";
 import { parseBuiltinUbankCsv } from "./parsers/ubank-csv.ts";
 import { parseBuiltinUpCsv } from "./parsers/up-csv.ts";
+import { classifyUnclassifiedDedupeKey, setAsideDedupeKey } from "./pdf-review.ts";
 import { IMPORT_SET_ASIDE_REVIEW } from "./set-aside.ts";
 
 /**
@@ -284,7 +285,7 @@ export function importStatement(
       raiseReviewItem(tx, audit, ctx, {
         kind: IMPORT_SET_ASIDE_REVIEW,
         entityRef: `import_batch:${batchId}`,
-        dedupeKey: `import.set_aside:${batchId}`,
+        dedupeKey: setAsideDedupeKey(batchId),
         accountId: account.id,
       });
     }
@@ -442,7 +443,7 @@ export function importStatement(
         raiseReviewItem(tx, audit, ctx, {
           kind: CLASSIFY_UNCLASSIFIED_REVIEW,
           entityRef: transactionEntityRef(txnId),
-          dedupeKey: `classify.unclassified:${txnId}`,
+          dedupeKey: classifyUnclassifiedDedupeKey(txnId),
           accountId: account.id,
         });
       }

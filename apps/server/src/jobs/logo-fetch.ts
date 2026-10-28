@@ -160,7 +160,8 @@ export function createLogoFetcher(options: LogoFetcherOptions = {}): LogoFetcher
         }
         if (res.status === 404) return null;
         if (!res.ok) throw new Error(`logo-fetch: ${domain} answered ${res.status}`);
-        const mime = (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+        const [mimeRaw = ""] = (res.headers.get("content-type") ?? "").split(";");
+        const mime = mimeRaw.trim().toLowerCase();
         if (!LOGO_MIMES.includes(mime)) {
           throw new Error(`logo-fetch: ${domain} served ${mime === "" ? "no content type" : mime}`);
         }

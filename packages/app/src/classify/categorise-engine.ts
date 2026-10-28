@@ -3,6 +3,7 @@ import { formatInstant } from "@pangolin/shared/temporal";
 import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
 import type { LlmProvider } from "../ports/llm-provider.ts";
+import { providerSetting } from "../ports/llm-provider.ts";
 import type { FewShotExample, LlmProviderRow, SuggestionRow } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
 import {
@@ -69,8 +70,8 @@ export async function categoriseTransactions(
 
   if (ctx.provider) {
     provider = ctx.provider;
-    isLocal = ctx.providerIsLocal ?? providerRow?.isLocal ?? false;
-    model = ctx.providerModel ?? providerRow?.model ?? "default";
+    isLocal = providerSetting(ctx.providerIsLocal, providerRow?.isLocal, false);
+    model = providerSetting(ctx.providerModel, providerRow?.model, "default");
   } else if (providerRow && ctx.resolveProvider) {
     provider = ctx.resolveProvider(providerRow);
     isLocal = providerRow.isLocal;
@@ -194,8 +195,7 @@ export async function categoriseTransactions(
       (s) => s.index !== undefined && s.index !== null,
     );
 
-    for (let idx = 0; idx < chunk.length; idx++) {
-      const item = chunk[idx]!;
+    for (const [idx, item] of chunk.entries()) {
       // Find matching suggestion by index, or fallback to array position only if no suggestions contain index
       const suggestionOutput = hasAnyIndex
         ? response.data.suggestions.find((s) => s.index === idx)

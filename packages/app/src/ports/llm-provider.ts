@@ -1,6 +1,19 @@
 import type { z } from "zod";
 
 /**
+ * Provider settings resolution order shared by every LLM call site (AD-6):
+ * an explicit context override wins, then the stored provider row column,
+ * then the fallback default.
+ */
+export function providerSetting<T>(
+  override: T | undefined,
+  rowValue: T | undefined,
+  fallback: T,
+): T {
+  return override ?? rowValue ?? fallback;
+}
+
+/**
  * Token usage reported by the provider.
  */
 export interface LlmUsage {

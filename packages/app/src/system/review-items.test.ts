@@ -36,6 +36,12 @@ const personA = idSchema("Person").parse("01J0000000000000000000000A");
 const personB = idSchema("Person").parse("01J0000000000000000000000B");
 const now = Temporal.Instant.from("2026-09-27T00:00:00Z");
 
+/** Fails the test loudly when a row or field that must exist is absent, and narrows the type. */
+function defined<T>(value: T | null | undefined, what: string): T {
+  if (value === undefined || value === null) throw new Error(`expected ${what} to be defined`);
+  return value;
+}
+
 const personal = defineReviewKind({ kind: "test.personal", module: "planning", scope: "person" });
 const perAccount = defineReviewKind({ kind: "test.account", module: "ledger", scope: "account" });
 const household = defineReviewKind({
@@ -408,7 +414,7 @@ describe("suggestion review actions", () => {
       amountCents: -5000,
       description: "Woolworths",
     });
-    const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+    const splitId = defined(getTransaction(f.ctxA, { id: txnId }).splits[0], "split").id;
 
     const sugId = f.ctx.newId<"Suggestion">();
     const sugRow: SuggestionRow = {
@@ -455,8 +461,9 @@ describe("suggestion review actions", () => {
 
     // Verify split category and provenance
     const updatedTxn = getTransaction(f.ctxA, { id: txnId });
-    expect(updatedTxn.splits[0]!.categoryId).toBe(f.catId);
-    expect(updatedTxn.splits[0]!.categorySource).toBe("llm");
+    const updatedSplit = defined(updatedTxn.splits[0], "split");
+    expect(updatedSplit.categoryId).toBe(f.catId);
+    expect(updatedSplit.categorySource).toBe("llm");
 
     // Verify suggestion outcome and resolvedAt
     const updatedSug = f.uow.state.suggestions.find((s) => s.id === sugId);
@@ -476,7 +483,7 @@ describe("suggestion review actions", () => {
       amountCents: -3500,
       description: "Coles",
     });
-    const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+    const splitId = defined(getTransaction(f.ctxA, { id: txnId }).splits[0], "split").id;
 
     const sugId = f.ctx.newId<"Suggestion">();
     const sugRow: SuggestionRow = {
@@ -517,7 +524,7 @@ describe("suggestion review actions", () => {
 
     // Verify split remains unclassified
     const currentTxn = getTransaction(f.ctxA, { id: txnId });
-    expect(currentTxn.splits[0]!.categoryId).toBeNull();
+    expect(defined(currentTxn.splits[0], "split").categoryId).toBeNull();
 
     // Verify review item remains open, but no longer has open suggestion
     const cardsAfter = listReviewCards(f.ctxA);
@@ -542,8 +549,8 @@ describe("suggestion review actions", () => {
       amountCents: -7000,
       description: "Store 2",
     });
-    const split1Id = getTransaction(f.ctxA, { id: txn1Id }).splits[0]!.id;
-    const split2Id = getTransaction(f.ctxA, { id: txn2Id }).splits[0]!.id;
+    const split1Id = defined(getTransaction(f.ctxA, { id: txn1Id }).splits[0], "split").id;
+    const split2Id = defined(getTransaction(f.ctxA, { id: txn2Id }).splits[0], "split").id;
 
     const sug1 = f.ctx.newId<"Suggestion">();
     const sug2 = f.ctx.newId<"Suggestion">();
@@ -604,8 +611,12 @@ describe("suggestion review actions", () => {
     const result = bulkAcceptSuggestions(f.ctxA, { ids: [item1, item2] });
     expect(result.acceptedCount).toBe(2);
 
-    expect(getTransaction(f.ctxA, { id: txn1Id }).splits[0]!.categorySource).toBe("llm");
-    expect(getTransaction(f.ctxA, { id: txn2Id }).splits[0]!.categorySource).toBe("llm");
+    expect(defined(getTransaction(f.ctxA, { id: txn1Id }).splits[0], "split").categorySource).toBe(
+      "llm",
+    );
+    expect(defined(getTransaction(f.ctxA, { id: txn2Id }).splits[0], "split").categorySource).toBe(
+      "llm",
+    );
     expect(f.uow.state.suggestions.find((s) => s.id === sug1)?.outcome).toBe("accepted");
     expect(f.uow.state.suggestions.find((s) => s.id === sug2)?.outcome).toBe("accepted");
   });
@@ -618,7 +629,7 @@ describe("suggestion review actions", () => {
       amountCents: -9900,
       description: "Secret Gift Shop",
     });
-    const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+    const splitId = defined(getTransaction(f.ctxA, { id: txnId }).splits[0], "split").id;
 
     const sugId = f.ctx.newId<"Suggestion">();
     f.uow.state.suggestions.push({
@@ -665,7 +676,7 @@ describe("suggestion review actions", () => {
       amountCents: -5000,
       description: "Store Duplicate",
     });
-    const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+    const splitId = defined(getTransaction(f.ctxA, { id: txnId }).splits[0], "split").id;
 
     f.uow.state.suggestions.push({
       id: f.ctx.newId<"Suggestion">(),
@@ -706,12 +717,16 @@ describe("suggestion review actions", () => {
       amountCents: -5000,
       description: "Store User Set",
     });
-    const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+    const splitId = defined(getTransaction(f.ctxA, { id: txnId }).splits[0], "split").id;
 
     // Simulate split already set by user
     f.uow.transaction((tx) => {
+      const visible = defined(
+        tx.transactions.findVisible(f.ctxA.viewer, txnId, "2026-09-27"),
+        "transaction",
+      );
       tx.transactions.updateSplit({
-        ...tx.transactions.findVisible(f.ctxA.viewer, txnId, "2026-09-27")!.splits[0]!,
+        ...defined(visible.splits[0], "split"),
         categoryId: f.catId,
         categorySource: "user",
       });
@@ -753,7 +768,7 @@ describe("suggestion review actions", () => {
       txnId: Id<"Transaction">,
       websiteDomain: string | null,
     ) {
-      const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+      const splitId = defined(getTransaction(f.ctxA, { id: txnId }).splits[0], "split").id;
       f.uow.state.suggestions.push({
         id: f.ctx.newId<"Suggestion">(),
         accountId: "pub1" as Id<"Account">,
@@ -803,9 +818,10 @@ describe("suggestion review actions", () => {
       );
       const jobs = logoJobs(f);
       expect(jobs).toHaveLength(1);
-      expect(jobs[0]!.lane).toBe("net");
-      expect(jobs[0]!.dedupeKey).toBe(`logo:${payee.id}`);
-      expect(JSON.parse(jobs[0]!.payload)).toEqual({ payeeId: payee.id });
+      const job = defined(jobs[0], "logo job");
+      expect(job.lane).toBe("net");
+      expect(job.dedupeKey).toBe(`logo:${payee.id}`);
+      expect(JSON.parse(job.payload)).toEqual({ payeeId: payee.id });
     });
 
     it("dedupes: a second accepted suggestion for the same payee adds no job", () => {
@@ -867,7 +883,7 @@ describe("suggestion review actions", () => {
         description: "Secret Shop",
         payeeId: payee.id,
       });
-      const splitId = getTransaction(f.ctxA, { id: txnId }).splits[0]!.id;
+      const splitId = defined(getTransaction(f.ctxA, { id: txnId }).splits[0], "split").id;
       f.uow.state.suggestions.push({
         id: f.ctx.newId<"Suggestion">(),
         accountId: "priv1" as Id<"Account">,

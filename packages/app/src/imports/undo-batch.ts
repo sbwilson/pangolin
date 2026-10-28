@@ -9,6 +9,7 @@ import { requireEntryOpen } from "../ledger/closed-lock.ts";
 import { softDeleteTransactionRow } from "../ledger/delete-transaction.ts";
 import { resolveReviewItem } from "../system/review-items.ts";
 import { write } from "../write.ts";
+import { setAsideDedupeKey } from "./pdf-review.ts";
 
 export const undoImportBatchInput = z.object({ batchId: idInput }).strict();
 export type UndoImportBatchInput = z.input<typeof undoImportBatchInput>;
@@ -69,7 +70,7 @@ export function undoImportBatch(
       softDeleteTransactionRow(ctx, tx, audit, row);
     }
     resolveReviewItem(tx, audit, ctx, {
-      dedupeKey: `import.set_aside:${batch.id}`,
+      dedupeKey: setAsideDedupeKey(batch.id),
       resolution: "import undone",
     });
     resolveReviewItem(tx, audit, ctx, {

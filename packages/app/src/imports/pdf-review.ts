@@ -26,6 +26,13 @@ export const IMPORT_PDF_FAILED_REVIEW = defineReviewKind({
 export const pdfFailedEntityRef = (batchId: string): string => `import_batch:${batchId}`;
 export const pdfFailedDedupeKey = (batchId: string): string => `import.pdf_failed:${batchId}`;
 
+/** Dedupe key for the `classify.unclassified` item raised for transaction `txnId`. */
+export const classifyUnclassifiedDedupeKey = (txnId: string): string =>
+  `classify.unclassified:${txnId}`;
+
+/** Dedupe key for the `import.set_aside` item raised for import batch `batchId`. */
+export const setAsideDedupeKey = (batchId: string): string => `import.set_aside:${batchId}`;
+
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD date");
 
 /** The corrected values of one extracted statement row, kept as JSON in `import_row.proposal`. */

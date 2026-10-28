@@ -279,7 +279,7 @@ describe("createLogoFetcher", () => {
       "shop.example.com",
     );
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchImpl.mock.calls[0]!;
+    const [url, init] = fetchImpl.mock.calls[0] as [string, LogoFetchInit | undefined];
     expect(url).toBe("https://shop.example.com/favicon.ico");
     expect(init?.redirect).toBe("manual");
     expect(fetched).not.toBeNull();
@@ -488,7 +488,8 @@ describe("createLogoFetcher with an egress proxy", () => {
       const fetched = await fetcher.fetchFavicon("shop.example.com");
       expect(fetched?.mime).toBe("image/png");
       expect(undiciFetchMock).toHaveBeenCalledTimes(1);
-      expect(undiciFetchMock.mock.calls[0]![0]).toBe("https://shop.example.com/favicon.ico");
+      const [undiciUrl] = undiciFetchMock.mock.calls[0] as [string, LogoFetchInit | undefined];
+      expect(undiciUrl).toBe("https://shop.example.com/favicon.ico");
       expect(globalFetch).not.toHaveBeenCalled();
     } finally {
       vi.doUnmock("undici");

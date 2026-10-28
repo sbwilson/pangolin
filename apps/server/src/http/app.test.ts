@@ -25,7 +25,6 @@ import {
   type PdfTextExtractor,
   personViewer,
   raiseReviewItem,
-  type SuggestionRow,
   systemClock,
   type UnitOfWork,
   type UseCaseContext,
@@ -57,6 +56,15 @@ const open: Db[] = [];
 
 const ORIGIN = "http://localhost:3000";
 const SESSION_COOKIE = "session=user-a";
+
+/**
+ * Narrows a test fixture lookup: fails the test loudly when a row or field that must
+ * exist is absent (undefined or null), and types the value as present afterwards.
+ */
+function defined<T>(value: T | null | undefined, what: string): T {
+  if (value === undefined || value === null) throw new Error(`expected ${what} to be defined`);
+  return value;
+}
 
 function openDb(readonly = false): Db {
   const db = openDatabase(dbPath, { readonly });
@@ -3299,39 +3307,38 @@ describe("POST /api/import/pdf and the PDF review routes", () => {
   const pdfBytes = Buffer.from("%PDF-1.4 mock statement body", "utf8");
   const pdfBase64 = pdfBytes.toString("base64");
 
+  const salaryRow = {
+    postedOn: "2024-09-02",
+    description: "SALARY",
+    amountCents: 50_000,
+    runningBalanceCents: 150_000,
+    pageNumber: 1,
+  };
+  const woolworthsRow = {
+    postedOn: "2024-09-05",
+    description: "WOOLWORTHS",
+    amountCents: -2_000,
+    runningBalanceCents: 148_000,
+    pageNumber: 1,
+  };
+  const paymeRow = {
+    postedOn: "2024-09-20",
+    description: "PAYME",
+    amountCents: 10_000,
+    runningBalanceCents: 158_000,
+    pageNumber: 1,
+  };
   const pageJson = {
     accountNumberLast4: "1234",
     startDate: "2024-09-01",
     endDate: "2024-09-30",
     openingBalanceCents: 100_000,
     closingBalanceCents: 158_000,
-    rows: [
-      {
-        postedOn: "2024-09-02",
-        description: "SALARY",
-        amountCents: 50_000,
-        runningBalanceCents: 150_000,
-        pageNumber: 1,
-      },
-      {
-        postedOn: "2024-09-05",
-        description: "WOOLWORTHS",
-        amountCents: -2_000,
-        runningBalanceCents: 148_000,
-        pageNumber: 1,
-      },
-      {
-        postedOn: "2024-09-20",
-        description: "PAYME",
-        amountCents: 10_000,
-        runningBalanceCents: 158_000,
-        pageNumber: 1,
-      },
-    ],
+    rows: [salaryRow, woolworthsRow, paymeRow],
   };
   const gapPageJson = {
     ...pageJson,
-    rows: [pageJson.rows[0]!, { ...pageJson.rows[1]!, amountCents: -2_001 }, pageJson.rows[2]!],
+    rows: [salaryRow, { ...woolworthsRow, amountCents: -2_001 }, paymeRow],
   };
 
   const fakeExtractor: PdfTextExtractor = async () => ({
@@ -3667,7 +3674,7 @@ describe("LLM provider endpoints (/api/llm/*)", () => {
       }),
     });
     expect(createRes.status).toBe(201);
-    const createdLocal = (await createRes.json()) as any;
+    const createdLocal = (await createRes.json()) as { id: string; apiKeyCiphertext?: unknown };
     expect(createdLocal).toMatchObject({
       name: "Local Ollama",
       isLocal: true,
@@ -3692,7 +3699,7 @@ describe("LLM provider endpoints (/api/llm/*)", () => {
       }),
     });
     expect(cloudRes.status).toBe(201);
-    const createdCloud = (await cloudRes.json()) as any;
+    const createdCloud = (await cloudRes.json()) as { id: string };
     expect(createdCloud).toMatchObject({
       name: "Cloud OpenAI",
       isLocal: false,
@@ -3722,18 +3729,29 @@ describe("LLM provider endpoints (/api/llm/*)", () => {
       }),
     });
     expect(updateRes.status).toBe(200);
-    const updated = (await updateRes.json()) as any;
+    const updated = (await updateRes.json()) as { name: string };
     expect(updated.name).toBe("Local Ollama Updated");
 
-    // 5. Test connection
-    const testRes = await app.request(`/api/llm/providers/${createdLocal.id}/test`, {
-      ...signedIn,
-      method: "POST",
-    });
-    expect(testRes.status).toBe(200);
-    const testBody = await testRes.json();
-    // Test connection either succeeds with latency or fails with sanitized error (endpoint doesn't really exist)
-    expect(testBody).toHaveProperty("ok");
+    // 5. Test connection — stub fetch so the check answers offline instead of dialing the LAN URL
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify({ ok: true }) } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      )) as typeof fetch;
+    let testBody: unknown;
+    try {
+      const testRes = await app.request(`/api/llm/providers/${createdLocal.id}/test`, {
+        ...signedIn,
+        method: "POST",
+      });
+      expect(testRes.status).toBe(200);
+      testBody = await testRes.json();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    // The stubbed endpoint answers the ping, so the result is a deterministic success.
+    expect(testBody).toEqual({ ok: true, latencyMs: expect.any(Number) });
 
     // 6. Preview request
     const previewRes = await app.request("/api/llm/preview", {
@@ -3742,7 +3760,7 @@ describe("LLM provider endpoints (/api/llm/*)", () => {
       body: JSON.stringify({ purpose: "categorise" }),
     });
     expect(previewRes.status).toBe(200);
-    const preview = (await previewRes.json()) as any;
+    const preview = (await previewRes.json()) as { schemaName: string; prompt?: unknown };
     expect(preview.schemaName).toBe("categorise");
     expect(preview.prompt).toBeDefined();
 
@@ -3756,9 +3774,9 @@ describe("LLM provider endpoints (/api/llm/*)", () => {
 
     // Verify settings list reflects deletion
     const finalSettingsRes = await app.request("/api/llm/settings", signedIn);
-    const finalSettings = (await finalSettingsRes.json()) as any;
+    const finalSettings = (await finalSettingsRes.json()) as { providers: Array<{ id: string }> };
     expect(finalSettings.providers).toHaveLength(1);
-    expect(finalSettings.providers[0].id).toBe(createdLocal.id);
+    expect(defined(finalSettings.providers[0], "remaining provider").id).toBe(createdLocal.id);
   });
 });
 
@@ -3800,7 +3818,7 @@ describe("suggestion review routes", () => {
       amountCents: -5000,
       description: "Supermarket",
     });
-    const splitId = getTransaction(sys, { id: txnId }).splits[0]!.id;
+    const splitId = defined(getTransaction(sys, { id: txnId }).splits[0], "split").id;
 
     const sugId = d.newId<"Suggestion">();
     write(sys, (tx) => {
@@ -3843,8 +3861,9 @@ describe("suggestion review routes", () => {
 
     // Verify split category was set with source 'llm'
     const updated = getTransaction(sys, { id: txnId });
-    expect(updated.splits[0]!.categoryId).toBe(catId);
-    expect(updated.splits[0]!.categorySource).toBe("llm");
+    const updatedSplit = defined(updated.splits[0], "split");
+    expect(updatedSplit.categoryId).toBe(catId);
+    expect(updatedSplit.categorySource).toBe("llm");
 
     // Calling accept again returns 404
     const again = await app.request(`/api/review/${item.id}/accept-suggestion`, {
@@ -3865,7 +3884,7 @@ describe("suggestion review routes", () => {
       amountCents: -3000,
       description: "Corner Mart",
     });
-    const splitId = getTransaction(sys, { id: txnId }).splits[0]!.id;
+    const splitId = defined(getTransaction(sys, { id: txnId }).splits[0], "split").id;
 
     const sugId = d.newId<"Suggestion">();
     write(sys, (tx) => {
@@ -3907,7 +3926,7 @@ describe("suggestion review routes", () => {
     expect(res.status).toBe(204);
 
     // Split remains unclassified
-    expect(getTransaction(sys, { id: txnId }).splits[0]!.categoryId).toBeNull();
+    expect(defined(getTransaction(sys, { id: txnId }).splits[0], "split").categoryId).toBeNull();
 
     // Calling dismiss again returns 404
     const again = await app.request(`/api/review/${item.id}/dismiss-suggestion`, {
@@ -3935,8 +3954,8 @@ describe("suggestion review routes", () => {
       description: "Shop B",
     });
 
-    const split1 = getTransaction(sys, { id: txn1 }).splits[0]!.id;
-    const split2 = getTransaction(sys, { id: txn2 }).splits[0]!.id;
+    const split1 = defined(getTransaction(sys, { id: txn1 }).splits[0], "split").id;
+    const split2 = defined(getTransaction(sys, { id: txn2 }).splits[0], "split").id;
 
     write(sys, (tx) => {
       tx.suggestions.insertMany([
@@ -4007,8 +4026,12 @@ describe("suggestion review routes", () => {
     const body = await res.json();
     expect(body).toEqual({ acceptedCount: 2 });
 
-    expect(getTransaction(sys, { id: txn1 }).splits[0]!.categorySource).toBe("llm");
-    expect(getTransaction(sys, { id: txn2 }).splits[0]!.categorySource).toBe("llm");
+    expect(defined(getTransaction(sys, { id: txn1 }).splits[0], "split").categorySource).toBe(
+      "llm",
+    );
+    expect(defined(getTransaction(sys, { id: txn2 }).splits[0], "split").categorySource).toBe(
+      "llm",
+    );
   });
 
   it("POST /api/review/:id/confirm-proposal commits proposed transaction and returns 204", async () => {
@@ -4025,21 +4048,25 @@ not-a-date,-12.00,"BOOKSTORE",988.00`;
       content: csv,
     });
 
-    const item = d.uow.read((r) =>
-      r.reviewItems
-        .listOpenFor(sys.viewer)
-        .find((ri) => ri.dedupeKey === `import.set_aside:${importRes.batchId}`),
+    const item = defined(
+      d.uow.read((r) =>
+        r.reviewItems
+          .listOpenFor(sys.viewer)
+          .find((ri) => ri.dedupeKey === `import.set_aside:${importRes.batchId}`),
+      ),
+      "set-aside review item",
     );
-    expect(item).toBeDefined();
 
     const rows = d.uow.read((r) => r.importRows.listForBatch(sys.viewer, importRes.batchId));
-    const setAsideRow = rows.find((r) => r.status === "set_aside");
-    expect(setAsideRow).toBeDefined();
+    const setAsideRow = defined(
+      rows.find((r) => r.status === "set_aside"),
+      "set-aside import row",
+    );
 
     // Attach a proposal to the set-aside row
     write(sys, (tx) => {
       tx.importRows.updateProposal(
-        setAsideRow!.id,
+        setAsideRow.id,
         JSON.stringify({
           postedOn: "2026-09-02",
           amountCents: -1200,
@@ -4050,22 +4077,22 @@ not-a-date,-12.00,"BOOKSTORE",988.00`;
     });
 
     // Confirm proposal
-    const res = await app.request(`/api/review/${item!.id}/confirm-proposal`, {
+    const res = await app.request(`/api/review/${item.id}/confirm-proposal`, {
       method: "POST",
       headers: json,
-      body: JSON.stringify({ rowId: setAsideRow!.id }),
+      body: JSON.stringify({ rowId: setAsideRow.id }),
     });
     expect(res.status).toBe(204);
 
     // Verify row committed
-    const updatedRow = d.uow.read((r) => r.importRows.find(sys.viewer, setAsideRow!.id));
+    const updatedRow = d.uow.read((r) => r.importRows.find(sys.viewer, setAsideRow.id));
     expect(updatedRow?.status).toBe("committed");
 
     // Re-confirming returns 404 because review item is resolved
-    const again = await app.request(`/api/review/${item!.id}/confirm-proposal`, {
+    const again = await app.request(`/api/review/${item.id}/confirm-proposal`, {
       method: "POST",
       headers: json,
-      body: JSON.stringify({ rowId: setAsideRow!.id }),
+      body: JSON.stringify({ rowId: setAsideRow.id }),
     });
     expect(again.status).toBe(404);
   });
@@ -4118,16 +4145,20 @@ not-a-date,-12.00,"BOOKSTORE",988.00`;
       content: csv,
     });
 
-    const item = d.uow.read((r) =>
-      r.reviewItems
-        .listOpenFor(sys.viewer)
-        .find((ri) => ri.dedupeKey === `import.set_aside:${importRes.batchId}`),
+    const item = defined(
+      d.uow.read((r) =>
+        r.reviewItems
+          .listOpenFor(sys.viewer)
+          .find((ri) => ri.dedupeKey === `import.set_aside:${importRes.batchId}`),
+      ),
+      "set-aside review item",
     );
-    expect(item).toBeDefined();
 
     const rows = d.uow.read((r) => r.importRows.listForBatch(sys.viewer, importRes.batchId));
-    const setAsideRow = rows.find((r) => r.status === "set_aside");
-    expect(setAsideRow).toBeDefined();
+    const setAsideRow = defined(
+      rows.find((r) => r.status === "set_aside"),
+      "set-aside import row",
+    );
 
     // 3. Mock globalThis.fetch to return structured proposals
     const originalFetch = globalThis.fetch;
@@ -4142,7 +4173,7 @@ not-a-date,-12.00,"BOOKSTORE",988.00`;
                     proposals: [
                       {
                         index: 0,
-                        rowId: setAsideRow!.id,
+                        rowId: setAsideRow.id,
                         postedOn: "2026-09-02",
                         amountCents: -1200,
                         description: "BOOKSTORE",
@@ -4158,20 +4189,30 @@ not-a-date,-12.00,"BOOKSTORE",988.00`;
           { status: 200, headers: { "Content-Type": "application/json" } },
         )) as typeof fetch;
 
-      const res = await app.request(`/api/review/${item!.id}/interpret-rows`, {
+      const res = await app.request(`/api/review/${item.id}/interpret-rows`, {
         method: "POST",
         headers: json,
       });
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
         interpretedCount: number;
-        proposals: Array<{ rowId: string; proposal: any }>;
+        proposals: Array<{
+          rowId: string;
+          proposal: {
+            rowId: string;
+            postedOn: string;
+            amountCents: number;
+            description: string;
+            confidence: number;
+            explanation: string;
+          };
+        }>;
       };
       expect(body.interpretedCount).toBe(1);
       expect(body.proposals).toHaveLength(1);
-      expect(body.proposals[0]?.rowId).toBe(setAsideRow!.id);
+      expect(body.proposals[0]?.rowId).toBe(setAsideRow.id);
       expect(body.proposals[0]?.proposal).toMatchObject({
-        rowId: setAsideRow!.id,
+        rowId: setAsideRow.id,
         postedOn: "2026-09-02",
         amountCents: -1200,
         description: "BOOKSTORE",
@@ -4180,9 +4221,12 @@ not-a-date,-12.00,"BOOKSTORE",988.00`;
       });
 
       // Verify row proposal was stored in database
-      const updatedRow = d.uow.read((r) => r.importRows.find(sys.viewer, setAsideRow!.id));
-      expect(updatedRow?.proposal).not.toBeNull();
-      const stored = JSON.parse(updatedRow!.proposal!);
+      const updatedRow = defined(
+        d.uow.read((r) => r.importRows.find(sys.viewer, setAsideRow.id)),
+        "updated import row",
+      );
+      expect(updatedRow.proposal).not.toBeNull();
+      const stored = JSON.parse(defined(updatedRow.proposal, "stored proposal"));
       expect(stored.postedOn).toBe("2026-09-02");
       expect(stored.amountCents).toBe(-1200);
       expect(stored.description).toBe("BOOKSTORE");

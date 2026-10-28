@@ -12,6 +12,12 @@ import { createPayee, updatePayee } from "./payees.ts";
 const personA = idSchema("Person").parse("01J0000000000000000000000A");
 const now = "2026-09-27T00:00:00Z";
 
+/** Fails the test loudly when a row that must exist is absent, and narrows the type. */
+function defined<T>(value: T | null | undefined, what: string): T {
+  if (value === undefined || value === null) throw new Error(`expected ${what} to be defined`);
+  return value;
+}
+
 function fixture() {
   const clock = manualClock(now);
   const made = memoryContext(systemViewer("job:test"), clock);
@@ -85,9 +91,10 @@ describe("payee logo triggers", () => {
     });
     const jobs = f.logoJobs();
     expect(jobs).toHaveLength(1);
-    expect(jobs[0]!.lane).toBe("net");
-    expect(jobs[0]!.dedupeKey).toBe(`logo:${payee.id}`);
-    expect(JSON.parse(jobs[0]!.payload)).toEqual({ payeeId: payee.id });
+    const job = defined(jobs[0], "logo job");
+    expect(job.lane).toBe("net");
+    expect(job.dedupeKey).toBe(`logo:${payee.id}`);
+    expect(JSON.parse(job.payload)).toEqual({ payeeId: payee.id });
   });
 
   it("createPayee without a website enqueues nothing", () => {
@@ -113,7 +120,7 @@ describe("payee logo triggers", () => {
     updatePayee(f.ctx, { id: payee.id, websiteUrl: "https://woolworths.com.au" });
     const jobs = f.logoJobs();
     expect(jobs).toHaveLength(1);
-    expect(jobs[0]!.dedupeKey).toBe(`logo:${payee.id}`);
+    expect(defined(jobs[0], "logo job").dedupeKey).toBe(`logo:${payee.id}`);
   });
 
   it("updatePayee replacing an existing website does not enqueue", () => {
@@ -124,7 +131,8 @@ describe("payee logo triggers", () => {
       originAccountId: "pub1",
     });
     expect(f.logoJobs()).toHaveLength(1); // from create
-    updatePayee(f.ctx, { id: f.uow.state.payees[0]!.id, websiteUrl: "https://www.woolies.com.au" });
+    const created = defined(f.uow.state.payees[0], "payee");
+    updatePayee(f.ctx, { id: created.id, websiteUrl: "https://www.woolies.com.au" });
     expect(f.logoJobs()).toHaveLength(1); // still one, and it stays the create's job
   });
 

@@ -1,11 +1,4 @@
 // Adapter: LLM providers (OpenAI-compatible and Anthropic-compatible)
-export type {
-  LlmProvider,
-  LlmUsage,
-  StructuredPrompt,
-  StructuredResponse,
-} from "@pangolin/app";
-
 export { AnthropicAdapter, type AnthropicConfig } from "./anthropic.ts";
 export {
   decryptApiKey,
@@ -34,7 +27,6 @@ export {
   type EvalOptions,
   type EvalReport,
   evalCategoriseSchema,
-  evaluateProvider,
   runEval,
 } from "./eval/harness.ts";
 export {

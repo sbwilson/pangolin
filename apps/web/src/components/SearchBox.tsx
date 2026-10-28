@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { MAX_QUERY } from "../routes/search.ts";
+import { INPUT_CLASS_RING } from "./ui/input-class.ts";
 
 /** Milliseconds after the last keystroke before the search box changes the list. */
 const SEARCH_DEBOUNCE_MS = 300;
@@ -82,7 +83,7 @@ export function SearchBox({ value, resetKey, onChange }: SearchBoxProps) {
         autoComplete="off"
         placeholder="Search name, notes, tag or amount"
         onChange={(e) => type(e.target.value)}
-        className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={INPUT_CLASS_RING}
       />
     </div>
   );

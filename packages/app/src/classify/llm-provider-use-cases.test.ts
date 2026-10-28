@@ -1,4 +1,3 @@
-import type { Id } from "@pangolin/shared";
 import { Temporal } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.ts";
@@ -285,8 +284,8 @@ describe("llm-provider-use-cases", () => {
   it("getLlmRequestPreview generates preview with public transactions and categories", () => {
     const { ctx, newId, personId } = setup();
 
-    let pubAcc: Id<"Account">;
-    let privAcc: Id<"Account">;
+    const pubAcc = newId<"Account">();
+    const privAcc = newId<"Account">();
 
     ctx.uow.transaction((tx) => {
       tx.person.insert({
@@ -298,9 +297,6 @@ describe("llm-provider-use-cases", () => {
         createdAt: "2026-10-26T12:00:00Z",
         updatedAt: "2026-10-26T12:00:00Z",
       });
-
-      pubAcc = newId<"Account">();
-      privAcc = newId<"Account">();
 
       tx.accounts.insert(
         {
@@ -354,14 +350,14 @@ describe("llm-provider-use-cases", () => {
     });
 
     createTransaction(ctx, {
-      accountId: pubAcc!,
+      accountId: pubAcc,
       postedOn: "2026-10-20",
       amountCents: -3200,
       description: "PUBLIC COFFEE SHOP",
     });
 
     createTransaction(ctx, {
-      accountId: privAcc!,
+      accountId: privAcc,
       postedOn: "2026-10-21",
       amountCents: -99999,
       description: "PRIVATE SECRET ITEM",

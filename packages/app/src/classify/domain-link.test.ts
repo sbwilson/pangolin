@@ -22,6 +22,12 @@ import { createPayee } from "./payees.ts";
 const personA = idSchema("Person").parse("01J0000000000000000000000A");
 const NOW = "2026-09-27T00:00:00Z";
 
+/** Fails the test loudly when a row that must exist is absent, and narrows the type. */
+function defined<T>(value: T | null | undefined, what: string): T {
+  if (value === undefined || value === null) throw new Error(`expected ${what} to be defined`);
+  return value;
+}
+
 function fixture() {
   const clock: ManualClock = manualClock(NOW);
   const made = memoryContext(systemViewer("job:test"), clock);
@@ -104,7 +110,7 @@ function fixture() {
       description: payeeName,
       payeeId: payee.id,
     });
-    const splitId = getTransaction(ctx, { id: txnId }).splits[0]!.id;
+    const splitId = defined(getTransaction(ctx, { id: txnId }).splits[0], "split").id;
     return { payeeId: payee.id, txnId, splitId };
   };
 
@@ -188,8 +194,9 @@ describe("classify.onSplitFieldWrite (the domain link)", () => {
     expect(f.payee(payeeId)?.websiteUrl).toBe("https://woolworths.com.au");
     const jobs = f.logoJobs();
     expect(jobs).toHaveLength(1);
-    expect(jobs[0]!.lane).toBe("net");
-    expect(jobs[0]!.dedupeKey).toBe(`logo:${payeeId}`);
+    const job = defined(jobs[0], "logo job");
+    expect(job.lane).toBe("net");
+    expect(job.dedupeKey).toBe(`logo:${payeeId}`);
   });
 
   it("audits the link as a classify payee update", () => {
@@ -207,7 +214,9 @@ describe("classify.onSplitFieldWrite (the domain link)", () => {
 
     const audits = f.uow.state.audit.filter((a) => a.entity === "payee" && a.action === "update");
     expect(audits).toHaveLength(1);
-    const after = JSON.parse(audits[0]!.after as string) as { websiteUrl: string };
+    const after = JSON.parse(defined(audits[0], "audit row").after as string) as {
+      websiteUrl: string;
+    };
     expect(after.websiteUrl).toBe("https://woolies.example.com");
   });
 
@@ -400,7 +409,7 @@ describe("classify.onSplitFieldWrite (the domain link)", () => {
       amountCents: -5000,
       description: "Mystery",
     });
-    const splitId = getTransaction(f.ctx, { id: txnId }).splits[0]!.id;
+    const splitId = defined(getTransaction(f.ctx, { id: txnId }).splits[0], "split").id;
     f.pushSuggestion(txnId, splitId, "mystery-brand.com");
     expect(() =>
       setSplitField(f.ctx, {

@@ -10,6 +10,7 @@ import {
   updateAccount,
 } from "../api.ts";
 import { Button } from "../components/ui/button.tsx";
+import { INPUT_CLASS_RING } from "../components/ui/input-class.ts";
 import { NativeSelect } from "../components/ui/select.tsx";
 import { Sheet } from "../components/ui/sheet.tsx";
 import { CREATABLE_TYPES, TYPE_LABEL } from "../lib/accounts.ts";
@@ -252,8 +253,7 @@ export function AccountSheet({
     }
   };
 
-  const fieldClass =
-    "h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  const fieldClass = INPUT_CLASS_RING;
 
   return (
     <Sheet

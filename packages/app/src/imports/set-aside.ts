@@ -20,6 +20,7 @@ import { descriptionField, postedOnField } from "../ledger/fields.ts";
 import { transactionEntityRef } from "../ledger/needs-review.ts";
 import { privateOwner } from "../ledger/split-targets.ts";
 import type { LlmProvider, StructuredResponse } from "../ports/llm-provider.ts";
+import { providerSetting } from "../ports/llm-provider.ts";
 import type {
   ImportRowRow,
   LlmProviderRow,
@@ -33,6 +34,7 @@ import {
   matchTransfersForBatch,
   raiseProbableDuplicate,
 } from "./match-transfers.ts";
+import { classifyUnclassifiedDedupeKey, setAsideDedupeKey } from "./pdf-review.ts";
 import {
   buildRowInterpretRequest,
   type RowInterpretOutput,
@@ -247,7 +249,7 @@ export function fixSetAsideRow(
       raiseReviewItem(tx, audit, ctx, {
         kind: CLASSIFY_UNCLASSIFIED_REVIEW,
         entityRef: transactionEntityRef(txnId),
-        dedupeKey: `classify.unclassified:${txnId}`,
+        dedupeKey: classifyUnclassifiedDedupeKey(txnId),
         accountId: account.id,
       });
     }
@@ -311,7 +313,7 @@ export function fixSetAsideRow(
     const remainingSetAside = batchRows.filter((r) => r.id !== row.id && r.status === "set_aside");
     if (remainingSetAside.length === 0) {
       resolveReviewItem(tx, audit, ctx, {
-        dedupeKey: `import.set_aside:${batch.id}`,
+        dedupeKey: setAsideDedupeKey(batch.id),
         resolution: "all rows resolved",
       });
     }
@@ -398,7 +400,7 @@ export function discardSetAsideRow(
     const remainingSetAside = batchRows.filter((r) => r.id !== row.id && r.status === "set_aside");
     if (remainingSetAside.length === 0) {
       resolveReviewItem(tx, audit, ctx, {
-        dedupeKey: `import.set_aside:${batch.id}`,
+        dedupeKey: setAsideDedupeKey(batch.id),
         resolution: "all rows resolved",
       });
     }
@@ -483,9 +485,9 @@ export async function interpretSetAsideRows(
 
   if (ctx.provider) {
     provider = ctx.provider;
-    isLocal = ctx.providerIsLocal ?? providerRow?.isLocal ?? false;
-    cloudRows = ctx.providerCloudRows ?? providerRow?.cloudRows ?? false;
-    model = ctx.providerModel ?? providerRow?.model;
+    isLocal = providerSetting(ctx.providerIsLocal, providerRow?.isLocal, false);
+    cloudRows = providerSetting(ctx.providerCloudRows, providerRow?.cloudRows, false);
+    model = providerSetting(ctx.providerModel, providerRow?.model, undefined);
   } else if (providerRow) {
     isLocal = providerRow.isLocal;
     cloudRows = providerRow.cloudRows;
@@ -577,7 +579,7 @@ export async function interpretSetAsideRows(
       if (seenRowIds.has(targetRow.id)) continue;
 
       const current = tx.importRows.find(ctx.viewer, targetRow.id);
-      if (!current || current.status !== "set_aside") continue;
+      if (current?.status !== "set_aside") continue;
 
       const parsedProp = rowInterpretProposalSchema.safeParse(proposal);
       if (!parsedProp.success) continue;

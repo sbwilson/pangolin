@@ -10,6 +10,7 @@ import {
   packageMigrationsDir,
 } from "@pangolin/db";
 import type { Id } from "@pangolin/shared";
+import { Temporal } from "@pangolin/shared/temporal";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type {
   AccountOwnerRow,
@@ -19,11 +20,13 @@ import type {
   PersonRow,
   SplitRow,
   SuggestionRow,
-  TransactionRow,
   UnitOfWork,
 } from "../ports/unit-of-work.ts";
 import type { Viewer } from "../viewer.ts";
 import { memoryUnitOfWork } from "./memory-uow.ts";
+
+/** `Viewer.authAt` is required by the type; these tests never read its value. */
+const AUTH_AT = Temporal.Instant.from("2026-10-26T10:00:00Z");
 
 describe("Suggestion repository parity (SQLite vs Memory)", () => {
   let dir: string;
@@ -156,6 +159,9 @@ describe("Suggestion repository parity (SQLite vs Memory)", () => {
             fingerprint: "fp-coles",
             fingerprintVersion: 1,
             status: "posted",
+            externalId: null,
+            importId: null,
+            isHidden: false,
             performedBy: null,
             payeeId: null,
             notes: null,
@@ -165,8 +171,7 @@ describe("Suggestion repository parity (SQLite vs Memory)", () => {
             needsReview: true,
             createdAt: "2026-10-26T10:00:00Z",
             updatedAt: "2026-10-26T10:00:00Z",
-            deletedAt: null,
-          } as any,
+          },
           [
             {
               id: splitId,
@@ -251,7 +256,7 @@ describe("Suggestion repository parity (SQLite vs Memory)", () => {
     ).toBeUndefined();
 
     // Verify transaction history in both
-    const viewer: Viewer = { kind: "person", personId: mem.personId, authAt: undefined as any };
+    const viewer: Viewer = { kind: "person", personId: mem.personId, authAt: AUTH_AT };
     const memTxnList = memoryUow.read((r) => r.suggestions.listForTransaction(viewer, txnId));
     const sqlTxnList = sqliteUow.read((r) => r.suggestions.listForTransaction(viewer, txnId));
     expect(memTxnList).toHaveLength(1);
@@ -287,6 +292,9 @@ describe("Suggestion repository parity (SQLite vs Memory)", () => {
             fingerprint: "fp-woolworths-pub",
             fingerprintVersion: 1,
             status: "posted",
+            externalId: null,
+            importId: null,
+            isHidden: false,
             performedBy: null,
             payeeId: null,
             notes: null,
@@ -296,8 +304,7 @@ describe("Suggestion repository parity (SQLite vs Memory)", () => {
             needsReview: false,
             createdAt: "2026-10-25T10:00:00Z",
             updatedAt: "2026-10-25T10:00:00Z",
-            deletedAt: null,
-          } as any,
+          },
           [
             {
               id: publicSplitId,
@@ -332,6 +339,9 @@ describe("Suggestion repository parity (SQLite vs Memory)", () => {
             fingerprint: "fp-woolworths-priv",
             fingerprintVersion: 1,
             status: "posted",
+            externalId: null,
+            importId: null,
+            isHidden: false,
             performedBy: null,
             payeeId: null,
             notes: null,
@@ -341,8 +351,7 @@ describe("Suggestion repository parity (SQLite vs Memory)", () => {
             needsReview: false,
             createdAt: "2026-10-25T10:00:00Z",
             updatedAt: "2026-10-25T10:00:00Z",
-            deletedAt: null,
-          } as any,
+          },
           [
             {
               id: privateSplitId,
@@ -371,7 +380,7 @@ describe("Suggestion repository parity (SQLite vs Memory)", () => {
     seedTxns(memoryUow, mem);
     seedTxns(sqliteUow, sql);
 
-    const viewer: Viewer = { kind: "person", personId: mem.personId, authAt: undefined as any };
+    const viewer: Viewer = { kind: "person", personId: mem.personId, authAt: AUTH_AT };
 
     const sqlFewShot = sqliteUow.read((r) =>
       r.suggestions.findFewShot(viewer, "2026-10-26", "Woolworths"),

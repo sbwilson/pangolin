@@ -26,10 +26,8 @@ export function findFewShotExamples(
   query: string,
   limit = 10,
 ): FewShotExample[] {
-  if (!query || !query.trim()) return [];
+  if (!query?.trim()) return [];
   const parsed = parseSearch(query);
   if (!parsed || parsed.terms.length === 0) return [];
   return repos.suggestions.findFewShot(viewer, today, query, Math.min(limit, 10));
 }
-
-export { findFewShotExamples as fewShotSearch, findFewShotExamples as searchFewShot };

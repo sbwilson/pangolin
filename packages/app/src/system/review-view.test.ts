@@ -67,6 +67,12 @@ import { countReviewItems, listReviewCards } from "./review-view.ts";
 
 beforeAll(() => registerTransactionNeedsReviewSync());
 
+/** Fails the test loudly when a row or field that must exist is absent, and narrows the type. */
+function defined<T>(value: T | null | undefined, what: string): T {
+  if (value === undefined || value === null) throw new Error(`expected ${what} to be defined`);
+  return value;
+}
+
 const CSV = `Date,Amount,Description,Balance
 01/09/2026,-50.00,"GROCER",1000.00
 not-a-date,-12.00,"BOOKSTORE",988.00`;
@@ -595,9 +601,11 @@ describe("review actions", () => {
       content: `${CSV}`,
     });
 
-    const card = listReviewCards(w.B).find((c) => c.kind === "import.set_aside");
-    expect(card).toBeDefined();
-    const rowsBefore = card?.detail.type === "batch" ? card.detail.rows : [];
+    const card = defined(
+      listReviewCards(w.B).find((c) => c.kind === "import.set_aside"),
+      "set-aside review card",
+    );
+    const rowsBefore = card.detail.type === "batch" ? card.detail.rows : [];
     expect(rowsBefore).toHaveLength(1);
     expect(rowsBefore[0]?.proposal).toBeNull();
 
@@ -624,7 +632,7 @@ describe("review actions", () => {
 
     const interpretRes = await interpretSetAsideRowsItem(
       { ...w.B, provider: mockProvider as never, providerIsLocal: true },
-      { id: card!.id },
+      { id: card.id },
     );
     expect(interpretRes.interpretedCount).toBe(1);
 
@@ -642,8 +650,8 @@ describe("review actions", () => {
 
     // Confirm the proposal
     const fixResult = confirmSetAsideProposalItem(w.B, {
-      id: card!.id,
-      rowId: rowsAfter[0]!.id,
+      id: card.id,
+      rowId: defined(rowsAfter[0], "set-aside row").id,
     });
     expect(fixResult.transactionId).toBeDefined();
 

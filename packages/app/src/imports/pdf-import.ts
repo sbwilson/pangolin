@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import type { Id } from "@pangolin/shared";
+import { isVisionCapableModel } from "@pangolin/shared";
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { AttachmentContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { idInput } from "../inputs.ts";
 import type { LlmProvider } from "../ports/llm-provider.ts";
+import { providerSetting } from "../ports/llm-provider.ts";
 import type {
   AttachmentRow,
   ImportBatchRow,
@@ -96,11 +98,6 @@ export interface ExtractAndImportPdfStatementResult {
   readonly openingBalanceCents?: number | null | undefined;
   readonly closingBalanceCents?: number | null | undefined;
   readonly verification?: StatementVerificationResult | undefined;
-}
-
-function defaultIsVisionCapable(model: string): boolean {
-  if (!model) return false;
-  return /gpt-4o|gpt-4-turbo|gpt-4-vision|claude-3|gemini|llava|pixtral|vision|\bvl\b/i.test(model);
 }
 
 /** The deduped `attachment` row for `name`, created on first sight (the createHandoff pattern). */
@@ -208,9 +205,9 @@ export async function extractAndImportPdfStatement(
   const passedProvider = options?.provider ?? ctx.provider;
   if (passedProvider) {
     provider = passedProvider;
-    isLocal = ctx.providerIsLocal ?? providerRow?.isLocal ?? false;
-    cloudPdf = ctx.providerCloudPdf ?? providerRow?.cloudPdf ?? false;
-    model = ctx.providerModel ?? providerRow?.model;
+    isLocal = providerSetting(ctx.providerIsLocal, providerRow?.isLocal, false);
+    cloudPdf = providerSetting(ctx.providerCloudPdf, providerRow?.cloudPdf, false);
+    model = providerSetting(ctx.providerModel, providerRow?.model, undefined);
   } else if (providerRow) {
     isLocal = providerRow.isLocal;
     cloudPdf = providerRow.cloudPdf;
@@ -268,7 +265,7 @@ export async function extractAndImportPdfStatement(
   if (!extraction.hasTextLayer) {
     const configuredModel = model ?? "unknown";
     const visionClassifier =
-      options?.isVisionCapableModel ?? ctx.isVisionCapableModel ?? defaultIsVisionCapable;
+      options?.isVisionCapableModel ?? ctx.isVisionCapableModel ?? isVisionCapableModel;
     const isVision = visionClassifier(configuredModel);
 
     if (!isVision) {

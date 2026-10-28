@@ -72,9 +72,9 @@ describe("committed migrations", () => {
       "0023_import_row_proposal",
       "0024_pdf_batch_attachment",
     ];
-    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: 25 });
-    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: 25 });
-    expect(schemaVersion(db)).toBe(25);
+    expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: migrations.length });
+    expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: migrations.length });
+    expect(schemaVersion(db)).toBe(migrations.length);
     expect(rows()).toEqual(names.map((name, i) => ({ version: i + 1, name })));
     expect(foreignKeysOn()).toBe(true);
   });

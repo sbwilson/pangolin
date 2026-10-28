@@ -388,24 +388,22 @@ importers:
 
   packages/importers:
     dependencies:
-      '@pangolin/app':
-        specifier: workspace:*
-        version: link:../app
       '@pangolin/shared':
         specifier: workspace:*
         version: link:../shared
       pdfjs-dist:
         specifier: ^6.4.299
         version: 6.4.299
+    devDependencies:
+      '@pangolin/app':
+        specifier: workspace:*
+        version: link:../app
 
   packages/llm:
     dependencies:
       '@pangolin/app':
         specifier: workspace:*
         version: link:../app
-      '@pangolin/shared':
-        specifier: workspace:*
-        version: link:../shared
       zod:
         specifier: 4.6.5
         version: 4.6.5

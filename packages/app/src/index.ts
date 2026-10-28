@@ -147,12 +147,7 @@ export { normaliseDomain, payeeLogoUrl } from "./classify/domain.ts";
 // Loading the package installs the domain-link listener (merchant-domain story): it links an
 // accepted suggestion's domain and enqueues the logo fetch inside the accepting transaction.
 export { onSplitFieldWrite } from "./classify/domain-link.ts";
-export {
-  type FewShotSearchInput,
-  fewShotSearch,
-  findFewShotExamples,
-  searchFewShot,
-} from "./classify/few-shot-search.ts";
+export { type FewShotSearchInput, findFewShotExamples } from "./classify/few-shot-search.ts";
 export {
   type AssignLlmPurposeInput,
   assignLlmPurpose,

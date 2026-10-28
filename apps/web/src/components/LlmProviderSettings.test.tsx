@@ -148,7 +148,8 @@ describe("LlmProviderSettings", () => {
     await screen.findByText("Ollama Local");
 
     const testButtons = screen.getAllByRole("button", { name: "Test connection" });
-    await user.click(testButtons[0]!);
+    expect(testButtons.length).toBeGreaterThan(1);
+    await user.click(testButtons[0] as HTMLElement);
 
     expect(api.testLlmProvider).toHaveBeenCalledWith(mockProviderLocal.id);
     expect(await screen.findByText("✓ Connected (45ms)")).toBeTruthy();
@@ -159,7 +160,7 @@ describe("LlmProviderSettings", () => {
       error: "401 Unauthorized: Invalid API key",
     });
 
-    await user.click(testButtons[1]!);
+    await user.click(testButtons[1] as HTMLElement);
     expect(api.testLlmProvider).toHaveBeenCalledWith(mockProviderCloud.id);
     expect(await screen.findByText(/401 Unauthorized: Invalid API key/)).toBeTruthy();
   });
@@ -227,7 +228,8 @@ describe("LlmProviderSettings", () => {
     await screen.findByText("OpenAI Cloud");
 
     const deleteButtons = screen.getAllByRole("button", { name: "Delete" });
-    await user.click(deleteButtons[1]!); // delete OpenAI Cloud
+    expect(deleteButtons.length).toBeGreaterThan(1);
+    await user.click(deleteButtons[1] as HTMLElement); // delete OpenAI Cloud
 
     // ReauthDialog should now be visible
     expect(

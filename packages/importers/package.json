@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Adapter: mock statement generators and anonymised fixtures",
+  "description": "Adapter: CSV/OFX/QIF/PDF statement fixtures, generators and text extraction",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -11,8 +11,10 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@pangolin/app": "workspace:*",
     "@pangolin/shared": "workspace:*",
     "pdfjs-dist": "^6.4.299"
+  },
+  "devDependencies": {
+    "@pangolin/app": "workspace:*"
   }
 }

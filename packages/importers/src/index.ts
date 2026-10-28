@@ -1,4 +1,6 @@
+export { isVisionCapableModel } from "@pangolin/shared";
 export {
+  type GenerateMockPdfStatementOptions,
   generateCommBankCsv,
   generateCommBankOfx,
   generateCommBankQif,
@@ -8,17 +10,13 @@ export {
   generateTwelveMonthStatements,
   generateUbankCsv,
   generateUpCsv,
-  type GenerateMockPdfStatementOptions,
   type MockPdfStatementRow,
   type MockTxn,
   type MonthlyStatement,
   type StatementFormat,
 } from "./generators/mock-statements.ts";
-
 export {
-  extractPdfTextPages,
   type ExtractedPdfPage,
+  extractPdfTextPages,
   type PdfTextExtractionResult,
 } from "./pdf/text-extractor.ts";
-
-export { isVisionCapableModel } from "./pdf/model-vision.ts";
