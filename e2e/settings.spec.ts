@@ -217,7 +217,23 @@ test("renders live system status, health, and CLI restore note at /settings#stat
     await expect(statusCard.getByRole("heading", { name: "System status" })).toBeVisible();
     await expect(statusCard.getByRole("status").filter({ hasText: "Healthy" })).toBeVisible();
     await expect(statusCard.getByText(/^Schema version \d+/)).toBeVisible();
-    await expect(statusCard.getByText("No jobs need attention", { exact: true })).toBeVisible();
+    // The jobs line mirrors the store (AD-9): an empty dead list shows "No jobs need
+    // attention"; anything in it is listed under "Jobs that failed". A seeded ledger whose
+    // merchant favicons could not be fetched (a stack with no egress, like CI) has dead
+    // logo-fetch jobs — one attempt, never retried — so read the truth and assert the card
+    // matches it, rather than assuming a clean queue.
+    const dead = await page.evaluate(async () => {
+      const res = await fetch("/api/system/jobs");
+      return ((await res.json()) as { dead: { kind: string }[] }).dead;
+    });
+    if (dead.length === 0) {
+      await expect(statusCard.getByText("No jobs need attention", { exact: true })).toBeVisible();
+    } else {
+      await expect(statusCard.getByRole("heading", { name: "Jobs that failed" })).toBeVisible();
+      for (const job of dead) {
+        await expect(statusCard.getByText(`${job.kind} —`, { exact: false }).first()).toBeVisible();
+      }
+    }
     await expect(
       statusCard.getByText(
         "Restores run from the server CLI, with Pangolin stopped. There's no restore button here on purpose.",

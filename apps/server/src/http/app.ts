@@ -80,7 +80,6 @@ import {
   issueSetupLink,
   keepDuplicateItem,
   type LeaksInput,
-  type LlmProviderRow,
   type LlmPurpose,
   type LlmUseCaseContext,
   leaks,
@@ -155,17 +154,12 @@ import {
   updateTransaction,
 } from "@pangolin/app";
 import { extractPdfTextPages } from "@pangolin/importers";
-import {
-  AnthropicAdapter,
-  decryptApiKey,
-  encryptApiKey,
-  isLanAddress,
-  OpenAiAdapter,
-} from "@pangolin/llm";
+import { decryptApiKey, encryptApiKey, isLanAddress } from "@pangolin/llm";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { clearedSessionCookies } from "../auth/cookie.ts";
+import { createLlmAdapter } from "../llm/create-provider.ts";
 import { cspOnHtml, serveIndex } from "./csp.ts";
 import { createErrorHandler, errorResponse, type InternalErrorLogger } from "./errors.ts";
 import { originCheck } from "./origin.ts";
@@ -314,20 +308,7 @@ export function createApi(deps: ApiDeps) {
     isLanAddress,
     encryptApiKey,
     decryptApiKey,
-    createProvider: (row: LlmProviderRow, apiKey?: string) => {
-      if (row.kind === "anthropic") {
-        return new AnthropicAdapter({
-          baseUrl: row.baseUrl,
-          apiKey: apiKey ?? undefined,
-          model: row.model,
-        });
-      }
-      return new OpenAiAdapter({
-        baseUrl: row.baseUrl,
-        apiKey: apiKey ?? undefined,
-        model: row.model,
-      });
-    },
+    createProvider: createLlmAdapter,
   });
   /** The answer to a redemption: signed in (with what must still be enrolled), or not. */
   const redeemed = (c: Context, session: IssuedSession) => {

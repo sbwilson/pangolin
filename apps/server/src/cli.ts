@@ -30,6 +30,7 @@ import {
   acquireDataDirLock,
   BACKUPS_NOT_CONFIGURED,
   type BackupStarted,
+  type CategorisePendingResult,
   type ConfirmedRecoveryBundle,
   type CredentialChoice,
   callAdmin,
@@ -44,7 +45,7 @@ import {
   type SeedResult,
   type StatusResult,
 } from "./admin/index.ts";
-import type { AdminResponse } from "./admin/socket.ts";
+import { type AdminResponse, COMMAND_TIMEOUT_MS } from "./admin/socket.ts";
 import { nodeTokens } from "./auth/secret.ts";
 import { checkRepositoryReachable } from "./backup/reachable.ts";
 import type { Restic } from "./backup/restic.ts";
@@ -75,6 +76,15 @@ Commands:
                                 and the end-to-end run; refused unless the stack sets
                                 PANGOLIN_ENABLE_SEED=true; needs both partners signed up and an
                                 empty ledger, and the server running (exits 3 when it is not)
+  categorise                    send the transactions that still have unclassified splits to the
+                                configured LLM provider (Settings → LLM providers), newest first,
+                                and record the suggestions it returns for the review inbox —
+                                nothing is applied to the ledger, and a private account's rows
+                                are skipped when the provider is not local; with candidates and
+                                no provider configured it fails with an explanatory message; a
+                                run with nothing to do is a clean no-op (exit 0); each batch is
+                                an LLM call, so a large ledger takes a while; needs the server
+                                running (exits 3 when it is not)
   m1-report --as <name>         the M1 gate's machine check, read-only, as that person (a household
                                 member's display name): the accounts they see, each with its
                                 statement coverage from 2024-07-01, the spans with no statement
@@ -211,10 +221,11 @@ async function viaSocket(
   config: Config,
   command: string,
   args: Record<string, unknown>,
+  timeoutMs?: number,
 ): Promise<AdminResponse | undefined> {
   if (config.adminSocket === null) return undefined;
   try {
-    return await callAdmin(config.adminSocket, command, args);
+    return await callAdmin(config.adminSocket, command, args, timeoutMs);
   } catch (error) {
     if (error instanceof AdminUnreachable) return undefined;
     throw error;
@@ -467,6 +478,42 @@ async function seedCli(config: Config, io: CliIo): Promise<number> {
   return EXIT_OK;
 }
 
+/**
+ * `categorise` waits a minute past the server's own command ceiling: if a run is ever cut
+ * off, it should be the server's decision, reported as such — not the client's 30-second
+ * default severing a command whose suggestions are still landing.
+ */
+const CATEGORISE_TIMEOUT_MS = COMMAND_TIMEOUT_MS + 60_000;
+
+/**
+ * `categorise`: over the admin socket only. The command runs the whole engine call on the
+ * server, so this just prints the outcome: how many transactions went to the provider, how
+ * many suggestions were recorded for the review inbox and how many were discarded — a
+ * recorded suggestion still needs a person to accept it in the UI. When the configured
+ * provider is not local, private-account rows are skipped and never submitted. The client
+ * outwaits the server's command ceiling so a long run is reported by the server, not cut
+ * short here.
+ */
+async function categoriseCli(config: Config, io: CliIo): Promise<number> {
+  if (config.adminSocket === null) {
+    io.err("pangolin: the admin socket is disabled (PANGOLIN_ADMIN_SOCKET is empty)");
+    return EXIT_FAILED;
+  }
+  const response = await viaSocket(config, "categorise", {}, CATEGORISE_TIMEOUT_MS);
+  if (response === undefined) return notAnswering(config, io);
+  if (!response.ok) {
+    printError(io, response.error);
+    return EXIT_FAILED;
+  }
+  const result = response.result as CategorisePendingResult;
+  io.out(
+    result.candidates === 0
+      ? "No unclassified transactions to categorise"
+      : `Sent ${result.candidates} unclassified transactions to the provider: ${result.recordedCount} suggestions recorded for the review inbox, ${result.discardedCount} discarded`,
+  );
+  return EXIT_OK;
+}
+
 function dollars(cents: number): string {
   return `${cents < 0 ? "-" : ""}$${(Math.abs(cents) / 100).toFixed(2)}`;
 }
@@ -680,6 +727,7 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
       "restore",
       "confirm-bundle",
       "seed",
+      "categorise",
       "m1-report",
       "opening-balance",
     ].includes(command)
@@ -693,6 +741,9 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
     return usage("confirm-bundle takes no arguments");
   }
   if (command === "seed" && rest.length > 0) return usage("seed takes no arguments");
+  if (command === "categorise" && rest.length > 0) {
+    return usage("categorise takes no arguments");
+  }
   // `--as <name>` (or `--as=<name>`) for the commands that run as a person; returns the rest.
   let as: string | undefined;
   let positional: string[] = rest;
@@ -789,6 +840,8 @@ export async function runCli(argv: readonly string[], options: CliOptions): Prom
         return await confirmBundleCli(config, io);
       case "seed":
         return await seedCli(config, io);
+      case "categorise":
+        return await categoriseCli(config, io);
       case "m1-report":
         return await m1ReportCli(config, io, as as string);
       case "opening-balance":

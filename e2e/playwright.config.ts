@@ -41,7 +41,9 @@ export default defineConfig({
             "spending-insight.spec.ts",
             "accounts.spec.ts",
             "axe.spec.ts",
+            "categorise.spec.ts",
             "import.spec.ts",
+            "pdf-import.spec.ts",
           ],
           dependencies: ["auth"],
           use: chrome,
@@ -64,9 +66,16 @@ export default defineConfig({
         // accounts.spec: it creates an account and imports into it, which would make the seed refuse.
         // pdf-import.spec belongs here as well: it needs the stack's `llm` profile (the mock
         // provider), imports into its own account, and resolves its review item before axe runs.
+        // categorise.spec runs here for the same reason: it needs the `llm` profile, imports into
+        // its own account, and accepts its own suggestions, so the inbox is clean again after it.
         {
           name: "accounts",
-          testMatch: ["accounts.spec.ts", "import.spec.ts", "pdf-import.spec.ts"],
+          testMatch: [
+            "accounts.spec.ts",
+            "categorise.spec.ts",
+            "import.spec.ts",
+            "pdf-import.spec.ts",
+          ],
           dependencies: ["reports"],
           use: chrome,
         },

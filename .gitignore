@@ -26,6 +26,8 @@ data/
 secrets/
 backups/
 archive/
+# Written by e2e/categorise.spec.ts mid-run; the mock-llm container replays it from the mount.
+tools/mock-llm/fixtures/openai/mock-live-*
 # Playwright output
 test-results/
 e2e/.state/

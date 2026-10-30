@@ -8,6 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -1192,5 +1193,175 @@ describe("pangolin m1-report (the M1 gate's machine check)", () => {
 
   it("says so when the server is not running, exit 3", async () => {
     expect(await cli(["m1-report", "--as", "Alex"])).toMatchObject({ code: EXIT_NOT_RUNNING });
+  });
+});
+
+describe("pangolin categorise (the admin LLM run)", () => {
+  /** One imported statement, so the ledger has open transactions with unclassified splits. */
+  function arrangeUnclassified(): void {
+    withDb((db) => {
+      const personId = addLogin(db, "alex@example.com", "Alex");
+      const clock = systemClock("UTC");
+      let ms = Date.now();
+      const newId = createIdGenerator({ now: () => ++ms, random: Math.random });
+      const ctx = {
+        viewer: personViewer(personId as never, clock.now()),
+        clock,
+        newId,
+        uow: createUnitOfWork(db),
+      };
+      const accountId = createAccount(ctx, {
+        name: "Everyday",
+        type: "transaction",
+        currency: "AUD",
+        isPrivate: false,
+        owners: [{ personId: personId as never, shareBp: 10000 }],
+      });
+      const statement = generateTwelveMonthStatements()[0] as { csv: string };
+      const res = importStatement(ctx, {
+        accountId,
+        format: "commbank_csv",
+        content: statement.csv,
+      });
+      expect(res.newCount).toBeGreaterThan(0);
+    });
+  }
+
+  it("lists in help, and refuses arguments as usage", async () => {
+    expect(await cli(["--help"])).toMatchObject({ out: /categorise {20}send the transactions/ });
+    expect(await cli(["categorise", "now"])).toMatchObject({
+      code: EXIT_USAGE,
+      err: /categorise takes no arguments/,
+    });
+  });
+
+  it("a fresh ledger is a clean no-op with no provider configured, exit 0", async () => {
+    await boot();
+    const result = await cli(["categorise"]);
+    expect(result.err).toBe("");
+    expect(result.code).toBe(EXIT_OK);
+    expect(result.out).toContain("No unclassified transactions to categorise");
+  });
+
+  it("candidates with no provider configured exit 1 with the engine's message", async () => {
+    await boot();
+    arrangeUnclassified();
+    const result = await cli(["categorise"]);
+    expect(result.code).toBe(EXIT_FAILED);
+    expect(result.err).toContain("No LLM provider configured for categorisation");
+  });
+
+  /** A stub OpenAI-compatible provider: every batch gets `categoryId` at all twenty positions. */
+  function startStubProvider(categoryId: string): Promise<{ url: string; close(): Promise<void> }> {
+    const completion = {
+      id: "chatcmpl-stub",
+      object: "chat.completion",
+      created: 1793000000,
+      model: "stub-model",
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: JSON.stringify({
+              suggestions: Array.from({ length: 20 }, (_, index) => ({
+                index,
+                category_id: categoryId,
+                confidence: 0.92,
+              })),
+            }),
+          },
+          finish_reason: "stop",
+        },
+      ],
+    };
+    const server = createServer((req, res) => {
+      req.resume();
+      const answer = () => {
+        if (req.method === "POST" && (req.url ?? "").endsWith("/v1/chat/completions")) {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify(completion));
+        } else {
+          res.writeHead(404).end();
+        }
+      };
+      req.on("end", answer);
+    });
+    return new Promise((resolve) => {
+      server.listen(0, "127.0.0.1", () => {
+        const { port } = server.address() as { port: number };
+        resolve({
+          url: `http://127.0.0.1:${port}`,
+          close: () => new Promise<void>((done) => server.close(() => done())),
+        });
+      });
+    });
+  }
+
+  it("reports the run's counts honestly when the provider answers", async () => {
+    await boot();
+    arrangeUnclassified();
+    let ms = Date.now();
+    const newId = createIdGenerator({ now: () => ++ms, random: Math.random });
+    const groupId = newId<"CategoryGroup">();
+    const categoryId = newId<"Category">();
+    const providerId = newId<"LlmProvider">();
+    const stub = await startStubProvider(categoryId);
+    try {
+      withDb((db) => {
+        const at = new Date().toISOString();
+        createUnitOfWork(db).transaction((tx) => {
+          tx.categoryGroups.insert({
+            id: groupId,
+            name: "General",
+            kind: "expense",
+            sort: 0,
+            createdAt: at,
+            updatedAt: at,
+          });
+          tx.categories.insert({
+            id: categoryId,
+            groupId,
+            name: "Daily life",
+            isFixedCost: false,
+            createdAt: at,
+            updatedAt: at,
+          });
+          tx.llmProviders.insert({
+            id: providerId,
+            name: "Stub",
+            kind: "openai",
+            baseUrl: stub.url,
+            model: "stub-model",
+            apiKeyCiphertext: null,
+            apiKeyLast4: null,
+            isLocal: true,
+            cloudPdf: false,
+            cloudRows: false,
+            createdAt: at,
+            updatedAt: at,
+          });
+          tx.llmProviders.assignPurpose("categorise", providerId, at);
+        });
+      });
+
+      const result = await cli(["categorise"]);
+      expect(result.err).toBe("");
+      expect(result.code).toBe(EXIT_OK);
+      const line =
+        /Sent (\d+) unclassified transactions to the provider: (\d+) suggestions recorded for the review inbox, (\d+) discarded/.exec(
+          result.out,
+        );
+      if (line === null) throw new Error(`unexpected categorise output: ${result.out}`);
+      expect(Number(line[1])).toBeGreaterThan(0);
+      expect(line[2]).toBe(line[1]); // every candidate answered: nothing lost, nothing invented
+      expect(line[3]).toBe("0");
+    } finally {
+      await stub.close();
+    }
+  });
+
+  it("says so when the server is not running, exit 3", async () => {
+    expect(await cli(["categorise"])).toMatchObject({ code: EXIT_NOT_RUNNING });
   });
 });

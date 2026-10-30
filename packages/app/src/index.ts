@@ -112,6 +112,12 @@ export {
   categoriseTransactions,
 } from "./classify/categorise-engine.ts";
 export {
+  CATEGORISE_PENDING_LIMIT,
+  type CategorisePendingInput,
+  type CategorisePendingResult,
+  categorisePendingTransactions,
+} from "./classify/categorise-pending.ts";
+export {
   type BuildCategorisationRequestInput,
   buildCategorisationRequest,
   CATEGORISE_PROMPT_VERSION,

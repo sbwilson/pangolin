@@ -1,4 +1,5 @@
 // The admin entry: commands that run as `SystemViewer` (AD-6, AD-16).
+export type { CategorisePendingResult } from "@pangolin/app";
 export { AdminUnreachable, CLIENT_TIMEOUT_MS, callAdmin } from "./client.ts";
 export {
   ADMIN_COMMANDS,

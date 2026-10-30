@@ -10,8 +10,10 @@ import {
   type BackupStatus,
   backupProgress,
   backupStatus,
+  type CategorisePendingResult,
   type Clock,
   type ConfirmedRecoveryBundle,
+  categorisePendingTransactions,
   confirmRecoveryBundle,
   type DeadJob,
   deadJobs,
@@ -20,6 +22,8 @@ import {
   type IdGenerator,
   type JobCounts,
   jobCounts,
+  type LlmProvider,
+  type LlmProviderRow,
   listBalanceSnapshots,
   listLogins,
   type M1Report,
@@ -53,6 +57,7 @@ export const ADMIN_COMMANDS = [
   "backup-status",
   "confirm-bundle",
   "seed",
+  "categorise",
   "m1-report",
   "opening-balance",
 ] as const;
@@ -87,6 +92,15 @@ export interface AdminDeps {
    * unless the stack opts in; undefined or false: it refuses.
    */
   readonly seedEnabled?: boolean;
+  /**
+   * The app secret that encrypts provider API keys. The `categorise` command needs it to read the
+   * DB-configured provider; undefined (demo mode, no secret) makes `categorise` refuse.
+   */
+  readonly authSecret?: string;
+  /** Decrypts a stored provider API key; the server wires the `@pangolin/llm` implementation. */
+  readonly decryptApiKey?: (ciphertext: string, secret: string) => string;
+  /** The LLM adapter factory for the `categorise` command; the server wires the real adapters. */
+  readonly createProvider?: (row: LlmProviderRow, apiKey?: string) => LlmProvider;
 }
 
 /** What `reset-user` needs: enough to run on a stopped stack, without the runner. */
@@ -304,7 +318,30 @@ export function seedCommand(deps: AdminDeps, args: unknown = {}): SeedResult {
   return { accounts, transactions, events };
 }
 
+/**
+ * `categorise`: run the transactions with unclassified splits through the configured
+ * categorisation provider (`classify.categorisePendingTransactions`), newest first, capped per
+ * run. Suggestions are recorded for the review inbox; nothing is applied to the ledger.
+ * The provider is the DB-configured one; with candidates and no provider it refuses with
+ * "No LLM provider configured for categorisation". A run with nothing to do is a clean no-op.
+ * Longest-running admin command: each batch is an LLM call, so it answers within the socket's
+ * command ceiling rather than being polled like `backup`.
+ */
+export async function categoriseCommand(
+  deps: AdminDeps,
+  args: unknown = {},
+): Promise<CategorisePendingResult> {
+  parseArgs(categoriseArgs, args);
+  return categorisePendingTransactions({
+    ...context(deps, "categorise"),
+    authSecret: deps.authSecret,
+    decryptApiKey: deps.decryptApiKey,
+    createProvider: deps.createProvider,
+  });
+}
+
 const asArg = z.string().trim().min(1).max(200);
+const categoriseArgs = z.object({}).strict();
 const m1ReportArgs = z.object({ as: asArg }).strict();
 
 /**
@@ -398,6 +435,8 @@ export function runAdminCommand(deps: AdminDeps, command: string, args: unknown)
       return confirmBundleCommand(deps, args);
     case "seed":
       return seedCommand(deps, args);
+    case "categorise":
+      return categoriseCommand(deps, args);
     case "m1-report":
       return m1ReportCommand(deps, args);
     case "opening-balance":

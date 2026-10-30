@@ -39,7 +39,7 @@ async function createAccount(page: Page, name: string): Promise<string> {
         owners: [{ personId: me.personId, shareBp: 10000 }],
       }),
     });
-    return { status: r.status, id: ((await r.json()) as { id: string }).id };
+    return { status: r.status, id: ((await r.json()) as { account: { id: string } }).account.id };
   }, name);
   expect(res.status).toBe(201);
   return res.id;
@@ -190,7 +190,9 @@ test("uploads, reviews, corrects and re-checks a PDF statement", async ({ page }
   const card = page.locator('[data-kind="import.pdf_failed"]').first();
   await expect(card).toBeVisible();
   await expect(card.getByRole("alert").first()).toContainText("exact gap of 1 cents");
-  await expect(card.getByText("Row 2")).toBeVisible();
+  // The row header line ("Row 2 · page 1 · …"); the "Save row 2" button would also match a
+  // plain substring.
+  await expect(card.getByText(/^Row 2 ·/)).toBeVisible();
   await expect(card.getByRole("img", { name: "Statement page 1" })).toBeVisible();
 
   // The inbox with the new card open stays axe-clean (mirrors axe.spec's /review audit).
@@ -198,7 +200,8 @@ test("uploads, reviews, corrects and re-checks a PDF statement", async ({ page }
   expect(audit.violations, JSON.stringify(audit.violations)).toEqual([]);
 
   // Correct the bad amount (the extraction says -20.01; the statement balances at -20.00).
-  const woolies = card.getByRole("listitem").filter({ hasText: "WOOLWORTHS" });
+  // Filter on the row header: the description lives in an input's value, not the item's text.
+  const woolies = card.getByRole("listitem").filter({ hasText: /^Row 2 ·/ });
   await expect(woolies.getByLabel("Amount")).toHaveValue("-20.01");
   await woolies.getByLabel("Amount").fill("-20.00");
   await woolies.getByRole("button", { name: "Save row 2" }).click();

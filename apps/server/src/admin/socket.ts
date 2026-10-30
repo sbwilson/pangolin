@@ -21,6 +21,12 @@ import { z } from "zod";
 export const MAX_REQUEST_BYTES = 64 * 1024;
 /** A connection idle this long is closed. */
 export const IDLE_TIMEOUT_MS = 10_000;
+/**
+ * How long an async command may run before its connection is dropped. Generous: a
+ * `categorise` against a real provider outlives any socket idle window, and severing
+ * the report while the work is still landing would be the worse failure.
+ */
+export const COMMAND_TIMEOUT_MS = 10 * 60_000;
 /** How recently a proof file must have been created. */
 export const PROOF_MAX_AGE_MS = 30_000;
 /** Proof file names: a fixed prefix and a random suffix, never a path. */
@@ -46,8 +52,12 @@ export type AdminLog = (
 
 export interface AdminSocketOptions {
   readonly path: string;
-  /** Runs one command. Throws `AppError` to refuse it; the result must be JSON-serialisable. */
-  readonly handle: (command: string, args: unknown) => unknown;
+  /**
+   * Runs one command, or starts it and returns its promise. Throws `AppError` to refuse it; the
+   * result must be JSON-serialisable. A promise is awaited before the answer line is written, so
+   * a command may do async work (`categorise` calls the LLM provider) within the command ceiling.
+   */
+  readonly handle: (command: string, args: unknown) => unknown | Promise<unknown>;
   /** Command names worth logging; any other name is logged as `unknown`. */
   readonly commands: readonly string[];
   /** Structured log sink: command names and outcomes only, never arguments or results. */
@@ -56,6 +66,9 @@ export interface AdminSocketOptions {
   readonly now?: () => number;
   /** How long an idle connection stays open. Defaults to `IDLE_TIMEOUT_MS`. */
   readonly idleTimeoutMs?: number;
+  /** How long a consumed request may run before its connection is dropped. Defaults to
+   * `COMMAND_TIMEOUT_MS`. Tests only. */
+  readonly commandTimeoutMs?: number;
   /**
    * Tests only: loosens the directory to 0777 and the socket to 0666, to prove the proof check
    * alone refuses another uid.
@@ -181,7 +194,7 @@ export async function listenAdminSocket(options: AdminSocketOptions): Promise<Ad
 
   const connections = new Set<Socket>();
 
-  function answer(line: string): AdminResponse {
+  async function answer(line: string): Promise<AdminResponse> {
     let raw: unknown;
     try {
       raw = JSON.parse(line);
@@ -197,7 +210,7 @@ export async function listenAdminSocket(options: AdminSocketOptions): Promise<Ad
       return refuse("Forbidden", "Permission denied");
     }
     try {
-      const result = options.handle(command, args);
+      const result = await options.handle(command, args);
       log("info", "admin command", { command: name, ok: true });
       return { ok: true, result };
     } catch (error) {
@@ -240,16 +253,19 @@ export async function listenAdminSocket(options: AdminSocketOptions): Promise<Ad
         return;
       }
       if (end === -1) return;
-      let response: AdminResponse;
-      try {
-        response = answer(buffered.subarray(0, end).toString("utf8"));
-      } catch (error) {
+      const line = buffered.subarray(0, end).toString("utf8");
+      // Claim the connection before awaiting the command: a client that sends more while a long
+      // command runs (`categorise` calls the LLM) must never get a second answer line.
+      answered = true;
+      // The request is in hand, so the idle window is over: from here the connection gets the
+      // command ceiling, long enough for a provider call over hundreds of transactions.
+      socket.setTimeout(options.commandTimeoutMs ?? COMMAND_TIMEOUT_MS, () => socket.destroy());
+      void answer(line).then(reply, (error: unknown) => {
         log("error", "admin request failed", {
           error: error instanceof Error ? error.message : String(error),
         });
-        response = refuse("Internal", "Internal error");
-      }
-      reply(response);
+        reply(refuse("Internal", "Internal error"));
+      });
     });
   });
 

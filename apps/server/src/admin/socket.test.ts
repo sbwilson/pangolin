@@ -356,6 +356,93 @@ describe("the admin socket", () => {
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
+  it("keeps a command that outlives the idle window to its answer", async () => {
+    // A real cloud `categorise` runs long; a consumed request gets the command ceiling,
+    // not the idle window, so the answer still reaches the client.
+    await listen({
+      idleTimeoutMs: 300,
+      handle: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        return { kept: true };
+      },
+    });
+    proofFile("proof-longrun000000000000000");
+    expect(
+      await raw(
+        `${JSON.stringify({ command: "status", args: {}, proof: "proof-longrun000000000000000" })}\n`,
+      ),
+    ).toEqual({ ok: true, result: { kept: true } });
+  });
+
+  it("runs categorise as a clean no-op over the socket, writing nothing", async () => {
+    const { log } = await listen();
+    const response = await callAdmin(sockPath, "categorise");
+    expect(response.ok).toBe(true);
+    expect((response as { result: unknown }).result).toEqual({
+      candidates: 0,
+      recordedCount: 0,
+      discardedCount: 0,
+    });
+    expect(log).toHaveBeenCalledWith("info", "admin command", { command: "categorise", ok: true });
+    expect(db.prepare("SELECT count(*) FROM audit_log").pluck().get()).toBe(0);
+  });
+
+  it("awaits a command that returns a promise, answering once even when more data follows", async () => {
+    await listen({
+      handle: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return { late: true };
+      },
+    });
+    proofFile("proof-slow00000000000000000");
+    const lines = new Promise<unknown[]>((resolve, reject) => {
+      const client = connect(sockPath);
+      let received = "";
+      client.on("data", (chunk) => {
+        received += chunk.toString("utf8");
+      });
+      client.on("error", reject);
+      client.on("close", () =>
+        resolve(
+          received
+            .split("\n")
+            .filter((line) => line !== "")
+            .map((line) => JSON.parse(line)),
+        ),
+      );
+      client.write(
+        `${JSON.stringify({ command: "status", args: {}, proof: "proof-slow00000000000000000" })}\n`,
+      );
+      // Arrives while the command is still running: it must not produce a second answer.
+      setTimeout(
+        () =>
+          client.write(
+            `${JSON.stringify({ command: "status", args: {}, proof: "proof-slow2-0000000000000" })}\n`,
+          ),
+        10,
+      );
+    });
+    expect(await lines).toEqual([{ ok: true, result: { late: true } }]);
+  });
+
+  it("answers Internal when a command promise rejects, and logs it once", async () => {
+    const { log } = await listen({
+      handle: async () => {
+        throw new Error("kaboom");
+      },
+    });
+    proofFile("proof-reject000000000000000");
+    expect(
+      await raw(
+        `${JSON.stringify({ command: "status", args: {}, proof: "proof-reject000000000000000" })}\n`,
+      ),
+    ).toEqual({ ok: false, error: { code: "Internal", message: "Internal error" } });
+    expect(log).toHaveBeenCalledWith("error", "admin command failed", {
+      command: "status",
+      error: "kaboom",
+    });
+  });
+
   it("clears a stale socket file, and refuses a path another server answers on", async () => {
     await listen();
     await expect(

@@ -1,8 +1,22 @@
 import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import type { Browser, Page } from "@playwright/test";
 import { firstSessionFile, loadAccount, signInWithPassword } from "./helpers/account.ts";
 import { expect, test, watchCsp } from "./helpers/csp.ts";
+
+const statementFixtures = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "packages",
+  "importers",
+  "fixtures",
+);
+// Same mock the pdf-import and categorise specs use; the provider row is created here only if
+// the household has none (running this spec alone), and pointing at a dead mock is fine: the
+// card audits a stored row, it never calls it.
+const llmBase = process.env.E2E_LLM_BASE_URL ?? "http://127.0.0.1:4111";
 
 let signedIn: Promise<string | undefined> | undefined;
 
@@ -54,6 +68,51 @@ async function alexSession(browser: Browser): Promise<string | undefined> {
 
 const MODES = ["light", "dark"] as const;
 type ColorMode = (typeof MODES)[number];
+
+let providerArranged: Promise<string> | undefined;
+
+/**
+ * The settings card audit needs at least one provider row. Arrange it through the API with a
+ * fresh sign-in (provider writes sit behind requireRecentAuth, and the shared session file may
+ * predate its window). Creates only when the household has none, and returns the name of the
+ * row to assert — normally the pdf-import spec's mock, which runs earlier in the suite.
+ */
+function ensureLlmProvider(browser: Browser): Promise<string> {
+  providerArranged ??= (async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await signInWithPassword(page, loadAccount());
+      const existing = await page.evaluate(async () => {
+        const res = await fetch("/api/llm/settings");
+        return (await res.json()) as { providers: { name: string }[] };
+      });
+      const first = existing.providers[0];
+      if (first !== undefined) {
+        return first.name;
+      }
+      const created = await page.evaluate(async (baseUrl) => {
+        const res = await fetch("/api/llm/providers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: "Axe mock",
+            kind: "openai",
+            baseUrl,
+            model: "mock-ok",
+            apiKey: "axe-key",
+          }),
+        });
+        return { status: res.status, name: ((await res.json()) as { name: string }).name };
+      }, llmBase);
+      expect(created.status).toBe(201);
+      return created.name;
+    } finally {
+      await context.close();
+    }
+  })();
+  return providerArranged;
+}
 
 const THEMES = [
   "clay-linen",
@@ -380,12 +439,81 @@ test.describe("WCAG 2.2 AA accessibility audit", () => {
 
         await setMode(page, mode);
         await page.getByRole("button", { name: "Import" }).first().click();
-        await expect(page.getByRole("dialog", { name: "Import a bank file" })).toBeVisible();
+        const dialog = page.getByRole("dialog", { name: "Import a bank file" });
+        await expect(dialog).toBeVisible();
 
         const violations = await auditPage(page);
         expect(
           violations,
           `Violations on the Import popover (${mode}): ${JSON.stringify(violations, null, 2)}`,
+        ).toEqual([]);
+
+        // With a PDF statement chosen: the card now shows the file name and the account
+        // select, which the empty-popover audit above never shows together. (The component
+        // clears the input's value after reading it, so the name in the card is the signal.)
+        await dialog
+          .getByTestId("import-file")
+          .setInputFiles(join(statementFixtures, "statement-ok.pdf"));
+        await expect(dialog.getByText("statement-ok.pdf")).toBeVisible();
+
+        const filledViolations = await auditPage(page);
+        expect(
+          filledViolations,
+          `Violations on the Import popover with a PDF chosen (${mode}): ${JSON.stringify(filledViolations, null, 2)}`,
+        ).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
+    test(`/settings#llm-providers in ${mode} mode passes WCAG 2.2 AA audit`, async ({
+      browser,
+      cspViolations,
+    }) => {
+      // The settings card must show a provider row, so the store has at least one: arrange
+      // that through the API first (idempotent — an existing provider is left alone).
+      const providerName = await ensureLlmProvider(browser);
+      const storageState = await alexSession(browser);
+      const context = await browser.newContext({
+        colorScheme: mode,
+        ...(storageState ? { storageState } : {}),
+      });
+      try {
+        await watchCsp(context, cspViolations);
+        await context.addInitScript(
+          ({ m }: { m: string }) => {
+            try {
+              localStorage.setItem("pangolin_mode", m);
+            } catch {}
+          },
+          { m: mode },
+        );
+        const page = await context.newPage();
+        await page.goto("/settings#llm-providers");
+        await page.waitForLoadState("domcontentloaded");
+        await expect(page.getByRole("navigation", { name: "Settings sections" })).toBeVisible();
+
+        await setMode(page, mode);
+
+        const card = page.locator("#llm-providers");
+        await expect(card).toBeVisible();
+        // A provider row renders with its kind, model and purpose selects.
+        await expect(card.getByText(providerName, { exact: true }).first()).toBeVisible();
+
+        const rowViolations = await auditPage(page);
+        expect(
+          rowViolations,
+          `Violations on /settings#llm-providers (${mode}): ${JSON.stringify(rowViolations, null, 2)}`,
+        ).toEqual([]);
+
+        // The add-provider form, open: every field labelled and the submit reachable.
+        await card.getByRole("button", { name: "Add provider" }).click();
+        await expect(page.getByLabel("Base URL")).toBeVisible();
+
+        const formViolations = await auditPage(page);
+        expect(
+          formViolations,
+          `Violations on /settings#llm-providers add form (${mode}): ${JSON.stringify(formViolations, null, 2)}`,
         ).toEqual([]);
       } finally {
         await context.close();

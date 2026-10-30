@@ -3,6 +3,7 @@
 // committed migrations and the built PWA next to them, and generates the demo seed
 // (dist/demo-seed.json) by running the seed CLI.
 import { cpSync, existsSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { packageMigrationsDir } from "@pangolin/db";
@@ -43,5 +44,17 @@ await build({
 
 cpSync(packageMigrationsDir, join(dist, "migrations"), { recursive: true });
 cpSync(webDist, join(dist, "public"), { recursive: true });
+
+// The PDF extractor bundles pdf.js's legacy build, which loads its worker at runtime from
+// "./pdf.worker.mjs" beside the entry module. esbuild cannot inline that dynamic import, so the
+// worker file shipped with the very pdfjs-dist copy the extractor resolves travels to dist.
+const importersRequire = createRequire(
+  new URL("index.js", new URL("..", import.meta.resolve("@pangolin/importers"))),
+);
+cpSync(
+  importersRequire.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"),
+  join(dist, "pdf.worker.mjs"),
+);
+
 generateSeedFile(join(dist, "demo-seed.json"));
-console.log(`Copied migrations and PWA, and wrote demo-seed.json, into ${dist}`);
+console.log(`Copied migrations, PWA and the pdf.js worker, and wrote demo-seed.json, into ${dist}`);

@@ -186,6 +186,8 @@ jobs:
           E2E_CONFIRM_BUNDLE_COMMAND: docker compose exec -T pangolin node dist/cli.js confirm-bundle
           # Once both partners have signed up, the ledger spec seeds the demo accounts onto them.
           E2E_SEED_COMMAND: docker compose exec -T pangolin node dist/cli.js seed
+          # The categorise journey spec runs the admin CLI in the container over the admin socket.
+          E2E_CATEGORISE_COMMAND: docker compose exec -T pangolin node dist/cli.js categorise
           # The PDF-statement spec points the provider at the stack's replay mock-llm (compose
           # DNS name: reachable from the server container, not from this host).
           E2E_LLM_BASE_URL: http://mock-llm:4111

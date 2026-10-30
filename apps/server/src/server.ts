@@ -21,6 +21,7 @@ import {
   migrate,
   openDatabase,
 } from "@pangolin/db";
+import { decryptApiKey } from "@pangolin/llm";
 import {
   ADMIN_COMMANDS,
   type AdminLog,
@@ -42,6 +43,7 @@ import { openDemoDatabase } from "./demo.ts";
 import { createApp } from "./http/app.ts";
 import type { Authn } from "./http/session.ts";
 import { createJobs, createRunner, type Runner } from "./jobs/index.ts";
+import { createLlmAdapter } from "./llm/create-provider.ts";
 
 /** The attachment store of a read-only demo: any use of it is a bug. */
 const refusingAttachments: AttachmentStore = {
@@ -182,11 +184,12 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
 
   let app: ReturnType<typeof createApp>;
   let setupLinkFile: string | undefined;
+  // The app secret also builds the admin `categorise` provider context below the try block.
+  let secret: string | undefined;
   try {
     let authn: Authn;
     // Demo mode never writes, so its recovery-code key is a throwaway.
     let codes = recoveryCodeHasher(randomBytes(32).toString("base64url"));
-    let secret: string | undefined;
     if (demo) {
       // Demo mode: no sign-in; every request is the first seeded person, and writes still fail.
       authn = { kind: "demo" };
@@ -307,6 +310,11 @@ export async function startServer(options: StartOptions): Promise<RunningServer>
       ...(adminSeedFile === undefined ? {} : { seedFile: adminSeedFile }),
       seedEnabled: config.enableSeed === true,
       ...(config.recoveryBundleId === undefined ? {} : { bundleId: config.recoveryBundleId }),
+      // The `categorise` command reads the DB-configured provider; the secret is always loaded
+      // here (demo mode opens no admin socket at all), spread guards the type.
+      ...(secret === undefined ? {} : { authSecret: secret }),
+      decryptApiKey,
+      createProvider: createLlmAdapter,
     };
     try {
       adminSocket = await listenAdminSocket({
