@@ -72,6 +72,7 @@ describe("committed migrations", () => {
       "0023_import_row_proposal",
       "0024_pdf_batch_attachment",
       "0025_pay_anchor",
+      "0026_budget",
     ];
     expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: migrations.length });
     expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: migrations.length });

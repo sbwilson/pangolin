@@ -2,6 +2,8 @@
 import { Decimal } from "decimal.js";
 import { z } from "zod";
 
+export { Decimal };
+
 declare const centsBrand: unique symbol;
 
 /** An integer number of cents, always a safe integer. Serialised as a JSON number. */

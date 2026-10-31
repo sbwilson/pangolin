@@ -1323,6 +1323,46 @@ export interface PayAnchorRepo {
   deleteForPerson(personId: Id<"Person">): void;
 }
 
+/** `budget`: category or group spending caps (AD-10, AD-22, CAP-4). */
+export interface BudgetRow {
+  readonly id: Id<"Budget">;
+  readonly personId: Id<"Person"> | null;
+  readonly categoryId: Id<"Category"> | null;
+  readonly categoryGroupId: Id<"CategoryGroup"> | null;
+  readonly cadence: "fortnight" | "month";
+  readonly limitCents: number;
+  readonly rollover: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface BudgetPeriodSpent {
+  readonly start: string; // YYYY-MM-DD
+  readonly end: string; // YYYY-MM-DD
+  readonly spentCents: number;
+}
+
+export interface BudgetRepository {
+  insert(row: BudgetRow): void;
+  update(row: BudgetRow): void;
+  delete(id: Id<"Budget">): boolean;
+  findById(viewer: Viewer, id: Id<"Budget">): BudgetRow | undefined;
+  listVisible(viewer: Viewer): readonly BudgetRow[];
+  calculateSpent(
+    viewer: Viewer,
+    budget: BudgetRow,
+    today: string,
+    period: { readonly start: string; readonly end: string },
+  ): number;
+  calculateHistoricalSpent(
+    viewer: Viewer,
+    budget: BudgetRow,
+    today: string,
+    periods: readonly { readonly start: string; readonly end: string }[],
+  ): readonly BudgetPeriodSpent[];
+  deleteForPerson(personId: Id<"Person">): void;
+}
+
 /**
  * `recovery_bundle`: the recovery bundle the household confirmed it stored safely (story 1.17).
  * Only its id, never a secret.
@@ -1878,6 +1918,7 @@ export interface TxRepos {
   readonly llmProviders: LlmProviderRepo;
   readonly suggestions: SuggestionRepo;
   readonly payAnchors: PayAnchorRepo;
+  readonly budgets: BudgetRepository;
 }
 
 /** The read-only subset of `TxRepos`, for queries. */
@@ -1959,6 +2000,10 @@ export interface ReadRepos {
     | "findFewShot"
   >;
   readonly payAnchors: Pick<PayAnchorRepo, "findByPersonId" | "listVisible">;
+  readonly budgets: Pick<
+    BudgetRepository,
+    "findById" | "listVisible" | "calculateSpent" | "calculateHistoricalSpent"
+  >;
 }
 
 export interface UnitOfWork {

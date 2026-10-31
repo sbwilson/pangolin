@@ -26,6 +26,7 @@ const SCOPED_REPOS = [
   "importHandoffs",
   "suggestions",
   "payAnchors",
+  "budgets",
 ] as const;
 
 /** `TxRepos` keys that hold no scoped data, each with its reason. Every other key is checked. */
@@ -113,6 +114,10 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
   "PayAnchorRepo.insert": "a new pay anchor; the use case enforces person scope",
   "PayAnchorRepo.update": "the use case checked the pay anchor through the viewer",
   "PayAnchorRepo.deleteForPerson": "hard-deletes the leaver's pay anchor (the leave)",
+  "BudgetRepository.insert": "a new budget; the use case enforces person or shared scope",
+  "BudgetRepository.update": "the use case checked the budget through the viewer",
+  "BudgetRepository.delete": "the use case checked the budget through the viewer",
+  "BudgetRepository.deleteForPerson": "hard-deletes the leaver's budgets (the leave)",
   "ImportHandoffRepo.insert": "a new hand-off; the use case set the sender to the viewer",
   "ImportHandoffRepo.markImported": "the use case found the hand-off with findForRecipient first",
   "ImportHandoffRepo.markDismissed": "the use case found the hand-off with findForRecipient first",

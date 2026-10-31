@@ -44,6 +44,7 @@ import {
 import type { Db } from "./open.ts";
 import { auditHiddenUntil, auditPayeeHidden, visibleAudit } from "./privacy.ts";
 import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
+import { createBudgetRepo } from "./repositories/budget.ts";
 import { createAttachmentRepo, createImportHandoffRepo } from "./repositories/handoff-repos.ts";
 import { createImportBatchRepo, createImportRowRepo } from "./repositories/import-repos.ts";
 import { createLlmProviderRepo } from "./repositories/llm-provider.ts";
@@ -274,6 +275,7 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     llmProviders: createLlmProviderRepo(orm, () => guard(scope)),
     suggestions: createSuggestionRepo(orm, () => guard(scope)),
     payAnchors: createPayAnchorRepo(orm, () => guard(scope)),
+    budgets: createBudgetRepo(orm, () => guard(scope)),
   };
 }
 
@@ -421,6 +423,12 @@ export function createUnitOfWork(db: Db): UnitOfWork {
             payAnchors: {
               findByPersonId: repos.payAnchors.findByPersonId,
               listVisible: repos.payAnchors.listVisible,
+            },
+            budgets: {
+              findById: repos.budgets.findById,
+              listVisible: repos.budgets.listVisible,
+              calculateSpent: repos.budgets.calculateSpent,
+              calculateHistoricalSpent: repos.budgets.calculateHistoricalSpent,
             },
           };
         },

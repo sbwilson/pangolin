@@ -16,6 +16,7 @@ export {
 export { backupSnapshot } from "./backup-snapshot.ts";
 export { backupVerification } from "./backup-verification.ts";
 export { balanceSnapshot } from "./balance-snapshot.ts";
+export { budget } from "./budget.ts";
 export { category } from "./category.ts";
 export { categoryGroup } from "./category-group.ts";
 export { householdSettings } from "./household-settings.ts";

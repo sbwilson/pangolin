@@ -23,6 +23,9 @@ import type {
   BackupVerificationRow,
   BalanceSnapshotRepo,
   BalanceSnapshotRow,
+  BudgetPeriodSpent,
+  BudgetRepository,
+  BudgetRow,
   CategoryGroupRepo,
   CategoryGroupRow,
   CategoryRepo,
@@ -158,6 +161,7 @@ export interface MemoryState {
   llmPurposeAssignments: LlmPurposeAssignmentRow[];
   suggestions: SuggestionRow[];
   payAnchors: PayAnchorRow[];
+  budgets: BudgetRow[];
 }
 
 export interface MemoryUnitOfWork extends UnitOfWork {
@@ -3328,6 +3332,147 @@ function payAnchorRepo(working: MemoryState, check: () => void): PayAnchorRepo {
   };
 }
 
+function isBudgetVisibleMemory(viewer: Viewer, personId: Id<"Person"> | null): boolean {
+  if (viewer.kind === "system") return true;
+  if (personId === null) return true;
+  return viewer.personId === personId;
+}
+
+function budgetRepo(working: MemoryState, check: () => void): BudgetRepository {
+  return {
+    insert(row: BudgetRow) {
+      check();
+      working.budgets.push(row);
+    },
+    update(row: BudgetRow) {
+      check();
+      const idx = working.budgets.findIndex((b) => b.id === row.id);
+      if (idx !== -1) {
+        working.budgets[idx] = row;
+      }
+    },
+    delete(id: Id<"Budget">) {
+      check();
+      const initial = working.budgets.length;
+      working.budgets = working.budgets.filter((b) => b.id !== id);
+      return working.budgets.length < initial;
+    },
+    findById(viewer: Viewer, id: Id<"Budget">) {
+      check();
+      const row = working.budgets.find((b) => b.id === id);
+      if (!row || !isBudgetVisibleMemory(viewer, row.personId)) return undefined;
+      return row;
+    },
+    listVisible(viewer: Viewer) {
+      check();
+      if (viewer.kind === "system") return [...working.budgets];
+      return working.budgets.filter((b) => isBudgetVisibleMemory(viewer, b.personId));
+    },
+    calculateSpent(
+      viewer: Viewer,
+      budgetRow: BudgetRow,
+      today: string,
+      period: { readonly start: string; readonly end: string },
+    ) {
+      check();
+      if (!isBudgetVisibleMemory(viewer, budgetRow.personId)) {
+        return 0;
+      }
+      requireDay(today, "visibleTxn");
+
+      // Find visible transactions for viewer
+      const visibleAccIds = new Set(
+        working.accounts
+          .filter((a) => {
+            if (viewer.kind === "system") return true;
+            if (!a.isPrivate) return true;
+            const owners = working.accountOwners.filter((o) => o.accountId === a.id);
+            return owners.some((o) => o.personId === viewer.personId);
+          })
+          .map((a) => a.id),
+      );
+
+      // Target category IDs
+      let targetCategoryIds: Set<string> | null = null;
+      if (budgetRow.categoryId) {
+        targetCategoryIds = new Set([budgetRow.categoryId]);
+      } else if (budgetRow.categoryGroupId) {
+        targetCategoryIds = new Set(
+          working.categories
+            .filter((c) => c.groupId === budgetRow.categoryGroupId && c.deletedAt === null)
+            .map((c) => c.id),
+        );
+      }
+
+      // Sum splits
+      let totalSpent = 0;
+      for (const split of working.splits) {
+        const txn = working.transactions.find((t) => t.id === split.transactionId);
+        if (!txn || txn.deletedAt !== null) continue;
+        if (!visibleAccIds.has(txn.accountId)) continue;
+        if (txn.postedOn < period.start || txn.postedOn >= period.end) continue;
+
+        // flowKind in memory:
+        const kind = flowKind({
+          splitAmountCents: split.amountCents,
+          categoryId: split.categoryId,
+          categoryGroupKind: (() => {
+            const cat = working.categories.find((c) => c.id === split.categoryId);
+            if (!cat) return null;
+            const grp = working.categoryGroups.find((g) => g.id === cat.groupId);
+            return (grp?.kind as any) ?? null;
+          })(),
+          counterpartAccountType: null, // transfers don't count anyway
+          hasTransferGroup: txn.transferGroupId !== null,
+        });
+
+        if (kind !== "expense") continue;
+
+        // Target check
+        if (targetCategoryIds && (!split.categoryId || !targetCategoryIds.has(split.categoryId))) {
+          continue;
+        }
+
+        // Beneficiary check:
+        // Shared budget: beneficiary === 'shared'
+        // Personal budget: beneficiary === budgetRow.personId
+        if (budgetRow.personId === null) {
+          if (split.beneficiary !== "shared") continue;
+        } else {
+          if (split.beneficiary !== budgetRow.personId) continue;
+        }
+
+        // Split amount is negative for expense, spent is positive
+        totalSpent += -split.amountCents;
+      }
+
+      return totalSpent;
+    },
+    calculateHistoricalSpent(
+      viewer: Viewer,
+      budgetRow: BudgetRow,
+      today: string,
+      periods: readonly { readonly start: string; readonly end: string }[],
+    ) {
+      check();
+      const results: BudgetPeriodSpent[] = [];
+      for (const p of periods) {
+        const spent = this.calculateSpent(viewer, budgetRow, today, p);
+        results.push({
+          start: p.start,
+          end: p.end,
+          spentCents: spent,
+        });
+      }
+      return results;
+    },
+    deleteForPerson(personId: Id<"Person">) {
+      check();
+      working.budgets = working.budgets.filter((b) => b.personId !== personId);
+    },
+  };
+}
+
 export function memoryUnitOfWork(
   settings: HouseholdSettingsRow = DEFAULT_SETTINGS,
 ): MemoryUnitOfWork {
@@ -3377,6 +3522,7 @@ export function memoryUnitOfWork(
       llmPurposeAssignments: [],
       suggestions: [],
       payAnchors: [],
+      budgets: [],
     },
     failAudit: false,
     transaction<T>(fn: (tx: TxRepos) => T): T {
@@ -3425,6 +3571,7 @@ export function memoryUnitOfWork(
         llmPurposeAssignments: [...uow.state.llmPurposeAssignments],
         suggestions: [...uow.state.suggestions],
         payAnchors: [...uow.state.payAnchors],
+        budgets: [...uow.state.budgets],
       };
       let active = true;
       const check = () => {
@@ -3474,6 +3621,7 @@ export function memoryUnitOfWork(
         llmProviders: llmProviderRepo(working, check),
         suggestions: suggestionRepo(working, check),
         payAnchors: payAnchorRepo(working, check),
+        budgets: budgetRepo(working, check),
         recoveryBundle: {
           get: () => {
             check();
@@ -3530,6 +3678,7 @@ export function memoryUnitOfWork(
         uow.state.llmPurposeAssignments = working.llmPurposeAssignments;
         uow.state.suggestions = working.suggestions;
         uow.state.payAnchors = working.payAnchors;
+        uow.state.budgets = working.budgets;
         return result;
       } finally {
         active = false;
@@ -3690,6 +3839,14 @@ export function memoryUnitOfWork(
           findByPersonId: (viewer, personId) =>
             payAnchorRepo(uow.state, check).findByPersonId(viewer, personId),
           listVisible: (viewer) => payAnchorRepo(uow.state, check).listVisible(viewer),
+        },
+        budgets: {
+          findById: (viewer, id) => budgetRepo(uow.state, check).findById(viewer, id),
+          listVisible: (viewer) => budgetRepo(uow.state, check).listVisible(viewer),
+          calculateSpent: (viewer, budgetRow, today, period) =>
+            budgetRepo(uow.state, check).calculateSpent(viewer, budgetRow, today, period),
+          calculateHistoricalSpent: (viewer, budgetRow, today, periods) =>
+            budgetRepo(uow.state, check).calculateHistoricalSpent(viewer, budgetRow, today, periods),
         },
       });
     },

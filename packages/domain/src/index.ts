@@ -36,6 +36,14 @@ export {
 } from "./flows/flow-kind.ts";
 export { normaliseCommBankDescription } from "./normalise/commbank.ts";
 export {
+  type BudgetMathInput,
+  type BudgetMathResult,
+  type BudgetStatus,
+  calculateBudgetMath,
+  calculateLimitSuggestion,
+  calculateRollover,
+} from "./planning/budget-math.ts";
+export {
   type ReconcileResult,
   type ReconcileRow,
   type ReconcileStatus,

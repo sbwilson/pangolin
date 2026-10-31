@@ -57,6 +57,10 @@ const ALLOWED: Readonly<Record<string, { tables: readonly string[]; reason: stri
     tables: ["account", "split", "transaction"],
     reason: "reads account, split and transaction for few-shot examples with privacy filters",
   },
+  "repositories/budget.ts": {
+    tables: ["split", "transaction"],
+    reason: "aggregates spent on split and transaction composed with visibleTxn and flowKindSql",
+  },
 };
 
 /**
