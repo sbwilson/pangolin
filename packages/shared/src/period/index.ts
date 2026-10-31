@@ -1,6 +1,5 @@
 // Period and financial-year maths (AD-14). Pure: no clock, no I/O.
 // Periods are half-open `[start, end)` in code and shown inclusive on screen.
-// Payday business-day roll-back and pay-deposit alignment (`PayCalendar`) belong to epic 6.
 import { type PlainDate, Temporal } from "../temporal/index.ts";
 
 /** How a pay anchor's periods repeat under `calendar` alignment. */
@@ -21,6 +20,82 @@ export interface FinancialYear {
   readonly label: `FY${number}`;
   readonly start: PlainDate;
   readonly end: PlainDate;
+}
+
+export interface PayPeriod {
+  readonly start: PlainDate;
+  readonly end: PlainDate;
+  readonly expectedPayDate: PlainDate;
+  readonly actualPayDate: PlainDate | null;
+  readonly isProjected: boolean;
+}
+
+export interface PayCalendar {
+  readonly anchorId: string;
+  readonly cadence: Cadence;
+  readonly alignment: "calendar" | "deposit";
+  readonly periodContaining: (date: PlainDate) => PayPeriod;
+  readonly periodsBetween: (from: PlainDate, to: PlainDate) => readonly PayPeriod[];
+}
+
+/**
+ * Rolls back a date falling on a weekend to the previous Friday.
+ * Monday (1) through Friday (5) remain unchanged.
+ * Saturday (6) rolls back 1 day to Friday.
+ * Sunday (7) rolls back 2 days to Friday.
+ */
+export function rollBackToBusinessDay(date: PlainDate): PlainDate {
+  if (date.dayOfWeek === 6) {
+    return date.subtract({ days: 1 });
+  }
+  if (date.dayOfWeek === 7) {
+    return date.subtract({ days: 2 });
+  }
+  return date;
+}
+
+/**
+ * Resolves a pure calendar-based PayCalendar without deposits.
+ * For calendar alignment, period start is the cycle date, and expected pay date is start rolled back to Friday if weekend.
+ * actualPayDate is null, and isProjected can be evaluated relative to an optional today (defaults to isProjected = true if date >= start).
+ */
+export function createCalendarPayCalendar(
+  anchorId: string,
+  cadence: Cadence,
+  today?: PlainDate,
+): PayCalendar {
+  function makePeriod(period: Period): PayPeriod {
+    const expectedPayDate = rollBackToBusinessDay(period.start);
+    const isProjected =
+      today !== undefined ? Temporal.PlainDate.compare(period.start, today) > 0 : false;
+    return {
+      start: period.start,
+      end: period.end,
+      expectedPayDate,
+      actualPayDate: null,
+      isProjected,
+    };
+  }
+
+  return {
+    anchorId,
+    cadence,
+    alignment: "calendar",
+    periodContaining(date: PlainDate): PayPeriod {
+      const p = periodContaining(cadence, date);
+      return makePeriod(p);
+    },
+    periodsBetween(from: PlainDate, to: PlainDate): readonly PayPeriod[] {
+      if (Temporal.PlainDate.compare(from, to) >= 0) return [];
+      const periods: PayPeriod[] = [];
+      let current = periodContaining(cadence, from);
+      while (Temporal.PlainDate.compare(current.start, to) < 0) {
+        periods.push(makePeriod(current));
+        current = nextPeriod(cadence, current);
+      }
+      return periods;
+    },
+  };
 }
 
 const FORTNIGHT_DAYS = 14;

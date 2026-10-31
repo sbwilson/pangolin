@@ -664,6 +664,23 @@ export {
   updateTransaction,
   updateTransactionInput,
 } from "./ledger/update-transaction.ts";
+export {
+  type DetectedPayDeposit,
+  detectPayDeposits,
+} from "./planning/detect-pay-deposits.ts";
+export {
+  type GetPayAnchorInput,
+  getPayAnchor,
+  getPayAnchorInput,
+  listPayAnchors,
+  type UpsertPayAnchorInput,
+  upsertPayAnchor,
+  upsertPayAnchorInput,
+} from "./planning/pay-anchor.ts";
+export {
+  payAnchorCadence,
+  resolvePayCalendar,
+} from "./planning/pay-calendar.ts";
 export type { AttachmentStore } from "./ports/attachment-store.ts";
 export type { Clock } from "./ports/clock.ts";
 export type {
@@ -792,6 +809,8 @@ export {
   type LeakMerchantRow,
   LLM_PURPOSES,
   type OwnedAccount,
+  type PayAnchorRepo,
+  type PayAnchorRow,
   type PayeeAliasRepo,
   type PayeeAliasRow,
   type PayeeRepo,

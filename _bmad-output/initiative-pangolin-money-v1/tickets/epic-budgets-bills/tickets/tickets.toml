@@ -1,0 +1,90 @@
+# tickets.toml — epic-budgets-bills
+# Table order is build order; id is permanent and never reused.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Tracer bullet: PayAnchor, PayCalendar resolution, and Household Settings"
+description = "Implements the pay_anchor schema, migration, and pay-deposit detection, connects PayCalendar resolution in shared/period with Clock support, and adds pay cadence, personal anchor, and household pay anchor controls to the Settings › Household card."
+verify = "Unit and component tests verify payday detection from deposits and calendar fallbacks, and Settings updates pay cycles and household anchor correctly."
+covers = ["CAP-4"]
+after = ["4.4"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Budget calculation engine: spent, pace, projected, and limit suggestions"
+description = "Implements core budget queries and domain math deriving spent, pace, projected, and optional rollover across fortnight/month periods aligned to PayCalendar, with 6-period historical limit suggestions."
+verify = "Calculations for spent, pace, projected, rollover carryover, and suggested limits match hand-computed figures across personal and shared budgets."
+covers = ["CAP-4"]
+after = [1, "3.4"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Budgets workspace UI and editor modal"
+description = "Implements the /planning/budgets page with period selector, budget cards showing spent/pace/projected progress bars, and the budget editor modal with suggested limit prefill and rollover toggle."
+verify = "A user views budgets on /planning/budgets, creates and edits a budget with prefilled suggestion, and toggles between personal and shared views."
+covers = ["CAP-4"]
+after = [2]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Over-budget review item generator"
+description = "Implements periodic evaluation raising one over_budget review_item per budget per period when spent exceeds limit, scoped per AD-22 with deduplication and resolution."
+verify = "Overspending a budget creates exactly one review item in the inbox scoped to the viewer, and does not duplicate on subsequent evaluations."
+covers = ["CAP-4"]
+after = [2]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Recurring bills detector and candidate generation"
+description = "Implements recurring bills detection grouping by payee, evaluating intervals (weekly, fortnightly, monthly, quarterly, annual) with median interval stability and amount tolerance, and predicting next due dates and amounts."
+verify = "Detector identifies synthetic series of >=3 occurrences with stable intervals, computes expected due dates/amounts, and excludes salary deposits."
+covers = ["CAP-5"]
+after = [1, "3.4"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Recurring bills UI and one-click confirmation"
+description = "Adds recurring bills section to /planning/budgets, displaying detected candidates with one-click confirmation, list of confirmed series, and manual series creation."
+verify = "User confirms a detected recurring bill candidate in one click and manages active recurring series."
+covers = ["CAP-5"]
+after = [5]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Bill alerts: missed payments and price rise detection"
+description = "Implements alert generation for recurring series: raises alert review items when an expected payment is missed past its due window or an amount increases by >10%."
+verify = "Missed payment and an 11% amount increase each raise an alert in the review inbox, and resolving or paying dismisses them."
+covers = ["CAP-5"]
+after = [6]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Refactor sweep, seed scenario verification, and Playwright e2e"
+description = "Cleans up code hygiene, implements the epic's SeedModule with synthetic budgets and recurring series, and adds Playwright + axe accessibility tests covering budgets, bills, and review items."
+verify = "Deployed/CI tests pass across unit, lint, migration, Playwright, and axe, verifying all 4 Done-when conditions against the seed scenario."
+covers = ["CAP-4", "CAP-5"]
+after = [3, 4, 7]
+hitl = false
+risk = "low"

@@ -328,6 +328,7 @@ export interface HouseholdSettingsData {
   readonly fyStart: string;
   readonly timezone: string;
   readonly sharedAttribution: SharedAttribution;
+  readonly householdPayAnchorPersonId?: string | null;
   readonly updatedAt: string;
 }
 
@@ -337,13 +338,19 @@ export async function fetchHouseholdSettings(): Promise<HouseholdSettingsData> {
   return (await res.json()) as HouseholdSettingsData;
 }
 
+/** Updates household settings (shared attribution and/or household pay anchor); throws `ApiError`. */
+export async function updateHouseholdSettings(input: {
+  readonly sharedAttribution?: SharedAttribution;
+  readonly householdPayAnchorPersonId?: string | null;
+}): Promise<HouseholdSettingsData> {
+  return await sendJson<HouseholdSettingsData>("PATCH", "/api/system/household", input);
+}
+
 /** Changes the shared attribution (the one setting the screen edits); throws `ApiError`. */
 export async function updateSharedAttribution(
   sharedAttribution: SharedAttribution,
 ): Promise<HouseholdSettingsData> {
-  return await sendJson<HouseholdSettingsData>("PATCH", "/api/system/household", {
-    sharedAttribution,
-  });
+  return await updateHouseholdSettings({ sharedAttribution });
 }
 
 /** The Needs review list: one card per open item the signed-in person may see, oldest first. */
@@ -1073,4 +1080,50 @@ export async function fetchLlmRequestPreview(input?: {
   readonly providerId?: string | undefined;
 }): Promise<LlmRequestPreviewResult> {
   return await sendJson<LlmRequestPreviewResult>("POST", "/api/llm/preview", input ?? {});
+}
+
+// -----------------------------------------------------------------------------
+// Planning & Pay Anchors
+// -----------------------------------------------------------------------------
+
+export interface PayAnchorData {
+  readonly id: string;
+  readonly personId: string;
+  readonly accountId: string;
+  readonly cadence: "fortnightly" | "monthly";
+  readonly dayOfMonth: number | null;
+  readonly anchorDate: string | null;
+  readonly alignment: "calendar" | "deposit";
+  readonly expectedNetCents: number | null;
+  readonly expectedGrossCents: number | null;
+}
+
+export async function fetchPayAnchors(): Promise<PayAnchorData[]> {
+  const res = await fetch("/api/planning/pay-anchors");
+  if (!res.ok) throw await apiError(res);
+  const data = (await res.json()) as { payAnchors: PayAnchorData[] };
+  return data.payAnchors;
+}
+
+export async function fetchPayAnchor(personId?: string): Promise<PayAnchorData | null> {
+  const url = personId
+    ? `/api/planning/pay-anchors?personId=${encodeURIComponent(personId)}`
+    : "/api/planning/pay-anchors";
+  const res = await fetch(url);
+  if (!res.ok) throw await apiError(res);
+  const data = (await res.json()) as { payAnchors: PayAnchorData[] };
+  return data.payAnchors[0] ?? null;
+}
+
+export async function upsertPayAnchor(input: {
+  readonly accountId: string;
+  readonly cadence: "fortnightly" | "monthly";
+  readonly dayOfMonth?: number | null;
+  readonly anchorDate?: string | null;
+  readonly alignment?: "calendar" | "deposit";
+  readonly expectedNetCents?: number | null;
+  readonly expectedGrossCents?: number | null;
+  readonly personId?: string;
+}): Promise<PayAnchorData> {
+  return await sendJson<PayAnchorData>("PUT", "/api/planning/pay-anchors", input);
 }

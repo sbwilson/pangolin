@@ -64,6 +64,7 @@ import {
   getHouseholdSettings,
   getLlmRequestPreview,
   getLlmSettings,
+  getPayAnchor,
   getPayee,
   getPayeeAlias,
   getPreferences,
@@ -92,6 +93,7 @@ import {
   listCategories,
   listCategoryGroups,
   listInstitutions,
+  listPayAnchors,
   listPayeeAliases,
   listPayees,
   listReviewCards,
@@ -152,6 +154,7 @@ import {
   updateTag,
   updateTaxCategory,
   updateTransaction,
+  upsertPayAnchor,
 } from "@pangolin/app";
 import { extractPdfTextPages } from "@pangolin/importers";
 import { decryptApiKey, encryptApiKey, isLanAddress } from "@pangolin/llm";
@@ -400,9 +403,22 @@ export function createApi(deps: ApiDeps) {
       return c.json(getHouseholdSettings(ctx(c), {}), 200);
     })
     .patch("/api/system/household", async (c) => {
-      // Any of `baseCurrency`, `timezone`, `sharedAttribution`; `fyStart` and any other key is 400.
+      // Any of `baseCurrency`, `timezone`, `sharedAttribution`, `householdPayAnchorPersonId`.
       writable();
       return c.json(updateHouseholdSettings(ctx(c), await objectBody(c)), 200);
+    })
+    .get("/api/planning/pay-anchors", (c) => {
+      // Per viewer (AD-22): only anchors visible to the viewer (own anchor).
+      const personId = c.req.query("personId");
+      if (personId !== undefined) {
+        const anchor = getPayAnchor(ctx(c), { personId });
+        return c.json({ payAnchors: anchor ? [anchor] : [] }, 200);
+      }
+      return c.json({ payAnchors: listPayAnchors(ctx(c)) }, 200);
+    })
+    .put("/api/planning/pay-anchors", async (c) => {
+      writable();
+      return c.json(upsertPayAnchor(ctx(c), await objectBody(c)), 200);
     })
     .get("/api/identity/preferences", (c) => {
       return c.json(getPreferences(ctx(c), {}), 200);

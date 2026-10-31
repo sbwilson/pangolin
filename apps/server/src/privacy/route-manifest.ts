@@ -198,6 +198,17 @@ export const MANIFEST: readonly ManifestEntry[] = [
   write("PUT", "/api/identity/preferences", {
     body: () => ({ theme: "clay-linen", mode: "system" }),
   }),
+  read("/api/planning/pay-anchors"),
+  write("PUT", "/api/planning/pay-anchors", {
+    bodyEntities: ["account"],
+    body: (id) => ({
+      accountId: id("account"),
+      cadence: "fortnightly",
+      anchorDate: "2026-10-10",
+      alignment: "calendar",
+      expectedNetCents: 350000,
+    }),
+  }),
   identity("POST", "/api/identity/setup-links", "Household setup link; carries no ledger data."),
   identity("POST", "/api/identity/sign-up", "Sign-up with a setup link."),
   identity("POST", "/api/identity/recovery-codes/initial", "The caller's own recovery codes."),

@@ -200,6 +200,14 @@ function deleteScopedRows(tx: TxRepos, leaver: Id<"Person">): void {
   tx.tags.deleteScopedTo(leaver);
   tx.activities.deleteScopedTo(leaver);
   tx.personPreferences.deleteForPerson(leaver);
+  tx.payAnchors.deleteForPerson(leaver);
+  const currentSettings = tx.householdSettings.get();
+  if (currentSettings.householdPayAnchorPersonId === leaver) {
+    tx.householdSettings.update({
+      ...currentSettings,
+      householdPayAnchorPersonId: null,
+    });
+  }
 }
 
 /**

@@ -84,12 +84,14 @@ describe("system.updateHouseholdSettings", () => {
       baseCurrency: "NZD",
       timezone: "Pacific/Auckland",
       sharedAttribution: "even",
+      householdPayAnchorPersonId: null,
     });
     expect(result).toMatchObject({
       baseCurrency: "NZD",
       fyStart: "07-01",
       timezone: "Pacific/Auckland",
       sharedAttribution: "even",
+      householdPayAnchorPersonId: null,
     });
   });
 

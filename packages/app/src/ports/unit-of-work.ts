@@ -12,6 +12,7 @@ export interface HouseholdSettingsRow {
   /** IANA time zone of the household, e.g. `Australia/Sydney`. */
   readonly timezone: string;
   readonly sharedAttribution: "contribution" | "even";
+  readonly householdPayAnchorPersonId?: Id<"Person"> | null;
   /** UTC ISO-8601 timestamp. */
   readonly updatedAt: string;
 }
@@ -1298,6 +1299,30 @@ export interface SuggestionRepo {
   findFewShot(viewer: Viewer, today: string, query: string, limit?: number): FewShotExample[];
 }
 
+/** `pay_anchor`: each person's pay cadence and deposit account (AD-14, AD-22, AD-25). */
+export interface PayAnchorRow {
+  readonly id: Id<"PayAnchor">;
+  readonly personId: Id<"Person">;
+  readonly accountId: Id<"Account">;
+  readonly cadence: "fortnightly" | "monthly";
+  readonly dayOfMonth: number | null;
+  /** YYYY-MM-DD */
+  readonly anchorDate: string | null;
+  readonly alignment: "calendar" | "deposit";
+  readonly expectedNetCents: number | null;
+  readonly expectedGrossCents: number | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface PayAnchorRepo {
+  insert(row: PayAnchorRow): void;
+  update(row: PayAnchorRow): void;
+  findByPersonId(viewer: Viewer, personId: Id<"Person">): PayAnchorRow | undefined;
+  listVisible(viewer: Viewer): readonly PayAnchorRow[];
+  deleteForPerson(personId: Id<"Person">): void;
+}
+
 /**
  * `recovery_bundle`: the recovery bundle the household confirmed it stored safely (story 1.17).
  * Only its id, never a secret.
@@ -1852,6 +1877,7 @@ export interface TxRepos {
   readonly importHandoffs: ImportHandoffRepo;
   readonly llmProviders: LlmProviderRepo;
   readonly suggestions: SuggestionRepo;
+  readonly payAnchors: PayAnchorRepo;
 }
 
 /** The read-only subset of `TxRepos`, for queries. */
@@ -1932,6 +1958,7 @@ export interface ReadRepos {
     | "listOpenForAccount"
     | "findFewShot"
   >;
+  readonly payAnchors: Pick<PayAnchorRepo, "findByPersonId" | "listVisible">;
 }
 
 export interface UnitOfWork {

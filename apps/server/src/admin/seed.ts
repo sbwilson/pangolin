@@ -112,7 +112,7 @@ const EVENT_SCHEMAS = {
   "household.settings": z.strictObject({
     type: z.literal("household.settings"),
     module: moduleName,
-    ...updateHouseholdSettingsInput.required().shape,
+    ...updateHouseholdSettingsInput.required().partial({ householdPayAnchorPersonId: true }).shape,
   }),
   "institution.created": z.strictObject({
     type: z.literal("institution.created"),

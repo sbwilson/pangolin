@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { check, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { person } from "./person.ts";
 
 /**
  * Household-wide configuration: always exactly one row, `id` = 1, inserted by migration 0001
@@ -13,6 +14,7 @@ export const householdSettings = sqliteTable(
     fyStart: text("fy_start").notNull(),
     timezone: text("timezone").notNull(),
     sharedAttribution: text("shared_attribution", { enum: ["contribution", "even"] }).notNull(),
+    householdPayAnchorPersonId: text("household_pay_anchor_person_id").references(() => person.id),
     updatedAt: text("updated_at").notNull(),
   },
   (t) => [

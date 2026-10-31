@@ -103,7 +103,7 @@ describe("migration 0001", () => {
     expect(() =>
       db
         .prepare(
-          "INSERT INTO household_settings VALUES (2, 'AUD', '07-01', 'UTC', 'even', '2026-01-01T00:00:00Z')",
+          "INSERT INTO household_settings (id, base_currency, fy_start, timezone, shared_attribution, updated_at) VALUES (2, 'AUD', '07-01', 'UTC', 'even', '2026-01-01T00:00:00Z')",
         )
         .run(),
     ).toThrow(/CHECK constraint failed/);

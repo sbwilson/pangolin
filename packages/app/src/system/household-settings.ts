@@ -1,7 +1,8 @@
+import type { Id } from "@pangolin/shared";
 import { formatInstant, Temporal } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
-import { parseInput } from "../errors.ts";
+import { AppError, parseInput } from "../errors.ts";
 import type { HouseholdSettingsRow } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
 
@@ -35,6 +36,7 @@ export const updateHouseholdSettingsInput = z
       .optional(),
     timezone: timeZoneSchema.optional(),
     sharedAttribution: z.enum(["contribution", "even"]).optional(),
+    householdPayAnchorPersonId: z.string().nullable().optional(),
   })
   .strict();
 export type UpdateHouseholdSettingsInput = z.input<typeof updateHouseholdSettingsInput>;
@@ -59,12 +61,23 @@ export function updateHouseholdSettings(
 ): HouseholdSettings {
   const parsed = parseInput(updateHouseholdSettingsInput, input);
   // Drop keys given as `undefined`, so spreading the patch never blanks a column.
-  const patch: { -readonly [K in keyof typeof parsed]?: NonNullable<(typeof parsed)[K]> } = {};
+  const patch: { -readonly [K in keyof HouseholdSettings]?: HouseholdSettings[K] } = {};
   if (parsed.baseCurrency !== undefined) patch.baseCurrency = parsed.baseCurrency;
   if (parsed.timezone !== undefined) patch.timezone = parsed.timezone;
   if (parsed.sharedAttribution !== undefined) patch.sharedAttribution = parsed.sharedAttribution;
+  if (parsed.householdPayAnchorPersonId !== undefined) {
+    patch.householdPayAnchorPersonId = (parsed.householdPayAnchorPersonId ??
+      null) as Id<"Person"> | null;
+  }
 
   return write(ctx, (tx, audit) => {
+    if (parsed.householdPayAnchorPersonId) {
+      const activePeople = tx.person.listActive();
+      const exists = activePeople.some((p) => p.id === parsed.householdPayAnchorPersonId);
+      if (!exists) {
+        throw new AppError("Validation", "Person does not exist");
+      }
+    }
     const before = tx.householdSettings.get();
     const changed = (Object.keys(patch) as (keyof typeof patch)[]).some(
       (key) => patch[key] !== before[key],

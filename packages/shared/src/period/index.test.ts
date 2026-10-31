@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { formatDate, parseDate } from "../temporal/index.ts";
+import { formatDate, parseDate, Temporal } from "../temporal/index.ts";
 import {
   type Cadence,
+  createCalendarPayCalendar,
   fyOf,
   fyRange,
   nextPeriod,
   type Period,
   periodContaining,
   previousPeriod,
+  rollBackToBusinessDay,
 } from "./index.ts";
 
 const d = parseDate;
@@ -101,5 +103,71 @@ describe("fortnightly cadence", () => {
     const period = periodContaining(cadence, d("2026-07-10"));
     expect(show(nextPeriod(cadence, period))).toEqual(["2026-07-16", "2026-07-30"]);
     expect(show(previousPeriod(cadence, period))).toEqual(["2026-06-18", "2026-07-02"]);
+  });
+
+  describe("rollBackToBusinessDay", () => {
+    it("keeps weekdays unchanged", () => {
+      // Monday 2026-10-05 to Friday 2026-10-09
+      expect(rollBackToBusinessDay(Temporal.PlainDate.from("2026-10-05")).toString()).toBe(
+        "2026-10-05",
+      );
+      expect(rollBackToBusinessDay(Temporal.PlainDate.from("2026-10-06")).toString()).toBe(
+        "2026-10-06",
+      );
+      expect(rollBackToBusinessDay(Temporal.PlainDate.from("2026-10-07")).toString()).toBe(
+        "2026-10-07",
+      );
+      expect(rollBackToBusinessDay(Temporal.PlainDate.from("2026-10-08")).toString()).toBe(
+        "2026-10-08",
+      );
+      expect(rollBackToBusinessDay(Temporal.PlainDate.from("2026-10-09")).toString()).toBe(
+        "2026-10-09",
+      );
+    });
+
+    it("rolls back Saturday to Friday", () => {
+      // Saturday 2026-10-10 -> Friday 2026-10-09
+      expect(rollBackToBusinessDay(Temporal.PlainDate.from("2026-10-10")).toString()).toBe(
+        "2026-10-09",
+      );
+    });
+
+    it("rolls back Sunday to Friday", () => {
+      // Sunday 2026-10-11 -> Friday 2026-10-09
+      expect(rollBackToBusinessDay(Temporal.PlainDate.from("2026-10-11")).toString()).toBe(
+        "2026-10-09",
+      );
+    });
+  });
+
+  describe("createCalendarPayCalendar", () => {
+    it("resolves fortnightly calendar with weekend roll-back for expected payday", () => {
+      const cal = createCalendarPayCalendar("anchor-1", {
+        kind: "fortnightly",
+        anchor: Temporal.PlainDate.from("2026-10-10"), // Saturday
+      });
+      const p = cal.periodContaining(Temporal.PlainDate.from("2026-10-10"));
+      expect(p.start.toString()).toBe("2026-10-10");
+      expect(p.end.toString()).toBe("2026-10-24");
+      expect(p.expectedPayDate.toString()).toBe("2026-10-09"); // rolled back to Friday
+      expect(p.actualPayDate).toBeNull();
+    });
+
+    it("resolves monthly calendar with day 31 clamping and weekend roll-back", () => {
+      const cal = createCalendarPayCalendar("anchor-2", {
+        kind: "monthly",
+        day: 31,
+      });
+      // In April (30 days)
+      const p = cal.periodContaining(Temporal.PlainDate.from("2026-04-15"));
+      // March 31 to April 30
+      expect(p.start.toString()).toBe("2026-03-31");
+      expect(p.end.toString()).toBe("2026-04-30");
+
+      // Now check period starting April 30: 2026-04-30 is Thursday
+      const pApril = cal.periodContaining(Temporal.PlainDate.from("2026-04-30"));
+      expect(pApril.start.toString()).toBe("2026-04-30");
+      expect(pApril.expectedPayDate.toString()).toBe("2026-04-30");
+    });
   });
 });

@@ -2353,6 +2353,65 @@ describe("/api/system/household", () => {
     const read = await createApp(deps(db)).request("/api/system/household", signedIn);
     expect(await read.json()).toMatchObject({ sharedAttribution: "contribution" });
   });
+
+  it("updates householdPayAnchorPersonId", async () => {
+    const db = openDb();
+    addPerson(db);
+    const app = createApp(deps(db));
+    const res = await patch(db, { householdPayAnchorPersonId: "01J0000000000000000000000A" });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { householdPayAnchorPersonId: string };
+    expect(json.householdPayAnchorPersonId).toBe("01J0000000000000000000000A");
+    const read = await app.request("/api/system/household", signedIn);
+    expect(((await read.json()) as any).householdPayAnchorPersonId).toBe(
+      "01J0000000000000000000000A",
+    );
+  });
+});
+
+describe("/api/planning/pay-anchors", () => {
+  it("upserts and gets personal pay anchor", async () => {
+    const db = openDb();
+    addPerson(db);
+    const d = deps(db);
+    const ctx: UseCaseContext = {
+      viewer: systemViewer("cli:test"),
+      clock: d.clock,
+      newId: d.newId,
+      uow: d.uow,
+    };
+    const accountId = createAccount(ctx, {
+      name: "Alex Pay Account",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: true,
+      owners: [{ personId: "01J0000000000000000000000A" as any, shareBp: 10000 }],
+    });
+    const app = createApp(d);
+
+    const putRes = await app.request("/api/planning/pay-anchors", {
+      method: "PUT",
+      headers: { Cookie: SESSION_COOKIE, Origin: ORIGIN, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accountId,
+        cadence: "fortnightly",
+        anchorDate: "2026-10-10",
+        alignment: "calendar",
+        expectedNetCents: 320000,
+        expectedGrossCents: 450000,
+      }),
+    });
+    expect(putRes.status).toBe(200);
+    const putJson = (await putRes.json()) as { personId: string; expectedNetCents: number };
+    expect(putJson.personId).toBe("01J0000000000000000000000A");
+    expect(putJson.expectedNetCents).toBe(320000);
+
+    const getRes = await app.request("/api/planning/pay-anchors", signedIn);
+    expect(getRes.status).toBe(200);
+    const getJson = (await getRes.json()) as { payAnchors: any[] };
+    expect(getJson.payAnchors).toHaveLength(1);
+    expect(getJson.payAnchors[0].expectedNetCents).toBe(320000);
+  });
 });
 
 describe("GET /api/reports/cash-flow", () => {

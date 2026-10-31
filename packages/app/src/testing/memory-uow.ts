@@ -50,6 +50,8 @@ import type {
   LoginAttemptRow,
   OwnedAccount,
   OwnerChange,
+  PayAnchorRepo,
+  PayAnchorRow,
   PayeeAliasRepo,
   PayeeAliasRow,
   PayeeRepo,
@@ -155,6 +157,7 @@ export interface MemoryState {
   llmProviders: LlmProviderRow[];
   llmPurposeAssignments: LlmPurposeAssignmentRow[];
   suggestions: SuggestionRow[];
+  payAnchors: PayAnchorRow[];
 }
 
 export interface MemoryUnitOfWork extends UnitOfWork {
@@ -168,6 +171,7 @@ export const DEFAULT_SETTINGS: HouseholdSettingsRow = {
   fyStart: "07-01",
   timezone: "Australia/Sydney",
   sharedAttribution: "contribution",
+  householdPayAnchorPersonId: null,
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
@@ -3294,6 +3298,36 @@ function suggestionRepo(working: MemoryState, check: () => void): SuggestionRepo
   };
 }
 
+function payAnchorRepo(working: MemoryState, check: () => void): PayAnchorRepo {
+  return {
+    insert(row: PayAnchorRow) {
+      check();
+      working.payAnchors.push(row);
+    },
+    update(row: PayAnchorRow) {
+      check();
+      const idx = working.payAnchors.findIndex((a) => a.id === row.id);
+      if (idx !== -1) {
+        working.payAnchors[idx] = row;
+      }
+    },
+    findByPersonId(viewer: Viewer, personId: Id<"Person">) {
+      check();
+      if (viewer.kind !== "system" && viewer.personId !== personId) return undefined;
+      return working.payAnchors.find((a) => a.personId === personId);
+    },
+    listVisible(viewer: Viewer) {
+      check();
+      if (viewer.kind === "system") return [...working.payAnchors];
+      return working.payAnchors.filter((a) => a.personId === viewer.personId);
+    },
+    deleteForPerson(personId: Id<"Person">) {
+      check();
+      working.payAnchors = working.payAnchors.filter((a) => a.personId !== personId);
+    },
+  };
+}
+
 export function memoryUnitOfWork(
   settings: HouseholdSettingsRow = DEFAULT_SETTINGS,
 ): MemoryUnitOfWork {
@@ -3342,6 +3376,7 @@ export function memoryUnitOfWork(
       llmProviders: [],
       llmPurposeAssignments: [],
       suggestions: [],
+      payAnchors: [],
     },
     failAudit: false,
     transaction<T>(fn: (tx: TxRepos) => T): T {
@@ -3389,6 +3424,7 @@ export function memoryUnitOfWork(
         llmProviders: [...uow.state.llmProviders],
         llmPurposeAssignments: [...uow.state.llmPurposeAssignments],
         suggestions: [...uow.state.suggestions],
+        payAnchors: [...uow.state.payAnchors],
       };
       let active = true;
       const check = () => {
@@ -3437,6 +3473,7 @@ export function memoryUnitOfWork(
         importHandoffs: importHandoffRepo(working, check),
         llmProviders: llmProviderRepo(working, check),
         suggestions: suggestionRepo(working, check),
+        payAnchors: payAnchorRepo(working, check),
         recoveryBundle: {
           get: () => {
             check();
@@ -3492,6 +3529,7 @@ export function memoryUnitOfWork(
         uow.state.llmProviders = working.llmProviders;
         uow.state.llmPurposeAssignments = working.llmPurposeAssignments;
         uow.state.suggestions = working.suggestions;
+        uow.state.payAnchors = working.payAnchors;
         return result;
       } finally {
         active = false;
@@ -3647,6 +3685,11 @@ export function memoryUnitOfWork(
             suggestionRepo(uow.state, check).listOpenForAccount(viewer, accountId),
           findFewShot: (viewer, today, query, limit) =>
             suggestionRepo(uow.state, check).findFewShot(viewer, today, query, limit),
+        },
+        payAnchors: {
+          findByPersonId: (viewer, personId) =>
+            payAnchorRepo(uow.state, check).findByPersonId(viewer, personId),
+          listVisible: (viewer) => payAnchorRepo(uow.state, check).listVisible(viewer),
         },
       });
     },

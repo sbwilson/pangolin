@@ -47,6 +47,7 @@ import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
 import { createAttachmentRepo, createImportHandoffRepo } from "./repositories/handoff-repos.ts";
 import { createImportBatchRepo, createImportRowRepo } from "./repositories/import-repos.ts";
 import { createLlmProviderRepo } from "./repositories/llm-provider.ts";
+import { createPayAnchorRepo } from "./repositories/pay-anchor.ts";
 import { createPersonPreferenceRepo } from "./repositories/person-preference.ts";
 import { createSuggestionRepo } from "./repositories/suggestion.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
@@ -73,6 +74,7 @@ function getSettings(orm: Orm): HouseholdSettingsRow {
       fyStart: householdSettings.fyStart,
       timezone: householdSettings.timezone,
       sharedAttribution: householdSettings.sharedAttribution,
+      householdPayAnchorPersonId: householdSettings.householdPayAnchorPersonId,
       updatedAt: householdSettings.updatedAt,
     })
     .from(householdSettings)
@@ -80,7 +82,7 @@ function getSettings(orm: Orm): HouseholdSettingsRow {
     .get();
   // Migration 0001 inserts the row and nothing deletes it; its absence is a broken database.
   if (row === undefined) throw new Error("household_settings row is missing");
-  return row;
+  return row as HouseholdSettingsRow;
 }
 
 /** The `owners` list of an account's audit JSON, or undefined when there is none. */
@@ -118,6 +120,7 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
             fyStart: row.fyStart,
             timezone: row.timezone,
             sharedAttribution: row.sharedAttribution,
+            householdPayAnchorPersonId: row.householdPayAnchorPersonId ?? null,
             updatedAt: row.updatedAt,
           })
           .where(eq(householdSettings.id, SETTINGS_ID))
@@ -270,6 +273,7 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     importHandoffs: createImportHandoffRepo(orm, () => guard(scope)),
     llmProviders: createLlmProviderRepo(orm, () => guard(scope)),
     suggestions: createSuggestionRepo(orm, () => guard(scope)),
+    payAnchors: createPayAnchorRepo(orm, () => guard(scope)),
   };
 }
 
@@ -413,6 +417,10 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               listForTransaction: repos.suggestions.listForTransaction,
               listOpenForAccount: repos.suggestions.listOpenForAccount,
               findFewShot: repos.suggestions.findFewShot,
+            },
+            payAnchors: {
+              findByPersonId: repos.payAnchors.findByPersonId,
+              listVisible: repos.payAnchors.listVisible,
             },
           };
         },

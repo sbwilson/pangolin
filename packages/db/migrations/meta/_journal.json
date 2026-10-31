@@ -176,6 +176,13 @@
       "when": 1793200000000,
       "tag": "0024_pdf_batch_attachment",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1793300000000,
+      "tag": "0025_pay_anchor",
+      "breakpoints": true
     }
   ]
 }

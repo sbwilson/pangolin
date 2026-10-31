@@ -71,6 +71,7 @@ describe("committed migrations", () => {
       "0022_suggestion",
       "0023_import_row_proposal",
       "0024_pdf_batch_attachment",
+      "0025_pay_anchor",
     ];
     expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: migrations.length });
     expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: migrations.length });
@@ -243,6 +244,38 @@ describe("committed migrations", () => {
         "INSERT INTO import_batch (id, account_id, source, file_sha256, status, attachment_id, created_at, updated_at) VALUES ('B1','A1','statement_pdf','s1','failed','nope','t','t')",
       ),
     ).toThrow(/FOREIGN KEY/);
+  });
+
+  it("creates pay_anchor table and adds household_pay_anchor_person_id to household_settings when 0024 upgrades to 0025", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 25));
+    expect(schemaVersion(db)).toBe(25);
+    expect(migrate(db, migrations.slice(0, 26)).applied).toEqual(["0025_pay_anchor"]);
+    expect(schemaVersion(db)).toBe(26);
+
+    const anchorCols = (
+      db.pragma("table_info(pay_anchor)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(anchorCols).toEqual([
+      "id",
+      "person_id",
+      "account_id",
+      "cadence",
+      "day_of_month",
+      "anchor_date",
+      "alignment",
+      "expected_net_cents",
+      "expected_gross_cents",
+      "created_at",
+      "updated_at",
+    ]);
+
+    const settingsCols = (
+      db.pragma("table_info(household_settings)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(settingsCols).toContain("household_pay_anchor_person_id");
+
+    expect(db.pragma("foreign_key_check")).toEqual([]);
   });
 
   it("backfills the posted-date span of existing batches, leaving reconcile_status null", () => {

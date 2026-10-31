@@ -26,6 +26,7 @@ export { institution } from "./institution.ts";
 export { job } from "./job.ts";
 export { llmProvider, llmPurposeAssignment } from "./llm-provider.ts";
 export { loginAttempt } from "./login-attempt.ts";
+export { payAnchor } from "./pay-anchor.ts";
 export { payee } from "./payee.ts";
 export { payeeAlias } from "./payee-alias.ts";
 export { person } from "./person.ts";

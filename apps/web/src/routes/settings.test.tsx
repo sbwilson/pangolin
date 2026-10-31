@@ -915,7 +915,7 @@ describe("SettingsPage", () => {
       partner: { personId: "p2", displayName: "Carissa" },
     });
 
-    expect(screen.getByText("Carissa")).toBeTruthy();
+    expect(screen.getAllByText("Carissa").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Signs in with a passkey")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Help Carissa back in" })).toBeTruthy();
 
