@@ -26,6 +26,7 @@ import {
   countReviewItems,
   createAccount,
   createActivity,
+  createBudget,
   createCategory,
   createCategoryGroup,
   createHandoff,
@@ -39,6 +40,7 @@ import {
   createTransferGroup,
   deadJobs,
   deleteActivity,
+  deleteBudget,
   deleteCategory,
   deleteLlmProvider,
   deletePayee,
@@ -61,6 +63,8 @@ import {
   fixSetAsideRowItem,
   getAccount,
   getActivity,
+  getBudget,
+  getBudgetSummary,
   getHouseholdSettings,
   getLlmRequestPreview,
   getLlmSettings,
@@ -68,6 +72,7 @@ import {
   getPayee,
   getPayeeAlias,
   getPreferences,
+  getSuggestedLimit,
   getTag,
   getTransaction,
   health,
@@ -90,6 +95,7 @@ import {
   listActivities,
   listAudit,
   listBalanceSnapshots,
+  listBudgets,
   listCategories,
   listCategoryGroups,
   listInstitutions,
@@ -143,6 +149,7 @@ import {
   unhideTransactionName,
   updateAccount,
   updateActivity,
+  updateBudget,
   updateCategory,
   updateCategoryGroup,
   updateHouseholdSettings,
@@ -419,6 +426,53 @@ export function createApi(deps: ApiDeps) {
     .put("/api/planning/pay-anchors", async (c) => {
       writable();
       return c.json(upsertPayAnchor(ctx(c), await objectBody(c)), 200);
+    })
+    .get("/api/planning/budgets", (c) => {
+      return c.json({ budgets: listBudgets(ctx(c)) }, 200);
+    })
+    .post("/api/planning/budgets", async (c) => {
+      writable();
+      const budget = createBudget(ctx(c), await objectBody(c));
+      return c.json({ budget }, 201);
+    })
+    .get("/api/planning/budgets/summary", (c) => {
+      const budgets = listBudgets(ctx(c));
+      const summaries = budgets.map((b) => getBudgetSummary(ctx(c), { id: b.id }));
+      return c.json({ summaries }, 200);
+    })
+    .get("/api/planning/budgets/suggested-limit", (c) => {
+      const id = c.req.query("id");
+      const categoryId = c.req.query("categoryId");
+      const categoryGroupId = c.req.query("categoryGroupId");
+      const cadence = c.req.query("cadence") as "fortnight" | "month" | undefined;
+      const personId = c.req.query("personId");
+
+      const input = id
+        ? { id }
+        : {
+            personId: personId || null,
+            categoryId: categoryId || null,
+            categoryGroupId: categoryGroupId || null,
+            cadence,
+          };
+      const suggestedLimitCents = getSuggestedLimit(ctx(c), input);
+      return c.json({ suggestedLimitCents }, 200);
+    })
+    .get("/api/planning/budgets/:id", (c) => {
+      return c.json({ budget: getBudget(ctx(c), { id: c.req.param("id") }) }, 200);
+    })
+    .get("/api/planning/budgets/:id/summary", (c) => {
+      return c.json({ summary: getBudgetSummary(ctx(c), { id: c.req.param("id") }) }, 200);
+    })
+    .patch("/api/planning/budgets/:id", async (c) => {
+      writable();
+      const id = c.req.param("id");
+      return c.json({ budget: updateBudget(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .delete("/api/planning/budgets/:id", (c) => {
+      writable();
+      deleteBudget(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
     })
     .get("/api/identity/preferences", (c) => {
       return c.json(getPreferences(ctx(c), {}), 200);

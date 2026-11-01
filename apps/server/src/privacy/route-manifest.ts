@@ -507,6 +507,56 @@ export const MANIFEST: readonly ManifestEntry[] = [
   // and `redact` (AD-3, AD-4).
   read("/api/ledger/export"),
   read("/api/system/audit"),
+
+  // Budgets (epic-budgets-bills, story 6.3)
+  {
+    kind: "exempt",
+    method: "GET",
+    path: "/api/planning/budgets",
+    reason: "Viewer-scoped budgets list; personal budgets visible only to their owner per AD-22.",
+  },
+  {
+    kind: "exempt",
+    method: "POST",
+    path: "/api/planning/budgets",
+    reason: "Creates budget scoped to viewer or shared; validated against viewer in use case.",
+  },
+  {
+    kind: "exempt",
+    method: "GET",
+    path: "/api/planning/budgets/summary",
+    reason: "Viewer-scoped budget summaries for visible budgets.",
+  },
+  {
+    kind: "exempt",
+    method: "GET",
+    path: "/api/planning/budgets/suggested-limit",
+    reason: "Computes 6-period historical limit suggestion scoped to viewer splits.",
+  },
+  {
+    kind: "exempt",
+    method: "GET",
+    path: "/api/planning/budgets/:id",
+    reason: "Fetch budget by ID with viewer scoping (404 on partner private).",
+  },
+  {
+    kind: "exempt",
+    method: "GET",
+    path: "/api/planning/budgets/:id/summary",
+    reason: "Budget summary by ID with viewer scoping.",
+  },
+  {
+    kind: "exempt",
+    method: "PATCH",
+    path: "/api/planning/budgets/:id",
+    reason: "Updates budget by ID with viewer scoping.",
+  },
+  {
+    kind: "exempt",
+    method: "DELETE",
+    path: "/api/planning/budgets/:id",
+    reason: "Deletes budget by ID with viewer scoping.",
+  },
 ];
 
 /** Entries that name a person's data, which the suite replays. */

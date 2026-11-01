@@ -32,3 +32,8 @@ export function useSignedIn(): Session & { readonly me: Me } {
   if (session.me === null) throw new Error("This page needs a signed-in person");
   return { ...session, me: session.me };
 }
+
+/** Hook returning current signed-in user `Me`, conforming to plan constraint. */
+export function useMe(): Me {
+  return useSignedIn().me;
+}

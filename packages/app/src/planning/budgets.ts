@@ -93,9 +93,25 @@ export type DeleteBudgetInput = z.input<typeof deleteBudgetInput>;
 
 export const getSuggestedLimitInput = z
   .object({
-    id: z.string().min(1),
+    id: z.string().optional(),
+    personId: z.string().nullable().optional(),
+    categoryId: z.string().nullable().optional(),
+    categoryGroupId: z.string().nullable().optional(),
+    cadence: z.enum(["fortnight", "month"]).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (data) => {
+      if (data.id) return true;
+      const hasCat = data.categoryId != null;
+      const hasGrp = data.categoryGroupId != null;
+      return (hasCat || hasGrp) && !(hasCat && hasGrp) && data.cadence != null;
+    },
+    {
+      message:
+        "Must provide either id, or (cadence and exactly one of categoryId or categoryGroupId)",
+    },
+  );
 export type GetSuggestedLimitInput = z.input<typeof getSuggestedLimitInput>;
 
 export const getBudgetSummaryInput = z
@@ -203,7 +219,7 @@ export function createBudget(ctx: UseCaseContext, input: CreateBudgetInput): Bud
     audit({
       entity: "budget",
       entityId: created.id,
-      personId: created.personId,
+      personId: created.personId ?? undefined,
       action: "create",
       before: null,
       after: created,
@@ -269,7 +285,7 @@ export function updateBudget(ctx: UseCaseContext, input: UpdateBudgetInput): Bud
     audit({
       entity: "budget",
       entityId: updated.id,
-      personId: updated.personId,
+      personId: updated.personId ?? undefined,
       action: "update",
       before: existing,
       after: updated,
@@ -295,7 +311,7 @@ export function deleteBudget(ctx: UseCaseContext, input: DeleteBudgetInput): boo
     audit({
       entity: "budget",
       entityId: existing.id,
-      personId: existing.personId,
+      personId: existing.personId ?? undefined,
       action: "delete",
       before: existing,
       after: null,
@@ -399,11 +415,28 @@ export function getSuggestedLimit(
   input: GetSuggestedLimitInput,
 ): Cents | null {
   const parsed = parseInput(getSuggestedLimitInput, input);
-  const budget = ctx.uow.read((repos) =>
-    repos.budgets.findById(ctx.viewer, parsed.id as Id<"Budget">),
-  );
-  if (!budget) {
-    throw new AppError("NotFound", "Budget not found");
+  let budget: BudgetRow;
+
+  if (parsed.id) {
+    const existing = ctx.uow.read((repos) =>
+      repos.budgets.findById(ctx.viewer, parsed.id as Id<"Budget">),
+    );
+    if (!existing) {
+      throw new AppError("NotFound", "Budget not found");
+    }
+    budget = existing;
+  } else {
+    budget = {
+      id: "virtual" as Id<"Budget">,
+      personId: (parsed.personId as Id<"Person"> | null) ?? null,
+      categoryId: (parsed.categoryId as Id<"Category"> | null) ?? null,
+      categoryGroupId: (parsed.categoryGroupId as Id<"CategoryGroup"> | null) ?? null,
+      cadence: parsed.cadence ?? "fortnight",
+      limitCents: 0,
+      rollover: false,
+      createdAt: "",
+      updatedAt: "",
+    };
   }
 
   const today = ctx.clock.today();

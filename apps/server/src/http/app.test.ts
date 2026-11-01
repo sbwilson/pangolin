@@ -4379,4 +4379,113 @@ describe("GET /api/payees/:id/logo", () => {
     expect((await app.request(`/api/payees/${privatePayee.id}/logo`, signedIn)).status).toBe(404);
     expect((await app.request(`/api/payees/${privatePayee.id}/logo`)).status).toBe(401);
   });
+
+  describe("Planning Budgets API endpoints (/api/planning/budgets/*)", () => {
+    function setupBudgetsEnv() {
+      const db = openDb();
+      addPerson(db);
+      const d = deps(db);
+      const sys = {
+        uow: d.uow,
+        viewer: systemViewer("cli:test"),
+        clock: d.clock,
+        newId: d.newId,
+      };
+
+      const personB = createPerson(sys, { displayName: "Bob", colour: "#00ff00" });
+
+      const grp = createCategoryGroup(sys, { name: "Daily Living", kind: "expense" });
+      const catGroceries = createCategory(sys, { groupId: grp.id, name: "Groceries" });
+      const catEatingOut = createCategory(sys, { groupId: grp.id, name: "Eating Out" });
+
+      const app = createApp(d);
+      return { db, d, sys, personB, catGroceries, catEatingOut, app };
+    }
+
+    it("supports budget CRUD, summary, and limit suggestions", async () => {
+      const { app, catGroceries } = setupBudgetsEnv();
+
+      // Sign-in as Alex (the seeded user via SESSION_COOKIE)
+      const signedInAlex = {
+        headers: {
+          Cookie: SESSION_COOKIE,
+          Origin: ORIGIN,
+        },
+      };
+
+      // 1. Create a shared budget
+      const createRes = await app.request("/api/planning/budgets", {
+        method: "POST",
+        headers: {
+          ...signedInAlex.headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          categoryId: catGroceries.id,
+          cadence: "fortnight",
+          limitCents: 60000,
+          rollover: true,
+        }),
+      });
+      expect(createRes.status).toBe(201);
+      const { budget } = (await createRes.json()) as { budget: { id: string; limitCents: number } };
+      expect(budget.limitCents).toBe(60000);
+
+      // 2. List budgets
+      const listRes = await app.request("/api/planning/budgets", signedInAlex);
+      expect(listRes.status).toBe(200);
+      const listBody = (await listRes.json()) as { budgets: { id: string }[] };
+      expect(listBody.budgets.some((b) => b.id === budget.id)).toBe(true);
+
+      // 3. Get single budget
+      const getRes = await app.request(`/api/planning/budgets/${budget.id}`, signedInAlex);
+      expect(getRes.status).toBe(200);
+      const getBody = (await getRes.json()) as { budget: { id: string; limitCents: number } };
+      expect(getBody.budget.limitCents).toBe(60000);
+
+      // 4. Get budget summaries
+      const summaryRes = await app.request("/api/planning/budgets/summary", signedInAlex);
+      expect(summaryRes.status).toBe(200);
+      const summaryBody = (await summaryRes.json()) as {
+        summaries: { budget: { id: string }; remainingCents: number }[];
+      };
+      expect(summaryBody.summaries.length).toBeGreaterThan(0);
+      expect(summaryBody.summaries[0]?.budget.id).toBe(budget.id);
+
+      // 5. Update budget
+      const updateRes = await app.request(`/api/planning/budgets/${budget.id}`, {
+        method: "PATCH",
+        headers: {
+          ...signedInAlex.headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          limitCents: 65000,
+        }),
+      });
+      expect(updateRes.status).toBe(200);
+      const updateBody = (await updateRes.json()) as { budget: { limitCents: number } };
+      expect(updateBody.budget.limitCents).toBe(65000);
+
+      // 6. Suggested limit query (no history -> returns null)
+      const suggRes = await app.request(
+        `/api/planning/budgets/suggested-limit?categoryId=${catGroceries.id}&cadence=fortnight`,
+        signedInAlex,
+      );
+      expect(suggRes.status).toBe(200);
+      const suggBody = (await suggRes.json()) as { suggestedLimitCents: number | null };
+      expect(suggBody.suggestedLimitCents).toBeNull();
+
+      // 7. Delete budget
+      const delRes = await app.request(`/api/planning/budgets/${budget.id}`, {
+        method: "DELETE",
+        headers: signedInAlex.headers,
+      });
+      expect(delRes.status).toBe(204);
+
+      // Verify gone
+      const verifyRes = await app.request(`/api/planning/budgets/${budget.id}`, signedInAlex);
+      expect(verifyRes.status).toBe(404);
+    });
+  });
 });

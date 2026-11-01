@@ -579,6 +579,23 @@ export async function fetchCategories(): Promise<CategorySummary[]> {
   }));
 }
 
+export interface CategoryGroupSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: "income" | "expense";
+}
+
+export async function fetchCategoryGroups(): Promise<CategoryGroupSummary[]> {
+  const res = await api.api.classify["category-groups"].$get();
+  if (!res.ok) throw await apiError(res);
+  const data = await res.json();
+  return data.categoryGroups.map((g: { id: string; name: string; kind?: string }) => ({
+    id: g.id,
+    name: g.name,
+    kind: (g.kind as "income" | "expense") ?? "expense",
+  }));
+}
+
 /** A tag the signed-in person may put on a split. */
 export async function fetchTags(): Promise<LedgerTag[]> {
   const res = await api.api.classify.tags.$get();
@@ -1126,4 +1143,118 @@ export async function upsertPayAnchor(input: {
   readonly personId?: string;
 }): Promise<PayAnchorData> {
   return await sendJson<PayAnchorData>("PUT", "/api/planning/pay-anchors", input);
+}
+
+// -----------------------------------------------------------------------------
+// Budgets
+// -----------------------------------------------------------------------------
+
+export interface BudgetData {
+  readonly id: string;
+  readonly personId: string | null;
+  readonly categoryId: string | null;
+  readonly categoryGroupId: string | null;
+  readonly cadence: "fortnight" | "month";
+  readonly limitCents: number;
+  readonly rollover: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface BudgetSummaryData {
+  readonly budget: BudgetData;
+  readonly period: {
+    readonly start: string;
+    readonly end: string;
+  };
+  readonly spentCents: number;
+  readonly remainingCents: number;
+  readonly paceCents: number;
+  readonly projectedCents: number;
+  readonly rolloverCents: number;
+  readonly effectiveLimitCents: number;
+  readonly status: "on-track" | "heading-over" | "over-budget";
+}
+
+export interface CreateBudgetInput {
+  readonly personId?: string | null;
+  readonly categoryId?: string | null;
+  readonly categoryGroupId?: string | null;
+  readonly cadence: "fortnight" | "month";
+  readonly limitCents: number;
+  readonly rollover?: boolean;
+}
+
+export interface UpdateBudgetInput {
+  readonly categoryId?: string | null;
+  readonly categoryGroupId?: string | null;
+  readonly cadence?: "fortnight" | "month";
+  readonly limitCents?: number;
+  readonly rollover?: boolean;
+}
+
+export async function fetchBudgets(): Promise<BudgetData[]> {
+  const res = await fetch("/api/planning/budgets");
+  if (!res.ok) throw await apiError(res);
+  const data = (await res.json()) as { budgets: BudgetData[] };
+  return data.budgets;
+}
+
+export async function fetchBudgetSummaries(): Promise<BudgetSummaryData[]> {
+  const res = await fetch("/api/planning/budgets/summary");
+  if (!res.ok) throw await apiError(res);
+  const data = (await res.json()) as { summaries: BudgetSummaryData[] };
+  return data.summaries;
+}
+
+export async function fetchBudget(id: string): Promise<BudgetData> {
+  const res = await fetch(`/api/planning/budgets/${encodeURIComponent(id)}`);
+  if (!res.ok) throw await apiError(res);
+  const data = (await res.json()) as { budget: BudgetData };
+  return data.budget;
+}
+
+export async function fetchBudgetSummary(id: string): Promise<BudgetSummaryData> {
+  const res = await fetch(`/api/planning/budgets/${encodeURIComponent(id)}/summary`);
+  if (!res.ok) throw await apiError(res);
+  const data = (await res.json()) as { summary: BudgetSummaryData };
+  return data.summary;
+}
+
+export async function createBudget(input: CreateBudgetInput): Promise<BudgetData> {
+  const res = await sendJson<{ budget: BudgetData }>("POST", "/api/planning/budgets", input);
+  return res.budget;
+}
+
+export async function updateBudget(id: string, input: UpdateBudgetInput): Promise<BudgetData> {
+  const res = await sendJson<{ budget: BudgetData }>(
+    "PATCH",
+    `/api/planning/budgets/${encodeURIComponent(id)}`,
+    input,
+  );
+  return res.budget;
+}
+
+export async function deleteBudget(id: string): Promise<void> {
+  await sendJson("DELETE", `/api/planning/budgets/${encodeURIComponent(id)}`);
+}
+
+export async function fetchSuggestedLimit(params: {
+  readonly id?: string;
+  readonly personId?: string | null;
+  readonly categoryId?: string | null;
+  readonly categoryGroupId?: string | null;
+  readonly cadence?: "fortnight" | "month";
+}): Promise<number | null> {
+  const query = new URLSearchParams();
+  if (params.id) query.set("id", params.id);
+  if (params.personId) query.set("personId", params.personId);
+  if (params.categoryId) query.set("categoryId", params.categoryId);
+  if (params.categoryGroupId) query.set("categoryGroupId", params.categoryGroupId);
+  if (params.cadence) query.set("cadence", params.cadence);
+
+  const res = await fetch(`/api/planning/budgets/suggested-limit?${query.toString()}`);
+  if (!res.ok) throw await apiError(res);
+  const data = (await res.json()) as { suggestedLimitCents: number | null };
+  return data.suggestedLimitCents;
 }

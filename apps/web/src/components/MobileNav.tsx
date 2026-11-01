@@ -158,7 +158,14 @@ export function MobileNav({ signOut, className }: MobileNavProps) {
       {activeSheet === "planning" ? (
         <Sheet title="Planning" onClose={() => setActiveSheet(null)}>
           <div className="flex flex-col divide-y divide-border py-2">
-            <span className="flex cursor-default items-center gap-3 py-3 text-sm text-muted-foreground opacity-60">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSheet(null);
+                void navigate({ to: "/planning/budgets" });
+              }}
+              className="flex items-center gap-3 py-3 text-sm text-foreground hover:text-primary transition-colors text-left"
+            >
               <svg
                 width="16"
                 height="16"
@@ -173,7 +180,7 @@ export function MobileNav({ signOut, className }: MobileNavProps) {
                 <path d="M3 7h16a2 2 0 0 1 2 2v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM5 7l3-3h9v3M16 13h2" />
               </svg>
               <span>Budgets</span>
-            </span>
+            </button>
             <span className="flex cursor-default items-center gap-3 py-3 text-sm text-muted-foreground opacity-60">
               <svg
                 width="16"
