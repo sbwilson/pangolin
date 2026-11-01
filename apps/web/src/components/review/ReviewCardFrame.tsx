@@ -26,6 +26,8 @@ const KIND_LABEL: Readonly<Record<string, string>> = {
   "system.restored": "Restored from a backup",
   "system.backup-verification-failed": "Backup check failed",
   "job.dead": "A background job failed",
+  "planning.over_budget": "Over budget",
+  "planning.over_budget.personal": "Over budget",
 };
 
 export function kindLabel(kind: string): string {

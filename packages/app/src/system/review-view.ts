@@ -5,6 +5,11 @@
 import { shiftDay, TRANSFER_WINDOW_DAYS } from "@pangolin/domain";
 import { z } from "zod";
 import { CLOSING_BALANCE_REVIEW } from "../accounts/closing-balance.ts";
+import {
+  OVER_BUDGET_HOUSEHOLD_REVIEW,
+  OVER_BUDGET_PERSONAL_REVIEW,
+} from "../planning/budget-review.ts";
+import { getBudgetSummary } from "../planning/budgets.ts";
 import { CLASSIFY_RULE_OFFER_REVIEW, CLASSIFY_UNCLASSIFIED_REVIEW } from "../classify/rules.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
@@ -122,6 +127,15 @@ export type ReviewDetail =
     }
   | { readonly type: "notice"; readonly issuedBy: string | null }
   | { readonly type: "account"; readonly accountName: string | null }
+  | {
+      readonly type: "budget";
+      readonly budgetId: string;
+      readonly targetName: string;
+      readonly cadence: "fortnight" | "month";
+      readonly spentCents: number;
+      readonly limitCents: number;
+      readonly overCents: number;
+    }
   | { readonly type: "none" };
 
 /** An open review item as a card. */
@@ -280,6 +294,33 @@ function detailOf(repos: ReadRepos, ctx: UseCaseContext, row: ReviewItemRow): Re
     case CLOSING_BALANCE_REVIEW.kind: {
       const account = repos.accounts.findVisible(ctx.viewer, refId(row.entityRef, "account") ?? "");
       return { type: "account", accountName: account?.name ?? null };
+    }
+    case OVER_BUDGET_HOUSEHOLD_REVIEW.kind:
+    case OVER_BUDGET_PERSONAL_REVIEW.kind: {
+      const budgetId = refId(row.entityRef, "budget") ?? "";
+      const budget = repos.budgets.findById(ctx.viewer, budgetId as any);
+      if (!budget) return { type: "none" };
+      let targetName = "Budget";
+      if (budget.categoryId) {
+        targetName = repos.categories.find(ctx.viewer, budget.categoryId)?.name ?? "Category";
+      } else if (budget.categoryGroupId) {
+        targetName = repos.categoryGroups.find(ctx.viewer, budget.categoryGroupId)?.name ?? "Category Group";
+      }
+      try {
+        const summary = getBudgetSummary(ctx, { id: budget.id });
+        const overCents = Math.max(0, summary.spentCents - summary.effectiveLimitCents);
+        return {
+          type: "budget",
+          budgetId: budget.id,
+          targetName,
+          cadence: budget.cadence,
+          spentCents: summary.spentCents,
+          limitCents: summary.effectiveLimitCents,
+          overCents,
+        };
+      } catch {
+        return { type: "none" };
+      }
     }
     default:
       return { type: "none" };

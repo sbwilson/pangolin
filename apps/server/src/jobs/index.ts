@@ -8,6 +8,8 @@ import {
   backupDrillSchedule,
   CLOSING_BALANCE_SYNC_JOB,
   closingBalanceSchedule,
+  BUDGET_EVALUATION_JOB,
+  budgetEvaluationSchedule,
   type JobKind,
   type JobRegistration,
   LOGO_FETCH_JOB,
@@ -15,6 +17,7 @@ import {
   type Schedule,
 } from "@pangolin/app";
 import { type BackupJobDeps, backupJobs } from "./backup.ts";
+import { budgetEvaluationJobs } from "./budget-evaluation.ts";
 import { closingBalanceJobs } from "./closing-balance.ts";
 import { type LogoJobDeps, logoJobs } from "./logo-fetch.ts";
 
@@ -44,6 +47,7 @@ export const JOB_KINDS: readonly JobKind[] = [
   BACKUP_CHECK_JOB,
   BACKUP_DRILL_JOB,
   CLOSING_BALANCE_SYNC_JOB,
+  BUDGET_EVALUATION_JOB,
   LOGO_FETCH_JOB,
 ];
 
@@ -70,9 +74,15 @@ export interface Jobs {
  */
 export function createJobs(deps: JobsDeps): Jobs {
   return {
-    kinds: [...backupJobs(deps), ...closingBalanceJobs(), ...logoJobs(deps)],
+    kinds: [
+      ...backupJobs(deps),
+      ...closingBalanceJobs(),
+      ...budgetEvaluationJobs(),
+      ...logoJobs(deps),
+    ],
     schedules: [
       closingBalanceSchedule(deps.timezone),
+      budgetEvaluationSchedule(deps.timezone),
       ...(deps.backup.repository === null
         ? []
         : [

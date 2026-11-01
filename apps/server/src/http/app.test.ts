@@ -7,6 +7,7 @@ import {
   closeAccount,
   createAccount,
   createActivity,
+  createBudget,
   createCategory,
   createCategoryGroup,
   createIdGenerator,
@@ -29,6 +30,10 @@ import {
   type UnitOfWork,
   type UseCaseContext,
   write,
+  OVER_BUDGET_HOUSEHOLD_REVIEW,
+  OVER_BUDGET_PERSONAL_REVIEW,
+  budgetEntityRef,
+  budgetOverBudgetDedupeKey,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import {
@@ -4292,6 +4297,78 @@ not-a-date,-12.00,"BOOKSTORE",988.00`;
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it("POST /api/review/:id/dismiss-budget dismisses over-budget item and returns 204", async () => {
+    const db = openDb();
+    const { sys, d, joint, catId } = seed(db);
+    const app = createApp(d);
+
+    const budget = createBudget(sys, {
+      categoryId: catId,
+      cadence: "fortnight",
+      limitCents: 20000,
+    });
+
+    const item = write(sys, (tx, audit) =>
+      raiseReviewItem(tx, audit, sys, {
+        kind: OVER_BUDGET_HOUSEHOLD_REVIEW,
+        entityRef: budgetEntityRef(budget.id),
+        dedupeKey: budgetOverBudgetDedupeKey(budget.id, "2026-09-27"),
+      }),
+    );
+
+    const res = await app.request(`/api/review/${item.id}/dismiss-budget`, {
+      method: "POST",
+      headers: json,
+    });
+    expect(res.status).toBe(204);
+
+    // Calling dismiss again returns 404
+    const again = await app.request(`/api/review/${item.id}/dismiss-budget`, {
+      method: "POST",
+      headers: json,
+    });
+    expect(again.status).toBe(404);
+  });
+
+  it("POST /api/review/:id/adjust-budget-limit adjusts budget limit, resolves item, and returns 204", async () => {
+    const db = openDb();
+    const { sys, d, joint, catId } = seed(db);
+    const app = createApp(d);
+
+    const budget = createBudget(sys, {
+      categoryId: catId,
+      cadence: "fortnight",
+      limitCents: 20000,
+    });
+
+    const item = write(sys, (tx, audit) =>
+      raiseReviewItem(tx, audit, sys, {
+        kind: OVER_BUDGET_HOUSEHOLD_REVIEW,
+        entityRef: budgetEntityRef(budget.id),
+        dedupeKey: budgetOverBudgetDedupeKey(budget.id, "2026-09-27"),
+      }),
+    );
+
+    const res = await app.request(`/api/review/${item.id}/adjust-budget-limit`, {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ limitCents: 35000 }),
+    });
+    expect(res.status).toBe(204);
+
+    // Verify budget updated in db
+    const updated = d.uow.read((r) => r.budgets.findById(sys.viewer, budget.id));
+    expect(updated?.limitCents).toBe(35000);
+
+    // Calling adjust again returns 404
+    const again = await app.request(`/api/review/${item.id}/adjust-budget-limit`, {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ limitCents: 40000 }),
+    });
+    expect(again.status).toBe(404);
   });
 });
 

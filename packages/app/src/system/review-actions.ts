@@ -48,6 +48,11 @@ import {
   listSetAsideRowsForBatch,
 } from "../imports/set-aside.ts";
 import { idInput } from "../inputs.ts";
+import {
+  type AdjustBudgetLimitFromReviewInput,
+  adjustBudgetLimitFromReview,
+  dismissBudgetReviewItem,
+} from "../planning/budget-actions.ts";
 import { setSplitField } from "../ledger/set-split-field.ts";
 import { createTransferGroup } from "../ledger/transfer-groups.ts";
 import type { ReviewItemRow, TxRepos, UnitOfWork } from "../ports/unit-of-work.ts";
@@ -418,4 +423,22 @@ export function revokeLinksItem(
 ): { readonly revoked: number } {
   openItem(ctx, input.id, [PARTNER_RESET_REVIEW.kind]);
   return revokeMyReEnrolmentLinks(ctx, {});
+}
+
+// ---------------------------------------------------------------------------------- budgets
+
+/** "Got it": dismisses an over-budget review item (`planning.dismissBudgetReviewItem`). */
+export function dismissBudgetReviewItemAction(
+  ctx: UseCaseContext,
+  input: { readonly id: string },
+): void {
+  dismissBudgetReviewItem(ctx, input);
+}
+
+/** "Adjust limit": updates the budget limit and resolves the review item (`planning.adjustBudgetLimitFromReview`). */
+export function adjustBudgetLimitFromReviewAction(
+  ctx: UseCaseContext,
+  input: AdjustBudgetLimitFromReviewInput,
+): void {
+  adjustBudgetLimitFromReview(ctx, input);
 }

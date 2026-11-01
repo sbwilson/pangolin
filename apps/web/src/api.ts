@@ -398,6 +398,8 @@ type ReviewAction =
   | "correct-pdf-row"
   | "recheck-pdf"
   | "dismiss-notice"
+  | "dismiss-budget"
+  | "adjust-budget-limit"
   | "revoke-links";
 
 /** The outcome of a Re-check: `ok` false carries the exact remaining error (HTTP 200). */
@@ -443,6 +445,16 @@ export async function reviewAction(
       : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   });
   if (!res.ok) throw await apiError(res);
+}
+
+/** Dismisses an over-budget review item. */
+export async function dismissBudgetReviewItem(id: string): Promise<void> {
+  await reviewAction(id, "dismiss-budget");
+}
+
+/** Adjusts a budget limit from an over-budget review item and resolves it. */
+export async function adjustBudgetLimitFromReview(id: string, limitCents: number): Promise<void> {
+  await reviewAction(id, "adjust-budget-limit", { limitCents });
 }
 
 /** A tag as a split carries it. */

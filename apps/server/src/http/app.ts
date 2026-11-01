@@ -51,6 +51,8 @@ import {
   discardSetAsideRowItem,
   dismissHandoffItem,
   dismissNoticeItem,
+  dismissBudgetReviewItemAction,
+  adjustBudgetLimitFromReviewAction,
   dismissRuleOfferItem,
   dismissSuggestionItem,
   dismissTransferItem,
@@ -976,6 +978,20 @@ export function createApi(deps: ApiDeps) {
     .post("/api/review/:id/dismiss-notice", (c) => {
       writable();
       dismissNoticeItem(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/dismiss-budget", (c) => {
+      writable();
+      dismissBudgetReviewItemAction(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/adjust-budget-limit", async (c) => {
+      writable();
+      const body = await objectBody<{ limitCents: number }>(c);
+      adjustBudgetLimitFromReviewAction(ctx(c), {
+        id: c.req.param("id"),
+        limitCents: body.limitCents,
+      });
       return c.body(null, 204);
     })
     .post("/api/review/:id/revoke-links", (c) => {

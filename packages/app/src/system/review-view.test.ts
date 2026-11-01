@@ -45,6 +45,13 @@ import { fakeCodeHasher, fakeTokens } from "../testing/tokens.ts";
 import { personViewer } from "../viewer.ts";
 import { write } from "../write.ts";
 import {
+  OVER_BUDGET_HOUSEHOLD_REVIEW,
+  OVER_BUDGET_PERSONAL_REVIEW,
+  budgetEntityRef,
+  budgetOverBudgetDedupeKey,
+} from "../planning/budget-review.ts";
+import { createBudget } from "../planning/budgets.ts";
+import {
   acceptHandoffItem,
   acceptRuleOfferItem,
   confirmSetAsideProposalItem,
@@ -706,5 +713,34 @@ describe("review actions", () => {
     expect(w.uow.state.importBatches.find((b) => b.id === batchId)?.status).toBe("ready");
     expect(w.uow.state.importRows.every((r) => r.reason === null)).toBe(true);
     expect(listReviewCards(w.A).some((c) => c.kind === "import.pdf_failed")).toBe(false);
+  });
+
+  it("populates budget review detail for over-budget cards", () => {
+    const w = setup();
+    const group = createCategoryGroup(w.A, { name: "Living", kind: "expense" });
+    const category = createCategory(w.A, { groupId: group.id, name: "Groceries" });
+    const budget = createBudget(w.A, {
+      categoryId: category.id,
+      cadence: "fortnight",
+      limitCents: 30000,
+    });
+
+    w.raise({
+      kind: OVER_BUDGET_HOUSEHOLD_REVIEW,
+      entityRef: budgetEntityRef(budget.id),
+      dedupeKey: budgetOverBudgetDedupeKey(budget.id, "2026-09-27"),
+    });
+
+    const card = listReviewCards(w.A).find((c) => c.kind === OVER_BUDGET_HOUSEHOLD_REVIEW.kind);
+    expect(card).toBeDefined();
+    expect(card?.detail.type).toBe("budget");
+    if (card?.detail.type === "budget") {
+      expect(card.detail.budgetId).toBe(budget.id);
+      expect(card.detail.targetName).toBe("Groceries");
+      expect(card.detail.cadence).toBe("fortnight");
+      expect(card.detail.limitCents).toBe(30000);
+      expect(card.detail.spentCents).toBe(0);
+      expect(card.detail.overCents).toBe(0);
+    }
   });
 });

@@ -1,6 +1,7 @@
 import type { ReviewCard } from "../../api.ts";
 import { HandoffCard } from "./HandoffCard.tsx";
 import { NoticeCard } from "./NoticeCard.tsx";
+import { OverBudgetCard } from "./OverBudgetCard.tsx";
 import { PdfStatementCard } from "./PdfStatementCard.tsx";
 import { ReadOnlyCard } from "./ReadOnlyCard.tsx";
 import { SetAsideCard } from "./SetAsideCard.tsx";
@@ -46,6 +47,10 @@ export function ReviewCardView({ card }: { readonly card: ReviewCard }) {
     case "identity.partner-reset":
     case "identity.recovery-code-used":
       if (detail.type === "notice") return <NoticeCard card={card} detail={detail} />;
+      break;
+    case "planning.over_budget":
+    case "planning.over_budget.personal":
+      if (detail.type === "budget") return <OverBudgetCard card={card} detail={detail} />;
       break;
   }
   return <ReadOnlyCard card={card} detail={detail} />;
