@@ -1363,6 +1363,37 @@ export interface BudgetRepository {
   deleteForPerson(personId: Id<"Person">): void;
 }
 
+/** `recurring_series`: detected or confirmed bills and income (AD-3, AD-10, AD-25, CAP-5). */
+export interface RecurringSeriesRow {
+  readonly id: Id<"RecurringSeries">;
+  readonly accountId: Id<"Account">;
+  readonly payeeId: Id<"Payee">;
+  readonly direction: "bill" | "income";
+  readonly cadence: "weekly" | "fortnightly" | "monthly" | "quarterly" | "annual";
+  readonly expectedCents: number;
+  readonly toleranceBp: number;
+  /** YYYY-MM-DD */
+  readonly nextDueOn: string;
+  readonly status: "candidate" | "confirmed" | "rejected";
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface RecurringSeriesRepo {
+  insert(row: RecurringSeriesRow): void;
+  update(row: RecurringSeriesRow): void;
+  delete(id: Id<"RecurringSeries">): boolean;
+  findById(viewer: Viewer, id: Id<"RecurringSeries">): RecurringSeriesRow | undefined;
+  listVisible(
+    viewer: Viewer,
+    filter?: {
+      readonly accountId?: Id<"Account">;
+      readonly status?: "candidate" | "confirmed" | "rejected";
+    },
+  ): readonly RecurringSeriesRow[];
+  deleteForAccount(accountId: Id<"Account">): void;
+}
+
 /**
  * `recovery_bundle`: the recovery bundle the household confirmed it stored safely (story 1.17).
  * Only its id, never a secret.
@@ -1919,6 +1950,7 @@ export interface TxRepos {
   readonly suggestions: SuggestionRepo;
   readonly payAnchors: PayAnchorRepo;
   readonly budgets: BudgetRepository;
+  readonly recurringSeries: RecurringSeriesRepo;
 }
 
 /** The read-only subset of `TxRepos`, for queries. */
@@ -2004,6 +2036,7 @@ export interface ReadRepos {
     BudgetRepository,
     "findById" | "listVisible" | "calculateSpent" | "calculateHistoricalSpent"
   >;
+  readonly recurringSeries: Pick<RecurringSeriesRepo, "findById" | "listVisible">;
 }
 
 export interface UnitOfWork {

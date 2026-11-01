@@ -73,6 +73,7 @@ describe("committed migrations", () => {
       "0024_pdf_batch_attachment",
       "0025_pay_anchor",
       "0026_budget",
+      "0027_recurring_series",
     ];
     expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: migrations.length });
     expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: migrations.length });
@@ -275,6 +276,58 @@ describe("committed migrations", () => {
       db.pragma("table_info(household_settings)") as { name: string; notnull: number }[]
     ).map((c) => c.name);
     expect(settingsCols).toContain("household_pay_anchor_person_id");
+
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+
+  it("creates budget table when 0025 upgrades to 0026", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 26));
+    expect(schemaVersion(db)).toBe(26);
+    expect(migrate(db, migrations.slice(0, 27)).applied).toEqual(["0026_budget"]);
+    expect(schemaVersion(db)).toBe(27);
+
+    const budgetCols = (
+      db.pragma("table_info(budget)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(budgetCols).toEqual([
+      "id",
+      "person_id",
+      "category_id",
+      "category_group_id",
+      "cadence",
+      "limit_cents",
+      "rollover",
+      "created_at",
+      "updated_at",
+    ]);
+
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+
+  it("creates recurring_series table when 0026 upgrades to 0027", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 27));
+    expect(schemaVersion(db)).toBe(27);
+    expect(migrate(db, migrations.slice(0, 28)).applied).toEqual(["0027_recurring_series"]);
+    expect(schemaVersion(db)).toBe(28);
+
+    const seriesCols = (
+      db.pragma("table_info(recurring_series)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(seriesCols).toEqual([
+      "id",
+      "account_id",
+      "payee_id",
+      "direction",
+      "cadence",
+      "expected_cents",
+      "tolerance_bp",
+      "next_due_on",
+      "status",
+      "created_at",
+      "updated_at",
+    ]);
 
     expect(db.pragma("foreign_key_check")).toEqual([]);
   });

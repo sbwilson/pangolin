@@ -248,7 +248,7 @@ function deleteAccountRows(
   tx: TxRepos,
   audit: Audit,
   accounts: Accounts,
-  accountId: string,
+  accountId: Id<"Account">,
   at: string,
   orphanFiles: string[],
 ): void {
@@ -277,6 +277,7 @@ function deleteAccountRows(
     }
   }
   tx.reviewItems.deleteForAccount(accountId);
+  tx.recurringSeries.deleteForAccount(accountId);
   tx.balanceSnapshots.deleteForAccount(accountId);
   tx.transactions.deleteForAccount(accountId);
   for (const attachmentId of tx.importBatches.deleteForAccount(accountId)) {

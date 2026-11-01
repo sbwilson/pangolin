@@ -66,6 +66,8 @@ import type {
   RecoveryBundleRow,
   RecoveryCodeRepo,
   RecoveryCodeRow,
+  RecurringSeriesRepo,
+  RecurringSeriesRow,
   ReEnrolmentLinkRepo,
   ReEnrolmentLinkRow,
   ReviewItemRepo,
@@ -162,6 +164,7 @@ export interface MemoryState {
   suggestions: SuggestionRow[];
   payAnchors: PayAnchorRow[];
   budgets: BudgetRow[];
+  recurringSeries: RecurringSeriesRow[];
 }
 
 export interface MemoryUnitOfWork extends UnitOfWork {
@@ -3473,6 +3476,62 @@ function budgetRepo(working: MemoryState, check: () => void): BudgetRepository {
   };
 }
 
+function recurringSeriesRepo(working: MemoryState, check: () => void): RecurringSeriesRepo {
+  return {
+    insert(row: RecurringSeriesRow) {
+      check();
+      working.recurringSeries.push(row);
+    },
+    update(row: RecurringSeriesRow) {
+      check();
+      const idx = working.recurringSeries.findIndex((s) => s.id === row.id);
+      if (idx !== -1) {
+        working.recurringSeries[idx] = row;
+      }
+    },
+    delete(id: Id<"RecurringSeries">) {
+      check();
+      const initial = working.recurringSeries.length;
+      working.recurringSeries = working.recurringSeries.filter((s) => s.id !== id);
+      return working.recurringSeries.length < initial;
+    },
+    findById(viewer: Viewer, id: Id<"RecurringSeries">) {
+      check();
+      const row = working.recurringSeries.find((s) => s.id === id);
+      if (!row) return undefined;
+      const acct = working.accounts.find((a) => a.id === row.accountId);
+      if (!acct || !accountVisible(working, viewer, acct)) return undefined;
+      return row;
+    },
+    listVisible(
+      viewer: Viewer,
+      filter?: {
+        readonly accountId?: Id<"Account">;
+        readonly status?: "candidate" | "confirmed" | "rejected";
+      },
+    ) {
+      check();
+      return working.recurringSeries.filter((row) => {
+        const acct = working.accounts.find((a) => a.id === row.accountId);
+        if (!acct || !accountVisible(working, viewer, acct)) return false;
+        if (filter?.accountId !== undefined && row.accountId !== filter.accountId) {
+          return false;
+        }
+        if (filter?.status !== undefined && row.status !== filter.status) {
+          return false;
+        }
+        return true;
+      });
+    },
+    deleteForAccount(accountId: Id<"Account">) {
+      check();
+      working.recurringSeries = working.recurringSeries.filter(
+        (s) => s.accountId !== accountId,
+      );
+    },
+  };
+}
+
 export function memoryUnitOfWork(
   settings: HouseholdSettingsRow = DEFAULT_SETTINGS,
 ): MemoryUnitOfWork {
@@ -3523,6 +3582,7 @@ export function memoryUnitOfWork(
       suggestions: [],
       payAnchors: [],
       budgets: [],
+      recurringSeries: [],
     },
     failAudit: false,
     transaction<T>(fn: (tx: TxRepos) => T): T {
@@ -3572,6 +3632,7 @@ export function memoryUnitOfWork(
         suggestions: [...uow.state.suggestions],
         payAnchors: [...uow.state.payAnchors],
         budgets: [...uow.state.budgets],
+        recurringSeries: [...uow.state.recurringSeries],
       };
       let active = true;
       const check = () => {
@@ -3622,6 +3683,7 @@ export function memoryUnitOfWork(
         suggestions: suggestionRepo(working, check),
         payAnchors: payAnchorRepo(working, check),
         budgets: budgetRepo(working, check),
+        recurringSeries: recurringSeriesRepo(working, check),
         recoveryBundle: {
           get: () => {
             check();
@@ -3679,6 +3741,7 @@ export function memoryUnitOfWork(
         uow.state.suggestions = working.suggestions;
         uow.state.payAnchors = working.payAnchors;
         uow.state.budgets = working.budgets;
+        uow.state.recurringSeries = working.recurringSeries;
         return result;
       } finally {
         active = false;
@@ -3847,6 +3910,11 @@ export function memoryUnitOfWork(
             budgetRepo(uow.state, check).calculateSpent(viewer, budgetRow, today, period),
           calculateHistoricalSpent: (viewer, budgetRow, today, periods) =>
             budgetRepo(uow.state, check).calculateHistoricalSpent(viewer, budgetRow, today, periods),
+        },
+        recurringSeries: {
+          findById: (viewer, id) => recurringSeriesRepo(uow.state, check).findById(viewer, id),
+          listVisible: (viewer, filter) =>
+            recurringSeriesRepo(uow.state, check).listVisible(viewer, filter),
         },
       });
     },

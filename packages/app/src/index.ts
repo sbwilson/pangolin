@@ -705,6 +705,22 @@ export {
   dismissBudgetReviewItemInput,
 } from "./planning/budget-actions.ts";
 export {
+  type ConfirmRecurringSeriesInput,
+  confirmRecurringSeries,
+  confirmRecurringSeriesInput,
+  type DetectRecurringBillCandidatesInput,
+  detectRecurringBillCandidates,
+  detectRecurringBillCandidatesInput,
+  isSalaryTransaction,
+  listCandidateSeries,
+  type ListRecurringSeriesInput,
+  listRecurringSeries,
+  listRecurringSeriesInput,
+  type RejectRecurringSeriesInput,
+  rejectRecurringSeries,
+  rejectRecurringSeriesInput,
+} from "./planning/recurring-bills.ts";
+export {
   BUDGET_EVALUATION_JOB,
   BUDGET_EVALUATION_SCHEDULE_NAME,
   BUDGET_EVALUATION_TIME,
@@ -830,6 +846,8 @@ export {
   type BudgetPeriodSpent,
   type BudgetRepository,
   type BudgetRow,
+  type RecurringSeriesRepo,
+  type RecurringSeriesRow,
   CATEGORY_GROUP_KINDS,
   type CategoryGroupKind,
   type CategoryGroupRepo,

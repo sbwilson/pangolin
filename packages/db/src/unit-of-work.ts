@@ -50,6 +50,7 @@ import { createImportBatchRepo, createImportRowRepo } from "./repositories/impor
 import { createLlmProviderRepo } from "./repositories/llm-provider.ts";
 import { createPayAnchorRepo } from "./repositories/pay-anchor.ts";
 import { createPersonPreferenceRepo } from "./repositories/person-preference.ts";
+import { createRecurringSeriesRepo } from "./repositories/recurring-series.ts";
 import { createSuggestionRepo } from "./repositories/suggestion.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
 import { auditLog } from "./schema/audit-log.ts";
@@ -276,6 +277,7 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     suggestions: createSuggestionRepo(orm, () => guard(scope)),
     payAnchors: createPayAnchorRepo(orm, () => guard(scope)),
     budgets: createBudgetRepo(orm, () => guard(scope)),
+    recurringSeries: createRecurringSeriesRepo(orm, () => guard(scope)),
   };
 }
 
@@ -429,6 +431,10 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               listVisible: repos.budgets.listVisible,
               calculateSpent: repos.budgets.calculateSpent,
               calculateHistoricalSpent: repos.budgets.calculateHistoricalSpent,
+            },
+            recurringSeries: {
+              findById: repos.recurringSeries.findById,
+              listVisible: repos.recurringSeries.listVisible,
             },
           };
         },

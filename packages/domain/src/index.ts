@@ -44,6 +44,15 @@ export {
   calculateRollover,
 } from "./planning/budget-math.ts";
 export {
+  calculateMedian,
+  classifyCadence,
+  type DetectedRecurringSeries,
+  detectRecurringSeries,
+  predictNextDueOn,
+  type RecurringCadence,
+  type RecurringOccurrence,
+} from "./planning/recurring-detector.ts";
+export {
   type ReconcileResult,
   type ReconcileRow,
   type ReconcileStatus,

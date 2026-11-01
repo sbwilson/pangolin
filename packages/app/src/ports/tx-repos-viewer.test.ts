@@ -27,6 +27,7 @@ const SCOPED_REPOS = [
   "suggestions",
   "payAnchors",
   "budgets",
+  "recurringSeries",
 ] as const;
 
 /** `TxRepos` keys that hold no scoped data, each with its reason. Every other key is checked. */
@@ -118,6 +119,10 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
   "BudgetRepository.update": "the use case checked the budget through the viewer",
   "BudgetRepository.delete": "the use case checked the budget through the viewer",
   "BudgetRepository.deleteForPerson": "hard-deletes the leaver's budgets (the leave)",
+  "RecurringSeriesRepo.insert": "a new recurring series; the use case enforces account scope",
+  "RecurringSeriesRepo.update": "the use case checked the recurring series through the viewer",
+  "RecurringSeriesRepo.delete": "the use case checked the recurring series through the viewer",
+  "RecurringSeriesRepo.deleteForAccount": "hard-deletes an account's recurring series (the leave)",
   "ImportHandoffRepo.insert": "a new hand-off; the use case set the sender to the viewer",
   "ImportHandoffRepo.markImported": "the use case found the hand-off with findForRecipient first",
   "ImportHandoffRepo.markDismissed": "the use case found the hand-off with findForRecipient first",
