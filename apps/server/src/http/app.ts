@@ -54,6 +54,7 @@ import {
   deleteTransferGroup,
   detectRecurringBillCandidates,
   discardSetAsideRowItem,
+  dismissBillAlertReviewItemAction,
   dismissBudgetReviewItemAction,
   dismissHandoffItem,
   dismissNoticeItem,
@@ -1024,6 +1025,11 @@ export function createApi(deps: ApiDeps) {
     .post("/api/review/:id/dismiss-budget", (c) => {
       writable();
       dismissBudgetReviewItemAction(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/dismiss-bill-alert", (c) => {
+      writable();
+      dismissBillAlertReviewItemAction(ctx(c), { id: c.req.param("id") });
       return c.body(null, 204);
     })
     .post("/api/review/:id/adjust-budget-limit", async (c) => {

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type AttachmentRow,
+  BILL_ALERT_MISSED_PAYMENT_REVIEW,
   budgetEntityRef,
   budgetOverBudgetDedupeKey,
   CLASSIFY_UNCLASSIFIED_REVIEW,
@@ -4368,6 +4369,34 @@ not-a-date,-12.00,"BOOKSTORE",988.00`;
       method: "POST",
       headers: json,
       body: JSON.stringify({ limitCents: 40000 }),
+    });
+    expect(again.status).toBe(404);
+  });
+
+  it("POST /api/review/:id/dismiss-bill-alert dismisses bill alert item and returns 204", async () => {
+    const db = openDb();
+    const { sys, d, joint } = seed(db);
+    const app = createApp(d);
+
+    const item = write(sys, (tx, audit) =>
+      raiseReviewItem(tx, audit, sys, {
+        kind: BILL_ALERT_MISSED_PAYMENT_REVIEW,
+        accountId: joint,
+        entityRef: "recurring_series:series-1",
+        dedupeKey: "bill:missed:series-1:2026-04-10",
+      }),
+    );
+
+    const res = await app.request(`/api/review/${item.id}/dismiss-bill-alert`, {
+      method: "POST",
+      headers: json,
+    });
+    expect(res.status).toBe(204);
+
+    // Calling dismiss again returns 404
+    const again = await app.request(`/api/review/${item.id}/dismiss-bill-alert`, {
+      method: "POST",
+      headers: json,
     });
     expect(again.status).toBe(404);
   });

@@ -37,6 +37,17 @@ import {
   transferCandidateEntityRef,
 } from "../ledger/needs-review.ts";
 import { setSplitField } from "../ledger/set-split-field.ts";
+import {
+  BILL_ALERT_MISSED_PAYMENT_REVIEW,
+  BILL_ALERT_PRICE_RISE_REVIEW,
+} from "../planning/bill-alerts.ts";
+import {
+  budgetEntityRef,
+  budgetOverBudgetDedupeKey,
+  OVER_BUDGET_HOUSEHOLD_REVIEW,
+  OVER_BUDGET_PERSONAL_REVIEW,
+} from "../planning/budget-review.ts";
+import { createBudget } from "../planning/budgets.ts";
 import { systemViewer } from "../system-viewer.ts";
 import { fakeAttachmentStore } from "../testing/attachment-store.ts";
 import { manualClock, sequentialIds } from "../testing/fixtures.ts";
@@ -44,13 +55,6 @@ import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import { fakeCodeHasher, fakeTokens } from "../testing/tokens.ts";
 import { personViewer } from "../viewer.ts";
 import { write } from "../write.ts";
-import {
-  OVER_BUDGET_HOUSEHOLD_REVIEW,
-  OVER_BUDGET_PERSONAL_REVIEW,
-  budgetEntityRef,
-  budgetOverBudgetDedupeKey,
-} from "../planning/budget-review.ts";
-import { createBudget } from "../planning/budgets.ts";
 import {
   acceptHandoffItem,
   acceptRuleOfferItem,
@@ -741,6 +745,83 @@ describe("review actions", () => {
       expect(card.detail.limitCents).toBe(30000);
       expect(card.detail.spentCents).toBe(0);
       expect(card.detail.overCents).toBe(0);
+    }
+  });
+
+  it("populates bill alert review detail for missed payment and price rise cards", () => {
+    const w = setup();
+    if (!w.uow.state.payees.some((p) => p.id === "payee-netflix")) {
+      w.uow.state.payees.push({
+        id: "payee-netflix" as Id<"Payee">,
+        name: "Netflix",
+        scopePersonId: null,
+        defaultCategoryId: null,
+        createdAt: "2026-09-01T00:00:00Z",
+        updatedAt: "2026-09-01T00:00:00Z",
+        deletedAt: null,
+      });
+    }
+
+    w.uow.state.recurringSeries.push({
+      id: "series-netflix-1" as Id<"RecurringSeries">,
+      accountId: w.joint,
+      payeeId: "payee-netflix" as Id<"Payee">,
+      direction: "bill",
+      cadence: "monthly",
+      expectedCents: 1999,
+      toleranceBp: 1500,
+      nextDueOn: "2026-10-10",
+      status: "confirmed",
+      createdAt: "2026-09-01T00:00:00Z",
+      updatedAt: "2026-09-01T00:00:00Z",
+    });
+
+    // 1. Missed payment card
+    w.raise({
+      kind: BILL_ALERT_MISSED_PAYMENT_REVIEW,
+      accountId: w.joint,
+      entityRef: "recurring_series:series-netflix-1",
+      dedupeKey: "bill:missed:series-netflix-1:2026-10-10",
+    });
+
+    const missedCard = listReviewCards(w.A).find(
+      (c) => c.kind === "planning.bill_alert.missed_payment",
+    );
+    expect(missedCard).toBeDefined();
+    expect(missedCard?.detail.type).toBe("bill_alert");
+    if (missedCard?.detail.type === "bill_alert") {
+      expect(missedCard.detail.kind).toBe("missed");
+      expect(missedCard.detail.payeeName).toBe("Netflix");
+      expect(missedCard.detail.cadence).toBe("monthly");
+      expect(missedCard.detail.expectedCents).toBe(1999);
+      expect(missedCard.detail.dueDate).toBe("2026-10-10");
+    }
+
+    // 2. Price rise card
+    const txnId = createTransaction(w.A, {
+      accountId: w.joint,
+      postedOn: "2026-10-10",
+      amountCents: -2500,
+      payeeId: "payee-netflix",
+      description: "Netflix increase",
+    });
+
+    w.raise({
+      kind: BILL_ALERT_PRICE_RISE_REVIEW,
+      accountId: w.joint,
+      entityRef: "recurring_series:series-netflix-1",
+      dedupeKey: `bill:price_rise:series-netflix-1:${txnId}`,
+    });
+
+    const riseCard = listReviewCards(w.A).find((c) => c.kind === "planning.bill_alert.price_rise");
+    expect(riseCard).toBeDefined();
+    expect(riseCard?.detail.type).toBe("bill_alert");
+    if (riseCard?.detail.type === "bill_alert") {
+      expect(riseCard.detail.kind).toBe("price_rise");
+      expect(riseCard.detail.payeeName).toBe("Netflix");
+      expect(riseCard.detail.expectedCents).toBe(1999);
+      expect(riseCard.detail.actualCents).toBe(2500);
+      expect(riseCard.detail.increasePct).toBe(25);
     }
   });
 });

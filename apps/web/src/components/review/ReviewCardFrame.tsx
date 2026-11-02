@@ -28,6 +28,8 @@ const KIND_LABEL: Readonly<Record<string, string>> = {
   "job.dead": "A background job failed",
   "planning.over_budget": "Over budget",
   "planning.over_budget.personal": "Over budget",
+  "planning.bill_alert.missed_payment": "Missed bill payment",
+  "planning.bill_alert.price_rise": "Bill price increase",
 };
 
 export function kindLabel(kind: string): string {

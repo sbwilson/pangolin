@@ -48,13 +48,14 @@ import {
   listSetAsideRowsForBatch,
 } from "../imports/set-aside.ts";
 import { idInput } from "../inputs.ts";
+import { setSplitField } from "../ledger/set-split-field.ts";
+import { createTransferGroup } from "../ledger/transfer-groups.ts";
+import { dismissBillAlertReviewItem } from "../planning/bill-alerts.ts";
 import {
   type AdjustBudgetLimitFromReviewInput,
   adjustBudgetLimitFromReview,
   dismissBudgetReviewItem,
 } from "../planning/budget-actions.ts";
-import { setSplitField } from "../ledger/set-split-field.ts";
-import { createTransferGroup } from "../ledger/transfer-groups.ts";
 import type { ReviewItemRow, TxRepos, UnitOfWork } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
 import { resolveReviewItem } from "./review-items.ts";
@@ -441,4 +442,14 @@ export function adjustBudgetLimitFromReviewAction(
   input: AdjustBudgetLimitFromReviewInput,
 ): void {
   adjustBudgetLimitFromReview(ctx, input);
+}
+
+// -------------------------------------------------------------------------------- bill alerts
+
+/** "Got it": dismisses a bill alert review item (`planning.dismissBillAlertReviewItem`). */
+export function dismissBillAlertReviewItemAction(
+  ctx: UseCaseContext,
+  input: { readonly id: string },
+): void {
+  dismissBillAlertReviewItem(ctx, input);
 }

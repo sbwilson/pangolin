@@ -2,14 +2,9 @@
 // the viewer may see, with what its card needs of the thing it is about. Everything starts from
 // `reviewItems.listOpenFor(viewer)` and goes through `redact`, so a card never carries data from
 // an account the viewer cannot see. The two counts are numbers only.
-import { shiftDay, TRANSFER_WINDOW_DAYS } from "@pangolin/domain";
+import { calculatePriceRisePercentage, shiftDay, TRANSFER_WINDOW_DAYS } from "@pangolin/domain";
 import { z } from "zod";
 import { CLOSING_BALANCE_REVIEW } from "../accounts/closing-balance.ts";
-import {
-  OVER_BUDGET_HOUSEHOLD_REVIEW,
-  OVER_BUDGET_PERSONAL_REVIEW,
-} from "../planning/budget-review.ts";
-import { getBudgetSummary } from "../planning/budgets.ts";
 import { CLASSIFY_RULE_OFFER_REVIEW, CLASSIFY_UNCLASSIFIED_REVIEW } from "../classify/rules.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
@@ -29,6 +24,15 @@ import {
 } from "../imports/pdf-review.ts";
 import { rowInterpretProposalSchema } from "../imports/row-interpret-request.ts";
 import { IMPORT_SET_ASIDE_REVIEW, listSetAsideRowsForBatch } from "../imports/set-aside.ts";
+import {
+  BILL_ALERT_MISSED_PAYMENT_REVIEW,
+  BILL_ALERT_PRICE_RISE_REVIEW,
+} from "../planning/bill-alerts.ts";
+import {
+  OVER_BUDGET_HOUSEHOLD_REVIEW,
+  OVER_BUDGET_PERSONAL_REVIEW,
+} from "../planning/budget-review.ts";
+import { getBudgetSummary } from "../planning/budgets.ts";
 import type { ReadRepos, ReviewItemRow } from "../ports/unit-of-work.ts";
 import { redact } from "../redact.ts";
 import type { Viewer } from "../viewer.ts";
@@ -135,6 +139,20 @@ export type ReviewDetail =
       readonly spentCents: number;
       readonly limitCents: number;
       readonly overCents: number;
+    }
+  | {
+      readonly type: "bill_alert";
+      readonly seriesId: string;
+      readonly payeeId: string;
+      readonly payeeName: string;
+      readonly accountName: string;
+      readonly cadence: string;
+      readonly expectedCents: number;
+      readonly actualCents?: number;
+      readonly increasePct?: number;
+      readonly dueDate: string;
+      readonly kind: "missed" | "price_rise";
+      readonly transactionId?: string;
     }
   | { readonly type: "none" };
 
@@ -304,7 +322,8 @@ function detailOf(repos: ReadRepos, ctx: UseCaseContext, row: ReviewItemRow): Re
       if (budget.categoryId) {
         targetName = repos.categories.find(ctx.viewer, budget.categoryId)?.name ?? "Category";
       } else if (budget.categoryGroupId) {
-        targetName = repos.categoryGroups.find(ctx.viewer, budget.categoryGroupId)?.name ?? "Category Group";
+        targetName =
+          repos.categoryGroups.find(ctx.viewer, budget.categoryGroupId)?.name ?? "Category Group";
       }
       try {
         const summary = getBudgetSummary(ctx, { id: budget.id });
@@ -321,6 +340,59 @@ function detailOf(repos: ReadRepos, ctx: UseCaseContext, row: ReviewItemRow): Re
       } catch {
         return { type: "none" };
       }
+    }
+    case BILL_ALERT_MISSED_PAYMENT_REVIEW.kind:
+    case BILL_ALERT_PRICE_RISE_REVIEW.kind: {
+      const isMissed = row.kind === BILL_ALERT_MISSED_PAYMENT_REVIEW.kind;
+      const seriesId = refId(row.entityRef, "recurring_series") ?? "";
+      const series = repos.recurringSeries.findById(ctx.viewer, seriesId as Id<"RecurringSeries">);
+      if (!series) return { type: "none" };
+      const account = repos.accounts.findVisible(ctx.viewer, series.accountId);
+      const payee = repos.payees.find(ctx.viewer, series.payeeId);
+      const accountName = account?.name ?? "";
+      const payeeName = payee?.name ?? "Bill";
+
+      if (isMissed) {
+        return {
+          type: "bill_alert",
+          seriesId: series.id,
+          payeeId: series.payeeId,
+          payeeName,
+          accountName,
+          cadence: series.cadence,
+          expectedCents: series.expectedCents,
+          dueDate: series.nextDueOn,
+          kind: "missed",
+        };
+      }
+
+      // Price rise: dedupeKey is bill:price_rise:<seriesId>:<transactionId>
+      const parts = row.dedupeKey.split(":");
+      const transactionId = parts[3];
+      const today = ctx.clock.today().toString();
+      const txn = transactionId
+        ? repos.transactions.findVisible(ctx.viewer, transactionId, today)
+        : undefined;
+      const actualCents = txn ? Math.abs(txn.amountCents) : undefined;
+      const increasePct =
+        actualCents !== undefined
+          ? calculatePriceRisePercentage(actualCents, series.expectedCents)
+          : undefined;
+
+      return {
+        type: "bill_alert",
+        seriesId: series.id,
+        payeeId: series.payeeId,
+        payeeName,
+        accountName,
+        cadence: series.cadence,
+        expectedCents: series.expectedCents,
+        actualCents,
+        increasePct,
+        dueDate: series.nextDueOn,
+        kind: "price_rise",
+        transactionId,
+      };
     }
     default:
       return { type: "none" };

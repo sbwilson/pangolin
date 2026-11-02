@@ -1,4 +1,5 @@
 import type { ReviewCard } from "../../api.ts";
+import { BillAlertCard } from "./BillAlertCard.tsx";
 import { HandoffCard } from "./HandoffCard.tsx";
 import { NoticeCard } from "./NoticeCard.tsx";
 import { OverBudgetCard } from "./OverBudgetCard.tsx";
@@ -51,6 +52,10 @@ export function ReviewCardView({ card }: { readonly card: ReviewCard }) {
     case "planning.over_budget":
     case "planning.over_budget.personal":
       if (detail.type === "budget") return <OverBudgetCard card={card} detail={detail} />;
+      break;
+    case "planning.bill_alert.missed_payment":
+    case "planning.bill_alert.price_rise":
+      if (detail.type === "bill_alert") return <BillAlertCard card={card} detail={detail} />;
       break;
   }
   return <ReadOnlyCard card={card} detail={detail} />;

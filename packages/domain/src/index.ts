@@ -36,6 +36,13 @@ export {
 } from "./flows/flow-kind.ts";
 export { normaliseCommBankDescription } from "./normalise/commbank.ts";
 export {
+  calculatePriceRisePercentage,
+  getCadenceGraceDays,
+  getPaymentMatchingWindow,
+  isPaymentPastDueWindow,
+  isPriceRise,
+} from "./planning/bill-alerts.ts";
+export {
   type BudgetMathInput,
   type BudgetMathResult,
   type BudgetStatus,
@@ -52,6 +59,7 @@ export {
   type RecurringCadence,
   type RecurringOccurrence,
 } from "./planning/recurring-detector.ts";
+
 export {
   type ReconcileResult,
   type ReconcileRow,

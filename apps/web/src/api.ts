@@ -399,6 +399,7 @@ type ReviewAction =
   | "recheck-pdf"
   | "dismiss-notice"
   | "dismiss-budget"
+  | "dismiss-bill-alert"
   | "adjust-budget-limit"
   | "revoke-links";
 
@@ -450,6 +451,11 @@ export async function reviewAction(
 /** Dismisses an over-budget review item. */
 export async function dismissBudgetReviewItem(id: string): Promise<void> {
   await reviewAction(id, "dismiss-budget");
+}
+
+/** Dismisses a bill alert review item ("Got it"). */
+export async function dismissBillAlert(id: string): Promise<void> {
+  await reviewAction(id, "dismiss-bill-alert");
 }
 
 /** Adjusts a budget limit from an over-budget review item and resolves it. */

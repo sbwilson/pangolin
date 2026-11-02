@@ -665,6 +665,18 @@ export {
   updateTransactionInput,
 } from "./ledger/update-transaction.ts";
 export {
+  BILL_ALERT_MISSED_PAYMENT_REVIEW,
+  BILL_ALERT_PRICE_RISE_REVIEW,
+  BILL_ALERT_REVIEW_KINDS,
+  billMissedPaymentDedupeKey,
+  billPriceRiseDedupeKey,
+  type DismissBillAlertReviewItemInput,
+  dismissBillAlertReviewItem,
+  dismissBillAlertReviewItemInput,
+  syncAllBillAlertReviewItems,
+  syncBillAlertsForSeries,
+} from "./planning/bill-alerts.ts";
+export {
   type AdjustBudgetLimitFromReviewInput,
   adjustBudgetLimitFromReview,
   adjustBudgetLimitFromReviewInput,
@@ -1124,6 +1136,7 @@ export {
   type DiscardSetAsideRowItemInput,
   type DismissSuggestionItemInput,
   discardSetAsideRowItem,
+  dismissBillAlertReviewItemAction,
   dismissBudgetReviewItemAction,
   dismissHandoffItem,
   dismissNoticeItem,

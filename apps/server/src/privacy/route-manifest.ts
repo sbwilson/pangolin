@@ -272,6 +272,7 @@ export const MANIFEST: readonly ManifestEntry[] = [
   write("POST", "/api/review/:id/recheck-pdf", { params: { id: "notice" } }),
   write("POST", "/api/review/:id/dismiss-notice", { params: { id: "notice" } }),
   write("POST", "/api/review/:id/dismiss-budget", { params: { id: "notice" } }),
+  write("POST", "/api/review/:id/dismiss-bill-alert", { params: { id: "notice" } }),
   write("POST", "/api/review/:id/adjust-budget-limit", {
     params: { id: "notice" },
     body: () => ({ limitCents: 50000 }),
