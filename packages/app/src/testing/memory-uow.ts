@@ -3525,9 +3525,7 @@ function recurringSeriesRepo(working: MemoryState, check: () => void): Recurring
     },
     deleteForAccount(accountId: Id<"Account">) {
       check();
-      working.recurringSeries = working.recurringSeries.filter(
-        (s) => s.accountId !== accountId,
-      );
+      working.recurringSeries = working.recurringSeries.filter((s) => s.accountId !== accountId);
     },
   };
 }
@@ -3909,7 +3907,12 @@ export function memoryUnitOfWork(
           calculateSpent: (viewer, budgetRow, today, period) =>
             budgetRepo(uow.state, check).calculateSpent(viewer, budgetRow, today, period),
           calculateHistoricalSpent: (viewer, budgetRow, today, periods) =>
-            budgetRepo(uow.state, check).calculateHistoricalSpent(viewer, budgetRow, today, periods),
+            budgetRepo(uow.state, check).calculateHistoricalSpent(
+              viewer,
+              budgetRow,
+              today,
+              periods,
+            ),
         },
         recurringSeries: {
           findById: (viewer, id) => recurringSeriesRepo(uow.state, check).findById(viewer, id),

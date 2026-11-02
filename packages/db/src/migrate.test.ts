@@ -287,9 +287,9 @@ describe("committed migrations", () => {
     expect(migrate(db, migrations.slice(0, 27)).applied).toEqual(["0026_budget"]);
     expect(schemaVersion(db)).toBe(27);
 
-    const budgetCols = (
-      db.pragma("table_info(budget)") as { name: string; notnull: number }[]
-    ).map((c) => c.name);
+    const budgetCols = (db.pragma("table_info(budget)") as { name: string; notnull: number }[]).map(
+      (c) => c.name,
+    );
     expect(budgetCols).toEqual([
       "id",
       "person_id",

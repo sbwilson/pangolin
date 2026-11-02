@@ -4,10 +4,10 @@ import { describe, expect, it } from "vitest";
 import type { UseCaseContext } from "../context.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import {
-  OVER_BUDGET_HOUSEHOLD_REVIEW,
-  OVER_BUDGET_PERSONAL_REVIEW,
   budgetEntityRef,
   budgetOverBudgetDedupeKey,
+  OVER_BUDGET_HOUSEHOLD_REVIEW,
+  OVER_BUDGET_PERSONAL_REVIEW,
   syncAllBudgetReviewItems,
   syncBudgetReviewItem,
 } from "./budget-review.ts";
@@ -136,7 +136,14 @@ describe("budget-review", () => {
 
   it("raises household-scoped item for shared budget when spent > limit", () => {
     const ctxA = createTestContext("person-a");
-    const ctxB = { ...ctxA, viewer: { kind: "person" as const, personId: "person-b" as Id<"Person">, authAt: "2026-10-08T00:00:00Z" } };
+    const ctxB = {
+      ...ctxA,
+      viewer: {
+        kind: "person" as const,
+        personId: "person-b" as Id<"Person">,
+        authAt: "2026-10-08T00:00:00Z",
+      },
+    };
 
     const budget = createBudget(ctxA, {
       categoryId: "cat-groceries",
@@ -189,7 +196,14 @@ describe("budget-review", () => {
 
   it("raises person-scoped item for personal budget when spent > limit", () => {
     const ctxA = createTestContext("person-a");
-    const ctxB = { ...ctxA, viewer: { kind: "person" as const, personId: "person-b" as Id<"Person">, authAt: "2026-10-08T00:00:00Z" } };
+    const ctxB = {
+      ...ctxA,
+      viewer: {
+        kind: "person" as const,
+        personId: "person-b" as Id<"Person">,
+        authAt: "2026-10-08T00:00:00Z",
+      },
+    };
 
     const budgetA = createBudget(ctxA, {
       personId: "person-a",

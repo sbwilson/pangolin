@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import {
   adjustBudgetLimitFromReview,
   dismissBudgetReviewItem,
@@ -27,9 +27,7 @@ export function OverBudgetCard({
 }) {
   const { run, busy, error } = useReviewAction();
   const [isAdjusting, setIsAdjusting] = useState(false);
-  const [newLimitStr, setNewLimitStr] = useState(
-    (detail.limitCents / 100).toFixed(0),
-  );
+  const [newLimitStr, setNewLimitStr] = useState((detail.limitCents / 100).toFixed(0));
 
   const spentFormatted = formatCents(detail.spentCents);
   const limitFormatted = formatCents(detail.limitCents);
@@ -71,10 +69,7 @@ export function OverBudgetCard({
           aria-valuemin={0}
           aria-valuemax={100}
         >
-          <div
-            className="h-full bg-warning transition-all"
-            style={{ width: `${pct}%` }}
-          />
+          <div className="h-full bg-warning transition-all" style={{ width: `${pct}%` }} />
         </div>
 
         {isAdjusting ? (
@@ -88,6 +83,7 @@ export function OverBudgetCard({
               onChange={(e) => setNewLimitStr(e.target.value)}
               className={`${INPUT_CLASS_RING_DISABLED} h-8 w-24 text-xs`}
               placeholder="500"
+              // biome-ignore lint/a11y/noAutofocus: user clicked "Adjust limit" to edit inline
               autoFocus
               disabled={busy}
             />

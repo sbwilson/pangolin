@@ -4,14 +4,8 @@ import { describe, expect, it } from "vitest";
 import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
-import {
-  adjustBudgetLimitFromReview,
-  dismissBudgetReviewItem,
-} from "./budget-actions.ts";
-import {
-  budgetOverBudgetDedupeKey,
-  syncAllBudgetReviewItems,
-} from "./budget-review.ts";
+import { adjustBudgetLimitFromReview, dismissBudgetReviewItem } from "./budget-actions.ts";
+import { budgetOverBudgetDedupeKey, syncAllBudgetReviewItems } from "./budget-review.ts";
 import { createBudget } from "./budgets.ts";
 
 function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext {
@@ -236,6 +230,8 @@ describe("budget-actions", () => {
   it("throws NotFound for unknown item id", () => {
     const ctx = createTestContext("person-a");
     expect(() => dismissBudgetReviewItem(ctx, { id: "non-existent" })).toThrow(AppError);
-    expect(() => adjustBudgetLimitFromReview(ctx, { id: "non-existent", limitCents: 5000 })).toThrow(AppError);
+    expect(() =>
+      adjustBudgetLimitFromReview(ctx, { id: "non-existent", limitCents: 5000 }),
+    ).toThrow(AppError);
   });
 });

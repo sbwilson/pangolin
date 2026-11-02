@@ -25,10 +25,7 @@ export const adjustBudgetLimitFromReviewInput = z
   .strict();
 export type AdjustBudgetLimitFromReviewInput = z.input<typeof adjustBudgetLimitFromReviewInput>;
 
-function openBudgetReviewItem(
-  ctx: UseCaseContext,
-  id: string,
-): ReviewItemRow {
+function openBudgetReviewItem(ctx: UseCaseContext, id: string): ReviewItemRow {
   const item = ctx.uow
     .read((repos) => repos.reviewItems.listOpenFor(ctx.viewer))
     .find((row) => row.id === id);

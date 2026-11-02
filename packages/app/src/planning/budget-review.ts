@@ -4,7 +4,6 @@ import type { Id } from "@pangolin/shared";
 import { cents } from "@pangolin/shared";
 import type { UseCaseContext } from "../context.ts";
 import type { BudgetRow, TxRepos } from "../ports/unit-of-work.ts";
-import { systemViewer } from "../system-viewer.ts";
 import { defineReviewKind, raiseReviewItem, resolveReviewItem } from "../system/review-items.ts";
 import { personViewer } from "../viewer.ts";
 import type { Audit } from "../write.ts";
@@ -126,16 +125,12 @@ export function syncBudgetReviewItem(
  */
 export function syncAllBudgetReviewItems(ctx: UseCaseContext): number {
   return write(ctx, (tx, audit) => {
-    const listViewer =
-      ctx.viewer.kind === "system"
-        ? systemViewer("job:budget-evaluation")
-        : ctx.viewer;
-    const budgets = tx.budgets.listVisible(listViewer);
+    const budgets = tx.budgets.listVisible(ctx.viewer);
     for (const budget of budgets) {
       const evalViewer =
         budget.personId !== null
           ? personViewer(budget.personId as Id<"Person">, ctx.clock.now())
-          : listViewer;
+          : ctx.viewer;
       const evalCtx = { ...ctx, viewer: evalViewer };
       syncBudgetReviewItem(tx, audit, evalCtx, budget.id);
     }
