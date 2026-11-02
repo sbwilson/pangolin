@@ -562,6 +562,45 @@ export const MANIFEST: readonly ManifestEntry[] = [
     path: "/api/planning/budgets/:id",
     reason: "Deletes budget by ID with viewer scoping.",
   },
+
+  // Recurring bills (epic-budgets-bills, story 6.6)
+  {
+    kind: "exempt",
+    method: "GET",
+    path: "/api/planning/recurring-bills",
+    reason:
+      "Viewer-scoped recurring bills list; private account series visible only to owner (AD-3, AD-22).",
+  },
+  {
+    kind: "exempt",
+    method: "POST",
+    path: "/api/planning/recurring-bills/detect",
+    reason: "Detects candidate series for viewer-visible accounts and returns created candidates.",
+  },
+  {
+    kind: "exempt",
+    method: "POST",
+    path: "/api/planning/recurring-bills",
+    reason: "Creates recurring series for an account visible to the viewer.",
+  },
+  {
+    kind: "exempt",
+    method: "POST",
+    path: "/api/planning/recurring-bills/:id/confirm",
+    reason: "Confirms candidate recurring series visible to the viewer.",
+  },
+  {
+    kind: "exempt",
+    method: "POST",
+    path: "/api/planning/recurring-bills/:id/reject",
+    reason: "Rejects candidate recurring series visible to the viewer.",
+  },
+  {
+    kind: "exempt",
+    method: "DELETE",
+    path: "/api/planning/recurring-bills/:id",
+    reason: "Deletes recurring series visible to the viewer.",
+  },
 ];
 
 /** Entries that name a person's data, which the suite replays. */

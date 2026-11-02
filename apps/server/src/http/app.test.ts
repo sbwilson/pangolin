@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type AttachmentRow,
+  budgetEntityRef,
+  budgetOverBudgetDedupeKey,
   CLASSIFY_UNCLASSIFIED_REVIEW,
   closeAccount,
   createAccount,
@@ -11,6 +13,7 @@ import {
   createCategory,
   createCategoryGroup,
   createIdGenerator,
+  createInstitution,
   createPayee,
   createPayeeAlias,
   createPerson,
@@ -23,6 +26,8 @@ import {
   hideTransactionName,
   type ImportBatchRow,
   importStatement,
+  OVER_BUDGET_HOUSEHOLD_REVIEW,
+  OVER_BUDGET_PERSONAL_REVIEW,
   type PdfTextExtractor,
   personViewer,
   raiseReviewItem,
@@ -30,10 +35,6 @@ import {
   type UnitOfWork,
   type UseCaseContext,
   write,
-  OVER_BUDGET_HOUSEHOLD_REVIEW,
-  OVER_BUDGET_PERSONAL_REVIEW,
-  budgetEntityRef,
-  budgetOverBudgetDedupeKey,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import {
@@ -4563,6 +4564,242 @@ describe("GET /api/payees/:id/logo", () => {
       // Verify gone
       const verifyRes = await app.request(`/api/planning/budgets/${budget.id}`, signedInAlex);
       expect(verifyRes.status).toBe(404);
+    });
+  });
+
+  describe("Planning Recurring Bills API endpoints (/api/planning/recurring-bills/*)", () => {
+    it("supports candidate detection, listing, confirmation, rejection, manual creation, and deletion", async () => {
+      const db = openDb();
+      addPerson(db);
+      const samPersonId = "01J0000000000000000000000B";
+      db.prepare(
+        `INSERT INTO auth_user (id, name, email, email_verified, two_factor_enabled, created_at, updated_at)
+         VALUES ('user-b', 'Sam', 'sam@example.com', 0, 1, 'x', 'x')`,
+      ).run();
+      db.prepare(
+        `INSERT INTO auth_passkey (id, user_id, public_key, credential_id, counter, device_type, backed_up)
+         VALUES ('pk-b', 'user-b', 'k', 'c-b', 0, 'singleDevice', 0)`,
+      ).run();
+      db.prepare(
+        `INSERT INTO person (id, user_id, display_name, colour, created_at, updated_at)
+         VALUES (?, 'user-b', 'Sam', '#10b981', 'x', 'x')`,
+      ).run(samPersonId);
+
+      const gateway: AuthGateway = {
+        handler: async (request) => new Response(`auth:${new URL(request.url).pathname}`),
+        getSession: async (headers) => {
+          const cookie = headers.get("cookie");
+          if (cookie === "session=user-a")
+            return { session: { userId: "user-a", createdAt: new Date() }, setCookies: [] };
+          if (cookie === "session=user-b")
+            return { session: { userId: "user-b", createdAt: new Date() }, setCookies: [] };
+          return { session: null, setCookies: [] };
+        },
+        signUp: async () => {
+          throw new Error("not used");
+        },
+        recover: async () => {
+          throw new Error("not used");
+        },
+        reEnrol: async () => {
+          throw new Error("not used");
+        },
+      };
+
+      const d = deps(db, { kind: "live", gateway });
+      const app = createApp(d);
+      const sys: UseCaseContext = {
+        viewer: systemViewer("cli:test"),
+        clock: d.clock,
+        newId: d.newId,
+        uow: d.uow,
+      };
+
+      const alex = d.uow.read((r) => r.person.findByUserId("user-a"));
+      const sam = d.uow.read((r) => r.person.findByUserId("user-b"));
+      if (!alex || !sam) throw new Error("Expected seeded people");
+
+      const signedInAlex = {
+        headers: {
+          Cookie: "session=user-a",
+          Origin: ORIGIN,
+        },
+      };
+      const signedInSam = {
+        headers: {
+          Cookie: "session=user-b",
+          Origin: ORIGIN,
+        },
+      };
+
+      // Create a joint account and a private account for Sam
+      const acctJointId = createAccount(sys, {
+        name: "Everyday Joint",
+        type: "transaction",
+        currency: "AUD",
+        isPrivate: false,
+        owners: [
+          { personId: alex.id, shareBp: 5000 },
+          { personId: sam.id, shareBp: 5000 },
+        ],
+      });
+
+      const acctPrivSamId = createAccount(sys, {
+        name: "Sam Private",
+        type: "transaction",
+        currency: "AUD",
+        isPrivate: true,
+        owners: [{ personId: sam.id, shareBp: 10000 }],
+      });
+
+      const payee = createPayee(sys, { name: "Internet Provider", originAccountId: acctJointId });
+
+      // Seed 3 transactions on acctJoint for recurring detection
+      createTransaction(sys, {
+        accountId: acctJointId,
+        postedOn: "2026-01-05",
+        amountCents: -7900,
+        description: "Internet Provider",
+        payeeId: payee.id,
+      });
+      createTransaction(sys, {
+        accountId: acctJointId,
+        postedOn: "2026-02-05",
+        amountCents: -7900,
+        description: "Internet Provider",
+        payeeId: payee.id,
+      });
+      createTransaction(sys, {
+        accountId: acctJointId,
+        postedOn: "2026-03-05",
+        amountCents: -7900,
+        description: "Internet Provider",
+        payeeId: payee.id,
+      });
+
+      // 1. Detect recurring bills via POST /api/planning/recurring-bills/detect
+      const detectRes = await app.request("/api/planning/recurring-bills/detect", {
+        method: "POST",
+        headers: {
+          ...signedInAlex.headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      expect(detectRes.status).toBe(200);
+      const detectBody = (await detectRes.json()) as {
+        candidates: { id: string; status: string }[];
+      };
+      expect(detectBody.candidates.length).toBeGreaterThanOrEqual(1);
+      expect(detectBody.candidates[0]).toBeDefined();
+      const candidate = detectBody.candidates[0];
+      if (!candidate) throw new Error("Expected candidate to exist");
+      expect(candidate.status).toBe("candidate");
+
+      // 2. List candidates via GET /api/planning/recurring-bills?status=candidate
+      const listRes = await app.request(
+        "/api/planning/recurring-bills?status=candidate",
+        signedInAlex,
+      );
+      expect(listRes.status).toBe(200);
+      const listBody = (await listRes.json()) as { series: { id: string }[] };
+      expect(listBody.series.some((s) => s.id === candidate.id)).toBe(true);
+
+      // 3. One-click confirm candidate via POST /api/planning/recurring-bills/:id/confirm
+      const confirmRes = await app.request(
+        `/api/planning/recurring-bills/${candidate.id}/confirm`,
+        {
+          method: "POST",
+          headers: signedInAlex.headers,
+        },
+      );
+      expect(confirmRes.status).toBe(200);
+      const confirmBody = (await confirmRes.json()) as { series: { id: string; status: string } };
+      expect(confirmBody.series.status).toBe("confirmed");
+
+      // 4. Manual create series via POST /api/planning/recurring-bills
+      const createRes = await app.request("/api/planning/recurring-bills", {
+        method: "POST",
+        headers: {
+          ...signedInAlex.headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          accountId: acctJointId,
+          payeeId: payee.id,
+          direction: "bill",
+          cadence: "monthly",
+          expectedCents: 12000,
+          toleranceBp: 1500,
+          nextDueOn: "2026-04-15",
+        }),
+      });
+      expect(createRes.status).toBe(201);
+      const createBody = (await createRes.json()) as { series: { id: string; status: string } };
+      expect(createBody.series.status).toBe("confirmed");
+      const manualSeries = createBody.series;
+
+      // 5. Sam creates a series on their private account
+      const samPrivRes = await app.request("/api/planning/recurring-bills", {
+        method: "POST",
+        headers: {
+          ...signedInSam.headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          accountId: acctPrivSamId,
+          payeeId: payee.id,
+          direction: "bill",
+          cadence: "weekly",
+          expectedCents: 3000,
+          toleranceBp: 1500,
+          nextDueOn: "2026-04-20",
+        }),
+      });
+      expect(samPrivRes.status).toBe(201);
+      const samPrivBody = (await samPrivRes.json()) as { series: { id: string } };
+      const samSeriesId = samPrivBody.series.id;
+
+      // Alex cannot see Sam's private recurring series
+      const alexListRes = await app.request("/api/planning/recurring-bills", signedInAlex);
+      const alexListBody = (await alexListRes.json()) as { series: { id: string }[] };
+      expect(alexListBody.series.some((s) => s.id === samSeriesId)).toBe(false);
+
+      // Alex cannot confirm, reject or delete Sam's private recurring series (404)
+      const alexConfirmRes = await app.request(
+        `/api/planning/recurring-bills/${samSeriesId}/confirm`,
+        { method: "POST", headers: signedInAlex.headers },
+      );
+      expect(alexConfirmRes.status).toBe(404);
+
+      const alexDeleteRes = await app.request(`/api/planning/recurring-bills/${samSeriesId}`, {
+        method: "DELETE",
+        headers: signedInAlex.headers,
+      });
+      expect(alexDeleteRes.status).toBe(404);
+
+      // 6. Reject candidate (create another candidate or reject manual)
+      const rejectRes = await app.request(
+        `/api/planning/recurring-bills/${manualSeries.id}/reject`,
+        { method: "POST", headers: signedInAlex.headers },
+      );
+      expect(rejectRes.status).toBe(200);
+      const rejectBody = (await rejectRes.json()) as { series: { status: string } };
+      expect(rejectBody.series.status).toBe("rejected");
+
+      // 7. Delete series via DELETE /api/planning/recurring-bills/:id
+      const delRes = await app.request(`/api/planning/recurring-bills/${manualSeries.id}`, {
+        method: "DELETE",
+        headers: signedInAlex.headers,
+      });
+      expect(delRes.status).toBe(204);
+
+      // Verify gone
+      const delAgainRes = await app.request(`/api/planning/recurring-bills/${manualSeries.id}`, {
+        method: "DELETE",
+        headers: signedInAlex.headers,
+      });
+      expect(delAgainRes.status).toBe(404);
     });
   });
 });

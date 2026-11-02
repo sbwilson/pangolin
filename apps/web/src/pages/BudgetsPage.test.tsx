@@ -26,6 +26,13 @@ vi.mock("../api.ts", async (importOriginal) => {
     updateBudget: vi.fn(),
     deleteBudget: vi.fn(),
     listAccounts: vi.fn(),
+    fetchRecurringSeries: vi.fn(),
+    fetchPayees: vi.fn(),
+    confirmRecurringSeries: vi.fn(),
+    rejectRecurringSeries: vi.fn(),
+    createRecurringSeries: vi.fn(),
+    deleteRecurringSeries: vi.fn(),
+    detectRecurringBills: vi.fn(),
   };
 });
 
@@ -213,6 +220,8 @@ describe("BudgetsPage", () => {
       },
     ]);
     vi.mocked(api.fetchSuggestedLimit).mockResolvedValue(18500);
+    vi.mocked(api.fetchRecurringSeries).mockResolvedValue([]);
+    vi.mocked(api.fetchPayees).mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -389,5 +398,65 @@ describe("BudgetsPage", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: /Create your first budget/i })).toBeTruthy();
+  });
+
+  it("renders recurring bills section with candidates, active bills, and allows one-click confirmation", async () => {
+    const user = userEvent.setup();
+    const candidateSeries: api.RecurringSeriesData = {
+      id: "series-cand-1",
+      accountId: "acc-1",
+      payeeId: "payee-1",
+      direction: "bill",
+      cadence: "monthly",
+      expectedCents: 1999,
+      toleranceBp: 1500,
+      nextDueOn: "2026-10-15",
+      status: "candidate",
+      createdAt: "2026-09-01T00:00:00Z",
+      updatedAt: "2026-09-01T00:00:00Z",
+    };
+
+    const confirmedSeries: api.RecurringSeriesData = {
+      id: "series-conf-1",
+      accountId: "acc-1",
+      payeeId: "payee-2",
+      direction: "bill",
+      cadence: "weekly",
+      expectedCents: 4500,
+      toleranceBp: 1500,
+      nextDueOn: "2026-10-08",
+      status: "confirmed",
+      createdAt: "2026-09-01T00:00:00Z",
+      updatedAt: "2026-09-01T00:00:00Z",
+    };
+
+    vi.mocked(api.fetchRecurringSeries).mockResolvedValue([candidateSeries, confirmedSeries]);
+    vi.mocked(api.fetchPayees).mockResolvedValue([
+      { id: "payee-1", name: "Netflix" },
+      { id: "payee-2", name: "Gym Membership" },
+    ]);
+    vi.mocked(api.confirmRecurringSeries).mockResolvedValue({
+      ...candidateSeries,
+      status: "confirmed",
+    });
+
+    renderPage();
+
+    // Verify candidates section and bills rendered
+    await waitFor(() => {
+      expect(screen.getByText("Netflix")).toBeTruthy();
+      expect(screen.getByText("Gym Membership")).toBeTruthy();
+    });
+
+    expect(screen.getByText("Detected candidates (1)")).toBeTruthy();
+    expect(screen.getByText("Active bills (1)")).toBeTruthy();
+
+    // One-click confirm
+    const confirmBtn = screen.getByRole("button", { name: /Confirm bill/i });
+    await user.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(api.confirmRecurringSeries).toHaveBeenCalledWith("series-cand-1");
+    });
   });
 });

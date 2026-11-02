@@ -9,6 +9,7 @@ import {
   acceptHandoffItem,
   acceptRuleOfferItem,
   acceptSuggestionItem,
+  adjustBudgetLimitFromReviewAction,
   assignLlmPurpose,
   backupStatus,
   balanceAsOf,
@@ -20,6 +21,7 @@ import {
   cashFlowTotals,
   checkSignUp,
   closeAccount,
+  confirmRecurringSeries,
   confirmSetAsideProposalItem,
   correctPdfRowItem,
   countBatchReviewItems,
@@ -34,6 +36,7 @@ import {
   createLlmProvider,
   createPayee,
   createPayeeAlias,
+  createRecurringSeries,
   createTag,
   createTaxCategory,
   createTransaction,
@@ -45,14 +48,15 @@ import {
   deleteLlmProvider,
   deletePayee,
   deletePayeeAlias,
+  deleteRecurringSeries,
   deleteTag,
   deleteTransaction,
   deleteTransferGroup,
+  detectRecurringBillCandidates,
   discardSetAsideRowItem,
+  dismissBudgetReviewItemAction,
   dismissHandoffItem,
   dismissNoticeItem,
-  dismissBudgetReviewItemAction,
-  adjustBudgetLimitFromReviewAction,
   dismissRuleOfferItem,
   dismissSuggestionItem,
   dismissTransferItem,
@@ -104,6 +108,7 @@ import {
   listPayAnchors,
   listPayeeAliases,
   listPayees,
+  listRecurringSeries,
   listReviewCards,
   listTags,
   listTaxCategories,
@@ -130,6 +135,7 @@ import {
   reEnrolmentUrl,
   regenerateRecoveryCodes,
   registerTransactionNeedsReviewSync,
+  rejectRecurringSeries,
   rejoinAccount,
   removeDuplicateItem,
   revokeLinksItem,
@@ -474,6 +480,41 @@ export function createApi(deps: ApiDeps) {
     .delete("/api/planning/budgets/:id", (c) => {
       writable();
       deleteBudget(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .get("/api/planning/recurring-bills", (c) => {
+      const accountId = c.req.query("accountId") || undefined;
+      const status = c.req.query("status") as "candidate" | "confirmed" | "rejected" | undefined;
+      const series = listRecurringSeries(ctx(c), { accountId, status });
+      return c.json({ series }, 200);
+    })
+    .post("/api/planning/recurring-bills/detect", async (c) => {
+      writable();
+      const body = (await c.req.json().catch(() => ({}))) as {
+        accountId?: string;
+        toleranceBp?: number;
+      };
+      const candidates = detectRecurringBillCandidates(ctx(c), body);
+      return c.json({ candidates }, 200);
+    })
+    .post("/api/planning/recurring-bills", async (c) => {
+      writable();
+      const series = createRecurringSeries(ctx(c), await objectBody(c));
+      return c.json({ series }, 201);
+    })
+    .post("/api/planning/recurring-bills/:id/confirm", (c) => {
+      writable();
+      const series = confirmRecurringSeries(ctx(c), { id: c.req.param("id") });
+      return c.json({ series }, 200);
+    })
+    .post("/api/planning/recurring-bills/:id/reject", (c) => {
+      writable();
+      const series = rejectRecurringSeries(ctx(c), { id: c.req.param("id") });
+      return c.json({ series }, 200);
+    })
+    .delete("/api/planning/recurring-bills/:id", (c) => {
+      writable();
+      deleteRecurringSeries(ctx(c), { id: c.req.param("id") });
       return c.body(null, 204);
     })
     .get("/api/identity/preferences", (c) => {

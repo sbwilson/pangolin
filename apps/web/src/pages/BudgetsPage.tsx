@@ -11,6 +11,7 @@ import { BudgetCard } from "../components/BudgetCard.tsx";
 import { BudgetEditorSheet } from "../components/BudgetEditorSheet.tsx";
 import { useOptionalImport } from "../components/import/index.ts";
 import { MascotIcon } from "../components/MascotLogo.tsx";
+import { RecurringBillsSection } from "../components/RecurringBillsSection.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { freshnessLabel } from "../lib/freshness.ts";
 import { useSignedIn } from "../session.tsx";
@@ -298,6 +299,9 @@ export function BudgetsPage() {
           })}
         </div>
       )}
+
+      {/* Recurring Bills Section */}
+      <RecurringBillsSection />
 
       {/* Budget Editor Sheet */}
       <BudgetEditorSheet

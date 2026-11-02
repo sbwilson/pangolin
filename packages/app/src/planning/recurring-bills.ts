@@ -46,6 +46,28 @@ export const rejectRecurringSeriesInput = z
 
 export type RejectRecurringSeriesInput = z.input<typeof rejectRecurringSeriesInput>;
 
+export const createRecurringSeriesInput = z
+  .object({
+    accountId: z.string().min(1),
+    payeeId: z.string().min(1),
+    direction: z.enum(["bill", "income"]).default("bill"),
+    cadence: z.enum(["weekly", "fortnightly", "monthly", "quarterly", "annual"]),
+    expectedCents: z.number().int().positive(),
+    toleranceBp: z.number().int().min(0).max(10000).default(1500),
+    nextDueOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD"),
+  })
+  .strict();
+
+export type CreateRecurringSeriesInput = z.input<typeof createRecurringSeriesInput>;
+
+export const deleteRecurringSeriesInput = z
+  .object({
+    id: z.string(),
+  })
+  .strict();
+
+export type DeleteRecurringSeriesInput = z.input<typeof deleteRecurringSeriesInput>;
+
 /**
  * Checks whether an incoming transaction is a salary deposit per AD-25:
  * 1. Positive amount (`amountCents > 0`).
@@ -326,5 +348,89 @@ export function rejectRecurringSeries(
     });
 
     return updated;
+  });
+}
+
+/**
+ * Creates a recurring series manually (AD-1, AD-3, AD-25).
+ * Defaults status to 'confirmed'.
+ */
+export function createRecurringSeries(
+  ctx: UseCaseContext,
+  input: CreateRecurringSeriesInput,
+): RecurringSeriesRow {
+  const parsed = parseInput(createRecurringSeriesInput, input);
+
+  return write(ctx, (tx, audit) => {
+    // Verify account is visible to viewer
+    const account = tx.accounts.findVisible(ctx.viewer, parsed.accountId as Id<"Account">);
+    if (!account) {
+      throw new AppError("NotFound", "Account not found");
+    }
+
+    // Verify payee is visible to viewer
+    const payee = tx.payees.find(ctx.viewer, parsed.payeeId as Id<"Payee">);
+    if (!payee) {
+      throw new AppError("NotFound", "Payee not found");
+    }
+
+    const id = ctx.newId<"RecurringSeries">();
+    const now = formatInstant(ctx.clock.now());
+
+    const row: RecurringSeriesRow = {
+      id,
+      accountId: parsed.accountId as Id<"Account">,
+      payeeId: parsed.payeeId as Id<"Payee">,
+      direction: parsed.direction,
+      cadence: parsed.cadence,
+      expectedCents: parsed.expectedCents,
+      toleranceBp: parsed.toleranceBp,
+      nextDueOn: parsed.nextDueOn,
+      status: "confirmed",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    tx.recurringSeries.insert(row);
+    audit({
+      entity: "recurring_series",
+      entityId: row.id,
+      accountId: row.accountId,
+      action: "create",
+      before: null,
+      after: row,
+    });
+
+    return row;
+  });
+}
+
+/**
+ * Deletes a recurring series (AD-1, AD-3).
+ */
+export function deleteRecurringSeries(
+  ctx: UseCaseContext,
+  input: DeleteRecurringSeriesInput,
+): boolean {
+  const parsed = parseInput(deleteRecurringSeriesInput, input);
+  const id = parsed.id as Id<"RecurringSeries">;
+
+  return write(ctx, (tx, audit) => {
+    const existing = tx.recurringSeries.findById(ctx.viewer, id);
+    if (!existing) {
+      throw new AppError("NotFound", "Recurring series not found");
+    }
+
+    tx.recurringSeries.delete(id);
+    audit({
+      entity: "recurring_series",
+      entityId: existing.id,
+      accountId: existing.accountId,
+      action: "delete",
+      before: existing,
+      after: null,
+    });
+
+    return true;
   });
 }

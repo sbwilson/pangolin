@@ -6,6 +6,8 @@ import { AppError } from "../errors.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import {
   confirmRecurringSeries,
+  createRecurringSeries,
+  deleteRecurringSeries,
   detectRecurringBillCandidates,
   listCandidateSeries,
   listRecurringSeries,
@@ -557,5 +559,88 @@ describe("recurring-bills service", () => {
     const candidateBId = detectedByB[0]?.id;
     if (!candidateBId) throw new Error("Expected candidate B");
     expect(() => confirmRecurringSeries(ctxA, { id: candidateBId })).toThrow(AppError);
+  });
+
+  it("can manually create and delete a recurring series with privacy enforcement", () => {
+    let idCounter = 1;
+    const newId = <B extends string>() =>
+      `01H000000000000000000000${(idCounter++).toString().padStart(2, "0")}` as Id<B>;
+    const uow = memoryUnitOfWork();
+    const ctxA = { ...createTestContext("person-a"), uow, newId };
+    const ctxB = { ...createTestContext("person-b"), uow, newId };
+
+    uow.state.people = createTestContext().uow.state.people;
+    uow.state.institutions = createTestContext().uow.state.institutions;
+    uow.state.accounts = createTestContext().uow.state.accounts;
+    uow.state.accountOwners = createTestContext().uow.state.accountOwners;
+    uow.state.payees = [
+      ...createTestContext().uow.state.payees,
+      {
+        id: "payee-rent" as Id<"Payee">,
+        name: "Landlord",
+        scopePersonId: null,
+        defaultCategoryId: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+      },
+    ];
+
+    // Create a confirmed series on joint account
+    const series = createRecurringSeries(ctxA, {
+      accountId: "acct-joint",
+      payeeId: "payee-rent",
+      direction: "bill",
+      cadence: "monthly",
+      expectedCents: 250000,
+      toleranceBp: 1000,
+      nextDueOn: "2026-05-01",
+    });
+
+    expect(series.id).toBeDefined();
+    expect(series.status).toBe("confirmed");
+    expect(series.expectedCents).toBe(250000);
+    expect(series.cadence).toBe("monthly");
+
+    // Both A and B can see series on joint account
+    expect(listRecurringSeries(ctxA)).toHaveLength(1);
+    expect(listRecurringSeries(ctxB)).toHaveLength(1);
+
+    // Creating series on private account
+    const privSeries = createRecurringSeries(ctxB, {
+      accountId: "acct-priv-b",
+      payeeId: "payee-rent",
+      direction: "bill",
+      cadence: "weekly",
+      expectedCents: 5000,
+      toleranceBp: 1500,
+      nextDueOn: "2026-04-10",
+    });
+
+    // A cannot see privSeries, B can see both
+    expect(listRecurringSeries(ctxA)).toHaveLength(1);
+    expect(listRecurringSeries(ctxB)).toHaveLength(2);
+
+    // A cannot delete privSeries (404)
+    expect(() => deleteRecurringSeries(ctxA, { id: privSeries.id })).toThrow(AppError);
+
+    // A cannot create a series for an account they cannot access or doesn't exist
+    expect(() =>
+      createRecurringSeries(ctxA, {
+        accountId: "acct-priv-b",
+        payeeId: "payee-rent",
+        direction: "bill",
+        cadence: "weekly",
+        expectedCents: 5000,
+        nextDueOn: "2026-04-10",
+      }),
+    ).toThrow(AppError);
+
+    // B can delete privSeries
+    expect(deleteRecurringSeries(ctxB, { id: privSeries.id })).toBe(true);
+    expect(listRecurringSeries(ctxB)).toHaveLength(1);
+
+    // Once deleted, deleting again throws NotFound
+    expect(() => deleteRecurringSeries(ctxB, { id: privSeries.id })).toThrow(AppError);
   });
 });

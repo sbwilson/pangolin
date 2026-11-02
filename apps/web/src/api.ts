@@ -1270,3 +1270,103 @@ export async function fetchSuggestedLimit(params: {
   const data = (await res.json()) as { suggestedLimitCents: number | null };
   return data.suggestedLimitCents;
 }
+
+export interface PayeeData {
+  readonly id: string;
+  readonly name: string;
+  readonly websiteUrl?: string | null;
+  readonly logoAttachmentId?: string | null;
+  readonly defaultCategoryId?: string | null;
+}
+
+export async function fetchPayees(): Promise<PayeeData[]> {
+  const res = await fetch("/api/classify/payees");
+  if (!res.ok) throw await apiError(res);
+  const data = (await res.json()) as { payees: PayeeData[] };
+  return data.payees;
+}
+
+export interface RecurringSeriesData {
+  readonly id: string;
+  readonly accountId: string;
+  readonly payeeId: string;
+  readonly direction: "bill" | "income";
+  readonly cadence: "weekly" | "fortnightly" | "monthly" | "quarterly" | "annual";
+  readonly expectedCents: number;
+  readonly toleranceBp: number;
+  readonly nextDueOn: string;
+  readonly status: "candidate" | "confirmed" | "rejected";
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface CreateRecurringSeriesInput {
+  readonly accountId: string;
+  readonly payeeId: string;
+  readonly direction?: "bill" | "income";
+  readonly cadence: "weekly" | "fortnightly" | "monthly" | "quarterly" | "annual";
+  readonly expectedCents: number;
+  readonly toleranceBp?: number;
+  readonly nextDueOn: string;
+}
+
+export async function fetchRecurringSeries(params?: {
+  readonly accountId?: string;
+  readonly status?: "candidate" | "confirmed" | "rejected";
+}): Promise<RecurringSeriesData[]> {
+  const query = new URLSearchParams();
+  if (params?.accountId) query.set("accountId", params.accountId);
+  if (params?.status) query.set("status", params.status);
+
+  const qs = query.toString();
+  const url = qs ? `/api/planning/recurring-bills?${qs}` : "/api/planning/recurring-bills";
+  const res = await fetch(url);
+  if (!res.ok) throw await apiError(res);
+  const data = (await res.json()) as { series: RecurringSeriesData[] };
+  return data.series;
+}
+
+export async function detectRecurringBills(input?: {
+  readonly accountId?: string;
+  readonly toleranceBp?: number;
+}): Promise<RecurringSeriesData[]> {
+  const res = await sendJson<{ candidates: RecurringSeriesData[] }>(
+    "POST",
+    "/api/planning/recurring-bills/detect",
+    input ?? {},
+  );
+  return res.candidates;
+}
+
+export async function confirmRecurringSeries(id: string): Promise<RecurringSeriesData> {
+  const res = await sendJson<{ series: RecurringSeriesData }>(
+    "POST",
+    `/api/planning/recurring-bills/${encodeURIComponent(id)}/confirm`,
+    {},
+  );
+  return res.series;
+}
+
+export async function rejectRecurringSeries(id: string): Promise<RecurringSeriesData> {
+  const res = await sendJson<{ series: RecurringSeriesData }>(
+    "POST",
+    `/api/planning/recurring-bills/${encodeURIComponent(id)}/reject`,
+    {},
+  );
+  return res.series;
+}
+
+export async function createRecurringSeries(
+  input: CreateRecurringSeriesInput,
+): Promise<RecurringSeriesData> {
+  const res = await sendJson<{ series: RecurringSeriesData }>(
+    "POST",
+    "/api/planning/recurring-bills",
+    input,
+  );
+  return res.series;
+}
+
+export async function deleteRecurringSeries(id: string): Promise<void> {
+  await sendJson("DELETE", `/api/planning/recurring-bills/${encodeURIComponent(id)}`);
+}
