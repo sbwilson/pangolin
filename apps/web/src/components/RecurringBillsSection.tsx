@@ -167,7 +167,7 @@ export function RecurringBillsSection() {
             }}
             className="text-xs h-8 inline-flex items-center gap-1.5"
           >
-            <RefreshCwIcon className={detectMutation.isPending ? "animate-spin" : undefined} />
+            <RefreshCwIcon className={detectMutation.isPending ? "animate-spin" : ""} />
             {detectMutation.isPending ? "Detecting..." : "Detect bills"}
           </Button>
 

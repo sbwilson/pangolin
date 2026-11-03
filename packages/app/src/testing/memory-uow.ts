@@ -3402,7 +3402,7 @@ function budgetRepo(working: MemoryState, check: () => void): BudgetRepository {
       } else if (budgetRow.categoryGroupId) {
         targetCategoryIds = new Set(
           working.categories
-            .filter((c) => c.groupId === budgetRow.categoryGroupId && c.deletedAt === null)
+            .filter((c) => c.groupId === budgetRow.categoryGroupId && !working.deleted.has(c.id))
             .map((c) => c.id),
         );
       }
@@ -3411,23 +3411,12 @@ function budgetRepo(working: MemoryState, check: () => void): BudgetRepository {
       let totalSpent = 0;
       for (const split of working.splits) {
         const txn = working.transactions.find((t) => t.id === split.transactionId);
-        if (!txn || txn.deletedAt !== null) continue;
+        if (!txn || working.deleted.has(txn.id)) continue;
         if (!visibleAccIds.has(txn.accountId)) continue;
         if (txn.postedOn < period.start || txn.postedOn >= period.end) continue;
 
         // flowKind in memory:
-        const kind = flowKind({
-          splitAmountCents: split.amountCents,
-          categoryId: split.categoryId,
-          categoryGroupKind: (() => {
-            const cat = working.categories.find((c) => c.id === split.categoryId);
-            if (!cat) return null;
-            const grp = working.categoryGroups.find((g) => g.id === cat.groupId);
-            return (grp?.kind as any) ?? null;
-          })(),
-          counterpartAccountType: null, // transfers don't count anyway
-          hasTransferGroup: txn.transferGroupId !== null,
-        });
+        const kind = splitFlowKindFor(working, viewer, txn, split);
 
         if (kind !== "expense") continue;
 

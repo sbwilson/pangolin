@@ -2,6 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Id, RecurringSeriesRow, Viewer } from "@pangolin/app";
+import { personViewer } from "@pangolin/app";
+import { Temporal } from "@pangolin/shared/temporal";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadMigrations, migrate, packageMigrationsDir } from "../migrate.ts";
 import { type Db, openDatabase } from "../open.ts";
@@ -68,7 +70,8 @@ describe("recurring_series repository on SQLite", () => {
       tx.recurringSeries.insert(validRow);
     });
 
-    const viewer: Viewer = { kind: "person", personId: personAId };
+    const authAt = Temporal.Instant.from("2026-01-01T00:00:00.000Z");
+    const viewer: Viewer = personViewer(personAId, authAt);
     const read = uow.read((repos) => repos.recurringSeries.findById(viewer, validRow.id));
     expect(read).toEqual(validRow);
 
@@ -142,8 +145,9 @@ describe("recurring_series repository on SQLite", () => {
       });
     });
 
-    const viewerA: Viewer = { kind: "person", personId: personAId };
-    const viewerB: Viewer = { kind: "person", personId: personBId };
+    const authAt = Temporal.Instant.from("2026-01-01T00:00:00.000Z");
+    const viewerA: Viewer = personViewer(personAId, authAt);
+    const viewerB: Viewer = personViewer(personBId, authAt);
 
     const seriesForA = uow.read((repos) => repos.recurringSeries.listVisible(viewerA));
     expect(seriesForA).toHaveLength(1);

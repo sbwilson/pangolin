@@ -126,6 +126,9 @@ describe("the closing-balance sync job", () => {
     // The next day's run raises nothing more and writes no audit row.
     const before = auditCount();
     now = fixedClockAt("2026-09-29").now().add({ minutes: 6 });
+    // With DEFAULT_CONCURRENCY.local = 1, runner.tick() claims 1 local job per tick.
+    // Ensure all due jobs (including daily schedules) are processed.
+    await r.tick();
     await r.tick();
     expect(items()).toHaveLength(1);
     expect(auditCount()).toBe(before);

@@ -102,6 +102,7 @@ describe("the backup jobs", () => {
       "backup-check",
       "backup-drill",
       "closing-balance-sync",
+      "budget-evaluation",
       "logo-fetch",
     ]);
     expect(EXTERNAL_EFFECT_KINDS).toEqual(["backup-push", "logo-fetch"]);
@@ -125,6 +126,12 @@ describe("the backup jobs", () => {
         kind: "closing-balance-sync",
         status: "pending",
         dedupe_key: "schedule:closing-balance-daily",
+        run_at: "2026-09-27T14:05:00.000Z",
+      },
+      {
+        kind: "budget-evaluation",
+        status: "pending",
+        dedupe_key: "schedule:budget-evaluation-daily",
         run_at: "2026-09-27T14:05:00.000Z",
       },
       {
@@ -153,6 +160,12 @@ describe("the backup jobs", () => {
         kind: "closing-balance-sync",
         status: "pending",
         dedupe_key: "schedule:closing-balance-daily",
+        run_at: "2026-09-27T14:05:00.000Z",
+      },
+      {
+        kind: "budget-evaluation",
+        status: "pending",
+        dedupe_key: "schedule:budget-evaluation-daily",
         run_at: "2026-09-27T14:05:00.000Z",
       },
     ]);

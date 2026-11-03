@@ -3,7 +3,8 @@ import { parseDate } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
-import { memoryUnitOfWork } from "../testing/memory-uow.ts";
+import { type MemoryUnitOfWork, memoryUnitOfWork } from "../testing/memory-uow.ts";
+import { personViewer } from "../viewer.ts";
 import {
   createBudget,
   deleteBudget,
@@ -14,7 +15,10 @@ import {
   updateBudget,
 } from "./budgets.ts";
 
-function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext {
+function createTestContext(viewerPersonId: string = "person-a"): {
+  ctx: UseCaseContext;
+  uow: MemoryUnitOfWork;
+} {
   const clock = {
     today: () => parseDate("2026-10-08"),
     now: () => parseDate("2026-10-08").toZonedDateTime("Australia/Sydney").toInstant(),
@@ -67,7 +71,6 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
       isFixedCost: false,
       createdAt: "2026-09-01T00:00:00Z",
       updatedAt: "2026-09-01T00:00:00Z",
-      deletedAt: null,
     },
   ];
 
@@ -117,22 +120,30 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
     {
       accountId: "acc-joint" as Id<"Account">,
       personId: "person-a" as Id<"Person">,
+      shareBp: 5000,
       createdAt: "2026-09-01T00:00:00Z",
+      updatedAt: "2026-09-01T00:00:00Z",
     },
     {
       accountId: "acc-joint" as Id<"Account">,
       personId: "person-b" as Id<"Person">,
+      shareBp: 5000,
       createdAt: "2026-09-01T00:00:00Z",
+      updatedAt: "2026-09-01T00:00:00Z",
     },
     {
       accountId: "acc-card-b" as Id<"Account">,
       personId: "person-b" as Id<"Person">,
+      shareBp: 10000,
       createdAt: "2026-09-01T00:00:00Z",
+      updatedAt: "2026-09-01T00:00:00Z",
     },
     {
       accountId: "acc-private-a" as Id<"Account">,
       personId: "person-a" as Id<"Person">,
+      shareBp: 10000,
       createdAt: "2026-09-01T00:00:00Z",
+      updatedAt: "2026-09-01T00:00:00Z",
     },
   ];
 
@@ -158,27 +169,22 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
   };
 
   return {
-    viewer: {
-      kind: "person",
-      personId: viewerPersonId as Id<"Person">,
-      authAt: "2026-10-08T00:00:00Z",
+    ctx: {
+      viewer: personViewer(viewerPersonId as Id<"Person">, clock.now()),
+      uow,
+      clock,
+      newId,
     },
     uow,
-    clock,
-    newId,
   };
 }
 
 describe("Budgets application use cases", () => {
   it("creates, updates, reads, and lists budgets with person scoping", () => {
-    const ctxA = createTestContext("person-a");
-    const ctxB = {
+    const { ctx: ctxA } = createTestContext("person-a");
+    const ctxB: UseCaseContext = {
       ...ctxA,
-      viewer: {
-        kind: "person" as const,
-        personId: "person-b" as Id<"Person">,
-        authAt: "2026-10-08T00:00:00Z",
-      },
+      viewer: personViewer("person-b" as Id<"Person">, ctxA.clock.now()),
     };
 
     // Create shared budget
@@ -224,7 +230,7 @@ describe("Budgets application use cases", () => {
   });
 
   it("calculates spent, pace, and projected for shared budget matching the I/O edge case matrix", () => {
-    const ctx = createTestContext("person-a");
+    const { ctx } = createTestContext("person-a");
 
     // Create shared budget on Groceries, limit $600 (60000 cents)
     const budget = createBudget(ctx, {
@@ -239,7 +245,7 @@ describe("Budgets application use cases", () => {
     // 1. $50 shared from joint account
     // 2. $30 shared from partner personal card
     // 3. $20 private personal (beneficiary = person-a)
-    ctx.uow.state.transactions.push(
+    (ctx.uow as MemoryUnitOfWork).state.transactions.push(
       {
         id: "txn-1" as Id<"Transaction">,
         accountId: "acc-joint" as Id<"Account">,
@@ -254,7 +260,11 @@ describe("Budgets application use cases", () => {
         fingerprint: "fp-1",
         fingerprintVersion: 1,
         externalId: null,
-        deletedAt: null,
+        status: "posted",
+        importId: null,
+        performedBy: null,
+        isHidden: false,
+        notes: null,
         createdAt: "2026-10-05T00:00:00Z",
         updatedAt: "2026-10-05T00:00:00Z",
       },
@@ -272,7 +282,11 @@ describe("Budgets application use cases", () => {
         fingerprint: "fp-2",
         fingerprintVersion: 1,
         externalId: null,
-        deletedAt: null,
+        status: "posted",
+        importId: null,
+        performedBy: null,
+        isHidden: false,
+        notes: null,
         createdAt: "2026-10-05T00:00:00Z",
         updatedAt: "2026-10-05T00:00:00Z",
       },
@@ -290,13 +304,17 @@ describe("Budgets application use cases", () => {
         fingerprint: "fp-3",
         fingerprintVersion: 1,
         externalId: null,
-        deletedAt: null,
+        status: "posted",
+        importId: null,
+        performedBy: null,
+        isHidden: false,
+        notes: null,
         createdAt: "2026-10-05T00:00:00Z",
         updatedAt: "2026-10-05T00:00:00Z",
       },
     );
 
-    ctx.uow.state.splits.push(
+    (ctx.uow as MemoryUnitOfWork).state.splits.push(
       {
         id: "split-1" as Id<"Split">,
         transactionId: "txn-1" as Id<"Transaction">,
@@ -304,6 +322,7 @@ describe("Budgets application use cases", () => {
         categoryId: "cat-groceries" as Id<"Category">,
         memo: null,
         beneficiary: "shared",
+        propertyId: null,
         activityId: null,
         taxCategoryId: null,
         deductibleBp: null,
@@ -322,6 +341,7 @@ describe("Budgets application use cases", () => {
         categoryId: "cat-groceries" as Id<"Category">,
         memo: null,
         beneficiary: "shared",
+        propertyId: null,
         activityId: null,
         taxCategoryId: null,
         deductibleBp: null,
@@ -340,6 +360,7 @@ describe("Budgets application use cases", () => {
         categoryId: "cat-groceries" as Id<"Category">,
         memo: null,
         beneficiary: "person-a",
+        propertyId: null,
         activityId: null,
         taxCategoryId: null,
         deductibleBp: null,
@@ -364,7 +385,7 @@ describe("Budgets application use cases", () => {
   });
 
   it("calculates rollover carryover from prior period when rollover is enabled", () => {
-    const ctx = createTestContext("person-a");
+    const { ctx } = createTestContext("person-a");
 
     const budget = createBudget(ctx, {
       categoryId: "cat-groceries",
@@ -375,7 +396,7 @@ describe("Budgets application use cases", () => {
 
     // Prior period is [2026-09-17, 2026-10-01).
     // In prior period, spend $360 (limit 400 - spent 360 = +$40 unspent).
-    ctx.uow.state.transactions.push({
+    (ctx.uow as MemoryUnitOfWork).state.transactions.push({
       id: "txn-prior" as Id<"Transaction">,
       accountId: "acc-joint" as Id<"Account">,
       postedOn: "2026-09-25",
@@ -389,17 +410,22 @@ describe("Budgets application use cases", () => {
       fingerprint: "fp-prior",
       fingerprintVersion: 1,
       externalId: null,
-      deletedAt: null,
+      status: "posted",
+      importId: null,
+      performedBy: null,
+      isHidden: false,
+      notes: null,
       createdAt: "2026-09-25T00:00:00Z",
       updatedAt: "2026-09-25T00:00:00Z",
     });
-    ctx.uow.state.splits.push({
+    (ctx.uow as MemoryUnitOfWork).state.splits.push({
       id: "split-prior" as Id<"Split">,
       transactionId: "txn-prior" as Id<"Transaction">,
       amountCents: -36000,
       categoryId: "cat-groceries" as Id<"Category">,
       memo: null,
       beneficiary: "shared",
+      propertyId: null,
       activityId: null,
       taxCategoryId: null,
       deductibleBp: null,
@@ -418,7 +444,7 @@ describe("Budgets application use cases", () => {
   });
 
   it("calculates 6-period limit suggestion and returns null when history < 6", () => {
-    const ctx = createTestContext("person-a");
+    const { ctx } = createTestContext("person-a");
 
     const budget = createBudget(ctx, {
       categoryId: "cat-groceries",
@@ -451,7 +477,7 @@ describe("Budgets application use cases", () => {
       const amount = amounts[i];
       if (!date || amount === undefined) continue;
       const txnId = `txn-hist-${i}` as Id<"Transaction">;
-      ctx.uow.state.transactions.push({
+      (ctx.uow as MemoryUnitOfWork).state.transactions.push({
         id: txnId,
         accountId: "acc-joint" as Id<"Account">,
         postedOn: date,
@@ -465,17 +491,22 @@ describe("Budgets application use cases", () => {
         fingerprint: `fp-hist-${i}`,
         fingerprintVersion: 1,
         externalId: null,
-        deletedAt: null,
+        status: "posted",
+        importId: null,
+        performedBy: null,
+        isHidden: false,
+        notes: null,
         createdAt: `${date}T00:00:00Z`,
         updatedAt: `${date}T00:00:00Z`,
       });
-      ctx.uow.state.splits.push({
+      (ctx.uow as MemoryUnitOfWork).state.splits.push({
         id: `split-hist-${i}` as Id<"Split">,
         transactionId: txnId,
         amountCents: -amount,
         categoryId: "cat-groceries" as Id<"Category">,
         memo: null,
         beneficiary: "shared",
+        propertyId: null,
         activityId: null,
         taxCategoryId: null,
         deductibleBp: null,

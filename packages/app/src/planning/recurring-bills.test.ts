@@ -3,7 +3,8 @@ import { parseDate } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
-import { memoryUnitOfWork } from "../testing/memory-uow.ts";
+import { type MemoryUnitOfWork, memoryUnitOfWork } from "../testing/memory-uow.ts";
+import { personViewer } from "../viewer.ts";
 import {
   confirmRecurringSeries,
   createRecurringSeries,
@@ -14,7 +15,10 @@ import {
   rejectRecurringSeries,
 } from "./recurring-bills.ts";
 
-function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext {
+function createTestContext(viewerPersonId: string = "person-a"): {
+  ctx: UseCaseContext;
+  uow: MemoryUnitOfWork;
+} {
   const clock = {
     today: () => parseDate("2026-04-01"),
     now: () => parseDate("2026-04-01").toZonedDateTime("Australia/Sydney").toInstant(),
@@ -33,8 +37,8 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
       colour: "#FF0000",
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
-      deletedAt: null,
       userId: "user-a",
+      deletedAt: null,
     },
     {
       id: "person-b" as Id<"Person">,
@@ -42,8 +46,8 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
       colour: "#00FF00",
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
-      deletedAt: null,
       userId: "user-b",
+      deletedAt: null,
     },
   ];
 
@@ -52,7 +56,7 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
       id: "inst-1" as Id<"Institution">,
       name: "CommBank",
       kind: "bank",
-      logoAttachmentId: null,
+      websiteUrl: null,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
     },
@@ -67,12 +71,11 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
       type: "transaction",
       currency: "AUD",
       isPrivate: false,
-      accountNumberMasked: null,
-      routingNumber: null,
+      openedOn: null,
       closedOn: null,
+      isSavings: false,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
-      deletedAt: null,
     },
     {
       id: "acct-priv-b" as Id<"Account">,
@@ -81,12 +84,11 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
       type: "transaction",
       currency: "AUD",
       isPrivate: true,
-      accountNumberMasked: null,
-      routingNumber: null,
+      openedOn: null,
       closedOn: null,
+      isSavings: false,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
-      deletedAt: null,
     },
   ];
 
@@ -118,46 +120,52 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
     {
       id: "payee-netflix" as Id<"Payee">,
       name: "Netflix",
+      websiteUrl: null,
+      logoAttachmentId: null,
       scopePersonId: null,
       defaultCategoryId: null,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
-      deletedAt: null,
     },
     {
       id: "payee-gym" as Id<"Payee">,
       name: "Gym",
+      websiteUrl: null,
+      logoAttachmentId: null,
       scopePersonId: null,
       defaultCategoryId: null,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
-      deletedAt: null,
     },
     {
       id: "payee-employer" as Id<"Payee">,
       name: "Acme Corp Payroll",
+      websiteUrl: null,
+      logoAttachmentId: null,
       scopePersonId: null,
       defaultCategoryId: null,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
-      deletedAt: null,
     },
   ];
 
   return {
-    viewer: { kind: "person", personId: viewerPersonId as Id<"Person"> },
-    clock,
-    newId,
+    ctx: {
+      viewer: personViewer(viewerPersonId as Id<"Person">, clock.now()),
+      clock,
+      newId,
+      uow,
+    },
     uow,
   };
 }
 
 describe("recurring-bills service", () => {
   it("detects recurring bill candidates for stable occurrences", () => {
-    const ctx = createTestContext("person-a");
+    const { ctx, uow } = createTestContext("person-a");
 
     // Add 3 monthly Netflix transactions in joint account
-    ctx.uow.state.transactions = [
+    uow.state.transactions = [
       {
         id: "t1" as Id<"Transaction">,
         accountId: "acct-joint" as Id<"Account">,
@@ -179,7 +187,6 @@ describe("recurring-bills service", () => {
         notes: null,
         createdAt: "2026-01-15T00:00:00Z",
         updatedAt: "2026-01-15T00:00:00Z",
-        deletedAt: null,
       },
       {
         id: "t2" as Id<"Transaction">,
@@ -202,7 +209,6 @@ describe("recurring-bills service", () => {
         notes: null,
         createdAt: "2026-02-15T00:00:00Z",
         updatedAt: "2026-02-15T00:00:00Z",
-        deletedAt: null,
       },
       {
         id: "t3" as Id<"Transaction">,
@@ -225,7 +231,6 @@ describe("recurring-bills service", () => {
         notes: null,
         createdAt: "2026-03-15T00:00:00Z",
         updatedAt: "2026-03-15T00:00:00Z",
-        deletedAt: null,
       },
     ];
 
@@ -257,8 +262,8 @@ describe("recurring-bills service", () => {
   });
 
   it("can reject a candidate", () => {
-    const ctx = createTestContext("person-a");
-    ctx.uow.state.recurringSeries = [
+    const { ctx, uow } = createTestContext("person-a");
+    uow.state.recurringSeries = [
       {
         id: "series-1" as Id<"RecurringSeries">,
         accountId: "acct-joint" as Id<"Account">,
@@ -280,9 +285,9 @@ describe("recurring-bills service", () => {
   });
 
   it("excludes internal transfers from candidate detection", () => {
-    const ctx = createTestContext("person-a");
+    const { ctx, uow } = createTestContext("person-a");
 
-    ctx.uow.state.transactions = [
+    uow.state.transactions = [
       {
         id: "t1" as Id<"Transaction">,
         accountId: "acct-joint" as Id<"Account">,
@@ -304,7 +309,6 @@ describe("recurring-bills service", () => {
         notes: null,
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
-        deletedAt: null,
       },
       {
         id: "t2" as Id<"Transaction">,
@@ -327,7 +331,6 @@ describe("recurring-bills service", () => {
         notes: null,
         createdAt: "2026-01-15T00:00:00Z",
         updatedAt: "2026-01-15T00:00:00Z",
-        deletedAt: null,
       },
       {
         id: "t3" as Id<"Transaction">,
@@ -350,7 +353,6 @@ describe("recurring-bills service", () => {
         notes: null,
         createdAt: "2026-01-29T00:00:00Z",
         updatedAt: "2026-01-29T00:00:00Z",
-        deletedAt: null,
       },
     ];
 
@@ -359,9 +361,9 @@ describe("recurring-bills service", () => {
   });
 
   it("excludes salary deposits matching pay anchor (AD-25)", () => {
-    const ctx = createTestContext("person-a");
+    const { ctx, uow } = createTestContext("person-a");
 
-    ctx.uow.state.payAnchors = [
+    uow.state.payAnchors = [
       {
         id: "anchor-1" as Id<"PayAnchor">,
         personId: "person-a" as Id<"Person">,
@@ -378,7 +380,7 @@ describe("recurring-bills service", () => {
     ];
 
     // Incoming salary deposits
-    ctx.uow.state.transactions = [
+    uow.state.transactions = [
       {
         id: "t1" as Id<"Transaction">,
         accountId: "acct-joint" as Id<"Account">,
@@ -400,7 +402,6 @@ describe("recurring-bills service", () => {
         notes: null,
         createdAt: "2026-01-08T00:00:00Z",
         updatedAt: "2026-01-08T00:00:00Z",
-        deletedAt: null,
       },
       {
         id: "t2" as Id<"Transaction">,
@@ -423,7 +424,6 @@ describe("recurring-bills service", () => {
         notes: null,
         createdAt: "2026-01-22T00:00:00Z",
         updatedAt: "2026-01-22T00:00:00Z",
-        deletedAt: null,
       },
       {
         id: "t3" as Id<"Transaction">,
@@ -446,7 +446,6 @@ describe("recurring-bills service", () => {
         notes: null,
         createdAt: "2026-02-05T00:00:00Z",
         updatedAt: "2026-02-05T00:00:00Z",
-        deletedAt: null,
       },
     ];
 
@@ -456,8 +455,13 @@ describe("recurring-bills service", () => {
 
   it("respects account privacy boundaries (AD-3, AD-22)", () => {
     const uow = memoryUnitOfWork();
-    const ctxA = { ...createTestContext("person-a"), uow };
-    const ctxB = { ...createTestContext("person-b"), uow };
+    const { ctx: baseA } = createTestContext("person-a");
+    const ctxA: UseCaseContext = { ...baseA, uow };
+    const ctxB: UseCaseContext = {
+      ...baseA,
+      viewer: personViewer("person-b" as Id<"Person">, baseA.clock.now()),
+      uow,
+    };
 
     // Copy setup from ctxA to shared uow
     uow.state.people = createTestContext().uow.state.people;
@@ -489,7 +493,6 @@ describe("recurring-bills service", () => {
         notes: null,
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
-        deletedAt: null,
       },
       {
         id: "t2" as Id<"Transaction">,
@@ -512,7 +515,6 @@ describe("recurring-bills service", () => {
         notes: null,
         createdAt: "2026-01-15T00:00:00Z",
         updatedAt: "2026-01-15T00:00:00Z",
-        deletedAt: null,
       },
       {
         id: "t3" as Id<"Transaction">,
@@ -535,7 +537,6 @@ describe("recurring-bills service", () => {
         notes: null,
         createdAt: "2026-01-29T00:00:00Z",
         updatedAt: "2026-01-29T00:00:00Z",
-        deletedAt: null,
       },
     ];
 
@@ -566,8 +567,14 @@ describe("recurring-bills service", () => {
     const newId = <B extends string>() =>
       `01H000000000000000000000${(idCounter++).toString().padStart(2, "0")}` as Id<B>;
     const uow = memoryUnitOfWork();
-    const ctxA = { ...createTestContext("person-a"), uow, newId };
-    const ctxB = { ...createTestContext("person-b"), uow, newId };
+    const { ctx: baseA } = createTestContext("person-a");
+    const ctxA: UseCaseContext = { ...baseA, uow, newId };
+    const ctxB: UseCaseContext = {
+      ...baseA,
+      viewer: personViewer("person-b" as Id<"Person">, baseA.clock.now()),
+      uow,
+      newId,
+    };
 
     uow.state.people = createTestContext().uow.state.people;
     uow.state.institutions = createTestContext().uow.state.institutions;
@@ -578,11 +585,12 @@ describe("recurring-bills service", () => {
       {
         id: "payee-rent" as Id<"Payee">,
         name: "Landlord",
+        websiteUrl: null,
+        logoAttachmentId: null,
         scopePersonId: null,
         defaultCategoryId: null,
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
-        deletedAt: null,
       },
     ];
 

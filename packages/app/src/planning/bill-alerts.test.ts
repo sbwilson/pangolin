@@ -3,7 +3,8 @@ import { parseDate } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import type { UseCaseContext } from "../context.ts";
 import { AppError } from "../errors.ts";
-import { memoryUnitOfWork } from "../testing/memory-uow.ts";
+import { type MemoryUnitOfWork, memoryUnitOfWork } from "../testing/memory-uow.ts";
+import { personViewer } from "../viewer.ts";
 import {
   BILL_ALERT_MISSED_PAYMENT_REVIEW,
   BILL_ALERT_PRICE_RISE_REVIEW,
@@ -13,7 +14,10 @@ import {
   syncAllBillAlertReviewItems,
 } from "./bill-alerts.ts";
 
-function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext {
+function createTestContext(viewerPersonId: string = "person-a"): {
+  ctx: UseCaseContext;
+  uow: MemoryUnitOfWork;
+} {
   const clock = {
     today: () => parseDate("2026-04-20"),
     now: () => parseDate("2026-04-20").toZonedDateTime("Australia/Sydney").toInstant(),
@@ -54,12 +58,11 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
       type: "transaction",
       currency: "AUD",
       isPrivate: false,
-      accountNumberMasked: null,
-      routingNumber: null,
+      openedOn: null,
       closedOn: null,
+      isSavings: false,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
-      deletedAt: null,
     },
     {
       id: "acct-priv-b" as Id<"Account">,
@@ -68,12 +71,11 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
       type: "transaction",
       currency: "AUD",
       isPrivate: true,
-      accountNumberMasked: null,
-      routingNumber: null,
+      openedOn: null,
       closedOn: null,
+      isSavings: false,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
-      deletedAt: null,
     },
   ];
 
@@ -105,37 +107,42 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
     {
       id: "payee-netflix" as Id<"Payee">,
       name: "Netflix",
+      websiteUrl: null,
+      logoAttachmentId: null,
       scopePersonId: null,
       defaultCategoryId: null,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
-      deletedAt: null,
     },
     {
       id: "payee-gym" as Id<"Payee">,
       name: "Gym",
+      websiteUrl: null,
+      logoAttachmentId: null,
       scopePersonId: null,
       defaultCategoryId: null,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
-      deletedAt: null,
     },
   ];
 
   return {
-    viewer: { kind: "person", personId: viewerPersonId as Id<"Person"> },
-    clock,
-    newId,
+    ctx: {
+      viewer: personViewer(viewerPersonId as Id<"Person">, clock.now()),
+      clock,
+      newId,
+      uow,
+    },
     uow,
   };
 }
 
 describe("bill-alerts application use cases", () => {
   it("generates missed payment alert when nextDueOn + grace < today and no matching payment", () => {
-    const ctx = createTestContext("person-a");
+    const { ctx, uow } = createTestContext("person-a");
 
     // Confirmed monthly series with nextDueOn = 2026-04-10. Today is 2026-04-20 (> 7 days grace)
-    ctx.uow.state.recurringSeries.push({
+    uow.state.recurringSeries.push({
       id: "series-netflix" as Id<"RecurringSeries">,
       accountId: "acct-joint" as Id<"Account">,
       payeeId: "payee-netflix" as Id<"Payee">,
@@ -159,10 +166,10 @@ describe("bill-alerts application use cases", () => {
   });
 
   it("does not generate missed payment alert if still within grace period", () => {
-    const ctx = createTestContext("person-a");
+    const { ctx, uow } = createTestContext("person-a");
 
     // nextDueOn is 2026-04-15 (monthly grace = 7 days -> cutoff 2026-04-22). Today is 2026-04-20.
-    ctx.uow.state.recurringSeries.push({
+    uow.state.recurringSeries.push({
       id: "series-netflix" as Id<"RecurringSeries">,
       accountId: "acct-joint" as Id<"Account">,
       payeeId: "payee-netflix" as Id<"Payee">,
@@ -183,9 +190,9 @@ describe("bill-alerts application use cases", () => {
   });
 
   it("auto-resolves open missed payment alert when matching payment is detected", () => {
-    const ctx = createTestContext("person-a");
+    const { ctx, uow } = createTestContext("person-a");
 
-    ctx.uow.state.recurringSeries.push({
+    uow.state.recurringSeries.push({
       id: "series-netflix" as Id<"RecurringSeries">,
       accountId: "acct-joint" as Id<"Account">,
       payeeId: "payee-netflix" as Id<"Payee">,
@@ -204,7 +211,7 @@ describe("bill-alerts application use cases", () => {
     expect(ctx.uow.read((r) => r.reviewItems.listOpenFor(ctx.viewer))).toHaveLength(1);
 
     // 2. Matching payment transaction occurs on 2026-04-11
-    ctx.uow.state.transactions.push({
+    uow.state.transactions.push({
       id: "t-netflix-paid" as Id<"Transaction">,
       accountId: "acct-joint" as Id<"Account">,
       postedOn: "2026-04-11",
@@ -225,7 +232,6 @@ describe("bill-alerts application use cases", () => {
       notes: null,
       createdAt: "2026-04-11T00:00:00Z",
       updatedAt: "2026-04-11T00:00:00Z",
-      deletedAt: null,
     });
 
     // 3. Re-run sync: should resolve missed payment alert
@@ -233,16 +239,16 @@ describe("bill-alerts application use cases", () => {
     const openItems = ctx.uow.read((r) => r.reviewItems.listOpenFor(ctx.viewer));
     expect(openItems).toHaveLength(0);
 
-    const resolved = ctx.uow.state.reviewItems.find(
+    const resolved = uow.state.reviewItems.find(
       (r) => r.dedupeKey === billMissedPaymentDedupeKey("series-netflix", "2026-04-10"),
     );
     expect(resolved?.resolution).toBe("paid");
   });
 
   it("raises price rise alert when matching payment is > 10% higher than expected", () => {
-    const ctx = createTestContext("person-a");
+    const { ctx, uow } = createTestContext("person-a");
 
-    ctx.uow.state.recurringSeries.push({
+    uow.state.recurringSeries.push({
       id: "series-netflix" as Id<"RecurringSeries">,
       accountId: "acct-joint" as Id<"Account">,
       payeeId: "payee-netflix" as Id<"Payee">,
@@ -257,7 +263,7 @@ describe("bill-alerts application use cases", () => {
     });
 
     // Payment occurs for $114 (-11,400 cents, +14%)
-    ctx.uow.state.transactions.push({
+    uow.state.transactions.push({
       id: "t-netflix-rise" as Id<"Transaction">,
       accountId: "acct-joint" as Id<"Account">,
       postedOn: "2026-04-10",
@@ -278,7 +284,6 @@ describe("bill-alerts application use cases", () => {
       notes: null,
       createdAt: "2026-04-10T00:00:00Z",
       updatedAt: "2026-04-10T00:00:00Z",
-      deletedAt: null,
     });
 
     syncAllBillAlertReviewItems(ctx);
@@ -290,9 +295,9 @@ describe("bill-alerts application use cases", () => {
   });
 
   it("does not raise price rise alert when payment increase is <= 10%", () => {
-    const ctx = createTestContext("person-a");
+    const { ctx, uow } = createTestContext("person-a");
 
-    ctx.uow.state.recurringSeries.push({
+    uow.state.recurringSeries.push({
       id: "series-netflix" as Id<"RecurringSeries">,
       accountId: "acct-joint" as Id<"Account">,
       payeeId: "payee-netflix" as Id<"Payee">,
@@ -307,7 +312,7 @@ describe("bill-alerts application use cases", () => {
     });
 
     // Payment occurs for $108 (-10,800 cents, +8%)
-    ctx.uow.state.transactions.push({
+    uow.state.transactions.push({
       id: "t-netflix-normal" as Id<"Transaction">,
       accountId: "acct-joint" as Id<"Account">,
       postedOn: "2026-04-10",
@@ -328,7 +333,6 @@ describe("bill-alerts application use cases", () => {
       notes: null,
       createdAt: "2026-04-10T00:00:00Z",
       updatedAt: "2026-04-10T00:00:00Z",
-      deletedAt: null,
     });
 
     syncAllBillAlertReviewItems(ctx);
@@ -338,9 +342,9 @@ describe("bill-alerts application use cases", () => {
   });
 
   it("allows user to dismiss bill alert with 'acknowledged'", () => {
-    const ctx = createTestContext("person-a");
+    const { ctx, uow } = createTestContext("person-a");
 
-    ctx.uow.state.recurringSeries.push({
+    uow.state.recurringSeries.push({
       id: "series-netflix" as Id<"RecurringSeries">,
       accountId: "acct-joint" as Id<"Account">,
       payeeId: "payee-netflix" as Id<"Payee">,
@@ -367,7 +371,7 @@ describe("bill-alerts application use cases", () => {
     const openItems = ctx.uow.read((r) => r.reviewItems.listOpenFor(ctx.viewer));
     expect(openItems).toHaveLength(0);
 
-    const item = ctx.uow.state.reviewItems.find((r) => r.id === itemId);
+    const item = uow.state.reviewItems.find((r) => r.id === itemId);
     expect(item?.resolution).toBe("acknowledged");
   });
 
@@ -375,9 +379,14 @@ describe("bill-alerts application use cases", () => {
     let idCounter = 1;
     const newId = <B extends string>() =>
       `01H000000000000000000000${(idCounter++).toString().padStart(2, "0")}` as Id<B>;
-    const uow = memoryUnitOfWork();
-    const ctxA = { ...createTestContext("person-a"), uow, newId };
-    const ctxB = { ...createTestContext("person-b"), uow, newId };
+    const { ctx: baseA, uow } = createTestContext("person-a");
+    const ctxA: UseCaseContext = { ...baseA, uow, newId };
+    const ctxB: UseCaseContext = {
+      ...baseA,
+      viewer: personViewer("person-b" as Id<"Person">, baseA.clock.now()),
+      uow,
+      newId,
+    };
 
     uow.state.people = createTestContext().uow.state.people;
     uow.state.accounts = createTestContext().uow.state.accounts;

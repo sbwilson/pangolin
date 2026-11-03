@@ -83,7 +83,7 @@ export function adjustBudgetLimitFromReview(
     audit({
       entity: "budget",
       entityId: updated.id,
-      personId: updated.personId ?? undefined,
+      ...(updated.personId ? { personId: updated.personId } : {}),
       action: "update",
       before: existing,
       after: updated,

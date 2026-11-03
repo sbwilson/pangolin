@@ -128,7 +128,7 @@ export function detectRecurringBillCandidates(
     const txns = repos.transactions.listVisible(ctx.viewer, today);
     const anchors = repos.payAnchors.listVisible(ctx.viewer);
     const existingSeries = repos.recurringSeries.listVisible(ctx.viewer, {
-      accountId: parsed.accountId as Id<"Account"> | undefined,
+      ...(parsed.accountId ? { accountId: parsed.accountId as Id<"Account"> } : {}),
     });
     return { txns, anchors, existingSeries };
   });
@@ -193,7 +193,7 @@ export function detectRecurringBillCandidates(
     }));
 
     const detected = detectRecurringSeries(occurrences, {
-      toleranceBp: parsed.toleranceBp,
+      ...(parsed.toleranceBp !== undefined ? { toleranceBp: parsed.toleranceBp } : {}),
     });
 
     if (detected) {
@@ -258,8 +258,8 @@ export function listRecurringSeries(
   const parsed = parseInput(listRecurringSeriesInput, input ?? {});
   return ctx.uow.read((repos) =>
     repos.recurringSeries.listVisible(ctx.viewer, {
-      accountId: parsed.accountId as Id<"Account"> | undefined,
-      status: parsed.status,
+      ...(parsed.accountId ? { accountId: parsed.accountId as Id<"Account"> } : {}),
+      ...(parsed.status ? { status: parsed.status } : {}),
     }),
   );
 }

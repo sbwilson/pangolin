@@ -96,7 +96,7 @@ export function RecurringBillEditorSheet({
       return;
     }
     const cents = parseCents(amountInput);
-    if (cents <= 0) {
+    if (cents === undefined || cents <= 0) {
       setError("Please enter a valid amount greater than $0.00.");
       return;
     }
@@ -157,7 +157,7 @@ export function RecurringBillEditorSheet({
             <option value="">Select an account</option>
             {accounts.map((acc) => (
               <option key={acc.id} value={acc.id}>
-                {acc.name} {acc.isPrivate ? "(Private)" : ""}
+                {acc.name}
               </option>
             ))}
           </NativeSelect>

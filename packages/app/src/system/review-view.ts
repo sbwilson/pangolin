@@ -3,6 +3,7 @@
 // `reviewItems.listOpenFor(viewer)` and goes through `redact`, so a card never carries data from
 // an account the viewer cannot see. The two counts are numbers only.
 import { calculatePriceRisePercentage, shiftDay, TRANSFER_WINDOW_DAYS } from "@pangolin/domain";
+import type { Id } from "@pangolin/shared";
 import { z } from "zod";
 import { CLOSING_BALANCE_REVIEW } from "../accounts/closing-balance.ts";
 import { CLASSIFY_RULE_OFFER_REVIEW, CLASSIFY_UNCLASSIFIED_REVIEW } from "../classify/rules.ts";
@@ -387,11 +388,11 @@ function detailOf(repos: ReadRepos, ctx: UseCaseContext, row: ReviewItemRow): Re
         accountName,
         cadence: series.cadence,
         expectedCents: series.expectedCents,
-        actualCents,
-        increasePct,
         dueDate: series.nextDueOn,
         kind: "price_rise",
-        transactionId,
+        ...(actualCents !== undefined ? { actualCents } : {}),
+        ...(increasePct !== undefined ? { increasePct } : {}),
+        ...(transactionId !== undefined ? { transactionId } : {}),
       };
     }
     default:

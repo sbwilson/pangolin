@@ -2,7 +2,8 @@ import type { Id } from "@pangolin/shared";
 import { parseDate } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import type { UseCaseContext } from "../context.ts";
-import { memoryUnitOfWork } from "../testing/memory-uow.ts";
+import { type MemoryUnitOfWork, memoryUnitOfWork } from "../testing/memory-uow.ts";
+import { personViewer } from "../viewer.ts";
 import {
   budgetEntityRef,
   budgetOverBudgetDedupeKey,
@@ -13,7 +14,10 @@ import {
 } from "./budget-review.ts";
 import { createBudget } from "./budgets.ts";
 
-function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext {
+function createTestContext(viewerPersonId: string = "person-a"): {
+  ctx: UseCaseContext;
+  uow: MemoryUnitOfWork;
+} {
   const clock = {
     today: () => parseDate("2026-10-08"),
     now: () => parseDate("2026-10-08").toZonedDateTime("Australia/Sydney").toInstant(),
@@ -32,8 +36,8 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
       colour: "#FF0000",
       createdAt: "2026-09-01T00:00:00Z",
       updatedAt: "2026-09-01T00:00:00Z",
-      deletedAt: null,
       userId: "user-a",
+      deletedAt: null,
     },
     {
       id: "person-b" as Id<"Person">,
@@ -41,8 +45,8 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
       colour: "#00FF00",
       createdAt: "2026-09-01T00:00:00Z",
       updatedAt: "2026-09-01T00:00:00Z",
-      deletedAt: null,
       userId: "user-b",
+      deletedAt: null,
     },
   ];
 
@@ -64,7 +68,6 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
       isFixedCost: false,
       createdAt: "2026-09-01T00:00:00Z",
       updatedAt: "2026-09-01T00:00:00Z",
-      deletedAt: null,
     },
   ];
 
@@ -87,12 +90,16 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
     {
       accountId: "acc-joint" as Id<"Account">,
       personId: "person-a" as Id<"Person">,
+      shareBp: 5000,
       createdAt: "2026-09-01T00:00:00Z",
+      updatedAt: "2026-09-01T00:00:00Z",
     },
     {
       accountId: "acc-joint" as Id<"Account">,
       personId: "person-b" as Id<"Person">,
+      shareBp: 5000,
       createdAt: "2026-09-01T00:00:00Z",
+      updatedAt: "2026-09-01T00:00:00Z",
     },
   ];
 
@@ -117,14 +124,13 @@ function createTestContext(viewerPersonId: string = "person-a"): UseCaseContext 
   };
 
   return {
-    viewer: {
-      kind: "person",
-      personId: viewerPersonId as Id<"Person">,
-      authAt: "2026-10-08T00:00:00Z",
+    ctx: {
+      viewer: personViewer(viewerPersonId as Id<"Person">, clock.now()),
+      uow,
+      clock,
+      newId,
     },
     uow,
-    clock,
-    newId,
   };
 }
 
@@ -135,14 +141,10 @@ describe("budget-review", () => {
   });
 
   it("raises household-scoped item for shared budget when spent > limit", () => {
-    const ctxA = createTestContext("person-a");
-    const ctxB = {
+    const { ctx: ctxA, uow } = createTestContext("person-a");
+    const ctxB: UseCaseContext = {
       ...ctxA,
-      viewer: {
-        kind: "person" as const,
-        personId: "person-b" as Id<"Person">,
-        authAt: "2026-10-08T00:00:00Z",
-      },
+      viewer: personViewer("person-b" as Id<"Person">, ctxA.clock.now()),
     };
 
     const budget = createBudget(ctxA, {
@@ -152,7 +154,7 @@ describe("budget-review", () => {
     });
 
     // Add spending: $460 in current period (2026-10-01 to 2026-10-15)
-    ctxA.uow.state.transactions.push({
+    uow.state.transactions.push({
       id: "txn-1" as Id<"Transaction">,
       accountId: "acc-joint" as Id<"Account">,
       payeeId: null,
@@ -162,21 +164,34 @@ describe("budget-review", () => {
       nameHiddenUntil: null,
       nameHiddenBy: null,
       transferGroupId: null,
-      isPending: false,
-      balanceSnapshotCents: null,
+      status: "posted",
+      fingerprint: "fp-1",
+      fingerprintVersion: 1,
+      externalId: null,
+      importId: null,
+      performedBy: null,
+      needsReview: false,
+      isHidden: false,
+      notes: null,
       createdAt: "2026-10-05T00:00:00Z",
       updatedAt: "2026-10-05T00:00:00Z",
-      deletedAt: null,
     });
-    ctxA.uow.state.splits.push({
+    uow.state.splits.push({
       id: "split-1" as Id<"Split">,
       transactionId: "txn-1" as Id<"Transaction">,
       amountCents: -46000,
       categoryId: "cat-groceries" as Id<"Category">,
       beneficiary: "shared",
       activityId: null,
+      propertyId: null,
       taxCategoryId: null,
-      order: 1,
+      deductibleBp: null,
+      memo: null,
+      categorySource: null,
+      activitySource: null,
+      taxCategorySource: null,
+      beneficiarySource: null,
+      deductibleBpSource: null,
       createdAt: "2026-10-05T00:00:00Z",
       updatedAt: "2026-10-05T00:00:00Z",
     });
@@ -195,14 +210,10 @@ describe("budget-review", () => {
   });
 
   it("raises person-scoped item for personal budget when spent > limit", () => {
-    const ctxA = createTestContext("person-a");
-    const ctxB = {
+    const { ctx: ctxA, uow } = createTestContext("person-a");
+    const ctxB: UseCaseContext = {
       ...ctxA,
-      viewer: {
-        kind: "person" as const,
-        personId: "person-b" as Id<"Person">,
-        authAt: "2026-10-08T00:00:00Z",
-      },
+      viewer: personViewer("person-b" as Id<"Person">, ctxA.clock.now()),
     };
 
     const budgetA = createBudget(ctxA, {
@@ -213,7 +224,7 @@ describe("budget-review", () => {
     });
 
     // Add spending: $250 in current period
-    ctxA.uow.state.transactions.push({
+    uow.state.transactions.push({
       id: "txn-2" as Id<"Transaction">,
       accountId: "acc-joint" as Id<"Account">,
       payeeId: null,
@@ -223,21 +234,34 @@ describe("budget-review", () => {
       nameHiddenUntil: null,
       nameHiddenBy: null,
       transferGroupId: null,
-      isPending: false,
-      balanceSnapshotCents: null,
+      status: "posted",
+      fingerprint: "fp-1",
+      fingerprintVersion: 1,
+      externalId: null,
+      importId: null,
+      performedBy: null,
+      needsReview: false,
+      isHidden: false,
+      notes: null,
       createdAt: "2026-10-06T00:00:00Z",
       updatedAt: "2026-10-06T00:00:00Z",
-      deletedAt: null,
     });
-    ctxA.uow.state.splits.push({
+    uow.state.splits.push({
       id: "split-2" as Id<"Split">,
       transactionId: "txn-2" as Id<"Transaction">,
       amountCents: -25000,
       categoryId: "cat-groceries" as Id<"Category">,
       beneficiary: "person-a",
       activityId: null,
+      propertyId: null,
       taxCategoryId: null,
-      order: 1,
+      deductibleBp: null,
+      memo: null,
+      categorySource: null,
+      activitySource: null,
+      taxCategorySource: null,
+      beneficiarySource: null,
+      deductibleBpSource: null,
       createdAt: "2026-10-06T00:00:00Z",
       updatedAt: "2026-10-06T00:00:00Z",
     });
@@ -255,13 +279,13 @@ describe("budget-review", () => {
   });
 
   it("is idempotent on re-evaluation", () => {
-    const ctxA = createTestContext("person-a");
+    const { ctx: ctxA, uow } = createTestContext("person-a");
     createBudget(ctxA, {
       categoryId: "cat-groceries",
       cadence: "fortnight",
       limitCents: 10000,
     });
-    ctxA.uow.state.transactions.push({
+    uow.state.transactions.push({
       id: "txn-1" as Id<"Transaction">,
       accountId: "acc-joint" as Id<"Account">,
       payeeId: null,
@@ -271,21 +295,34 @@ describe("budget-review", () => {
       nameHiddenUntil: null,
       nameHiddenBy: null,
       transferGroupId: null,
-      isPending: false,
-      balanceSnapshotCents: null,
+      status: "posted",
+      fingerprint: "fp-1",
+      fingerprintVersion: 1,
+      externalId: null,
+      importId: null,
+      performedBy: null,
+      needsReview: false,
+      isHidden: false,
+      notes: null,
       createdAt: "2026-10-05T00:00:00Z",
       updatedAt: "2026-10-05T00:00:00Z",
-      deletedAt: null,
     });
-    ctxA.uow.state.splits.push({
+    uow.state.splits.push({
       id: "split-1" as Id<"Split">,
       transactionId: "txn-1" as Id<"Transaction">,
       amountCents: -15000,
       categoryId: "cat-groceries" as Id<"Category">,
       beneficiary: "shared",
       activityId: null,
+      propertyId: null,
       taxCategoryId: null,
-      order: 1,
+      deductibleBp: null,
+      memo: null,
+      categorySource: null,
+      activitySource: null,
+      taxCategorySource: null,
+      beneficiarySource: null,
+      deductibleBpSource: null,
       createdAt: "2026-10-05T00:00:00Z",
       updatedAt: "2026-10-05T00:00:00Z",
     });
@@ -298,13 +335,13 @@ describe("budget-review", () => {
   });
 
   it("resolves open review item when spending drops back within limit", () => {
-    const ctxA = createTestContext("person-a");
+    const { ctx: ctxA, uow } = createTestContext("person-a");
     const budget = createBudget(ctxA, {
       categoryId: "cat-groceries",
       cadence: "fortnight",
       limitCents: 10000,
     });
-    ctxA.uow.state.transactions.push({
+    uow.state.transactions.push({
       id: "txn-1" as Id<"Transaction">,
       accountId: "acc-joint" as Id<"Account">,
       payeeId: null,
@@ -314,21 +351,34 @@ describe("budget-review", () => {
       nameHiddenUntil: null,
       nameHiddenBy: null,
       transferGroupId: null,
-      isPending: false,
-      balanceSnapshotCents: null,
+      status: "posted",
+      fingerprint: "fp-1",
+      fingerprintVersion: 1,
+      externalId: null,
+      importId: null,
+      performedBy: null,
+      needsReview: false,
+      isHidden: false,
+      notes: null,
       createdAt: "2026-10-05T00:00:00Z",
       updatedAt: "2026-10-05T00:00:00Z",
-      deletedAt: null,
     });
-    ctxA.uow.state.splits.push({
+    uow.state.splits.push({
       id: "split-1" as Id<"Split">,
       transactionId: "txn-1" as Id<"Transaction">,
       amountCents: -15000,
       categoryId: "cat-groceries" as Id<"Category">,
       beneficiary: "shared",
       activityId: null,
+      propertyId: null,
       taxCategoryId: null,
-      order: 1,
+      deductibleBp: null,
+      memo: null,
+      categorySource: null,
+      activitySource: null,
+      taxCategorySource: null,
+      beneficiarySource: null,
+      deductibleBpSource: null,
       createdAt: "2026-10-05T00:00:00Z",
       updatedAt: "2026-10-05T00:00:00Z",
     });
@@ -337,8 +387,8 @@ describe("budget-review", () => {
     expect(ctxA.uow.read((r) => r.reviewItems.listOpenFor(ctxA.viewer))).toHaveLength(1);
 
     // Now reduce spending or remove transaction
-    ctxA.uow.state.splits[0] = {
-      ...ctxA.uow.state.splits[0]!,
+    uow.state.splits[0] = {
+      ...uow.state.splits[0]!,
       amountCents: -5000,
     };
 
@@ -347,7 +397,7 @@ describe("budget-review", () => {
     expect(openItems).toHaveLength(0);
 
     // Verify resolution message
-    const resolvedItem = ctxA.uow.state.reviewItems.find(
+    const resolvedItem = uow.state.reviewItems.find(
       (r) => r.dedupeKey === budgetOverBudgetDedupeKey(budget.id, "2026-10-01"),
     );
     expect(resolvedItem?.resolution).toBe("spent is within limit");

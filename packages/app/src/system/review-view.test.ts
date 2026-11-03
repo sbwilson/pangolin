@@ -1,3 +1,4 @@
+import type { Id } from "@pangolin/shared";
 import { Temporal } from "@pangolin/shared/temporal";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createAccount } from "../accounts/create-account.ts";
@@ -754,11 +755,12 @@ describe("review actions", () => {
       w.uow.state.payees.push({
         id: "payee-netflix" as Id<"Payee">,
         name: "Netflix",
+        websiteUrl: null,
+        logoAttachmentId: null,
         scopePersonId: null,
         defaultCategoryId: null,
         createdAt: "2026-09-01T00:00:00Z",
         updatedAt: "2026-09-01T00:00:00Z",
-        deletedAt: null,
       });
     }
 

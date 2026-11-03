@@ -219,7 +219,7 @@ export function createBudget(ctx: UseCaseContext, input: CreateBudgetInput): Bud
     audit({
       entity: "budget",
       entityId: created.id,
-      personId: created.personId ?? undefined,
+      ...(created.personId ? { personId: created.personId } : {}),
       action: "create",
       before: null,
       after: created,
@@ -285,7 +285,7 @@ export function updateBudget(ctx: UseCaseContext, input: UpdateBudgetInput): Bud
     audit({
       entity: "budget",
       entityId: updated.id,
-      personId: updated.personId ?? undefined,
+      ...(updated.personId ? { personId: updated.personId } : {}),
       action: "update",
       before: existing,
       after: updated,
@@ -311,7 +311,7 @@ export function deleteBudget(ctx: UseCaseContext, input: DeleteBudgetInput): boo
     audit({
       entity: "budget",
       entityId: existing.id,
-      personId: existing.personId ?? undefined,
+      ...(existing.personId ? { personId: existing.personId } : {}),
       action: "delete",
       before: existing,
       after: null,

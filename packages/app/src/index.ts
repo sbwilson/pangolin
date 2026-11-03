@@ -1,6 +1,7 @@
 // The package root. `systemViewer` is deliberately absent: it is exported only from
 // `@pangolin/app/system-viewer`, which lint bans outside `apps/server/src/{jobs,admin}` (AD-6).
 
+export type { Id } from "@pangolin/shared";
 export {
   checkSeedReferences,
   emptySeedKnown,

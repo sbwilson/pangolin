@@ -186,17 +186,18 @@ describe("pangolin (the admin CLI)", () => {
     const schema = loadMigrations(packageMigrationsDir).length;
     expect(result.out).toContain(`Schema:    ${schema} (this build expects ${schema})`);
     expect(result.out).toMatch(/Readiness: ok/);
-    // Only the daily closing-balance sync is waiting; nothing runs and nothing is dead.
-    expect(result.out).toMatch(/Jobs: +1 pending, 0 running, 0 dead/);
+    // Daily schedules (closing-balance and budget-evaluation) are waiting; nothing runs and nothing is dead.
+    expect(result.out).toMatch(/Jobs: +2 pending, 0 running, 0 dead/);
     expect(result.out).toMatch(/Pending jobs[^\n]*\n {2}\S+ {2}closing-balance-sync\n/);
+    expect(result.out).toMatch(/ {2}\S+ {2}budget-evaluation\n/);
     expect(result.out).not.toMatch(/Running jobs|Dead jobs/);
   });
 
   it("status lists the next pending jobs and the running ones, kind and time only", async () => {
     await boot();
     withDb((db) => {
-      // Leave the schedule's own row out, so the count is the test's alone.
-      db.prepare("DELETE FROM job WHERE dedupe_key = 'schedule:closing-balance-daily'").run();
+      // Leave the schedules' own rows out, so the count is the test's alone.
+      db.prepare("DELETE FROM job WHERE dedupe_key LIKE 'schedule:%'").run();
       const insert = db.prepare(
         `INSERT INTO job (id, kind, lane, payload, status, attempts, max_attempts, run_at,
            lease_owner, lease_expires_at, created_at, updated_at)
@@ -465,9 +466,10 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
     const status = (await cli(["status"])).out;
     expect(status).toContain("Backups:   not configured (PANGOLIN_BACKUP_REPOSITORY is empty)");
     expect(status).not.toMatch(/^(Check|Drill|Warning):/m);
-    // Nothing was enqueued, and no nightly schedule exists: only the closing-balance sync waits.
+    // Nothing was enqueued, and no nightly schedule exists: only closing-balance and budget-evaluation wait.
     expect(withDb((db) => db.prepare("SELECT dedupe_key FROM job").pluck().all())).toEqual([
       "schedule:closing-balance-daily",
+      "schedule:budget-evaluation-daily",
     ]);
   });
 
@@ -522,6 +524,7 @@ describe("pangolin backup and restore", { timeout: 20_000 }, () => {
       "schedule:backup-check-weekly",
       "schedule:backup-drill-monthly",
       "schedule:backup-nightly",
+      "schedule:budget-evaluation-daily",
       "schedule:closing-balance-daily",
     ]);
     const result = await cli(["backup"]);

@@ -2,6 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BudgetRow, Id, Viewer } from "@pangolin/app";
+import { personViewer } from "@pangolin/app";
+import { Temporal } from "@pangolin/shared/temporal";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadMigrations, migrate, packageMigrationsDir } from "../migrate.ts";
 import { type Db, openDatabase } from "../open.ts";
@@ -148,16 +150,9 @@ describe("budget repository on SQLite", () => {
     ).run();
 
     const uow = createUnitOfWork(db);
-    const viewerP1: Viewer = {
-      kind: "person",
-      personId: "P1" as Id<"Person">,
-      authAt: "2026-10-08T00:00:00Z",
-    };
-    const viewerP2: Viewer = {
-      kind: "person",
-      personId: "P2" as Id<"Person">,
-      authAt: "2026-10-08T00:00:00Z",
-    };
+    const authAt = Temporal.Instant.from("2026-10-08T00:00:00Z");
+    const viewerP1: Viewer = personViewer("P1" as Id<"Person">, authAt);
+    const viewerP2: Viewer = personViewer("P2" as Id<"Person">, authAt);
 
     const sharedBudgetRow: BudgetRow = {
       id: "B_SHARED" as Id<"Budget">,
