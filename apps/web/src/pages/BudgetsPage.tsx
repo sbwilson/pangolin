@@ -153,7 +153,7 @@ export function BudgetsPage() {
         </div>
 
         {/* Filter segment + New Budget button */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Scope Segment Filter */}
           <fieldset
             className="inline-flex rounded-lg border border-border bg-muted p-0.5 m-0 border-0"
