@@ -17,8 +17,8 @@ import {
   personViewer,
   syncAllBillAlertReviewItems,
   syncAllBudgetReviewItems,
-  updateHouseholdSettings,
   type UseCaseContext,
+  updateHouseholdSettings,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import { fakeAttachmentStore } from "@pangolin/app/testing/attachment-store";
@@ -157,16 +157,16 @@ describe("Budgets & Bills on default seed (Epic 6 Done-when verification)", () =
 
     // Condition 1 & 2 assertions for Groceries:
     // Spent, pace, projected match expectations calculated from seed
-    expect(sharedSummaryA!.spentCents).toBe(groceriesEx.currentSpentCents);
-    expect(sharedSummaryA!.rolloverCents).toBe(groceriesEx.rolloverCents);
-    expect(sharedSummaryA!.effectiveLimitCents).toBe(groceriesEx.effectiveLimitCents);
-    expect(sharedSummaryA!.paceCents).toBe(groceriesEx.paceCents);
-    expect(sharedSummaryA!.projectedCents).toBe(groceriesEx.projectedCents);
-    expect(sharedSummaryA!.status).toBe("over-budget");
+    expect(sharedSummaryA?.spentCents).toBe(groceriesEx.currentSpentCents);
+    expect(sharedSummaryA?.rolloverCents).toBe(groceriesEx.rolloverCents);
+    expect(sharedSummaryA?.effectiveLimitCents).toBe(groceriesEx.effectiveLimitCents);
+    expect(sharedSummaryA?.paceCents).toBe(groceriesEx.paceCents);
+    expect(sharedSummaryA?.projectedCents).toBe(groceriesEx.projectedCents);
+    expect(sharedSummaryA?.status).toBe("over-budget");
 
     // Pay calendar boundaries match Person A's payday anchor (2026-07-03 to 2026-07-17)
-    expect(sharedSummaryA!.period.start).toBe("2026-07-03");
-    expect(sharedSummaryA!.period.end).toBe("2026-07-17");
+    expect(sharedSummaryA?.period.start).toBe("2026-07-03");
+    expect(sharedSummaryA?.period.end).toBe("2026-07-17");
 
     // Person B views the same shared budget and sees identical figures and dates (Condition 2)
     const resB = await app.request("/api/planning/budgets/summary", {
@@ -176,13 +176,13 @@ describe("Budgets & Bills on default seed (Epic 6 Done-when verification)", () =
     const jsonB = (await resB.json()) as { summaries: BudgetSummary[] };
     const sharedSummaryB = jsonB.summaries.find((s) => s.budget.personId === null);
     expect(sharedSummaryB).toBeDefined();
-    expect(sharedSummaryB!.spentCents).toBe(sharedSummaryA!.spentCents);
-    expect(sharedSummaryB!.period.start).toBe(sharedSummaryA!.period.start);
-    expect(sharedSummaryB!.period.end).toBe(sharedSummaryA!.period.end);
+    expect(sharedSummaryB?.spentCents).toBe(sharedSummaryA?.spentCents);
+    expect(sharedSummaryB?.period.start).toBe(sharedSummaryA?.period.start);
+    expect(sharedSummaryB?.period.end).toBe(sharedSummaryA?.period.end);
 
     // Editor suggests limit from mean of last 6 closed periods
     const suggestRes = await app.request(
-      `/api/planning/budgets/suggested-limit?id=${sharedSummaryA!.budget.id}`,
+      `/api/planning/budgets/suggested-limit?id=${sharedSummaryA?.budget.id}`,
       {
         headers: { Cookie: "session=user-a" },
       },
@@ -233,7 +233,7 @@ describe("Budgets & Bills on default seed (Epic 6 Done-when verification)", () =
     const groceriesItemB = budgetItemsB.find((i) => i.personId == null);
     expect(groceriesItemA).toBeDefined();
     expect(groceriesItemB).toBeDefined();
-    expect(groceriesItemA!.id).toBe(groceriesItemB!.id);
+    expect(groceriesItemA?.id).toBe(groceriesItemB?.id);
 
     // Person B has Fitness budget which is over budget -> Person B sees it, but Person A cannot (AD-3, AD-22)
     const fitnessItemB = budgetItemsB.find((i) => i.personId === people["person-b"]);
@@ -286,8 +286,8 @@ describe("Budgets & Bills on default seed (Epic 6 Done-when verification)", () =
       uow,
     };
     const itemsB = listReviewItems(ctxB);
-    expect(itemsB.find((i) => i.id === missedItem!.id)).toBeDefined();
-    expect(itemsB.find((i) => i.id === priceRiseItem!.id)).toBeDefined();
+    expect(itemsB.find((i) => i.id === missedItem?.id)).toBeDefined();
+    expect(itemsB.find((i) => i.id === priceRiseItem?.id)).toBeDefined();
   });
 
   it("Condition 3: Candidate recurring series detected and one-click confirmed", async () => {
@@ -304,11 +304,11 @@ describe("Budgets & Bills on default seed (Epic 6 Done-when verification)", () =
     const candidates = listCandidateSeries(ctxA);
     const netflixCandidate = candidates.find((c) => c.expectedCents === 2300);
     expect(netflixCandidate).toBeDefined();
-    expect(netflixCandidate!.status).toBe("candidate");
+    expect(netflixCandidate?.status).toBe("candidate");
 
     // One-click confirm candidate via HTTP
     const confirmRes = await app.request(
-      `/api/planning/recurring-bills/${netflixCandidate!.id}/confirm`,
+      `/api/planning/recurring-bills/${netflixCandidate?.id}/confirm`,
       {
         method: "POST",
         headers: { Cookie: "session=user-a", Origin: ORIGIN },
@@ -320,10 +320,10 @@ describe("Budgets & Bills on default seed (Epic 6 Done-when verification)", () =
 
     // Candidate list now no longer has it
     const remainingCandidates = listCandidateSeries(ctxA);
-    expect(remainingCandidates.find((c) => c.id === netflixCandidate!.id)).toBeUndefined();
+    expect(remainingCandidates.find((c) => c.id === netflixCandidate?.id)).toBeUndefined();
 
     // Confirmed series list now has it
     const confirmedList = listRecurringSeries(ctxA, { status: "confirmed" });
-    expect(confirmedList.find((c) => c.id === netflixCandidate!.id)).toBeDefined();
+    expect(confirmedList.find((c) => c.id === netflixCandidate?.id)).toBeDefined();
   });
 });
