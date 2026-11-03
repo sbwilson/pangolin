@@ -31,8 +31,6 @@ import {
   type SeedTransactionInput,
   seedDefaults,
   seedTransactions,
-  syncAllBillAlertReviewItems,
-  syncAllBudgetReviewItems,
   type UnitOfWork,
   type UseCaseContext,
   updateHouseholdSettings,
@@ -718,8 +716,6 @@ function applyEvents(
     }
   }
   flushTransactions();
-  syncAllBudgetReviewItems(ctx);
-  syncAllBillAlertReviewItems(ctx);
   return {
     seed: parsed.seed,
     today: parsed.today,
