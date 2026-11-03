@@ -424,6 +424,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
             },
             payAnchors: {
               findByPersonId: repos.payAnchors.findByPersonId,
+              findHouseholdAnchor: repos.payAnchors.findHouseholdAnchor,
               listVisible: repos.payAnchors.listVisible,
             },
             budgets: {

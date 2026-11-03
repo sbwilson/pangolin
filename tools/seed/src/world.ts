@@ -18,6 +18,7 @@ export interface WorldHousehold {
   /** ISO 4217 code. */
   readonly baseCurrency: string;
   readonly sharedAttribution: "contribution" | "even";
+  readonly householdPayAnchorPersonId?: string | null;
 }
 
 /** An account owner: a person's key and their share in basis points (5000 = 50%). */
@@ -92,11 +93,41 @@ export interface WorldTransaction {
   readonly amountCents: number;
   readonly description: string;
   readonly payee: string | null;
+  readonly category?: CategoryRef;
+  readonly splits?: readonly SeedSplit[];
 }
 
 // Placeholders: epics 3 and 6 give these their fields and the events that fill them.
 export interface WorldPayAnchor {
   readonly key: string;
+  readonly person: string | null;
+  readonly account: string;
+  readonly cadence: "fortnightly" | "monthly";
+  readonly anchorDate: string | null;
+  readonly dayOfMonth: number | null;
+  readonly alignment: "calendar" | "deposit";
+  readonly expectedNetCents: number | null;
+  readonly expectedGrossCents: number | null;
+}
+export interface WorldBudget {
+  readonly key: string;
+  readonly person: string | null;
+  readonly category: CategoryRef | null;
+  readonly categoryGroup: string | null;
+  readonly cadence: "fortnight" | "month";
+  readonly limitCents: number;
+  readonly rollover: boolean;
+}
+export interface WorldRecurringSeries {
+  readonly key: string;
+  readonly account: string;
+  readonly payee: string;
+  readonly direction: "bill" | "income";
+  readonly cadence: "weekly" | "fortnightly" | "monthly" | "quarterly" | "annual";
+  readonly expectedCents: number;
+  readonly toleranceBp: number;
+  readonly nextDueOn: string;
+  readonly status: "candidate" | "confirmed" | "rejected";
 }
 export interface WorldMerchant {
   readonly key: string;
@@ -121,6 +152,8 @@ export interface World {
   readonly payees: readonly WorldPayee[];
   readonly transactions: readonly WorldTransaction[];
   readonly payAnchors: readonly WorldPayAnchor[];
+  readonly budgets: readonly WorldBudget[];
+  readonly recurringSeries: readonly WorldRecurringSeries[];
   readonly merchants: readonly WorldMerchant[];
   readonly bills: readonly WorldBill[];
   /** @internal */
@@ -221,6 +254,18 @@ export interface TransferGroupedEvent {
   readonly by: string;
 }
 
+export interface PayAnchorCreatedEvent extends WorldPayAnchor {
+  readonly type: "pay-anchor.created";
+}
+
+export interface BudgetCreatedEvent extends WorldBudget {
+  readonly type: "budget.created";
+}
+
+export interface RecurringSeriesCreatedEvent extends WorldRecurringSeries {
+  readonly type: "recurring-series.created";
+}
+
 /** Everything a module may emit. Later epics add events here and to the server's loader. */
 export type SeedEvent =
   | PersonCreatedEvent
@@ -232,7 +277,10 @@ export type SeedEvent =
   | BalanceRecordedEvent
   | TransactionCreatedEvent
   | NameHiddenEvent
-  | TransferGroupedEvent;
+  | TransferGroupedEvent
+  | PayAnchorCreatedEvent
+  | BudgetCreatedEvent
+  | RecurringSeriesCreatedEvent;
 
 /** An event as it appears in the seed output: stamped with the module that emitted it. */
 export type EmittedEvent = SeedEvent & { readonly module: string };
@@ -254,6 +302,8 @@ export function emptyWorld(
     payees: [],
     transactions: [],
     payAnchors: [],
+    budgets: [],
+    recurringSeries: [],
     merchants: [],
     bills: [],
     _known: emptySeedKnown(),
@@ -286,6 +336,9 @@ function knownOf(world: World): SeedKnown {
       hidden: false,
     });
   }
+  for (const pa of world.payAnchors) known.payAnchors.add(pa.key);
+  for (const b of world.budgets) known.budgets.add(b.key);
+  for (const rs of world.recurringSeries) known.recurringSeries.add(rs.key);
   return known;
 }
 
@@ -297,6 +350,9 @@ function cloneKnown(k: SeedKnown): SeedKnown {
     tags: new Map(k.tags),
     payees: new Map(k.payees),
     transactions: new Map(k.transactions),
+    payAnchors: new Set(k.payAnchors),
+    budgets: new Set(k.budgets),
+    recurringSeries: new Set(k.recurringSeries),
   };
 }
 
@@ -312,6 +368,8 @@ export function applyEvents(world: World, events: readonly SeedEvent[]): World {
   const payees = [...world.payees];
   const transactions = [...world.transactions];
   const payAnchors = [...world.payAnchors];
+  const budgets = [...world.budgets];
+  const recurringSeries = [...world.recurringSeries];
   const merchants = [...world.merchants];
   const bills = [...world.bills];
 
@@ -329,6 +387,7 @@ export function applyEvents(world: World, events: readonly SeedEvent[]): World {
           timezone: event.timezone,
           baseCurrency: event.baseCurrency,
           sharedAttribution: event.sharedAttribution,
+          householdPayAnchorPersonId: event.householdPayAnchorPersonId ?? null,
         };
         break;
       case "institution.created":
@@ -366,6 +425,45 @@ export function applyEvents(world: World, events: readonly SeedEvent[]): World {
           amountCents: event.amountCents,
           description: event.description,
           payee: event.payee ?? null,
+          ...(event.category !== undefined ? { category: event.category } : {}),
+          ...(event.splits !== undefined ? { splits: event.splits } : {}),
+        });
+        break;
+      case "pay-anchor.created":
+        payAnchors.push({
+          key: event.key,
+          person: event.person ?? null,
+          account: event.account,
+          cadence: event.cadence,
+          anchorDate: event.anchorDate ?? null,
+          dayOfMonth: event.dayOfMonth ?? null,
+          alignment: event.alignment ?? "calendar",
+          expectedNetCents: event.expectedNetCents ?? null,
+          expectedGrossCents: event.expectedGrossCents ?? null,
+        });
+        break;
+      case "budget.created":
+        budgets.push({
+          key: event.key,
+          person: event.person ?? null,
+          category: event.category ?? null,
+          categoryGroup: event.categoryGroup ?? null,
+          cadence: event.cadence,
+          limitCents: event.limitCents,
+          rollover: event.rollover,
+        });
+        break;
+      case "recurring-series.created":
+        recurringSeries.push({
+          key: event.key,
+          account: event.account,
+          payee: event.payee,
+          direction: event.direction ?? "bill",
+          cadence: event.cadence,
+          expectedCents: event.expectedCents,
+          toleranceBp: event.toleranceBp ?? 1500,
+          nextDueOn: event.nextDueOn,
+          status: event.status ?? "candidate",
         });
         break;
       case "balance.recorded":
@@ -387,6 +485,8 @@ export function applyEvents(world: World, events: readonly SeedEvent[]): World {
     payees,
     transactions,
     payAnchors,
+    budgets,
+    recurringSeries,
     merchants,
     bills,
     _known: known,

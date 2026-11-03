@@ -3323,6 +3323,12 @@ function payAnchorRepo(working: MemoryState, check: () => void): PayAnchorRepo {
       if (viewer.kind !== "system" && viewer.personId !== personId) return undefined;
       return working.payAnchors.find((a) => a.personId === personId);
     },
+    findHouseholdAnchor() {
+      check();
+      const personId = working.settings.householdPayAnchorPersonId;
+      if (!personId) return undefined;
+      return working.payAnchors.find((a) => a.personId === personId);
+    },
     listVisible(viewer: Viewer) {
       check();
       if (viewer.kind === "system") return [...working.payAnchors];
@@ -3888,6 +3894,7 @@ export function memoryUnitOfWork(
         payAnchors: {
           findByPersonId: (viewer, personId) =>
             payAnchorRepo(uow.state, check).findByPersonId(viewer, personId),
+          findHouseholdAnchor: () => payAnchorRepo(uow.state, check).findHouseholdAnchor(),
           listVisible: (viewer) => payAnchorRepo(uow.state, check).listVisible(viewer),
         },
         budgets: {

@@ -7,10 +7,12 @@ import {
   type Clock,
   checkSeedReferences,
   createAccount,
+  createBudget,
   createInstitution,
   createPayee,
   createPerson,
   createPersonInput,
+  createRecurringSeries,
   createTag,
   createTransferGroup,
   DEFAULT_CATEGORIES,
@@ -33,6 +35,7 @@ import {
   type UseCaseContext,
   updateHouseholdSettings,
   updateHouseholdSettingsInput,
+  upsertPayAnchor,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
 import { z } from "zod";
@@ -184,6 +187,43 @@ const EVENT_SCHEMAS = {
     transactions: z.tuple([key, key]),
     by: key,
   }),
+  "pay-anchor.created": z.strictObject({
+    type: z.literal("pay-anchor.created"),
+    module: moduleName,
+    key,
+    person: key.nullable().optional(),
+    account: key,
+    cadence: z.enum(["fortnightly", "monthly"]),
+    anchorDate: dateString.nullable().optional(),
+    dayOfMonth: z.number().int().min(1).max(31).nullable().optional(),
+    alignment: z.enum(["calendar", "deposit"]).default("calendar"),
+    expectedNetCents: z.number().int().nonnegative().nullable().optional(),
+    expectedGrossCents: z.number().int().nonnegative().nullable().optional(),
+  }),
+  "budget.created": z.strictObject({
+    type: z.literal("budget.created"),
+    module: moduleName,
+    key,
+    person: key.nullable().optional(),
+    category: categoryRef.nullable().optional(),
+    categoryGroup: key.nullable().optional(),
+    cadence: z.enum(["fortnight", "month"]),
+    limitCents: z.number().int().positive(),
+    rollover: z.boolean().default(false),
+  }),
+  "recurring-series.created": z.strictObject({
+    type: z.literal("recurring-series.created"),
+    module: moduleName,
+    key,
+    account: key,
+    payee: key,
+    direction: z.enum(["bill", "income"]).default("bill"),
+    cadence: z.enum(["weekly", "fortnightly", "monthly", "quarterly", "annual"]),
+    expectedCents: z.number().int().positive(),
+    toleranceBp: z.number().int().min(0).max(10000).default(1500),
+    nextDueOn: dateString,
+    status: z.enum(["candidate", "confirmed", "rejected"]).default("candidate"),
+  }),
 } as const;
 
 type EventType = keyof typeof EVENT_SCHEMAS;
@@ -216,6 +256,9 @@ const DEFAULT_CATEGORY_KEYS: ReadonlySet<string> = new Set(
   DEFAULT_CATEGORIES.flatMap((group) =>
     group.categories.map((category) => categoryKey({ group: group.name, name: category.name })),
   ),
+);
+const DEFAULT_GROUP_NAMES: ReadonlySet<string> = new Set(
+  DEFAULT_CATEGORIES.map((group) => group.name),
 );
 
 /**
@@ -314,6 +357,20 @@ function checkReferences(event: SeedEvent, known: SeedKnown, at: string): string
       }
       break;
     }
+    case "pay-anchor.created":
+      break;
+    case "budget.created":
+      if (event.category !== undefined && event.category !== null) {
+        requireCategory(event.category, "category");
+      }
+      if (event.categoryGroup !== undefined && event.categoryGroup !== null) {
+        if (!DEFAULT_GROUP_NAMES.has(event.categoryGroup)) {
+          bad(`categoryGroup: unknown category group "${event.categoryGroup}"`);
+        }
+      }
+      break;
+    case "recurring-series.created":
+      break;
     case "institution.created":
     case "account.created":
     case "tag.created":
@@ -428,7 +485,11 @@ function applyEvents(
   const tags: Record<string, string> = {};
   const payees: Record<string, string> = {};
   const transactions: Record<string, string> = {};
+  const payAnchors: Record<string, string> = {};
+  const budgets: Record<string, string> = {};
+  const recurringSeries: Record<string, string> = {};
   let categoryIds: Map<string, string> | undefined;
+  let categoryGroupIds: Map<string, string> | undefined;
 
   const asPerson = (personKey: string): UseCaseContext => ({
     ...ctx,
@@ -438,6 +499,9 @@ function applyEvents(
   const categoryId = (ref: CategoryRef): string => {
     if (categoryIds === undefined) {
       const groups = new Map(listCategoryGroups(ctx).map((group) => [group.id as string, group]));
+      categoryGroupIds = new Map(
+        listCategoryGroups(ctx).map((group) => [group.name, group.id as string]),
+      );
       categoryIds = new Map(
         listCategories(ctx).flatMap((category) => {
           const group = groups.get(category.groupId);
@@ -453,6 +517,19 @@ function applyEvents(
         "Validation",
         `The household has no category "${ref.group} / ${ref.name}"`,
       );
+    }
+    return id;
+  };
+
+  const categoryGroupId = (name: string): string => {
+    if (categoryGroupIds === undefined) {
+      categoryGroupIds = new Map(
+        listCategoryGroups(ctx).map((group) => [group.name, group.id as string]),
+      );
+    }
+    const id = categoryGroupIds.get(name);
+    if (id === undefined) {
+      throw new AppError("Validation", `The household has no category group "${name}"`);
     }
     return id;
   };
@@ -595,6 +672,47 @@ function applyEvents(
           ],
         });
         break;
+      case "pay-anchor.created": {
+        const row = upsertPayAnchor(ctx, {
+          personId: event.person != null ? (people[event.person] as string) : undefined,
+          accountId: accounts[event.account] as string,
+          cadence: event.cadence,
+          anchorDate: event.anchorDate,
+          dayOfMonth: event.dayOfMonth,
+          alignment: event.alignment,
+          expectedNetCents: event.expectedNetCents,
+          expectedGrossCents: event.expectedGrossCents,
+        });
+        payAnchors[event.key] = row.id;
+        break;
+      }
+      case "budget.created": {
+        const row = createBudget(ctx, {
+          personId: event.person != null ? (people[event.person] as string) : null,
+          categoryId: event.category != null ? categoryId(event.category) : null,
+          categoryGroupId:
+            event.categoryGroup != null ? categoryGroupId(event.categoryGroup) : null,
+          cadence: event.cadence,
+          limitCents: event.limitCents,
+          rollover: event.rollover,
+        });
+        budgets[event.key] = row.id;
+        break;
+      }
+      case "recurring-series.created": {
+        const row = createRecurringSeries(ctx, {
+          accountId: accounts[event.account] as string,
+          payeeId: payees[event.payee] as string,
+          direction: event.direction ?? "bill",
+          cadence: event.cadence,
+          expectedCents: event.expectedCents,
+          toleranceBp: event.toleranceBp ?? 1500,
+          nextDueOn: event.nextDueOn,
+          status: event.status ?? "candidate",
+        });
+        recurringSeries[event.key] = row.id;
+        break;
+      }
     }
   }
   flushTransactions();

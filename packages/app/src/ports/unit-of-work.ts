@@ -1319,6 +1319,7 @@ export interface PayAnchorRepo {
   insert(row: PayAnchorRow): void;
   update(row: PayAnchorRow): void;
   findByPersonId(viewer: Viewer, personId: Id<"Person">): PayAnchorRow | undefined;
+  findHouseholdAnchor(): PayAnchorRow | undefined;
   listVisible(viewer: Viewer): readonly PayAnchorRow[];
   deleteForPerson(personId: Id<"Person">): void;
 }
@@ -2031,7 +2032,10 @@ export interface ReadRepos {
     | "listOpenForAccount"
     | "findFewShot"
   >;
-  readonly payAnchors: Pick<PayAnchorRepo, "findByPersonId" | "listVisible">;
+  readonly payAnchors: Pick<
+    PayAnchorRepo,
+    "findByPersonId" | "findHouseholdAnchor" | "listVisible"
+  >;
   readonly budgets: Pick<
     BudgetRepository,
     "findById" | "listVisible" | "calculateSpent" | "calculateHistoricalSpent"

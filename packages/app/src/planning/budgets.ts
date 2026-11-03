@@ -139,21 +139,13 @@ export function resolveBudgetPayCalendar(ctx: UseCaseContext, budget: BudgetRow)
       return resolvePayCalendar(ctx, anchor);
     }
   } else {
-    // Shared budget: check householdSettings.householdPayAnchorPersonId
-    const settings = ctx.uow.read((repos) => repos.householdSettings.get());
-    if (settings.householdPayAnchorPersonId) {
-      const anchor = ctx.uow.read((repos) =>
-        repos.payAnchors.findByPersonId(
-          ctx.viewer,
-          settings.householdPayAnchorPersonId as Id<"Person">,
-        ),
-      );
-      if (anchor) {
-        return resolvePayCalendar(ctx, anchor);
-      }
+    // Shared budget: check household designated pay anchor
+    const targetCadence = budget.cadence === "fortnight" ? "fortnightly" : "monthly";
+    const anchor = ctx.uow.read((repos) => repos.payAnchors.findHouseholdAnchor());
+    if (anchor && anchor.cadence === targetCadence) {
+      return resolvePayCalendar(ctx, anchor);
     }
     // Fallback: check any pay anchor visible whose cadence matches budget.cadence
-    const targetCadence = budget.cadence === "fortnight" ? "fortnightly" : "monthly";
     const anchors = ctx.uow.read((repos) => repos.payAnchors.listVisible(ctx.viewer));
     const matchingAnchor = anchors.find((a) => a.cadence === targetCadence);
     if (matchingAnchor) {

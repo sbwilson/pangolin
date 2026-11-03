@@ -1,6 +1,7 @@
 import type { PayAnchorRepo, PayAnchorRow, Viewer } from "@pangolin/app";
 import { eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { householdSettings } from "../schema/household-settings.ts";
 import { payAnchor } from "../schema/pay-anchor.ts";
 
 type Orm = BetterSQLite3Database;
@@ -37,6 +38,17 @@ export function createPayAnchorRepo(orm: Orm, check: () => void): PayAnchorRepo 
       check();
       if (!isPersonVisible(viewer, personId)) return undefined;
       const row = orm.select().from(payAnchor).where(eq(payAnchor.personId, personId)).get();
+      return row as PayAnchorRow | undefined;
+    },
+    findHouseholdAnchor: () => {
+      check();
+      const settings = orm.select().from(householdSettings).get();
+      if (!settings?.householdPayAnchorPersonId) return undefined;
+      const row = orm
+        .select()
+        .from(payAnchor)
+        .where(eq(payAnchor.personId, settings.householdPayAnchorPersonId))
+        .get();
       return row as PayAnchorRow | undefined;
     },
     listVisible: (viewer: Viewer) => {

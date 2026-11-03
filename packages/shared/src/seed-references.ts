@@ -5,7 +5,10 @@
 /** An event as the reference rules read it: only the fields that name other events' keys. */
 export type SeedReferenceEvent =
   | { readonly type: "person.created"; readonly key: string }
-  | { readonly type: "household.settings" }
+  | {
+      readonly type: "household.settings";
+      readonly householdPayAnchorPersonId?: string | null | undefined;
+    }
   | { readonly type: "institution.created"; readonly key: string }
   | {
       readonly type: "account.created";
@@ -42,6 +45,37 @@ export type SeedReferenceEvent =
       readonly type: "transfer.grouped";
       readonly transactions: readonly [string, string];
       readonly by: string;
+    }
+  | {
+      readonly type: "pay-anchor.created";
+      readonly key: string;
+      readonly person?: string | null | undefined;
+      readonly account: string;
+      readonly cadence: "fortnightly" | "monthly";
+      readonly anchorDate?: string | null | undefined;
+      readonly dayOfMonth?: number | null | undefined;
+    }
+  | {
+      readonly type: "budget.created";
+      readonly key: string;
+      readonly person?: string | null | undefined;
+      readonly category?: { readonly group: string; readonly name: string } | null | undefined;
+      readonly categoryGroup?: string | null | undefined;
+      readonly cadence: "fortnight" | "month";
+      readonly limitCents: number;
+      readonly rollover: boolean;
+    }
+  | {
+      readonly type: "recurring-series.created";
+      readonly key: string;
+      readonly account: string;
+      readonly payee: string;
+      readonly direction?: "bill" | "income" | undefined;
+      readonly cadence: "weekly" | "fortnightly" | "monthly" | "quarterly" | "annual";
+      readonly expectedCents: number;
+      readonly toleranceBp?: number | undefined;
+      readonly nextDueOn: string;
+      readonly status?: "candidate" | "confirmed" | "rejected" | undefined;
     };
 
 /** What the events checked so far created, by key. */
@@ -57,6 +91,9 @@ export interface SeedKnown {
     string,
     { account: string; amountCents: number; grouped: boolean; hidden: boolean }
   >;
+  readonly payAnchors: Set<string>;
+  readonly budgets: Set<string>;
+  readonly recurringSeries: Set<string>;
 }
 
 export function emptySeedKnown(): SeedKnown {
@@ -67,6 +104,9 @@ export function emptySeedKnown(): SeedKnown {
     tags: new Map(),
     payees: new Map(),
     transactions: new Map(),
+    payAnchors: new Set(),
+    budgets: new Set(),
+    recurringSeries: new Set(),
   };
 }
 
@@ -174,7 +214,48 @@ export function checkSeedReferences(event: SeedReferenceEvent, known: SeedKnown)
       }
       if (!known.people.has(event.by)) bad(`unknown person "${event.by}"`);
       break;
+    case "pay-anchor.created":
+      if (known.payAnchors.has(event.key)) bad(`pay anchor key "${event.key}" is used twice`);
+      if (event.person != null && !known.people.has(event.person)) {
+        bad(`unknown person "${event.person}"`);
+      }
+      if (!known.accounts.has(event.account)) {
+        bad(`unknown account "${event.account}"`);
+      }
+      known.payAnchors.add(event.key);
+      break;
+    case "budget.created":
+      if (known.budgets.has(event.key)) bad(`budget key "${event.key}" is used twice`);
+      if (event.person != null && !known.people.has(event.person)) {
+        bad(`unknown person "${event.person}"`);
+      }
+      if (
+        (event.category != null && event.categoryGroup != null) ||
+        (event.category == null && event.categoryGroup == null)
+      ) {
+        bad("budget must target either category or categoryGroup, but not both");
+      }
+      known.budgets.add(event.key);
+      break;
+    case "recurring-series.created":
+      if (known.recurringSeries.has(event.key)) {
+        bad(`recurring series key "${event.key}" is used twice`);
+      }
+      if (!known.accounts.has(event.account)) {
+        bad(`unknown account "${event.account}"`);
+      }
+      if (!known.payees.has(event.payee)) {
+        bad(`unknown payee "${event.payee}"`);
+      }
+      known.recurringSeries.add(event.key);
+      break;
     case "household.settings":
+      if (
+        event.householdPayAnchorPersonId != null &&
+        !known.people.has(event.householdPayAnchorPersonId)
+      ) {
+        bad(`unknown person "${event.householdPayAnchorPersonId}"`);
+      }
       break;
   }
   return problems;

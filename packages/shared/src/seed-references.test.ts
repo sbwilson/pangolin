@@ -131,4 +131,128 @@ describe("checkSeedReferences", () => {
       }),
     ).toEqual([]);
   });
+
+  it("checks pay-anchor.created references and uniqueness", () => {
+    expect(
+      last(...world, {
+        type: "pay-anchor.created",
+        key: "pa1",
+        person: "unknown",
+        account: "a",
+        cadence: "fortnightly",
+        anchorDate: "2026-07-03",
+      }),
+    ).toEqual(['unknown person "unknown"']);
+
+    expect(
+      last(...world, {
+        type: "pay-anchor.created",
+        key: "pa1",
+        person: "p",
+        account: "unknown",
+        cadence: "fortnightly",
+        anchorDate: "2026-07-03",
+      }),
+    ).toEqual(['unknown account "unknown"']);
+
+    const validAnchor: SeedReferenceEvent = {
+      type: "pay-anchor.created",
+      key: "pa1",
+      person: "p",
+      account: "a",
+      cadence: "fortnightly",
+      anchorDate: "2026-07-03",
+    };
+    expect(last(...world, validAnchor)).toEqual([]);
+    expect(last(...world, validAnchor, validAnchor)).toEqual([
+      'pay anchor key "pa1" is used twice',
+    ]);
+  });
+
+  it("checks budget.created references, category targeting, and uniqueness", () => {
+    expect(
+      last(...world, {
+        type: "budget.created",
+        key: "b1",
+        person: "unknown",
+        category: { group: "Food", name: "Groceries" },
+        cadence: "fortnight",
+        limitCents: 30000,
+        rollover: true,
+      }),
+    ).toEqual(['unknown person "unknown"']);
+
+    expect(
+      last(...world, {
+        type: "budget.created",
+        key: "b1",
+        cadence: "fortnight",
+        limitCents: 30000,
+        rollover: true,
+      }),
+    ).toEqual(["budget must target either category or categoryGroup, but not both"]);
+
+    expect(
+      last(...world, {
+        type: "budget.created",
+        key: "b1",
+        category: { group: "Food", name: "Groceries" },
+        categoryGroup: "Food",
+        cadence: "fortnight",
+        limitCents: 30000,
+        rollover: true,
+      }),
+    ).toEqual(["budget must target either category or categoryGroup, but not both"]);
+
+    const validBudget: SeedReferenceEvent = {
+      type: "budget.created",
+      key: "b1",
+      category: { group: "Food", name: "Groceries" },
+      cadence: "fortnight",
+      limitCents: 30000,
+      rollover: true,
+    };
+    expect(last(...world, validBudget)).toEqual([]);
+    expect(last(...world, validBudget, validBudget)).toEqual(['budget key "b1" is used twice']);
+  });
+
+  it("checks recurring-series.created references and uniqueness", () => {
+    expect(
+      last(...world, {
+        type: "recurring-series.created",
+        key: "rs1",
+        account: "unknown",
+        payee: "y",
+        cadence: "monthly",
+        expectedCents: 2300,
+        nextDueOn: "2026-07-15",
+      }),
+    ).toEqual(['unknown account "unknown"']);
+
+    expect(
+      last(...world, {
+        type: "recurring-series.created",
+        key: "rs1",
+        account: "a",
+        payee: "unknown",
+        cadence: "monthly",
+        expectedCents: 2300,
+        nextDueOn: "2026-07-15",
+      }),
+    ).toEqual(['unknown payee "unknown"']);
+
+    const validSeries: SeedReferenceEvent = {
+      type: "recurring-series.created",
+      key: "rs1",
+      account: "a",
+      payee: "y",
+      cadence: "monthly",
+      expectedCents: 2300,
+      nextDueOn: "2026-07-15",
+    };
+    expect(last(...world, validSeries)).toEqual([]);
+    expect(last(...world, validSeries, validSeries)).toEqual([
+      'recurring series key "rs1" is used twice',
+    ]);
+  });
 });

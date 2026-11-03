@@ -413,6 +413,42 @@ test.describe("WCAG 2.2 AA accessibility audit", () => {
       }
     });
 
+    test(`/planning/budgets in ${mode} mode passes WCAG 2.2 AA audit`, async ({
+      browser,
+      cspViolations,
+    }) => {
+      const storageState = await alexSession(browser);
+      const context = await browser.newContext({
+        colorScheme: mode,
+        ...(storageState ? { storageState } : {}),
+      });
+      try {
+        await watchCsp(context, cspViolations);
+        await context.addInitScript(
+          ({ m }: { m: string }) => {
+            try {
+              localStorage.setItem("pangolin_mode", m);
+            } catch {}
+          },
+          { m: mode },
+        );
+        const page = await context.newPage();
+        await page.goto("/planning/budgets");
+        await page.waitForLoadState("domcontentloaded");
+        await expect(page.getByRole("heading", { level: 1, name: "Budgets" })).toBeVisible();
+
+        await setMode(page, mode);
+
+        const violations = await auditPage(page);
+        expect(
+          violations,
+          `Violations on /planning/budgets (${mode}): ${JSON.stringify(violations, null, 2)}`,
+        ).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
     test(`the open Import popover in ${mode} mode passes WCAG 2.2 AA audit`, async ({
       browser,
       cspViolations,
@@ -716,6 +752,7 @@ test.describe("WCAG 1.4.10 320 px reflow audit", () => {
     },
     { path: "/spending?from=2026-04-01&to=2026-06-30", name: "Spending", testId: "bar-lists-card" },
     { path: "/net-worth", name: "Net worth", testId: "net-worth-kpis" },
+    { path: "/planning/budgets", name: "Budgets", testId: "budget-summary-line" },
   ] as const;
 
   for (const { path, name, testId } of routes) {

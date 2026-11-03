@@ -240,10 +240,10 @@ describe("applySeed", () => {
   });
 
   it("rejects an unknown event type, naming it, after valid events and before any write", () => {
-    const events = [...seed.events, { type: "budget.created", module: "budgets", key: "x" }];
+    const events = [...seed.events, { type: "test.unknown", module: "budgets", key: "x" }];
     const error = rejection(() => applySeed(createUnitOfWork(db), deps(), withEvents(events)));
     expect(error.message).toContain(
-      `events.${seed.events.length}: unknown event type "budget.created"`,
+      `events.${seed.events.length}: unknown event type "test.unknown"`,
     );
     expect([count("person"), count("audit_log")]).toEqual([0, 0]);
   });
@@ -329,6 +329,24 @@ describe("parseSeed references", () => {
         (e[payee] as SeedEventShape).defaultCategory = { group: "Nope", name: "Nothing" };
       }),
       /defaultCategory: unknown category "Nope \/ Nothing"/,
+    );
+
+    // Rejects unknown category or categoryGroup on budget.created
+    reject(
+      changed((e) => {
+        e.push({
+          module: "test",
+          type: "budget.created",
+          key: "budget-test-unknown-group",
+          person: null,
+          category: null,
+          categoryGroup: "NonExistentGroup",
+          cadence: "month",
+          limitCents: 10000,
+          rollover: false,
+        });
+      }),
+      /categoryGroup: unknown category group "NonExistentGroup"/,
     );
   });
 

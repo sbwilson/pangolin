@@ -55,6 +55,7 @@ export const createRecurringSeriesInput = z
     expectedCents: z.number().int().positive(),
     toleranceBp: z.number().int().min(0).max(10000).default(1500),
     nextDueOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD"),
+    status: z.enum(["candidate", "confirmed", "rejected"]).default("confirmed"),
   })
   .strict();
 
@@ -386,7 +387,7 @@ export function createRecurringSeries(
       expectedCents: parsed.expectedCents,
       toleranceBp: parsed.toleranceBp,
       nextDueOn: parsed.nextDueOn,
-      status: "confirmed",
+      status: parsed.status,
       createdAt: now,
       updatedAt: now,
     };

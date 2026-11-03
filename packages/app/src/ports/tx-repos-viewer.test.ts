@@ -113,6 +113,8 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
   "SuggestionRepo.resolveOpen":
     "a write on a suggestion whose split the use case read through the viewer",
   "PayAnchorRepo.insert": "a new pay anchor; the use case enforces person scope",
+  "PayAnchorRepo.findHouseholdAnchor":
+    "reads the designated household pay anchor row for shared budget and calendar calculations, visible to all household members",
   "PayAnchorRepo.update": "the use case checked the pay anchor through the viewer",
   "PayAnchorRepo.deleteForPerson": "hard-deletes the leaver's pay anchor (the leave)",
   "BudgetRepository.insert": "a new budget; the use case enforces person or shared scope",

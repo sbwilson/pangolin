@@ -583,11 +583,11 @@ describe("startServer in demo mode", () => {
       JSON.stringify({
         seed: "s",
         today: "2026-07-15",
-        events: [{ type: "budget.created" }],
+        events: [{ type: "test.unknown" }],
         expectations: {},
       }),
     );
-    await expect(bootDemo(bad)).rejects.toThrow(/unknown event type "budget.created"/);
+    await expect(bootDemo(bad)).rejects.toThrow(/unknown event type "test.unknown"/);
     writeFileSync(bad, "{ nope");
     await expect(bootDemo(bad)).rejects.toThrow(/not valid JSON/);
     await expect(bootDemo(join(dir, "missing.json"))).rejects.toThrow(/ENOENT/);

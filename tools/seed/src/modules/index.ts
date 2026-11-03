@@ -1,6 +1,7 @@
 // Every seed module, in any order (the runner sorts by dependencies). Later epics append theirs.
 import type { SeedModule } from "../module.ts";
 import { balanceSnapshots } from "./balance-snapshots.ts";
+import { budgetsAndBills } from "./budgets-and-bills.ts";
 import { classification } from "./classification.ts";
 import { institutionsAndAccounts } from "./institutions-and-accounts.ts";
 import { ledgerTransactions } from "./ledger-transactions.ts";
@@ -14,4 +15,5 @@ export const defaultModules: readonly SeedModule[] = [
   ledgerTransactions,
   transfersAndPrivacy,
   balanceSnapshots,
+  budgetsAndBills,
 ];
