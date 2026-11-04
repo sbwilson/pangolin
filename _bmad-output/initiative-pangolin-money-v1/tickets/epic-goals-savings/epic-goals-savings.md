@@ -51,4 +51,5 @@ goal (kind, emergency fund), goal_rule, goal_allocation, allocation_stage, goal_
 - Assumption: epic grows by about one story for Cover an expense and detection; re-check sizing at inception.
 - Waits on epic-platform-foundations because: the shared/period calendar and FY maths.
 - Waits on epic-budgets-bills because: pay anchors, pay-deposit detection and PayCalendar.
+- Decision (2026-11-04, inception): Sliced into 8 implementation stories in build order (tracer bullet schema/UI, staged allocation engine, savings reconciliation & deficit buffer engine, goals workspace UI, cover expense engine with undo, cover modal & buffer divert UI, reconciliation review items, and refactor sweep with seed & e2e). Tracer bullet begins with goals schema and UI foundations.
 - Note (2026-10-05, validation): epic-home-buying-planner (15) reads the shared deposit goal from this epic.

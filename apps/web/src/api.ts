@@ -1376,3 +1376,91 @@ export async function createRecurringSeries(
 export async function deleteRecurringSeries(id: string): Promise<void> {
   await sendJson("DELETE", `/api/planning/recurring-bills/${encodeURIComponent(id)}`);
 }
+
+// -----------------------------------------------------------------------------
+// Goals & Savings (Epic 7)
+// -----------------------------------------------------------------------------
+
+export interface SavingsPoolBalanceData {
+  readonly pool: "shared" | string;
+  readonly personId?: string | null;
+  readonly totalCents: number;
+  readonly accounts: ReadonlyArray<{
+    readonly id: string;
+    readonly name: string;
+    readonly balanceCents: number;
+    readonly isPrivate?: boolean;
+    readonly institution?: string;
+  }>;
+}
+
+export interface AllocationStageData {
+  readonly id: string;
+  readonly personId: string | null;
+  readonly name: string;
+  readonly sort: number;
+  readonly exitGoalId: string | null;
+  readonly fallbackThresholdBp: number;
+  readonly completedSharePolicy: "rescale" | "buffer";
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface GoalRuleData {
+  readonly id: string;
+  readonly stageId: string;
+  readonly goalId: string;
+  readonly shareBp: number;
+  readonly effectiveFrom?: string;
+  readonly effectiveUntil?: string | null;
+  readonly source?: "rule" | "shortfall_override";
+  readonly createdAt: string;
+  readonly updatedAt?: string;
+}
+
+export interface GoalData {
+  readonly id: string;
+  readonly personId: string | null;
+  readonly name: string;
+  readonly targetCents: number;
+  readonly targetDate: string | null;
+  readonly priority: number;
+  readonly kind: "flexible" | "protected";
+  readonly isEmergencyFund: boolean;
+  readonly completedAt?: string | null;
+  readonly createdAt: string;
+  readonly updatedAt?: string;
+  readonly archivedAt?: string | null;
+  readonly pool: "shared" | string;
+}
+
+export interface GoalsSummaryData {
+  readonly asOf: string;
+  readonly pools: ReadonlyArray<SavingsPoolBalanceData>;
+  readonly goals: ReadonlyArray<GoalData>;
+  readonly stages: ReadonlyArray<AllocationStageData>;
+  readonly activeStage: AllocationStageData | null;
+  readonly rules: ReadonlyArray<GoalRuleData>;
+}
+
+export async function fetchGoalsSummary(asOf?: string): Promise<GoalsSummaryData> {
+  const qs = asOf ? `?asOf=${encodeURIComponent(asOf)}` : "";
+  const res = await fetch(`/api/planning/goals/summary${qs}`);
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()) as GoalsSummaryData;
+}
+
+export async function fetchGoals(asOf?: string): Promise<{
+  readonly asOf: string;
+  readonly pools: ReadonlyArray<SavingsPoolBalanceData>;
+  readonly goals: ReadonlyArray<GoalData>;
+}> {
+  const qs = asOf ? `?asOf=${encodeURIComponent(asOf)}` : "";
+  const res = await fetch(`/api/planning/goals${qs}`);
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()) as {
+    readonly asOf: string;
+    readonly pools: ReadonlyArray<SavingsPoolBalanceData>;
+    readonly goals: ReadonlyArray<GoalData>;
+  };
+}

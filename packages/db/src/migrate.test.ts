@@ -74,6 +74,7 @@ describe("committed migrations", () => {
       "0025_pay_anchor",
       "0026_budget",
       "0027_recurring_series",
+      "0028_goals_savings",
     ];
     expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: migrations.length });
     expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: migrations.length });
@@ -325,6 +326,110 @@ describe("committed migrations", () => {
       "tolerance_bp",
       "next_due_on",
       "status",
+      "created_at",
+      "updated_at",
+    ]);
+
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+
+  it("creates goals and savings tables when 0027 upgrades to 0028", () => {
+    const migrations = loadMigrations(packageMigrationsDir);
+    migrate(db, migrations.slice(0, 28));
+    expect(schemaVersion(db)).toBe(28);
+    expect(migrate(db, migrations.slice(0, 29)).applied).toEqual(["0028_goals_savings"]);
+    expect(schemaVersion(db)).toBe(29);
+
+    const goalCols = (
+      db.pragma("table_info(goal)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(goalCols).toEqual([
+      "id",
+      "person_id",
+      "name",
+      "target_cents",
+      "target_date",
+      "priority",
+      "kind",
+      "is_emergency_fund",
+      "completed_at",
+      "created_at",
+      "updated_at",
+    ]);
+
+    const stageCols = (
+      db.pragma("table_info(allocation_stage)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(stageCols).toEqual([
+      "id",
+      "person_id",
+      "name",
+      "sort",
+      "exit_goal_id",
+      "fallback_threshold_bp",
+      "completed_share_policy",
+      "created_at",
+      "updated_at",
+    ]);
+
+    const ruleCols = (
+      db.pragma("table_info(goal_rule)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(ruleCols).toEqual([
+      "id",
+      "goal_id",
+      "stage_id",
+      "share_bp",
+      "effective_from",
+      "effective_until",
+      "source",
+      "created_at",
+      "updated_at",
+    ]);
+
+    const allocationCols = (
+      db.pragma("table_info(goal_allocation)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(allocationCols).toEqual([
+      "id",
+      "goal_id",
+      "period_start",
+      "allocated_cents",
+      "created_at",
+    ]);
+
+    const drawdownCols = (
+      db.pragma("table_info(goal_drawdown)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(drawdownCols).toEqual([
+      "id",
+      "person_id",
+      "reason",
+      "label",
+      "amount_cents",
+      "transaction_id",
+      "created_by",
+      "created_at",
+      "undone_at",
+    ]);
+
+    const adjustmentCols = (
+      db.pragma("table_info(goal_adjustment)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(adjustmentCols).toEqual([
+      "id",
+      "drawdown_id",
+      "goal_id",
+      "amount_cents",
+    ]);
+
+    const settingCols = (
+      db.pragma("table_info(planning_setting)") as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(settingCols).toEqual([
+      "id",
+      "person_id",
+      "large_withdrawal_threshold_cents",
       "created_at",
       "updated_at",
     ]);

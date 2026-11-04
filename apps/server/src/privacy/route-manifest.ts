@@ -602,6 +602,10 @@ export const MANIFEST: readonly ManifestEntry[] = [
     path: "/api/planning/recurring-bills/:id",
     reason: "Deletes recurring series visible to the viewer.",
   },
+
+  // Goals (epic-goals-savings, story 7.1)
+  read("/api/planning/goals"),
+  read("/api/planning/goals/summary"),
 ];
 
 /** Entries that name a person's data, which the suite replays. */

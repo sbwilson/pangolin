@@ -4831,4 +4831,228 @@ describe("GET /api/payees/:id/logo", () => {
       expect(delAgainRes.status).toBe(404);
     });
   });
+
+  describe("GET /api/planning/goals and /api/planning/goals/summary", () => {
+    it("returns goals, stages, rules, and savings pool balances with privacy scoping", async () => {
+      const db = openDb();
+      addPerson(db);
+      const samPersonId = "01J0000000000000000000000B";
+      db.prepare(
+        `INSERT INTO auth_user (id, name, email, email_verified, two_factor_enabled, created_at, updated_at)
+         VALUES ('user-b', 'Sam', 'sam@example.com', 0, 1, 'x', 'x')`,
+      ).run();
+      db.prepare(
+        `INSERT INTO auth_passkey (id, user_id, public_key, credential_id, counter, device_type, backed_up)
+         VALUES ('pk-b', 'user-b', 'k', 'c-b', 0, 'singleDevice', 0)`,
+      ).run();
+      db.prepare(
+        `INSERT INTO person (id, user_id, display_name, colour, created_at, updated_at)
+         VALUES (?, 'user-b', 'Sam', '#10b981', 'x', 'x')`,
+      ).run(samPersonId);
+
+      const gateway: AuthGateway = {
+        handler: async (request) => new Response(`auth:${new URL(request.url).pathname}`),
+        getSession: async (headers) => {
+          const cookie = headers.get("cookie");
+          if (cookie === "session=user-a")
+            return { session: { userId: "user-a", createdAt: new Date() }, setCookies: [] };
+          if (cookie === "session=user-b")
+            return { session: { userId: "user-b", createdAt: new Date() }, setCookies: [] };
+          return { session: null, setCookies: [] };
+        },
+        signUp: async () => {
+          throw new Error("not used");
+        },
+        recover: async () => {
+          throw new Error("not used");
+        },
+        reEnrol: async () => {
+          throw new Error("not used");
+        },
+      };
+
+      const d = deps(db, { kind: "live", gateway });
+      const app = createApp(d);
+      const sys: UseCaseContext = {
+        viewer: systemViewer("cli:test"),
+        clock: d.clock,
+        newId: d.newId,
+        uow: d.uow,
+      };
+
+      const alex = d.uow.read((r) => r.person.findByUserId("user-a"));
+      const sam = d.uow.read((r) => r.person.findByUserId("user-b"));
+      if (!alex || !sam) throw new Error("Expected seeded people");
+
+      const signedInAlex = {
+        headers: {
+          Cookie: "session=user-a",
+          Origin: ORIGIN,
+        },
+      };
+
+      // Shared savings account
+      const sharedSavingsId = createAccount(sys, {
+        name: "Joint Saver",
+        type: "savings",
+        currency: "AUD",
+        isPrivate: false,
+        isSavings: true,
+        owners: [
+          { personId: alex.id, shareBp: 5000 },
+          { personId: sam.id, shareBp: 5000 },
+        ],
+      });
+
+      // Alex personal savings account
+      const alexSavingsId = createAccount(sys, {
+        name: "Alex Saver",
+        type: "savings",
+        currency: "AUD",
+        isPrivate: true,
+        isSavings: true,
+        owners: [{ personId: alex.id, shareBp: 10000 }],
+      });
+
+      // Sam personal savings account
+      const samSavingsId = createAccount(sys, {
+        name: "Sam Saver",
+        type: "savings",
+        currency: "AUD",
+        isPrivate: true,
+        isSavings: true,
+        owners: [{ personId: sam.id, shareBp: 10000 }],
+      });
+
+      // Add transactions to give balances:
+      // Shared: 200,000 cents ($2,000)
+      createTransaction(sys, {
+        accountId: sharedSavingsId,
+        postedOn: "2026-07-01",
+        amountCents: 200000,
+        description: "Deposit",
+      });
+      // Alex: 50,000 cents ($500)
+      createTransaction(sys, {
+        accountId: alexSavingsId,
+        postedOn: "2026-07-01",
+        amountCents: 50000,
+        description: "Deposit",
+      });
+      // Sam: 75,000 cents ($750)
+      createTransaction(sys, {
+        accountId: samSavingsId,
+        postedOn: "2026-07-01",
+        amountCents: 75000,
+        description: "Deposit",
+      });
+
+      // Create stage & goals in DB
+      write(sys, (tx) => {
+        tx.stages.insert({
+          id: "stage-1" as Id<"AllocationStage">,
+          personId: null,
+          name: "Stage 1",
+          sort: 0,
+          exitGoalId: null,
+          fallbackThresholdBp: 1000,
+          completedSharePolicy: "rescale",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        });
+
+        tx.goals.insert({
+          id: "goal-ef" as Id<"Goal">,
+          personId: null,
+          name: "Emergency Fund",
+          targetCents: 1000000,
+          targetDate: null,
+          kind: "protected",
+          priority: 0,
+          isEmergencyFund: true,
+          completedAt: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          archivedAt: null,
+        });
+
+        tx.goals.insert({
+          id: "goal-guitar" as Id<"Goal">,
+          personId: alex.id,
+          name: "Alex Guitar",
+          targetCents: 150000,
+          targetDate: null,
+          kind: "flexible",
+          priority: 1,
+          isEmergencyFund: false,
+          completedAt: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          archivedAt: null,
+        });
+
+        tx.goals.insert({
+          id: "goal-bike" as Id<"Goal">,
+          personId: sam.id,
+          name: "Sam Bike",
+          targetCents: 200000,
+          targetDate: null,
+          kind: "flexible",
+          priority: 2,
+          isEmergencyFund: false,
+          completedAt: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          archivedAt: null,
+        });
+
+        tx.goalRules.insert({
+          id: "rule-1" as Id<"GoalRule">,
+          stageId: "stage-1" as Id<"AllocationStage">,
+          goalId: "goal-ef" as Id<"Goal">,
+          shareBp: 10000,
+          effectiveFrom: "2026-01-01",
+          effectiveUntil: null,
+          source: "rule",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        });
+      });
+
+      // 1. GET /api/planning/goals
+      const goalsRes = await app.request("/api/planning/goals", signedInAlex);
+      expect(goalsRes.status).toBe(200);
+      const goalsBody = (await goalsRes.json()) as {
+        pools: { pool: string; personId: string | null; totalCents: number }[];
+        goals: { id: string; name: string }[];
+      };
+      // Alex sees shared pool ($2,000) and Alex personal pool ($500), but NOT Sam personal pool
+      expect(goalsBody.pools).toHaveLength(2);
+      expect(goalsBody.pools.find((p) => p.pool === "shared")?.totalCents).toBe(200000);
+      expect(goalsBody.pools.find((p) => p.pool === alex.id)?.totalCents).toBe(50000);
+      expect(goalsBody.pools.some((p) => p.pool === sam.id)).toBe(false);
+
+      // Alex sees shared goal and Alex personal goal, but NOT Sam personal goal
+      expect(goalsBody.goals.map((g) => g.name)).toEqual(
+        expect.arrayContaining(["Emergency Fund", "Alex Guitar"]),
+      );
+      expect(goalsBody.goals.some((g) => g.name === "Sam Bike")).toBe(false);
+
+      // 2. GET /api/planning/goals/summary
+      const summaryRes = await app.request("/api/planning/goals/summary", signedInAlex);
+      expect(summaryRes.status).toBe(200);
+      const summaryBody = (await summaryRes.json()) as {
+        activeStage: { name: string } | null;
+        stages: { name: string }[];
+        rules: { shareBp: number }[];
+        pools: { pools: { totalCents: number }[] };
+        goals: { name: string }[];
+      };
+      expect(summaryBody.activeStage?.name).toBe("Stage 1");
+      expect(summaryBody.stages).toHaveLength(1);
+      expect(summaryBody.rules).toHaveLength(1);
+      expect(summaryBody.rules[0]?.shareBp).toBe(10000);
+      expect(summaryBody.goals.some((g) => g.name === "Sam Bike")).toBe(false);
+    });
+  });
 });

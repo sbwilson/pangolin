@@ -72,6 +72,7 @@ import {
   getActivity,
   getBudget,
   getBudgetSummary,
+  getGoalsSummary,
   getHouseholdSettings,
   getLlmRequestPreview,
   getLlmSettings,
@@ -79,6 +80,7 @@ import {
   getPayee,
   getPayeeAlias,
   getPreferences,
+  getSavingsPoolBalances,
   getSuggestedLimit,
   getTag,
   getTransaction,
@@ -105,6 +107,7 @@ import {
   listBudgets,
   listCategories,
   listCategoryGroups,
+  listGoals,
   listInstitutions,
   listPayAnchors,
   listPayeeAliases,
@@ -517,6 +520,17 @@ export function createApi(deps: ApiDeps) {
       writable();
       deleteRecurringSeries(ctx(c), { id: c.req.param("id") });
       return c.body(null, 204);
+    })
+    .get("/api/planning/goals", (c) => {
+      const asOf = c.req.query("asOf");
+      const goals = listGoals(ctx(c));
+      const poolResult = getSavingsPoolBalances(ctx(c), { asOf });
+      return c.json({ asOf: poolResult.asOf, pools: poolResult.pools, goals }, 200);
+    })
+    .get("/api/planning/goals/summary", (c) => {
+      const asOf = c.req.query("asOf");
+      const summary = getGoalsSummary(ctx(c), { asOf });
+      return c.json(summary, 200);
     })
     .get("/api/identity/preferences", (c) => {
       return c.json(getPreferences(ctx(c), {}), 200);

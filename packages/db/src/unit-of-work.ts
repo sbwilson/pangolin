@@ -51,6 +51,12 @@ import { createLlmProviderRepo } from "./repositories/llm-provider.ts";
 import { createPayAnchorRepo } from "./repositories/pay-anchor.ts";
 import { createPersonPreferenceRepo } from "./repositories/person-preference.ts";
 import { createRecurringSeriesRepo } from "./repositories/recurring-series.ts";
+import {
+  createAllocationStageRepo,
+  createGoalRepo,
+  createGoalRuleRepo,
+  createPlanningSettingRepo,
+} from "./repositories/goal.ts";
 import { createSuggestionRepo } from "./repositories/suggestion.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
 import { auditLog } from "./schema/audit-log.ts";
@@ -278,6 +284,10 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     payAnchors: createPayAnchorRepo(orm, () => guard(scope)),
     budgets: createBudgetRepo(orm, () => guard(scope)),
     recurringSeries: createRecurringSeriesRepo(orm, () => guard(scope)),
+    goals: createGoalRepo(orm, () => guard(scope)),
+    stages: createAllocationStageRepo(orm, () => guard(scope)),
+    goalRules: createGoalRuleRepo(orm, () => guard(scope)),
+    planningSettings: createPlanningSettingRepo(orm, () => guard(scope)),
   };
 }
 
@@ -436,6 +446,22 @@ export function createUnitOfWork(db: Db): UnitOfWork {
             recurringSeries: {
               findById: repos.recurringSeries.findById,
               listVisible: repos.recurringSeries.listVisible,
+            },
+            goals: {
+              findById: repos.goals.findById,
+              listVisible: repos.goals.listVisible,
+            },
+            stages: {
+              findById: repos.stages.findById,
+              listVisible: repos.stages.listVisible,
+            },
+            goalRules: {
+              findById: repos.goalRules.findById,
+              listForStage: repos.goalRules.listForStage,
+              listVisible: repos.goalRules.listVisible,
+            },
+            planningSettings: {
+              get: repos.planningSettings.get,
             },
           };
         },

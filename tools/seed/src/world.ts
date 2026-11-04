@@ -135,6 +135,34 @@ export interface WorldMerchant {
 export interface WorldBill {
   readonly key: string;
 }
+export interface WorldStage {
+  readonly key: string;
+  readonly person: string | null;
+  readonly name: string;
+  readonly sort: number;
+  readonly exitGoal: string | null;
+  readonly fallbackThresholdBp: number;
+  readonly completedSharePolicy: "rescale" | "buffer";
+}
+export interface WorldGoal {
+  readonly key: string;
+  readonly person: string | null;
+  readonly name: string;
+  readonly targetCents: number;
+  readonly targetDate: string | null;
+  readonly priority: number;
+  readonly kind: "flexible" | "protected";
+  readonly isEmergencyFund: boolean;
+}
+export interface WorldGoalRule {
+  readonly key: string;
+  readonly goal: string;
+  readonly stage: string;
+  readonly shareBp: number;
+  readonly effectiveFrom: string;
+  readonly effectiveUntil: string | null;
+  readonly source: "rule" | "shortfall_override";
+}
 
 export type SeedProfile = "default" | "perf";
 
@@ -154,6 +182,9 @@ export interface World {
   readonly payAnchors: readonly WorldPayAnchor[];
   readonly budgets: readonly WorldBudget[];
   readonly recurringSeries: readonly WorldRecurringSeries[];
+  readonly stages: readonly WorldStage[];
+  readonly goals: readonly WorldGoal[];
+  readonly goalRules: readonly WorldGoalRule[];
   readonly merchants: readonly WorldMerchant[];
   readonly bills: readonly WorldBill[];
   /** @internal */
@@ -266,6 +297,18 @@ export interface RecurringSeriesCreatedEvent extends WorldRecurringSeries {
   readonly type: "recurring-series.created";
 }
 
+export interface StageCreatedEvent extends WorldStage {
+  readonly type: "stage.created";
+}
+
+export interface GoalCreatedEvent extends WorldGoal {
+  readonly type: "goal.created";
+}
+
+export interface GoalRuleCreatedEvent extends WorldGoalRule {
+  readonly type: "goal-rule.created";
+}
+
 /** Everything a module may emit. Later epics add events here and to the server's loader. */
 export type SeedEvent =
   | PersonCreatedEvent
@@ -280,7 +323,10 @@ export type SeedEvent =
   | TransferGroupedEvent
   | PayAnchorCreatedEvent
   | BudgetCreatedEvent
-  | RecurringSeriesCreatedEvent;
+  | RecurringSeriesCreatedEvent
+  | StageCreatedEvent
+  | GoalCreatedEvent
+  | GoalRuleCreatedEvent;
 
 /** An event as it appears in the seed output: stamped with the module that emitted it. */
 export type EmittedEvent = SeedEvent & { readonly module: string };
@@ -304,6 +350,9 @@ export function emptyWorld(
     payAnchors: [],
     budgets: [],
     recurringSeries: [],
+    stages: [],
+    goals: [],
+    goalRules: [],
     merchants: [],
     bills: [],
     _known: emptySeedKnown(),
@@ -339,6 +388,9 @@ function knownOf(world: World): SeedKnown {
   for (const pa of world.payAnchors) known.payAnchors.add(pa.key);
   for (const b of world.budgets) known.budgets.add(b.key);
   for (const rs of world.recurringSeries) known.recurringSeries.add(rs.key);
+  for (const s of world.stages) known.stages.add(s.key);
+  for (const g of world.goals) known.goals.add(g.key);
+  for (const gr of world.goalRules) known.goalRules.add(gr.key);
   return known;
 }
 
@@ -353,6 +405,9 @@ function cloneKnown(k: SeedKnown): SeedKnown {
     payAnchors: new Set(k.payAnchors),
     budgets: new Set(k.budgets),
     recurringSeries: new Set(k.recurringSeries),
+    stages: new Set(k.stages),
+    goals: new Set(k.goals),
+    goalRules: new Set(k.goalRules),
   };
 }
 
@@ -370,6 +425,9 @@ export function applyEvents(world: World, events: readonly SeedEvent[]): World {
   const payAnchors = [...world.payAnchors];
   const budgets = [...world.budgets];
   const recurringSeries = [...world.recurringSeries];
+  const stages = [...world.stages];
+  const goals = [...world.goals];
+  const goalRules = [...world.goalRules];
   const merchants = [...world.merchants];
   const bills = [...world.bills];
 
@@ -466,6 +524,40 @@ export function applyEvents(world: World, events: readonly SeedEvent[]): World {
           status: event.status ?? "candidate",
         });
         break;
+      case "stage.created":
+        stages.push({
+          key: event.key,
+          person: event.person ?? null,
+          name: event.name,
+          sort: event.sort,
+          exitGoal: event.exitGoal ?? null,
+          fallbackThresholdBp: event.fallbackThresholdBp ?? 8000,
+          completedSharePolicy: event.completedSharePolicy ?? "rescale",
+        });
+        break;
+      case "goal.created":
+        goals.push({
+          key: event.key,
+          person: event.person ?? null,
+          name: event.name,
+          targetCents: event.targetCents,
+          targetDate: event.targetDate ?? null,
+          priority: event.priority ?? 0,
+          kind: event.kind ?? "flexible",
+          isEmergencyFund: event.isEmergencyFund ?? false,
+        });
+        break;
+      case "goal-rule.created":
+        goalRules.push({
+          key: event.key,
+          goal: event.goal,
+          stage: event.stage,
+          shareBp: event.shareBp,
+          effectiveFrom: event.effectiveFrom,
+          effectiveUntil: event.effectiveUntil ?? null,
+          source: event.source ?? "rule",
+        });
+        break;
       case "balance.recorded":
       case "transaction.name-hidden":
       case "transfer.grouped":
@@ -487,6 +579,9 @@ export function applyEvents(world: World, events: readonly SeedEvent[]): World {
     payAnchors,
     budgets,
     recurringSeries,
+    stages,
+    goals,
+    goalRules,
     merchants,
     bills,
     _known: known,

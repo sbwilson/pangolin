@@ -2,6 +2,7 @@ import { createMemoryHistory, createRouter, type RouterHistory } from "@tanstack
 import { accountRoute, accountsRoute } from "./routes/accounts.tsx";
 import { budgetsRoute } from "./routes/budgets.tsx";
 import { cashFlowRoute } from "./routes/cash-flow.tsx";
+import { goalsRoute } from "./routes/goals.tsx";
 import { homeRoute } from "./routes/home.tsx";
 import { ledgerRoute } from "./routes/ledger.tsx";
 import { netWorthRoute } from "./routes/net-worth.tsx";
@@ -23,6 +24,7 @@ const routeTree = rootRoute.addChildren([
   spendingRoute,
   transactionsRoute,
   budgetsRoute,
+  goalsRoute,
   accountsRoute,
   accountRoute,
   ledgerRoute,

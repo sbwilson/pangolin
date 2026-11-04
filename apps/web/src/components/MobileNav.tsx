@@ -181,7 +181,14 @@ export function MobileNav({ signOut, className }: MobileNavProps) {
               </svg>
               <span>Budgets</span>
             </button>
-            <span className="flex cursor-default items-center gap-3 py-3 text-sm text-muted-foreground opacity-60">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSheet(null);
+                void navigate({ to: "/planning/goals" });
+              }}
+              className="flex items-center gap-3 py-3 text-sm text-foreground hover:text-primary transition-colors text-left"
+            >
               <svg
                 width="16"
                 height="16"
@@ -198,7 +205,7 @@ export function MobileNav({ signOut, className }: MobileNavProps) {
                 <circle cx="12" cy="12" r="1" />
               </svg>
               <span>Goals</span>
-            </span>
+            </button>
             <span className="flex cursor-default items-center gap-3 py-3 text-sm text-muted-foreground opacity-60">
               <svg
                 width="16"

@@ -224,6 +224,40 @@ const EVENT_SCHEMAS = {
     nextDueOn: dateString,
     status: z.enum(["candidate", "confirmed", "rejected"]).default("candidate"),
   }),
+  "stage.created": z.strictObject({
+    type: z.literal("stage.created"),
+    module: moduleName,
+    key,
+    person: key.nullable().optional(),
+    name: key,
+    sort: z.number().int(),
+    exitGoal: key.nullable().optional(),
+    fallbackThresholdBp: z.number().int().min(0).max(10000).default(8000),
+    completedSharePolicy: z.enum(["rescale", "buffer"]).default("rescale"),
+  }),
+  "goal.created": z.strictObject({
+    type: z.literal("goal.created"),
+    module: moduleName,
+    key,
+    person: key.nullable().optional(),
+    name: key,
+    targetCents: z.number().int().positive(),
+    targetDate: dateString.nullable().optional(),
+    priority: z.number().int().default(0),
+    kind: z.enum(["flexible", "protected"]).default("flexible"),
+    isEmergencyFund: z.boolean().default(false),
+  }),
+  "goal-rule.created": z.strictObject({
+    type: z.literal("goal-rule.created"),
+    module: moduleName,
+    key,
+    goal: key,
+    stage: key,
+    shareBp: z.number().int().min(0).max(10000),
+    effectiveFrom: dateString,
+    effectiveUntil: dateString.nullable().optional(),
+    source: z.enum(["rule", "shortfall_override"]).default("rule"),
+  }),
 } as const;
 
 type EventType = keyof typeof EVENT_SCHEMAS;
@@ -370,6 +404,9 @@ function checkReferences(event: SeedEvent, known: SeedKnown, at: string): string
       }
       break;
     case "recurring-series.created":
+    case "stage.created":
+    case "goal.created":
+    case "goal-rule.created":
       break;
     case "institution.created":
     case "account.created":
@@ -488,6 +525,9 @@ function applyEvents(
   const payAnchors: Record<string, string> = {};
   const budgets: Record<string, string> = {};
   const recurringSeries: Record<string, string> = {};
+  const goals: Record<string, string> = {};
+  const stages: Record<string, string> = {};
+  const goalRules: Record<string, string> = {};
   let categoryIds: Map<string, string> | undefined;
   let categoryGroupIds: Map<string, string> | undefined;
 
@@ -711,6 +751,65 @@ function applyEvents(
           status: event.status ?? "candidate",
         });
         recurringSeries[event.key] = row.id;
+        break;
+      }
+      case "stage.created": {
+        const id = deps.newId();
+        const now = deps.clock.now().toString();
+        uow.transaction((tx) => {
+          tx.stages.insert({
+            id: id as any,
+            personId: event.person != null ? (people[event.person] as any) : null,
+            name: event.name,
+            sort: event.sort,
+            exitGoalId: event.exitGoal != null ? (goals[event.exitGoal] as any) : null,
+            fallbackThresholdBp: event.fallbackThresholdBp,
+            completedSharePolicy: event.completedSharePolicy,
+            createdAt: now,
+            updatedAt: now,
+          });
+        });
+        stages[event.key] = id;
+        break;
+      }
+      case "goal.created": {
+        const id = deps.newId();
+        const now = deps.clock.now().toString();
+        uow.transaction((tx) => {
+          tx.goals.insert({
+            id: id as any,
+            personId: event.person != null ? (people[event.person] as any) : null,
+            name: event.name,
+            targetCents: event.targetCents,
+            targetDate: event.targetDate ?? null,
+            priority: event.priority,
+            kind: event.kind,
+            isEmergencyFund: event.isEmergencyFund,
+            completedAt: null,
+            createdAt: now,
+            updatedAt: now,
+          });
+        });
+        goals[event.key] = id;
+        break;
+      }
+      case "goal-rule.created": {
+        const id = deps.newId();
+        const now = deps.clock.now().toString();
+        uow.transaction((tx) => {
+          tx.goalRules.insert({
+            id: id as any,
+            goalId: goals[event.goal] as any,
+            stageId: stages[event.stage] as any,
+            shareBp: event.shareBp,
+            effectiveFrom: event.effectiveFrom,
+            effectiveUntil: event.effectiveUntil ?? null,
+            source: event.source,
+            createdAt: now,
+            updatedAt: now,
+          });
+        });
+        goalRules[event.key] = id;
         break;
       }
     }

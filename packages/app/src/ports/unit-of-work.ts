@@ -1395,6 +1395,119 @@ export interface RecurringSeriesRepo {
   deleteForAccount(accountId: Id<"Account">): void;
 }
 
+export type GoalKind = "flexible" | "protected";
+export type AllocationStagePolicy = "rescale" | "buffer";
+export type GoalRuleSource = "rule" | "shortfall_override";
+export type GoalDrawdownReason = "large_purchase" | "shortfall";
+
+export interface GoalRow {
+  readonly id: Id<"Goal">;
+  readonly personId: Id<"Person"> | null;
+  readonly name: string;
+  readonly targetCents: number;
+  readonly targetDate: string | null;
+  readonly priority: number;
+  readonly kind: GoalKind;
+  readonly isEmergencyFund: boolean;
+  readonly completedAt: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface AllocationStageRow {
+  readonly id: Id<"AllocationStage">;
+  readonly personId: Id<"Person"> | null;
+  readonly name: string;
+  readonly sort: number;
+  readonly exitGoalId: Id<"Goal"> | null;
+  readonly fallbackThresholdBp: number;
+  readonly completedSharePolicy: AllocationStagePolicy;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface GoalRuleRow {
+  readonly id: Id<"GoalRule">;
+  readonly goalId: Id<"Goal">;
+  readonly stageId: Id<"AllocationStage">;
+  readonly shareBp: number;
+  readonly effectiveFrom: string;
+  readonly effectiveUntil: string | null;
+  readonly source: GoalRuleSource;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface GoalAllocationRow {
+  readonly id: Id<"GoalAllocation">;
+  readonly goalId: Id<"Goal">;
+  readonly periodStart: string;
+  readonly allocatedCents: number;
+  readonly createdAt: string;
+}
+
+export interface GoalDrawdownRow {
+  readonly id: Id<"GoalDrawdown">;
+  readonly personId: Id<"Person"> | null;
+  readonly reason: GoalDrawdownReason;
+  readonly label: string;
+  readonly amountCents: number;
+  readonly transactionId: Id<"Transaction"> | null;
+  readonly createdBy: Id<"Person">;
+  readonly createdAt: string;
+  readonly undoneAt: string | null;
+}
+
+export interface GoalAdjustmentRow {
+  readonly id: Id<"GoalAdjustment">;
+  readonly drawdownId: Id<"GoalDrawdown">;
+  readonly goalId: Id<"Goal">;
+  readonly amountCents: number;
+}
+
+export interface PlanningSettingRow {
+  readonly id: Id<"PlanningSetting">;
+  readonly personId: Id<"Person"> | null;
+  readonly largeWithdrawalThresholdCents: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface GoalRepo {
+  insert(row: GoalRow): void;
+  update(row: GoalRow): boolean;
+  delete(id: Id<"Goal">): boolean;
+  findById(viewer: Viewer, id: Id<"Goal">): GoalRow | undefined;
+  listVisible(viewer: Viewer): GoalRow[];
+  deleteForPerson(personId: Id<"Person">): void;
+}
+
+export interface AllocationStageRepo {
+  insert(row: AllocationStageRow): void;
+  update(row: AllocationStageRow): boolean;
+  delete(id: Id<"AllocationStage">): boolean;
+  findById(viewer: Viewer, id: Id<"AllocationStage">): AllocationStageRow | undefined;
+  listVisible(viewer: Viewer): AllocationStageRow[];
+  deleteForPerson(personId: Id<"Person">): void;
+}
+
+export interface GoalRuleRepo {
+  insert(row: GoalRuleRow): void;
+  update(row: GoalRuleRow): boolean;
+  delete(id: Id<"GoalRule">): boolean;
+  findById(viewer: Viewer, id: Id<"GoalRule">): GoalRuleRow | undefined;
+  listForStage(viewer: Viewer, stageId: Id<"AllocationStage">): GoalRuleRow[];
+  listVisible(viewer: Viewer): GoalRuleRow[];
+  deleteForGoal(goalId: Id<"Goal">): void;
+  deleteForStage(stageId: Id<"AllocationStage">): void;
+}
+
+export interface PlanningSettingRepo {
+  get(viewer: Viewer, personId: Id<"Person"> | null): PlanningSettingRow | undefined;
+  upsert(row: PlanningSettingRow): void;
+  deleteForPerson(personId: Id<"Person">): void;
+}
+
 /**
  * `recovery_bundle`: the recovery bundle the household confirmed it stored safely (story 1.17).
  * Only its id, never a secret.
@@ -1952,6 +2065,10 @@ export interface TxRepos {
   readonly payAnchors: PayAnchorRepo;
   readonly budgets: BudgetRepository;
   readonly recurringSeries: RecurringSeriesRepo;
+  readonly goals: GoalRepo;
+  readonly stages: AllocationStageRepo;
+  readonly goalRules: GoalRuleRepo;
+  readonly planningSettings: PlanningSettingRepo;
 }
 
 /** The read-only subset of `TxRepos`, for queries. */
@@ -2041,6 +2158,10 @@ export interface ReadRepos {
     "findById" | "listVisible" | "calculateSpent" | "calculateHistoricalSpent"
   >;
   readonly recurringSeries: Pick<RecurringSeriesRepo, "findById" | "listVisible">;
+  readonly goals: Pick<GoalRepo, "findById" | "listVisible">;
+  readonly stages: Pick<AllocationStageRepo, "findById" | "listVisible">;
+  readonly goalRules: Pick<GoalRuleRepo, "findById" | "listForStage" | "listVisible">;
+  readonly planningSettings: Pick<PlanningSettingRepo, "get">;
 }
 
 export interface UnitOfWork {

@@ -200,9 +200,13 @@ export function AppSidebar({ me, signOut, className }: AppSidebarProps) {
             <span>Budgets</span>
           </Link>
 
-          <span
-            aria-disabled="true"
-            className="flex cursor-default items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground"
+          <Link
+            to="/planning/goals"
+            className="flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            activeProps={{
+              className: "bg-accent font-semibold text-primary",
+              "aria-current": "page",
+            }}
           >
             <svg
               width="16"
@@ -220,7 +224,7 @@ export function AppSidebar({ me, signOut, className }: AppSidebarProps) {
               <circle cx="12" cy="12" r="1" />
             </svg>
             <span>Goals</span>
-          </span>
+          </Link>
 
           <span
             aria-disabled="true"

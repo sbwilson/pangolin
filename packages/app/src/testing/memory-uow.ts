@@ -12,6 +12,8 @@ import type {
   AccountRow,
   ActivityRepo,
   ActivityRow,
+  AllocationStageRepo,
+  AllocationStageRow,
   AttachmentRepo,
   AttachmentRow,
   AuditedOwner,
@@ -33,6 +35,13 @@ import type {
   CredentialRepo,
   FewShotExample,
   FlowBreakdownRow,
+  GoalAllocationRow,
+  GoalAdjustmentRow,
+  GoalDrawdownRow,
+  GoalRepo,
+  GoalRow,
+  GoalRuleRepo,
+  GoalRuleRow,
   HouseholdSettingsRow,
   ImportBatchRepo,
   ImportBatchRow,
@@ -63,6 +72,8 @@ import type {
   PersonPreferenceRow,
   PersonRepo,
   PersonRow,
+  PlanningSettingRepo,
+  PlanningSettingRow,
   RecoveryBundleRow,
   RecoveryCodeRepo,
   RecoveryCodeRow,
@@ -165,6 +176,13 @@ export interface MemoryState {
   payAnchors: PayAnchorRow[];
   budgets: BudgetRow[];
   recurringSeries: RecurringSeriesRow[];
+  goals: GoalRow[];
+  stages: AllocationStageRow[];
+  goalRules: GoalRuleRow[];
+  goalAllocations: GoalAllocationRow[];
+  goalDrawdowns: GoalDrawdownRow[];
+  goalAdjustments: GoalAdjustmentRow[];
+  planningSettings: PlanningSettingRow[];
 }
 
 export interface MemoryUnitOfWork extends UnitOfWork {
@@ -3525,6 +3543,214 @@ function recurringSeriesRepo(working: MemoryState, check: () => void): Recurring
   };
 }
 
+function goalRepo(working: MemoryState, check: () => void): GoalRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.goals.some((g) => g.id === row.id)) {
+        throw new Error("UNIQUE constraint failed: goal.id");
+      }
+      if (row.isEmergencyFund) {
+        const existingEf = working.goals.find(
+          (g) => g.isEmergencyFund && g.personId === row.personId,
+        );
+        if (existingEf) {
+          throw new Error("UNIQUE constraint failed: goal.person_id (emergency fund)");
+        }
+      }
+      working.goals.push(row);
+    },
+    update: (row) => {
+      check();
+      const idx = working.goals.findIndex((g) => g.id === row.id);
+      if (idx === -1) return false;
+      if (row.isEmergencyFund) {
+        const existingEf = working.goals.find(
+          (g) => g.id !== row.id && g.isEmergencyFund && g.personId === row.personId,
+        );
+        if (existingEf) {
+          throw new Error("UNIQUE constraint failed: goal.person_id (emergency fund)");
+        }
+      }
+      working.goals[idx] = row;
+      return true;
+    },
+    delete: (id) => {
+      check();
+      const prev = working.goals.length;
+      working.goals = working.goals.filter((g) => g.id !== id);
+      return working.goals.length < prev;
+    },
+    findById: (viewer, id) => {
+      check();
+      const row = working.goals.find((g) => g.id === id);
+      if (!row) return undefined;
+      if (viewer.kind !== "system" && row.personId !== null && row.personId !== viewer.personId) {
+        return undefined;
+      }
+      return row;
+    },
+    listVisible: (viewer) => {
+      check();
+      return working.goals
+        .filter((g) => viewer.kind === "system" || g.personId === null || g.personId === viewer.personId)
+        .sort((a, b) => a.priority - b.priority || a.createdAt.localeCompare(b.createdAt));
+    },
+    deleteForPerson: (personId) => {
+      check();
+      working.goals = working.goals.filter((g) => g.personId !== personId);
+    },
+  };
+}
+
+function allocationStageRepo(working: MemoryState, check: () => void): AllocationStageRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.stages.some((s) => s.id === row.id)) {
+        throw new Error("UNIQUE constraint failed: allocation_stage.id");
+      }
+      working.stages.push(row);
+    },
+    update: (row) => {
+      check();
+      const idx = working.stages.findIndex((s) => s.id === row.id);
+      if (idx === -1) return false;
+      working.stages[idx] = row;
+      return true;
+    },
+    delete: (id) => {
+      check();
+      const prev = working.stages.length;
+      working.stages = working.stages.filter((s) => s.id !== id);
+      return working.stages.length < prev;
+    },
+    findById: (viewer, id) => {
+      check();
+      const row = working.stages.find((s) => s.id === id);
+      if (!row) return undefined;
+      if (viewer.kind !== "system" && row.personId !== null && row.personId !== viewer.personId) {
+        return undefined;
+      }
+      return row;
+    },
+    listVisible: (viewer) => {
+      check();
+      return working.stages
+        .filter((s) => viewer.kind === "system" || s.personId === null || s.personId === viewer.personId)
+        .sort((a, b) => a.sort - b.sort);
+    },
+    deleteForPerson: (personId) => {
+      check();
+      working.stages = working.stages.filter((s) => s.personId !== personId);
+    },
+  };
+}
+
+function goalRuleRepo(working: MemoryState, check: () => void): GoalRuleRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.goalRules.some((r) => r.id === row.id)) {
+        throw new Error("UNIQUE constraint failed: goal_rule.id");
+      }
+      working.goalRules.push(row);
+    },
+    update: (row) => {
+      check();
+      const idx = working.goalRules.findIndex((r) => r.id === row.id);
+      if (idx === -1) return false;
+      working.goalRules[idx] = row;
+      return true;
+    },
+    delete: (id) => {
+      check();
+      const prev = working.goalRules.length;
+      working.goalRules = working.goalRules.filter((r) => r.id !== id);
+      return working.goalRules.length < prev;
+    },
+    findById: (viewer, id) => {
+      check();
+      const row = working.goalRules.find((r) => r.id === id);
+      if (!row) return undefined;
+      const targetGoal = working.goals.find((g) => g.id === row.goalId);
+      if (
+        viewer.kind !== "system" &&
+        targetGoal &&
+        targetGoal.personId !== null &&
+        targetGoal.personId !== viewer.personId
+      ) {
+        return undefined;
+      }
+      return row;
+    },
+    listForStage: (viewer, stageId) => {
+      check();
+      return working.goalRules.filter((r) => {
+        if (r.stageId !== stageId) return false;
+        const targetGoal = working.goals.find((g) => g.id === r.goalId);
+        if (
+          viewer.kind !== "system" &&
+          targetGoal &&
+          targetGoal.personId !== null &&
+          targetGoal.personId !== viewer.personId
+        ) {
+          return false;
+        }
+        return true;
+      });
+    },
+    listVisible: (viewer) => {
+      check();
+      return working.goalRules.filter((r) => {
+        const targetGoal = working.goals.find((g) => g.id === r.goalId);
+        if (
+          viewer.kind !== "system" &&
+          targetGoal &&
+          targetGoal.personId !== null &&
+          targetGoal.personId !== viewer.personId
+        ) {
+          return false;
+        }
+        return true;
+      });
+    },
+    deleteForGoal: (goalId) => {
+      check();
+      working.goalRules = working.goalRules.filter((r) => r.goalId !== goalId);
+    },
+    deleteForStage: (stageId) => {
+      check();
+      working.goalRules = working.goalRules.filter((r) => r.stageId !== stageId);
+    },
+  };
+}
+
+function planningSettingRepo(working: MemoryState, check: () => void): PlanningSettingRepo {
+  return {
+    get: (viewer, personId) => {
+      check();
+      if (viewer.kind !== "system" && personId !== null && personId !== viewer.personId) {
+        return undefined;
+      }
+      return working.planningSettings.find((s) => s.personId === personId);
+    },
+    upsert: (row) => {
+      check();
+      const idx = working.planningSettings.findIndex((s) => s.personId === row.personId);
+      if (idx !== -1) {
+        working.planningSettings[idx] = row;
+      } else {
+        working.planningSettings.push(row);
+      }
+    },
+    deleteForPerson: (personId) => {
+      check();
+      working.planningSettings = working.planningSettings.filter((s) => s.personId !== personId);
+    },
+  };
+}
+
 export function memoryUnitOfWork(
   settings: HouseholdSettingsRow = DEFAULT_SETTINGS,
 ): MemoryUnitOfWork {
@@ -3576,6 +3802,13 @@ export function memoryUnitOfWork(
       payAnchors: [],
       budgets: [],
       recurringSeries: [],
+      goals: [],
+      stages: [],
+      goalRules: [],
+      goalAllocations: [],
+      goalDrawdowns: [],
+      goalAdjustments: [],
+      planningSettings: [],
     },
     failAudit: false,
     transaction<T>(fn: (tx: TxRepos) => T): T {
@@ -3626,6 +3859,13 @@ export function memoryUnitOfWork(
         payAnchors: [...uow.state.payAnchors],
         budgets: [...uow.state.budgets],
         recurringSeries: [...uow.state.recurringSeries],
+        goals: [...uow.state.goals],
+        stages: [...uow.state.stages],
+        goalRules: [...uow.state.goalRules],
+        goalAllocations: [...uow.state.goalAllocations],
+        goalDrawdowns: [...uow.state.goalDrawdowns],
+        goalAdjustments: [...uow.state.goalAdjustments],
+        planningSettings: [...uow.state.planningSettings],
       };
       let active = true;
       const check = () => {
@@ -3677,6 +3917,10 @@ export function memoryUnitOfWork(
         payAnchors: payAnchorRepo(working, check),
         budgets: budgetRepo(working, check),
         recurringSeries: recurringSeriesRepo(working, check),
+        goals: goalRepo(working, check),
+        stages: allocationStageRepo(working, check),
+        goalRules: goalRuleRepo(working, check),
+        planningSettings: planningSettingRepo(working, check),
         recoveryBundle: {
           get: () => {
             check();
@@ -3914,6 +4158,24 @@ export function memoryUnitOfWork(
           findById: (viewer, id) => recurringSeriesRepo(uow.state, check).findById(viewer, id),
           listVisible: (viewer, filter) =>
             recurringSeriesRepo(uow.state, check).listVisible(viewer, filter),
+        },
+        goals: {
+          findById: (viewer, id) => goalRepo(uow.state, check).findById(viewer, id),
+          listVisible: (viewer) => goalRepo(uow.state, check).listVisible(viewer),
+        },
+        stages: {
+          findById: (viewer, id) => allocationStageRepo(uow.state, check).findById(viewer, id),
+          listVisible: (viewer) => allocationStageRepo(uow.state, check).listVisible(viewer),
+        },
+        goalRules: {
+          findById: (viewer, id) => goalRuleRepo(uow.state, check).findById(viewer, id),
+          listForStage: (viewer, stageId) =>
+            goalRuleRepo(uow.state, check).listForStage(viewer, stageId),
+          listVisible: (viewer) => goalRuleRepo(uow.state, check).listVisible(viewer),
+        },
+        planningSettings: {
+          get: (viewer, personId) =>
+            planningSettingRepo(uow.state, check).get(viewer, personId),
         },
       });
     },

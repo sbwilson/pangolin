@@ -1,0 +1,90 @@
+# tickets.toml — epic-goals-savings
+# Table order is build order; id is permanent and never reused.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Tracer bullet: goals schema, pool balances query, and goals list UI"
+description = "Adds schema and migrations for goal, goal_rule, allocation_stage, goal_drawdown, goal_adjustment, goal_allocation, and planning_setting, plus seed generator updates and a basic goals list view under /planning/goals."
+verify = "Migrations apply cleanly, synthetic goal and stage records seed, and /planning/goals renders goals with their target amounts and pool tags."
+covers = ["CAP-6"]
+after = ["1.1", "6.1"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Staged allocation engine: rules, stages, exit goals, and fallback"
+description = "Implements multi-period allocation math splitting positive new savings by stage shares, handles stage exit and rescale on goal completion, falls back to stage 1 when emergency fund drops below threshold, and rejects duplicate emergency funds."
+verify = "Domain tests verify stage progression, emergency fund cap and fallback, share rescaling, and allocation row generation across multi-period histories."
+covers = ["CAP-6"]
+after = [1]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Savings reconciliation engine: invariant check, deficit buffer absorption, and shortfall detection"
+description = "Derives period new savings from savings-flagged accounts, enforces the invariant (goal balances + buffer = savings), absorbs deficit periods into buffer only (Option A), and detects over-commitment shortfall."
+verify = "Unit tests confirm deficits reduce only the buffer without reducing goals, and an over-committed pool raises shortfall warnings when buffer is exhausted."
+covers = ["CAP-6"]
+after = [2]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Goals workspace UI and stage editor modal"
+description = "Delivers the /planning/goals page with active stage card, projected milestone dates, goal progress cards (flexible/protected tags, emergency fund indicator), and stage/rule configuration modals."
+verify = "User can view goals grouped by stage/pool, see projected completion dates, create/edit goals, and configure stage allocation rules."
+covers = ["CAP-6"]
+after = [2, 3]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Cover an expense engine: large purchase vs shortfall drawdown ordering, proposals, and undo"
+description = "Implements drawdown domain logic proposing splits across goals (emergency fund -> Flexible -> Protected for purchases; Flexible -> emergency fund -> Protected for shortfalls), creates audited goal_drawdown/adjustment records, and supports full undo."
+verify = "Calculations propose correct ordered splits with balance caps, Protected unlock warnings, and undo restores exact prior balances."
+covers = ["CAP-7"]
+after = [3]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Cover an expense modal and buffer divert override"
+description = "Builds the Cover an expense sheet with interactive sliders, Protected warning gating, real-time balance previews, and shortfall buffer divert rule toggle."
+verify = "User can interactively adjust proposed drawdowns, confirm a cover that executes drawdown debits, or toggle buffer divert for gradual shortfalls."
+covers = ["CAP-7"]
+after = [4, 5]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Savings reconciliation review items: large withdrawal detection, shortfall alerts, and one-click fixes"
+description = "Detects savings withdrawals >= threshold ($2,000 default) raising Large withdrawal review items, raises shortfall review items pointing to existing fixes, and provides one-click buffer mismatch adjustments."
+verify = "Qualifying savings withdrawals and shortfall conditions raise deduplicated review items in the inbox with actions linking to the Cover sheet or buffer adjustment."
+covers = ["CAP-6", "CAP-7"]
+after = [5, 6]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Refactor sweep, seed scenario verification, and Playwright e2e tests"
+description = "Cleans up planning contracts, verifies end-to-end multi-period scenario (stage progression, emergency fund replenishment, shortfall cover, undo), and adds Playwright tests and axe accessibility passes on /planning/goals."
+verify = "All CI checks (lint, types, unit, Playwright e2e, axe accessibility) pass on the goals workspace and review inbox workflows."
+covers = ["CAP-6", "CAP-7"]
+after = [7]
+hitl = false
+risk = "medium"

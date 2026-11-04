@@ -2,6 +2,7 @@
 import type { SeedModule } from "../module.ts";
 import { balanceSnapshots } from "./balance-snapshots.ts";
 import { budgetsAndBills } from "./budgets-and-bills.ts";
+import { goalsAndSavings } from "./goals.ts";
 import { classification } from "./classification.ts";
 import { institutionsAndAccounts } from "./institutions-and-accounts.ts";
 import { ledgerTransactions } from "./ledger-transactions.ts";
@@ -16,4 +17,5 @@ export const defaultModules: readonly SeedModule[] = [
   transfersAndPrivacy,
   balanceSnapshots,
   budgetsAndBills,
+  goalsAndSavings,
 ];

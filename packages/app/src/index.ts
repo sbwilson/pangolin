@@ -724,6 +724,33 @@ export {
   updateBudgetInput,
 } from "./planning/budgets.ts";
 export {
+  type AllocationStagePolicy,
+  type AllocationStageRepo,
+  type AllocationStageRow,
+  type GoalAdjustmentRow,
+  type GoalAllocationRow,
+  type GoalDrawdownReason,
+  type GoalDrawdownRow,
+  type GoalKind,
+  type GoalRepo,
+  type GoalRow,
+  type GoalRuleRepo,
+  type GoalRuleRow,
+  type GoalRuleSource,
+  type PlanningSettingRepo,
+  type PlanningSettingRow,
+} from "./ports/unit-of-work.ts";
+export {
+  type GoalsSummaryResult,
+  type GoalView,
+  type SavingsPoolBalance,
+  type SavingsPoolBalancesResult,
+  getGoalsSummary,
+  getSavingsPoolBalances,
+  listGoals,
+  listStages,
+} from "./planning/goals.ts";
+export {
   type DetectedPayDeposit,
   detectPayDeposits,
 } from "./planning/detect-pay-deposits.ts";

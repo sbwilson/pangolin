@@ -76,6 +76,37 @@ export type SeedReferenceEvent =
       readonly toleranceBp?: number | undefined;
       readonly nextDueOn: string;
       readonly status?: "candidate" | "confirmed" | "rejected" | undefined;
+    }
+  | {
+      readonly type: "stage.created";
+      readonly key: string;
+      readonly person?: string | null | undefined;
+      readonly name: string;
+      readonly sort: number;
+      readonly exitGoal?: string | null | undefined;
+      readonly fallbackThresholdBp?: number | undefined;
+      readonly completedSharePolicy?: "rescale" | "buffer" | undefined;
+    }
+  | {
+      readonly type: "goal.created";
+      readonly key: string;
+      readonly person?: string | null | undefined;
+      readonly name: string;
+      readonly targetCents: number;
+      readonly targetDate?: string | null | undefined;
+      readonly priority?: number | undefined;
+      readonly kind?: "flexible" | "protected" | undefined;
+      readonly isEmergencyFund?: boolean | undefined;
+    }
+  | {
+      readonly type: "goal-rule.created";
+      readonly key: string;
+      readonly goal: string;
+      readonly stage: string;
+      readonly shareBp: number;
+      readonly effectiveFrom: string;
+      readonly effectiveUntil?: string | null | undefined;
+      readonly source?: "rule" | "shortfall_override" | undefined;
     };
 
 /** What the events checked so far created, by key. */
@@ -94,6 +125,9 @@ export interface SeedKnown {
   readonly payAnchors: Set<string>;
   readonly budgets: Set<string>;
   readonly recurringSeries: Set<string>;
+  readonly goals: Set<string>;
+  readonly stages: Set<string>;
+  readonly goalRules: Set<string>;
 }
 
 export function emptySeedKnown(): SeedKnown {
@@ -107,6 +141,9 @@ export function emptySeedKnown(): SeedKnown {
     payAnchors: new Set(),
     budgets: new Set(),
     recurringSeries: new Set(),
+    goals: new Set(),
+    stages: new Set(),
+    goalRules: new Set(),
   };
 }
 
@@ -248,6 +285,31 @@ export function checkSeedReferences(event: SeedReferenceEvent, known: SeedKnown)
         bad(`unknown payee "${event.payee}"`);
       }
       known.recurringSeries.add(event.key);
+      break;
+    case "stage.created":
+      if (known.stages.has(event.key)) bad(`stage key "${event.key}" is used twice`);
+      if (event.person != null && !known.people.has(event.person)) {
+        bad(`unknown person "${event.person}"`);
+      }
+      if (event.exitGoal != null && !known.goals.has(event.exitGoal)) {
+        bad(`unknown exit goal "${event.exitGoal}"`);
+      }
+      known.stages.add(event.key);
+      break;
+    case "goal.created":
+      if (known.goals.has(event.key)) bad(`goal key "${event.key}" is used twice`);
+      if (event.person != null && !known.people.has(event.person)) {
+        bad(`unknown person "${event.person}"`);
+      }
+      if (event.targetCents <= 0) bad("targetCents must be greater than 0");
+      known.goals.add(event.key);
+      break;
+    case "goal-rule.created":
+      if (known.goalRules.has(event.key)) bad(`goal rule key "${event.key}" is used twice`);
+      if (!known.goals.has(event.goal)) bad(`unknown goal "${event.goal}"`);
+      if (!known.stages.has(event.stage)) bad(`unknown stage "${event.stage}"`);
+      if (event.shareBp < 0 || event.shareBp > 10000) bad("shareBp must be in 0..10000");
+      known.goalRules.add(event.key);
       break;
     case "household.settings":
       if (

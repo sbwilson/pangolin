@@ -19,6 +19,15 @@ export { balanceSnapshot } from "./balance-snapshot.ts";
 export { budget } from "./budget.ts";
 export { category } from "./category.ts";
 export { categoryGroup } from "./category-group.ts";
+export {
+  allocationStage,
+  goal,
+  goalAdjustment,
+  goalAllocation,
+  goalDrawdown,
+  goalRule,
+  planningSetting,
+} from "./goal.ts";
 export { householdSettings } from "./household-settings.ts";
 export { importBatch } from "./import-batch.ts";
 export { importHandoff } from "./import-handoff.ts";
