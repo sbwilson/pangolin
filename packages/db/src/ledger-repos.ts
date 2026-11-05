@@ -1014,6 +1014,33 @@ export function createTransactionRepo(orm: Orm, check: () => void): TransactionR
       return sharedFigures(orm, viewer, today, range);
     },
 
+    sumSplitCents: (viewer, accountIds, categoryIds, range) => {
+      requireViewer(viewer, "sumSplitCents");
+      check();
+      if (accountIds.length === 0 || categoryIds.length === 0) return 0;
+      let total = 0;
+      for (let i = 0; i < accountIds.length; i += 400) {
+        for (let j = 0; j < categoryIds.length; j += 400) {
+          const row = orm
+            .select({ total: sql<number>`coalesce(sum(${split.amountCents}), 0)` })
+            .from(split)
+            .innerJoin(transaction, eq(transaction.id, split.transactionId))
+            .where(
+              and(
+                liveVisibleTxn(viewer),
+                inArray(transaction.accountId, accountIds.slice(i, i + 400) as string[]),
+                inArray(split.categoryId, categoryIds.slice(j, j + 400) as string[]),
+                gte(transaction.postedOn, range.from),
+                lte(transaction.postedOn, range.to),
+              ),
+            )
+            .get();
+          total += Number(row?.total ?? 0);
+        }
+      }
+      return total;
+    },
+
     countBefore: (viewer, today, filter, cursor) => {
       const projection = visibleTxn(viewer, today);
       const narrowed = filterConditions(viewer, projection, filter);

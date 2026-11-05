@@ -171,10 +171,9 @@ export function getGoalsSummary(
   const settings: PlanningSettingRow[] = [];
   const sharedSetting = ctx.uow.read((r) => r.planningSettings.get(ctx.viewer, null));
   if (sharedSetting) settings.push(sharedSetting);
-  if (ctx.viewer.kind === "person") {
-    const personalSetting = ctx.uow.read((r) =>
-      r.planningSettings.get(ctx.viewer, ctx.viewer.personId),
-    );
+  const viewer = ctx.viewer;
+  if (viewer.kind === "person") {
+    const personalSetting = ctx.uow.read((r) => r.planningSettings.get(viewer, viewer.personId));
     if (personalSetting) settings.push(personalSetting);
   }
 

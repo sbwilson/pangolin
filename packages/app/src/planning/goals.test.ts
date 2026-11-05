@@ -82,6 +82,7 @@ describe("planning/goals", () => {
       source: "manual",
       importBatchId: null,
       createdAt: "2026-07-15T00:00:00Z",
+      updatedAt: "2026-07-15T00:00:00Z",
     });
 
     // 2. Person A private savings ($1,200 = 120,000 cents)
@@ -114,6 +115,7 @@ describe("planning/goals", () => {
       source: "manual",
       importBatchId: null,
       createdAt: "2026-07-15T00:00:00Z",
+      updatedAt: "2026-07-15T00:00:00Z",
     });
 
     // 3. Person B private savings ($5,000 = 500,000 cents)
@@ -146,6 +148,7 @@ describe("planning/goals", () => {
       source: "manual",
       importBatchId: null,
       createdAt: "2026-07-15T00:00:00Z",
+      updatedAt: "2026-07-15T00:00:00Z",
     });
 
     // Query as Person A

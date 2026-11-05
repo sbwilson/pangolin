@@ -372,6 +372,7 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               flowBreakdown: repos.transactions.flowBreakdown,
               merchantLeaks: repos.transactions.merchantLeaks,
               sharedFigures: repos.transactions.sharedFigures,
+              sumSplitCents: repos.transactions.sumSplitCents,
               countBefore: repos.transactions.countBefore,
               dayNets: repos.transactions.dayNets,
               latestPostedOn: repos.transactions.latestPostedOn,

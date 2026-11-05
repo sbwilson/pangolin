@@ -760,6 +760,20 @@ export interface TransactionRepo {
    * Ordered by person id. Throws without a viewer.
    */
   sharedFigures(viewer: Viewer, today: string, range: DayRange): SharedFigures;
+  /**
+   * The signed sum of the splits of the live (soft-deletion is the only removal, as in
+   * `balanceAsOf` — pending and posted alike) transactions `viewer` may see on the accounts in
+   * `accountIds`, posted in `range` (inclusive), restricted to the splits whose category is in
+   * `categoryIds`. An empty `accountIds` or `categoryIds` sums nothing (0). The savings
+   * reconciliation engine uses it to exclude interest income from a pool's new savings (AD-19).
+   * Throws without a viewer.
+   */
+  sumSplitCents(
+    viewer: Viewer,
+    accountIds: readonly string[],
+    categoryIds: readonly string[],
+    range: DayRange,
+  ): number;
   /** How many rows `filter` leaves that come strictly before `cursor` in list order. */
   countBefore(
     viewer: Viewer,
@@ -2108,6 +2122,7 @@ export interface ReadRepos {
     | "flowBreakdown"
     | "merchantLeaks"
     | "sharedFigures"
+    | "sumSplitCents"
     | "countBefore"
     | "dayNets"
     | "latestPostedOn"

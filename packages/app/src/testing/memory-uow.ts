@@ -1885,6 +1885,22 @@ function transactionRepo(working: MemoryState, check: () => void): TransactionRe
           .map(([personId, cents]) => ({ personId, cents })),
       };
     },
+    sumSplitCents: (viewer, accountIds, categoryIds, range) => {
+      requireViewer(viewer);
+      check();
+      if (accountIds.length === 0 || categoryIds.length === 0) return 0;
+      const accounts = new Set<string>(accountIds);
+      const categories = new Set<string>(categoryIds);
+      let total = 0;
+      for (const row of visibleRows(viewer)) {
+        if (!accounts.has(row.accountId)) continue;
+        if (row.postedOn < range.from || row.postedOn > range.to) continue;
+        for (const s of working.splits.filter((x) => x.transactionId === row.id)) {
+          if (s.categoryId !== null && categories.has(s.categoryId)) total += s.amountCents;
+        }
+      }
+      return total;
+    },
     flowBreakdown: (viewer, today, range) => {
       requireViewer(viewer);
       requireDay(today, "visibleTxn");
@@ -4124,6 +4140,7 @@ export function memoryUnitOfWork(
           flowBreakdown: transactionRepo(uow.state, check).flowBreakdown,
           merchantLeaks: transactionRepo(uow.state, check).merchantLeaks,
           sharedFigures: transactionRepo(uow.state, check).sharedFigures,
+          sumSplitCents: transactionRepo(uow.state, check).sumSplitCents,
           countBefore: transactionRepo(uow.state, check).countBefore,
           dayNets: transactionRepo(uow.state, check).dayNets,
           latestPostedOn: transactionRepo(uow.state, check).latestPostedOn,

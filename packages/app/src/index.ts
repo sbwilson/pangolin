@@ -791,6 +791,21 @@ export {
   rejectRecurringSeries,
   rejectRecurringSeriesInput,
 } from "./planning/recurring-bills.ts";
+export {
+  derivePoolNewSavingsCents,
+  type GetSavingsReconciliationInput,
+  getSavingsReconciliation,
+  getSavingsReconciliationInput,
+  INTEREST_CATEGORY_NAME,
+  type PoolNewSavingsInput,
+  type RunSavingsReconciliationInput,
+  reconcilePool,
+  runSavingsReconciliation,
+  runSavingsReconciliationInput,
+  type SavingsReconciliationReport,
+  type SavingsReconciliationRunReport,
+  type SavingsReconciliationStatus,
+} from "./planning/savings-reconciliation.ts";
 export type { AttachmentStore } from "./ports/attachment-store.ts";
 export type { Clock } from "./ports/clock.ts";
 export type {

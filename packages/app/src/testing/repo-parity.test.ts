@@ -2001,6 +2001,79 @@ function scenario(
     ];
   });
 
+  // sumSplitCents: the signed split sum of the live visible rows on the accounts, in the
+  // categories, posted in the day range (the savings reconciliation engine's interest read).
+  const sumAcct = newId<"Account">();
+  step("sumSplit.acct", (r) =>
+    r.accounts.insert(account(sumAcct, false), [owner(sumAcct, a, 5000), owner(sumAcct, b, 5000)]),
+  );
+  const sumLine = (
+    tag: string,
+    accountId: Id<"Account">,
+    postedOn: string,
+    categoryId: Id<"Category"> | null,
+    amountCents: number,
+  ) => {
+    const t = txn(accountId, `sum-${tag}`, { postedOn, amountCents });
+    return { t, s: categoryId === null ? [] : [split(t.id, { categoryId, amountCents })] };
+  };
+  step("sumSplit.rows", (r) => {
+    for (const { t, s } of [
+      sumLine("first", sumAcct, "2026-09-01", liveCat, 7), // the range's lower bound counts
+      sumLine("last", sumAcct, "2026-09-30", liveCat, 11), // and its upper bound
+      sumLine("before", sumAcct, "2026-08-31", liveCat, 13), // outside the range
+      sumLine("positive", sumAcct, "2026-09-10", liveCat, 500),
+      sumLine("negative", sumAcct, "2026-09-20", liveCat, -300),
+      sumLine("uncategorised", sumAcct, "2026-09-12", null, 900), // no split: sums nothing
+      sumLine("other-category", sumAcct, "2026-09-12", cat, 40), // a category not asked for
+    ]) {
+      r.transactions.insert(t, s);
+    }
+  });
+  // Soft-deleted rows never count, and only for them: a live row on the same account does.
+  const sumDelAcct = newId<"Account">();
+  step("sumSplit.deleted", (r) => {
+    r.accounts.insert(account(sumDelAcct, false), []);
+    const kept = sumLine("kept", sumDelAcct, "2026-09-16", liveCat, 800);
+    const gone = sumLine("gone", sumDelAcct, "2026-09-15", liveCat, 111);
+    r.transactions.insert(kept.t, kept.s);
+    r.transactions.insert(gone.t, gone.s);
+    r.transactions.softDelete(system, gone.t.id, T2);
+  });
+  // A private account's splits are invisible to the other person (AD-3).
+  step("sumSplit.private", (r) => {
+    const mine = sumLine("mine", privA, "2026-09-10", liveCat, 1000);
+    r.transactions.insert(mine.t, mine.s);
+  });
+  const sumSep = { from: "2026-09-01", to: "2026-09-30" };
+  out["sumSplit.cents"] = tx((r) => [
+    r.transactions.sumSplitCents(asB, [sumAcct], [liveCat], sumSep),
+    r.transactions.sumSplitCents(asA, [sumAcct], [liveCat], sumSep),
+    r.transactions.sumSplitCents(system, [sumAcct], [liveCat], sumSep),
+    r.transactions.sumSplitCents(asB, [sumAcct], [liveCat, cat], sumSep),
+    r.transactions.sumSplitCents(asB, [shared, sumAcct], [liveCat], sumSep),
+    r.transactions.sumSplitCents(asB, [], [liveCat], sumSep),
+    r.transactions.sumSplitCents(asB, [sumAcct], [], sumSep),
+    r.transactions.sumSplitCents(asB, [newId<"Account">()], [liveCat], sumSep),
+    r.transactions.sumSplitCents(asB, [sumAcct], [liveCat], {
+      from: "2026-08-31",
+      to: "2026-08-31",
+    }),
+    r.transactions.sumSplitCents(asB, [sumAcct], [liveCat], {
+      from: "2026-10-01",
+      to: "2026-10-31",
+    }),
+    throws(() => r.transactions.sumSplitCents(undefined as never, [sumAcct], [liveCat], sumSep)),
+  ]);
+  out["sumSplit.softDeleted"] = tx((r) =>
+    r.transactions.sumSplitCents(asB, [sumDelAcct], [liveCat], sumSep),
+  );
+  out["sumSplit.privacy"] = tx((r) => [
+    r.transactions.sumSplitCents(asB, [privA], [liveCat], sumSep),
+    r.transactions.sumSplitCents(asA, [privA], [liveCat], sumSep),
+    r.transactions.sumSplitCents(system, [privA], [liveCat], sumSep),
+  ]);
+
   return out;
 }
 
@@ -2270,6 +2343,21 @@ describe("memory and SQLite repositories agree", () => {
     const mirror = memoryUnitOfWork();
     const memory = scenario(mirror, (id) => mirror.state.deleted.add(id));
     expect(sqlite["tag.hiddenSurvives"]).toEqual([["holiday", true]]);
+    expect(sqlite["sumSplit.cents"]).toEqual([
+      218,
+      218,
+      218,
+      258,
+      -1032,
+      0,
+      0,
+      0,
+      13,
+      0,
+      "TypeError",
+    ]);
+    expect(sqlite["sumSplit.softDeleted"]).toBe(800);
+    expect(sqlite["sumSplit.privacy"]).toEqual([0, 1000, 1000]);
     expect(memory).toEqual(sqlite);
   });
 });

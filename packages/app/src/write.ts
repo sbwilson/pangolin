@@ -5,6 +5,9 @@ import type { UseCaseContext } from "./context.ts";
 import type { AuditRow, TxRepos } from "./ports/unit-of-work.ts";
 import { actorOf } from "./viewer.ts";
 
+/** Re-exported so use case modules can name the context type they take. */
+export type { UseCaseContext };
+
 /** What a use case says about a change; `write` stamps the id, time and actor. */
 export interface AuditEntry {
   readonly entity: string;
