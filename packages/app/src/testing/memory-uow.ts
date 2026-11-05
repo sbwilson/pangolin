@@ -35,8 +35,9 @@ import type {
   CredentialRepo,
   FewShotExample,
   FlowBreakdownRow,
-  GoalAllocationRow,
   GoalAdjustmentRow,
+  GoalAllocationRepo,
+  GoalAllocationRow,
   GoalDrawdownRow,
   GoalRepo,
   GoalRow,
@@ -3593,7 +3594,9 @@ function goalRepo(working: MemoryState, check: () => void): GoalRepo {
     listVisible: (viewer) => {
       check();
       return working.goals
-        .filter((g) => viewer.kind === "system" || g.personId === null || g.personId === viewer.personId)
+        .filter(
+          (g) => viewer.kind === "system" || g.personId === null || g.personId === viewer.personId,
+        )
         .sort((a, b) => a.priority - b.priority || a.createdAt.localeCompare(b.createdAt));
     },
     deleteForPerson: (personId) => {
@@ -3637,7 +3640,9 @@ function allocationStageRepo(working: MemoryState, check: () => void): Allocatio
     listVisible: (viewer) => {
       check();
       return working.stages
-        .filter((s) => viewer.kind === "system" || s.personId === null || s.personId === viewer.personId)
+        .filter(
+          (s) => viewer.kind === "system" || s.personId === null || s.personId === viewer.personId,
+        )
         .sort((a, b) => a.sort - b.sort);
     },
     deleteForPerson: (personId) => {
@@ -3747,6 +3752,82 @@ function planningSettingRepo(working: MemoryState, check: () => void): PlanningS
     deleteForPerson: (personId) => {
       check();
       working.planningSettings = working.planningSettings.filter((s) => s.personId !== personId);
+    },
+  };
+}
+
+function goalAllocationRepo(working: MemoryState, check: () => void): GoalAllocationRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.goalAllocations.some((a) => a.id === row.id)) {
+        throw new Error("UNIQUE constraint failed: goal_allocation.id");
+      }
+      working.goalAllocations.push(row);
+    },
+    insertMany: (rows) => {
+      check();
+      for (const row of rows) {
+        if (working.goalAllocations.some((a) => a.id === row.id)) {
+          throw new Error("UNIQUE constraint failed: goal_allocation.id");
+        }
+      }
+      working.goalAllocations.push(...rows);
+    },
+    listForGoal: (viewer, goalId) => {
+      check();
+      const targetGoal = working.goals.find((g) => g.id === goalId);
+      if (
+        viewer.kind !== "system" &&
+        targetGoal &&
+        targetGoal.personId !== null &&
+        targetGoal.personId !== viewer.personId
+      ) {
+        return [];
+      }
+      return working.goalAllocations
+        .filter((a) => a.goalId === goalId)
+        .sort(
+          (a, b) =>
+            a.periodStart.localeCompare(b.periodStart) || a.createdAt.localeCompare(b.createdAt),
+        );
+    },
+    listForPeriod: (viewer, periodStart) => {
+      check();
+      return working.goalAllocations
+        .filter((a) => {
+          if (a.periodStart !== periodStart) return false;
+          const targetGoal = working.goals.find((g) => g.id === a.goalId);
+          if (
+            viewer.kind !== "system" &&
+            targetGoal &&
+            targetGoal.personId !== null &&
+            targetGoal.personId !== viewer.personId
+          ) {
+            return false;
+          }
+          return true;
+        })
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+    sumForGoal: (viewer, goalId) => {
+      check();
+      const targetGoal = working.goals.find((g) => g.id === goalId);
+      if (
+        viewer.kind !== "system" &&
+        targetGoal &&
+        targetGoal.personId !== null &&
+        targetGoal.personId !== viewer.personId
+      ) {
+        return 0;
+      }
+      return working.goalAllocations
+        .filter((a) => a.goalId === goalId)
+        .reduce((sum, a) => sum + a.allocatedCents, 0);
+    },
+    deleteForGoal: (goalId) => {
+      check();
+      working.goalAllocations = working.goalAllocations.filter((a) => a.goalId !== goalId);
     },
   };
 }
@@ -3920,6 +4001,7 @@ export function memoryUnitOfWork(
         goals: goalRepo(working, check),
         stages: allocationStageRepo(working, check),
         goalRules: goalRuleRepo(working, check),
+        goalAllocations: goalAllocationRepo(working, check),
         planningSettings: planningSettingRepo(working, check),
         recoveryBundle: {
           get: () => {
@@ -3979,6 +4061,13 @@ export function memoryUnitOfWork(
         uow.state.payAnchors = working.payAnchors;
         uow.state.budgets = working.budgets;
         uow.state.recurringSeries = working.recurringSeries;
+        uow.state.goals = working.goals;
+        uow.state.stages = working.stages;
+        uow.state.goalRules = working.goalRules;
+        uow.state.goalAllocations = working.goalAllocations;
+        uow.state.goalDrawdowns = working.goalDrawdowns;
+        uow.state.goalAdjustments = working.goalAdjustments;
+        uow.state.planningSettings = working.planningSettings;
         return result;
       } finally {
         active = false;
@@ -4173,9 +4262,16 @@ export function memoryUnitOfWork(
             goalRuleRepo(uow.state, check).listForStage(viewer, stageId),
           listVisible: (viewer) => goalRuleRepo(uow.state, check).listVisible(viewer),
         },
+        goalAllocations: {
+          listForGoal: (viewer, goalId) =>
+            goalAllocationRepo(uow.state, check).listForGoal(viewer, goalId),
+          listForPeriod: (viewer, periodStart) =>
+            goalAllocationRepo(uow.state, check).listForPeriod(viewer, periodStart),
+          sumForGoal: (viewer, goalId) =>
+            goalAllocationRepo(uow.state, check).sumForGoal(viewer, goalId),
+        },
         planningSettings: {
-          get: (viewer, personId) =>
-            planningSettingRepo(uow.state, check).get(viewer, personId),
+          get: (viewer, personId) => planningSettingRepo(uow.state, check).get(viewer, personId),
         },
       });
     },

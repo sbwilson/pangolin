@@ -1446,6 +1446,15 @@ export interface GoalAllocationRow {
   readonly createdAt: string;
 }
 
+export interface GoalAllocationRepo {
+  insert(row: GoalAllocationRow): void;
+  insertMany(rows: readonly GoalAllocationRow[]): void;
+  listForGoal(viewer: Viewer, goalId: Id<"Goal">): GoalAllocationRow[];
+  listForPeriod(viewer: Viewer, periodStart: string): GoalAllocationRow[];
+  sumForGoal(viewer: Viewer, goalId: Id<"Goal">): number;
+  deleteForGoal(goalId: Id<"Goal">): void;
+}
+
 export interface GoalDrawdownRow {
   readonly id: Id<"GoalDrawdown">;
   readonly personId: Id<"Person"> | null;
@@ -2068,6 +2077,7 @@ export interface TxRepos {
   readonly goals: GoalRepo;
   readonly stages: AllocationStageRepo;
   readonly goalRules: GoalRuleRepo;
+  readonly goalAllocations: GoalAllocationRepo;
   readonly planningSettings: PlanningSettingRepo;
 }
 
@@ -2161,6 +2171,10 @@ export interface ReadRepos {
   readonly goals: Pick<GoalRepo, "findById" | "listVisible">;
   readonly stages: Pick<AllocationStageRepo, "findById" | "listVisible">;
   readonly goalRules: Pick<GoalRuleRepo, "findById" | "listForStage" | "listVisible">;
+  readonly goalAllocations: Pick<
+    GoalAllocationRepo,
+    "listForGoal" | "listForPeriod" | "sumForGoal"
+  >;
   readonly planningSettings: Pick<PlanningSettingRepo, "get">;
 }
 

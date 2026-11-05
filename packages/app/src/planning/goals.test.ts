@@ -1,10 +1,17 @@
+import { parseDate } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import { fixedClock } from "../clock.ts";
-import { parseDate } from "@pangolin/shared/temporal";
-import { personViewer } from "../viewer.ts";
+import { AppError } from "../errors.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
-import { getGoalsSummary, getSavingsPoolBalances, listGoals } from "./goals.ts";
+import { personViewer } from "../viewer.ts";
 import type { UseCaseContext } from "../write.ts";
+import {
+  createGoal,
+  getGoalsSummary,
+  getSavingsPoolBalances,
+  listGoals,
+  updateGoal,
+} from "./goals.ts";
 
 describe("planning/goals", () => {
   const clock = fixedClock(parseDate("2026-07-15"));
@@ -52,8 +59,20 @@ describe("planning/goals", () => {
       updatedAt: "2026-01-01T00:00:00Z",
     });
     uow.state.accountOwners.push(
-      { accountId: jointSavingsId, personId: personA, shareBp: 5000, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
-      { accountId: jointSavingsId, personId: personB, shareBp: 5000, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+      {
+        accountId: jointSavingsId,
+        personId: personA,
+        shareBp: 5000,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+      {
+        accountId: jointSavingsId,
+        personId: personB,
+        shareBp: 5000,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
     );
     uow.state.balanceSnapshots.push({
       id: "01J000000000000000000SNAP1" as any,
@@ -80,9 +99,13 @@ describe("planning/goals", () => {
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
     });
-    uow.state.accountOwners.push(
-      { accountId: privSavingsAId, personId: personA, shareBp: 10000, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
-    );
+    uow.state.accountOwners.push({
+      accountId: privSavingsAId,
+      personId: personA,
+      shareBp: 10000,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
     uow.state.balanceSnapshots.push({
       id: "01J000000000000000000SNAP2" as any,
       accountId: privSavingsAId,
@@ -108,9 +131,13 @@ describe("planning/goals", () => {
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
     });
-    uow.state.accountOwners.push(
-      { accountId: privSavingsBId, personId: personB, shareBp: 10000, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
-    );
+    uow.state.accountOwners.push({
+      accountId: privSavingsBId,
+      personId: personB,
+      shareBp: 10000,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
     uow.state.balanceSnapshots.push({
       id: "01J000000000000000000SNAP3" as any,
       accountId: privSavingsBId,
@@ -235,5 +262,94 @@ describe("planning/goals", () => {
     expect(summaryA.goals).toHaveLength(2);
     expect(summaryA.stages).toHaveLength(1);
     expect(summaryA.activeStage?.name).toBe("Stage 1: Emergency fund first");
+  });
+
+  it("createGoal rejects duplicate emergency fund in the same pool", () => {
+    const uow = memoryUnitOfWork();
+    const personA = "01J0000000000000000000000A" as any;
+    let idSeq = 1;
+    const ctx: UseCaseContext = {
+      viewer: personViewer(personA, clock.now()),
+      clock,
+      newId: () => `01J0000000000000000000000${idSeq++}` as any,
+      uow,
+    };
+
+    // Create initial emergency fund in shared pool
+    const ef1 = createGoal(ctx, {
+      name: "Emergency Fund",
+      targetCents: 1000000,
+      isEmergencyFund: true,
+      pool: "shared",
+    });
+    expect(ef1.id).toBeDefined();
+
+    // Attempt to create second emergency fund in shared pool -> rejected with Conflict
+    expect(() => {
+      createGoal(ctx, {
+        name: "Second Emergency Fund",
+        targetCents: 500000,
+        isEmergencyFund: true,
+        pool: "shared",
+      });
+    }).toThrow(AppError);
+
+    try {
+      createGoal(ctx, {
+        name: "Second Emergency Fund",
+        targetCents: 500000,
+        isEmergencyFund: true,
+        pool: "shared",
+      });
+    } catch (e: any) {
+      expect(e).toBeInstanceOf(AppError);
+      expect(e.code).toBe("Conflict");
+      expect(e.message).toBe("Pool already has an emergency fund");
+    }
+
+    // Creating non-emergency fund in shared pool succeeds
+    const nonEf = createGoal(ctx, {
+      name: "Holiday",
+      targetCents: 300000,
+      isEmergencyFund: false,
+      pool: "shared",
+    });
+    expect(nonEf.id).toBeDefined();
+
+    // Creating emergency fund in personal pool succeeds (separate pool)
+    const personalEf = createGoal(ctx, {
+      name: "A's Emergency Fund",
+      targetCents: 200000,
+      isEmergencyFund: true,
+      pool: personA,
+    });
+    expect(personalEf.id).toBeDefined();
+
+    // But creating a second one in A's personal pool fails
+    expect(() => {
+      createGoal(ctx, {
+        name: "A's Second Emergency Fund",
+        targetCents: 200000,
+        isEmergencyFund: true,
+        pool: personA,
+      });
+    }).toThrow(AppError);
+
+    // Updating nonEf to isEmergencyFund = true fails when pool already has one
+    expect(() => {
+      updateGoal(ctx, {
+        id: nonEf.id,
+        isEmergencyFund: true,
+      });
+    }).toThrow(AppError);
+
+    // Updating nonEf's name or target succeeds
+    const updatedNonEf = updateGoal(ctx, {
+      id: nonEf.id,
+      name: "Holiday Updated",
+      targetCents: 350000,
+    });
+    expect(updatedNonEf.name).toBe("Holiday Updated");
+    expect(updatedNonEf.targetCents).toBe(350000);
   });
 });

@@ -2,6 +2,8 @@ import type {
   AllocationStagePolicy,
   AllocationStageRepo,
   AllocationStageRow,
+  GoalAllocationRepo,
+  GoalAllocationRow,
   GoalKind,
   GoalRepo,
   GoalRow,
@@ -13,11 +15,12 @@ import type {
   PlanningSettingRow,
   Viewer,
 } from "@pangolin/app";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, or, type SQL, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import {
   allocationStage,
   goal,
+  goalAllocation,
   goalRule,
   planningSetting,
 } from "../schema/goal.ts";
@@ -28,6 +31,14 @@ function isPersonVisible(viewer: Viewer, personId: string | null): boolean {
   if (viewer.kind === "system") return true;
   if (personId === null) return true;
   return viewer.personId === personId;
+}
+
+function goalVisibilityPredicate(viewer: Viewer): SQL | undefined {
+  if (viewer.kind === "system") return undefined;
+  if (viewer.personId) {
+    return or(isNull(goal.personId), eq(goal.personId, viewer.personId));
+  }
+  return isNull(goal.personId);
 }
 
 export function createGoalRepo(orm: Orm, check: () => void): GoalRepo {
@@ -312,7 +323,9 @@ export function createPlanningSettingRepo(orm: Orm, check: () => void): Planning
       check();
       if (!isPersonVisible(viewer, personId)) return undefined;
       const whereClause =
-        personId === null ? isNull(planningSetting.personId) : eq(planningSetting.personId, personId);
+        personId === null
+          ? isNull(planningSetting.personId)
+          : eq(planningSetting.personId, personId);
       const row = orm.select().from(planningSetting).where(whereClause).get();
       return row ? (row as PlanningSettingRow) : undefined;
     },
@@ -341,6 +354,102 @@ export function createPlanningSettingRepo(orm: Orm, check: () => void): Planning
     deleteForPerson: (personId: Id<"Person">) => {
       check();
       orm.delete(planningSetting).where(eq(planningSetting.personId, personId)).run();
+    },
+  };
+}
+
+export function createGoalAllocationRepo(orm: Orm, check: () => void): GoalAllocationRepo {
+  return {
+    insert: (row: GoalAllocationRow) => {
+      check();
+      orm
+        .insert(goalAllocation)
+        .values({
+          id: row.id,
+          goalId: row.goalId,
+          periodStart: row.periodStart,
+          allocatedCents: row.allocatedCents,
+          createdAt: row.createdAt,
+        })
+        .run();
+    },
+
+    insertMany: (rows: readonly GoalAllocationRow[]) => {
+      check();
+      if (rows.length === 0) return;
+      orm
+        .insert(goalAllocation)
+        .values(
+          rows.map((row) => ({
+            id: row.id,
+            goalId: row.goalId,
+            periodStart: row.periodStart,
+            allocatedCents: row.allocatedCents,
+            createdAt: row.createdAt,
+          })),
+        )
+        .run();
+    },
+
+    listForGoal: (viewer: Viewer, goalId: Id<"Goal">) => {
+      check();
+      const visibility = goalVisibilityPredicate(viewer);
+      const rows = orm
+        .select({
+          allocation: goalAllocation,
+        })
+        .from(goalAllocation)
+        .innerJoin(goal, eq(goal.id, goalAllocation.goalId))
+        .where(
+          visibility
+            ? and(eq(goalAllocation.goalId, goalId), visibility)
+            : eq(goalAllocation.goalId, goalId),
+        )
+        .orderBy(asc(goalAllocation.periodStart), asc(goalAllocation.createdAt))
+        .all();
+      return rows.map((r) => r.allocation) as GoalAllocationRow[];
+    },
+
+    listForPeriod: (viewer: Viewer, periodStart: string) => {
+      check();
+      const visibility = goalVisibilityPredicate(viewer);
+      const rows = orm
+        .select({
+          allocation: goalAllocation,
+        })
+        .from(goalAllocation)
+        .innerJoin(goal, eq(goal.id, goalAllocation.goalId))
+        .where(
+          visibility
+            ? and(eq(goalAllocation.periodStart, periodStart), visibility)
+            : eq(goalAllocation.periodStart, periodStart),
+        )
+        .orderBy(asc(goalAllocation.createdAt))
+        .all();
+      return rows.map((r) => r.allocation) as GoalAllocationRow[];
+    },
+
+    sumForGoal: (viewer: Viewer, goalId: Id<"Goal">) => {
+      check();
+      const visibility = goalVisibilityPredicate(viewer);
+      const res = orm
+        .select({
+          total: sql<number>`coalesce(sum(${goalAllocation.allocatedCents}), 0)`,
+        })
+        .from(goalAllocation)
+        .innerJoin(goal, eq(goal.id, goalAllocation.goalId))
+        .where(
+          visibility
+            ? and(eq(goalAllocation.goalId, goalId), visibility)
+            : eq(goalAllocation.goalId, goalId),
+        )
+        .get();
+      return res?.total ?? 0;
+    },
+
+    deleteForGoal: (goalId: Id<"Goal">) => {
+      check();
+      orm.delete(goalAllocation).where(eq(goalAllocation.goalId, goalId)).run();
     },
   };
 }

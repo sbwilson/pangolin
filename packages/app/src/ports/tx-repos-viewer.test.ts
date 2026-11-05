@@ -31,6 +31,7 @@ const SCOPED_REPOS = [
   "goals",
   "stages",
   "goalRules",
+  "goalAllocations",
   "planningSettings",
 ] as const;
 
@@ -142,6 +143,9 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
   "GoalRuleRepo.delete": "the use case checked the rule through the viewer",
   "GoalRuleRepo.deleteForStage": "cascade deletion of rules for a stage",
   "GoalRuleRepo.deleteForGoal": "cascade deletion of rules for a goal",
+  "GoalAllocationRepo.insert": "a new allocation; the use case enforces goal scope",
+  "GoalAllocationRepo.insertMany": "new allocations; the use case enforces goal scope",
+  "GoalAllocationRepo.deleteForGoal": "cascade deletion of allocations for a goal",
   "PlanningSettingRepo.upsert": "the use case checked scope through viewer",
   "PlanningSettingRepo.deleteForPerson": "hard-deletes the leaver's planning settings (the leave)",
   "ImportHandoffRepo.insert": "a new hand-off; the use case set the sender to the viewer",

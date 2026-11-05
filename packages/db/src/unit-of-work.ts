@@ -45,18 +45,19 @@ import type { Db } from "./open.ts";
 import { auditHiddenUntil, auditPayeeHidden, visibleAudit } from "./privacy.ts";
 import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
 import { createBudgetRepo } from "./repositories/budget.ts";
+import {
+  createAllocationStageRepo,
+  createGoalAllocationRepo,
+  createGoalRepo,
+  createGoalRuleRepo,
+  createPlanningSettingRepo,
+} from "./repositories/goal.ts";
 import { createAttachmentRepo, createImportHandoffRepo } from "./repositories/handoff-repos.ts";
 import { createImportBatchRepo, createImportRowRepo } from "./repositories/import-repos.ts";
 import { createLlmProviderRepo } from "./repositories/llm-provider.ts";
 import { createPayAnchorRepo } from "./repositories/pay-anchor.ts";
 import { createPersonPreferenceRepo } from "./repositories/person-preference.ts";
 import { createRecurringSeriesRepo } from "./repositories/recurring-series.ts";
-import {
-  createAllocationStageRepo,
-  createGoalRepo,
-  createGoalRuleRepo,
-  createPlanningSettingRepo,
-} from "./repositories/goal.ts";
 import { createSuggestionRepo } from "./repositories/suggestion.ts";
 import { createReviewItemRepo } from "./review-item-repo.ts";
 import { auditLog } from "./schema/audit-log.ts";
@@ -287,6 +288,7 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     goals: createGoalRepo(orm, () => guard(scope)),
     stages: createAllocationStageRepo(orm, () => guard(scope)),
     goalRules: createGoalRuleRepo(orm, () => guard(scope)),
+    goalAllocations: createGoalAllocationRepo(orm, () => guard(scope)),
     planningSettings: createPlanningSettingRepo(orm, () => guard(scope)),
   };
 }
@@ -459,6 +461,11 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               findById: repos.goalRules.findById,
               listForStage: repos.goalRules.listForStage,
               listVisible: repos.goalRules.listVisible,
+            },
+            goalAllocations: {
+              listForGoal: repos.goalAllocations.listForGoal,
+              listForPeriod: repos.goalAllocations.listForPeriod,
+              sumForGoal: repos.goalAllocations.sumForGoal,
             },
             planningSettings: {
               get: repos.planningSettings.get,
