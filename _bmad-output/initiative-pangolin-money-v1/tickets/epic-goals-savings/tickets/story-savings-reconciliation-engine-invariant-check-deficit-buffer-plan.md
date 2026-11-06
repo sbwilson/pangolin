@@ -120,3 +120,14 @@ context:
 - `pnpm --filter @pangolin/db test` -- expected: ledger repo and parity tests pass
 - `pnpm test` -- expected: whole workspace green
 - `pnpm lint` -- expected: biome check passes
+
+## CI Fix Trail (post-commit)
+
+CI on `develop` had never run the 7.1/7.2 commits (remote was behind), so first-run failures surfaced only after 7.3's push. None originated in 7.3 code. Sequence:
+
+1. `1556eba` chore(lint): biome import order in `tools/seed/src/modules/index.ts` + formatting in `packages/db/src/migrate.test.ts`.
+2. `0c36d07` fix(planning): typecheck — `type Id` import and dropped `archivedAt` inserts in `apps/server/src/http/app.test.ts`; `asOf?: string | undefined` on `getSavingsPoolBalances`/`getGoalsSummary` (exactOptionalPropertyTypes); complete `Session` mock in `GoalsPage.test.tsx`.
+3. `d8dbcbe` fix(db): added missing `packages/db/migrations/meta/0028_snapshot.json` — the 7.1 commit shipped `0028_goals_savings.sql` + journal entry without its snapshot, so `db:generate` regenerated the goals/savings tables and the "migrations match the schema" gate failed. Committed SQL and journal left untouched.
+4. `8c25c68` test(web): `HouseholdSettings.test.tsx` pay-anchor save switched to `fireEvent.change` — keystroke `user.type` raced on CI (net state `""` at save, 2/2 failures on CI, green locally incl. 6x repeats).
+
+Final run https://github.com/sbwilson/pangolin/actions/runs/42185846127: secret scan, lint+types+tests+STRICT, and container/e2e all success.
