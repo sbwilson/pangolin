@@ -3594,6 +3594,13 @@ function goalRepo(working: MemoryState, check: () => void): GoalRepo {
     },
     delete: (id) => {
       check();
+      // SQLite FKs (RESTRICT, no cascade): rows referencing the goal block its removal.
+      if (working.goalAllocations.some((a) => a.goalId === id)) {
+        throw new Error("FOREIGN KEY constraint failed");
+      }
+      if (working.goalRules.some((r) => r.goalId === id)) {
+        throw new Error("FOREIGN KEY constraint failed");
+      }
       const prev = working.goals.length;
       working.goals = working.goals.filter((g) => g.id !== id);
       return working.goals.length < prev;
@@ -3640,6 +3647,10 @@ function allocationStageRepo(working: MemoryState, check: () => void): Allocatio
     },
     delete: (id) => {
       check();
+      // SQLite FK (RESTRICT, no cascade): goal_rule rows referencing the stage block it.
+      if (working.goalRules.some((r) => r.stageId === id)) {
+        throw new Error("FOREIGN KEY constraint failed");
+      }
       const prev = working.stages.length;
       working.stages = working.stages.filter((s) => s.id !== id);
       return working.stages.length < prev;

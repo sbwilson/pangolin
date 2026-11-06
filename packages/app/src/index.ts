@@ -741,9 +741,24 @@ export {
   type StageAllocationResult,
 } from "./planning/goal-allocation.ts";
 export {
+  type GoalProjection,
+  type ProjectionAllocationRow,
+  type ProjectionPace,
+  projectGoalCompletion,
+} from "./planning/goal-projection.ts";
+export {
   type CreateGoalInput,
+  type CreateStageInput,
   createGoal,
   createGoalInput,
+  createStage,
+  createStageInput,
+  type DeleteGoalInput,
+  type DeleteStageInput,
+  deleteGoal,
+  deleteGoalInput,
+  deleteStage,
+  deleteStageInput,
   type GoalsSummaryResult,
   type GoalView,
   getGoalsSummary,
@@ -752,9 +767,15 @@ export {
   listStages,
   type SavingsPoolBalance,
   type SavingsPoolBalancesResult,
+  type SetStageRulesInput,
+  setStageRules,
+  setStageRulesInput,
   type UpdateGoalInput,
+  type UpdateStageInput,
   updateGoal,
   updateGoalInput,
+  updateStage,
+  updateStageInput,
 } from "./planning/goals.ts";
 export {
   type GetPayAnchorInput,

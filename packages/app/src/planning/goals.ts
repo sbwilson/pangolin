@@ -3,15 +3,18 @@ import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import { poolOf } from "../accounts/pool.ts";
 import { AppError, parseInput } from "../errors.ts";
+import { idInput } from "../inputs.ts";
 import type {
   AllocationStageRow,
   GoalKind,
   GoalRow,
   GoalRuleRow,
   PlanningSettingRow,
+  TxRepos,
 } from "../ports/unit-of-work.ts";
 import { type UseCaseContext, write } from "../write.ts";
-import { calculateGoalBalances, resolveActiveStage } from "./goal-allocation.ts";
+import { resolveActiveStage } from "./goal-allocation.ts";
+import { type GoalProjection, projectGoalCompletion } from "./goal-projection.ts";
 
 export interface SavingsPoolBalance {
   readonly pool: "shared" | string; // "shared" or personId
@@ -32,6 +35,8 @@ export interface SavingsPoolBalancesResult {
 export interface GoalView extends GoalRow {
   readonly pool: "shared" | string;
   readonly currentBalance: number;
+  /** Completion projection from recent allocation cadence; null when nothing to project. */
+  readonly projection: GoalProjection | null;
 }
 
 export interface GoalsSummaryResult {
@@ -39,6 +44,8 @@ export interface GoalsSummaryResult {
   readonly goals: readonly GoalView[];
   readonly stages: readonly AllocationStageRow[];
   readonly activeStage: AllocationStageRow | null;
+  /** When the active stage's exit goal is projected to arrive; null with no projection. */
+  readonly nextStageChangeDate: string | null;
   readonly rules: readonly GoalRuleRow[];
   readonly pools: readonly SavingsPoolBalance[];
   readonly poolBalances: readonly SavingsPoolBalance[];
@@ -131,17 +138,27 @@ export function getSavingsPoolBalances(
 }
 
 /**
- * List goals visible to the viewer (AD-3, AD-22) with current balances.
- * Shared goals (personId = null) + viewer's personal goals only.
+ * List goals visible to the viewer (AD-3, AD-22) with current balances and a
+ * completion projection from the goal's own allocation history.
  */
-export function listGoals(ctx: UseCaseContext): GoalView[] {
+export function listGoals(
+  ctx: UseCaseContext,
+  input: { readonly asOf?: string | undefined } = {},
+): GoalView[] {
+  const asOf = input.asOf ?? ctx.clock.today().toString();
   const goals = ctx.uow.read((r) => r.goals.listVisible(ctx.viewer));
   return goals.map((g) => {
     const currentBalance = ctx.uow.read((r) => r.goalAllocations.sumForGoal(ctx.viewer, g.id));
+    const rows = ctx.uow.read((r) => r.goalAllocations.listForGoal(ctx.viewer, g.id));
     return {
       ...g,
       pool: g.personId === null ? "shared" : g.personId,
       currentBalance,
+      projection: projectGoalCompletion(
+        rows.map((a) => ({ periodStart: a.periodStart, amountCents: a.allocatedCents })),
+        g.targetCents - currentBalance,
+        asOf,
+      ),
     };
   });
 }
@@ -162,7 +179,7 @@ export function getGoalsSummary(
   input: { readonly asOf?: string | undefined } = {},
 ): GoalsSummaryResult {
   const asOf = input.asOf ?? ctx.clock.today().toString();
-  const goals = listGoals(ctx);
+  const goals = listGoals(ctx, { asOf });
   const stages = listStages(ctx);
   const rules = ctx.uow.read((r) => r.goalRules.listVisible(ctx.viewer));
   const poolBalancesResult = getSavingsPoolBalances(ctx, { asOf });
@@ -198,11 +215,17 @@ export function getGoalsSummary(
   const activeStageRes = resolveActiveStage(sharedStages, sharedGoals, balancesMap);
   const activeStage = activeStageRes.activeStage;
 
+  // The active stage's exit goal, if projected, is when the ladder changes next.
+  const exitProjection = activeStage?.exitGoalId
+    ? (goals.find((g) => g.id === activeStage.exitGoalId)?.projection ?? null)
+    : null;
+
   return {
     asOf,
     goals,
     stages,
     activeStage,
+    nextStageChangeDate: exitProjection?.projectedCompletion ?? null,
     rules,
     pools: poolBalancesResult.pools,
     poolBalances: poolBalancesResult.pools,
@@ -351,5 +374,303 @@ export function updateGoal(ctx: UseCaseContext, rawInput: UpdateGoalInput): Goal
     });
 
     return updated;
+  });
+}
+
+export const deleteGoalInput = z.object({
+  id: idInput,
+});
+
+export type DeleteGoalInput = z.infer<typeof deleteGoalInput>;
+
+/**
+ * Deletes a savings goal.
+ * Blocked while any stage still ends with the goal (the ladder would dangle), and
+ * once the goal has savings history (those allocation rows are the engine's record).
+ */
+export function deleteGoal(ctx: UseCaseContext, rawInput: DeleteGoalInput): void {
+  const input = parseInput(deleteGoalInput, rawInput);
+  const goalId = input.id as Id<"Goal">;
+
+  write(ctx, (tx, audit) => {
+    const existing = tx.goals.findById(ctx.viewer, goalId);
+    if (!existing) {
+      throw new AppError("NotFound", `Goal ${input.id} not found`);
+    }
+
+    const referencing = tx.stages.listVisible(ctx.viewer).find((s) => s.exitGoalId === goalId);
+    if (referencing) {
+      throw new AppError("Conflict", `Stage "${referencing.name}" still ends with this goal`);
+    }
+
+    if (tx.goalAllocations.listForGoal(ctx.viewer, goalId).length > 0) {
+      throw new AppError("Conflict", "Goal already has savings history");
+    }
+
+    // Rules referencing the goal go with it; stage rows themselves are untouched.
+    tx.goalRules.deleteForGoal(goalId);
+    tx.goals.delete(goalId);
+    audit({
+      entity: "goal",
+      entityId: goalId,
+      ...(existing.personId ? { personId: existing.personId } : {}),
+      action: "delete",
+      before: existing,
+      after: null,
+    });
+  });
+}
+
+export const createStageInput = z.object({
+  name: z.string().min(1),
+  pool: z.string().nullable().optional(), // "shared" / null or personId
+  sort: z.number().int().optional(),
+  exitGoalId: idInput.nullable().optional(),
+  fallbackThresholdBp: z.number().int().min(0).max(10000).optional(),
+  completedSharePolicy: z.enum(["rescale", "buffer"]).optional(),
+});
+
+export type CreateStageInput = z.infer<typeof createStageInput>;
+
+function poolPersonId(ctx: UseCaseContext, pool: string | null | undefined): Id<"Person"> | null {
+  if (pool === undefined || pool === null || pool === "shared") return null;
+  const personId = pool as Id<"Person">;
+  if (ctx.viewer.kind === "person" && ctx.viewer.personId !== personId) {
+    throw new AppError("NotFound", "Pool not found");
+  }
+  return personId;
+}
+
+/** An exit goal must exist (to the viewer) and live in the same pool as its stage. */
+function assertExitGoal(
+  tx: TxRepos,
+  ctx: UseCaseContext,
+  exitGoalId: Id<"Goal">,
+  personId: Id<"Person"> | null,
+): void {
+  const goal = tx.goals.findById(ctx.viewer, exitGoalId);
+  if (!goal) {
+    throw new AppError("NotFound", `Goal ${exitGoalId} not found`);
+  }
+  // `findById` hides another pool's goal, so this only fires for a system viewer.
+  if (goal.personId !== personId) {
+    throw new AppError("Conflict", `Goal "${goal.name}" belongs to another pool`);
+  }
+}
+
+/**
+ * Creates an allocation stage in a pool. Sort defaults past the pool's current ladder,
+ * so a new stage joins at the end.
+ */
+export function createStage(ctx: UseCaseContext, rawInput: CreateStageInput): AllocationStageRow {
+  const input = parseInput(createStageInput, rawInput);
+  const targetPersonId = poolPersonId(ctx, input.pool);
+
+  return write(ctx, (tx, audit) => {
+    if (input.exitGoalId !== undefined && input.exitGoalId !== null) {
+      assertExitGoal(tx, ctx, input.exitGoalId as Id<"Goal">, targetPersonId);
+    }
+
+    const siblings = tx.stages.listVisible(ctx.viewer).filter((s) => s.personId === targetPersonId);
+    const sort = input.sort ?? siblings.reduce((max, s) => Math.max(max, s.sort), -1) + 1;
+
+    const now = formatInstant(ctx.clock.now());
+    const row: AllocationStageRow = {
+      id: ctx.newId<"AllocationStage">(),
+      personId: targetPersonId,
+      name: input.name,
+      sort,
+      exitGoalId: input.exitGoalId !== undefined ? (input.exitGoalId as Id<"Goal"> | null) : null,
+      fallbackThresholdBp: input.fallbackThresholdBp ?? 8000,
+      completedSharePolicy: input.completedSharePolicy ?? "rescale",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    tx.stages.insert(row);
+    audit({
+      entity: "allocation_stage",
+      entityId: row.id,
+      ...(targetPersonId ? { personId: targetPersonId } : {}),
+      action: "stage-change",
+      before: null,
+      after: row,
+    });
+
+    return row;
+  });
+}
+
+export const updateStageInput = z.object({
+  id: idInput,
+  name: z.string().min(1).optional(),
+  sort: z.number().int().optional(),
+  exitGoalId: idInput.nullable().optional(),
+  fallbackThresholdBp: z.number().int().min(0).max(10000).optional(),
+  completedSharePolicy: z.enum(["rescale", "buffer"]).optional(),
+});
+
+export type UpdateStageInput = z.infer<typeof updateStageInput>;
+
+/** Updates an allocation stage. */
+export function updateStage(ctx: UseCaseContext, rawInput: UpdateStageInput): AllocationStageRow {
+  const input = parseInput(updateStageInput, rawInput);
+  const stageId = input.id as Id<"AllocationStage">;
+
+  return write(ctx, (tx, audit) => {
+    const existing = tx.stages.findById(ctx.viewer, stageId);
+    if (!existing) {
+      throw new AppError("NotFound", `Stage ${input.id} not found`);
+    }
+
+    if (input.exitGoalId !== undefined && input.exitGoalId !== null) {
+      assertExitGoal(tx, ctx, input.exitGoalId as Id<"Goal">, existing.personId);
+    }
+
+    const now = formatInstant(ctx.clock.now());
+    const updated: AllocationStageRow = {
+      ...existing,
+      name: input.name ?? existing.name,
+      sort: input.sort ?? existing.sort,
+      exitGoalId:
+        input.exitGoalId !== undefined
+          ? (input.exitGoalId as Id<"Goal"> | null)
+          : existing.exitGoalId,
+      fallbackThresholdBp: input.fallbackThresholdBp ?? existing.fallbackThresholdBp,
+      completedSharePolicy: input.completedSharePolicy ?? existing.completedSharePolicy,
+      updatedAt: now,
+    };
+
+    tx.stages.update(updated);
+    audit({
+      entity: "allocation_stage",
+      entityId: updated.id,
+      ...(existing.personId ? { personId: existing.personId } : {}),
+      action: "stage-change",
+      before: existing,
+      after: updated,
+    });
+
+    return updated;
+  });
+}
+
+export const deleteStageInput = z.object({
+  id: idInput,
+});
+
+export type DeleteStageInput = z.infer<typeof deleteStageInput>;
+
+/**
+ * Deletes an allocation stage together with its rules.
+ * `goal_allocation` history is untouched — the record of what was saved stays.
+ */
+export function deleteStage(ctx: UseCaseContext, rawInput: DeleteStageInput): void {
+  const input = parseInput(deleteStageInput, rawInput);
+  const stageId = input.id as Id<"AllocationStage">;
+
+  write(ctx, (tx, audit) => {
+    const existing = tx.stages.findById(ctx.viewer, stageId);
+    if (!existing) {
+      throw new AppError("NotFound", `Stage ${input.id} not found`);
+    }
+
+    tx.goalRules.deleteForStage(stageId);
+    tx.stages.delete(stageId);
+    audit({
+      entity: "allocation_stage",
+      entityId: stageId,
+      ...(existing.personId ? { personId: existing.personId } : {}),
+      action: "stage-change",
+      before: existing,
+      after: null,
+    });
+  });
+}
+
+export const setStageRulesInput = z.object({
+  stageId: idInput,
+  rules: z.array(
+    z.object({
+      goalId: idInput,
+      shareBp: z.number().int().min(0).max(10000),
+    }),
+  ),
+});
+
+export type SetStageRulesInput = z.infer<typeof setStageRulesInput>;
+
+/**
+ * Replaces a stage's per-goal share rules wholesale (`effectiveFrom` = today).
+ * `shortfall_override` rows stay untouched — story 7.6 owns those. The buffer is
+ * the remainder to 10000 bp and never a rule row, so shares may sum below it.
+ */
+export function setStageRules(ctx: UseCaseContext, rawInput: SetStageRulesInput): GoalRuleRow[] {
+  const input = parseInput(setStageRulesInput, rawInput);
+  const stageId = input.stageId as Id<"AllocationStage">;
+
+  return write(ctx, (tx, audit) => {
+    const stage = tx.stages.findById(ctx.viewer, stageId);
+    if (!stage) {
+      throw new AppError("NotFound", `Stage ${input.stageId} not found`);
+    }
+
+    const totalShareBp = input.rules.reduce((sum, r) => sum + r.shareBp, 0);
+    if (totalShareBp > 10000) {
+      throw new AppError(
+        "Validation",
+        `Shares sum to ${totalShareBp / 100}%; a stage's shares must total at most 100%`,
+      );
+    }
+    if (new Set(input.rules.map((r) => r.goalId)).size !== input.rules.length) {
+      throw new AppError("Validation", "A goal can appear only once per stage");
+    }
+
+    const now = formatInstant(ctx.clock.now());
+    const today = ctx.clock.today().toString();
+    const goalById = new Map(tx.goals.listVisible(ctx.viewer).map((g) => [g.id as string, g]));
+
+    const rows: GoalRuleRow[] = [];
+    for (const rule of input.rules) {
+      const goal = goalById.get(rule.goalId);
+      if (!goal) {
+        throw new AppError("NotFound", `Goal ${rule.goalId} not found`);
+      }
+      if (goal.personId !== stage.personId) {
+        throw new AppError("Conflict", `Goal "${goal.name}" belongs to another pool`);
+      }
+      rows.push({
+        id: ctx.newId<"GoalRule">(),
+        goalId: goal.id,
+        stageId: stage.id,
+        shareBp: rule.shareBp,
+        effectiveFrom: today,
+        effectiveUntil: null,
+        source: "rule",
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    const before = tx.goalRules.listForStage(ctx.viewer, stage.id);
+    for (const existing of before) {
+      if (existing.source === "rule") {
+        tx.goalRules.delete(existing.id);
+      }
+    }
+    for (const row of rows) {
+      tx.goalRules.insert(row);
+    }
+
+    audit({
+      entity: "allocation_stage",
+      entityId: stage.id,
+      ...(stage.personId ? { personId: stage.personId } : {}),
+      action: "stage-change",
+      before: { rules: before.filter((r) => r.source === "rule") },
+      after: { rules: rows },
+    });
+
+    return rows;
   });
 }

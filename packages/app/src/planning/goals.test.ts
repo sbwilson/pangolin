@@ -2,15 +2,22 @@ import { parseDate } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import { fixedClock } from "../clock.ts";
 import { AppError } from "../errors.ts";
+import { systemViewer } from "../system-viewer.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import { personViewer } from "../viewer.ts";
 import type { UseCaseContext } from "../write.ts";
+import { executeSavingsAllocation } from "./goal-allocation.ts";
 import {
   createGoal,
+  createStage,
+  deleteGoal,
+  deleteStage,
   getGoalsSummary,
   getSavingsPoolBalances,
   listGoals,
+  setStageRules,
   updateGoal,
+  updateStage,
 } from "./goals.ts";
 
 describe("planning/goals", () => {
@@ -355,4 +362,568 @@ describe("planning/goals", () => {
     expect(updatedNonEf.name).toBe("Holiday Updated");
     expect(updatedNonEf.targetCents).toBe(350000);
   });
+
+  // ---- story 7.4: deleteGoal, stage & rule CRUD, summary projections ----
+
+  const anaId = "01J000000000000000000000A1" as any;
+  const benId = "01J000000000000000000000B3" as any;
+
+  function makeCtx(uow: ReturnType<typeof memoryUnitOfWork>, personId: string | null = anaId) {
+    let n = 0;
+    const newId = (() =>
+      `01J000000000000000000ID${String(++n).padStart(3, "0")}`) as unknown as UseCaseContext["newId"];
+    return {
+      viewer:
+        personId === null ? systemViewer("cli:test") : personViewer(personId as any, clock.now()),
+      clock,
+      newId,
+      uow,
+    } as UseCaseContext;
+  }
+
+  const sharedGoal = (id: string, name: string, over: Record<string, unknown> = {}) =>
+    ({
+      id,
+      personId: null,
+      name,
+      targetCents: 100_000,
+      targetDate: null,
+      priority: 0,
+      kind: "flexible",
+      isEmergencyFund: false,
+      completedAt: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      ...over,
+    }) as any;
+
+  describe("deleteGoal", () => {
+    it("deletes a goal with no references and records a delete audit", () => {
+      const uow = memoryUnitOfWork();
+      uow.state.goals.push(sharedGoal("G1", "Kayak"));
+      const ctx = makeCtx(uow);
+
+      deleteGoal(ctx, { id: "G1" });
+
+      expect(uow.state.goals).toHaveLength(0);
+      const auditRow = uow.state.audit.find((a) => a.action === "delete");
+      expect(auditRow?.entity).toBe("goal");
+      expect(auditRow?.entityId).toBe("G1");
+    });
+
+    it("deletes the goal's rules with it", () => {
+      const uow = memoryUnitOfWork();
+      uow.state.goals.push(sharedGoal("G1", "Kayak"));
+      uow.state.stages.push({
+        id: "S1",
+        personId: null,
+        name: "Stage 1",
+        sort: 0,
+        exitGoalId: null,
+        fallbackThresholdBp: 8000,
+        completedSharePolicy: "rescale",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      uow.state.goalRules.push({
+        id: "R1",
+        stageId: "S1",
+        goalId: "G1",
+        shareBp: 5000,
+        effectiveFrom: "2026-01-01",
+        effectiveUntil: null,
+        source: "rule",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      const ctx = makeCtx(uow);
+
+      deleteGoal(ctx, { id: "G1" });
+
+      expect(uow.state.goals).toHaveLength(0);
+      expect(uow.state.goalRules).toHaveLength(0);
+      expect(uow.state.stages).toHaveLength(1);
+    });
+
+    it("blocks deletion while a stage ends with the goal, naming the stage", () => {
+      const uow = memoryUnitOfWork();
+      uow.state.goals.push(sharedGoal("G1", "Rainy day", { isEmergencyFund: true }));
+      uow.state.stages.push({
+        id: "S1",
+        personId: null,
+        name: "Emergency fund first",
+        sort: 0,
+        exitGoalId: "G1",
+        fallbackThresholdBp: 8000,
+        completedSharePolicy: "rescale",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      const ctx = makeCtx(uow);
+
+      const error = capture(() => deleteGoal(ctx, { id: "G1" }));
+      expect(error).toBeInstanceOf(AppError);
+      expect((error as AppError).code).toBe("Conflict");
+      expect((error as Error).message).toContain("Emergency fund first");
+      expect(uow.state.goals).toHaveLength(1);
+    });
+
+    it("blocks deletion once the goal has savings history", () => {
+      const uow = memoryUnitOfWork();
+      uow.state.goals.push(sharedGoal("G1", "Kayak"));
+      uow.state.goalAllocations.push({
+        id: "A1",
+        goalId: "G1",
+        periodStart: "2026-07-01",
+        allocatedCents: 5000,
+        createdAt: "2026-07-01T00:00:00Z",
+      } as any);
+      const ctx = makeCtx(uow);
+
+      const error = capture(() => deleteGoal(ctx, { id: "G1" }));
+      expect((error as AppError).code).toBe("Conflict");
+      expect((error as Error).message).toMatch(/savings history/);
+      expect(uow.state.goals).toHaveLength(1);
+    });
+
+    it("answers NotFound for an unknown goal or one in another pool", () => {
+      const uow = memoryUnitOfWork();
+      uow.state.goals.push(sharedGoal("G-BEN", "Ben's goal", { personId: benId }));
+      const ctx = makeCtx(uow);
+
+      expect((capture(() => deleteGoal(ctx, { id: "nope" })) as AppError).code).toBe("NotFound");
+      expect((capture(() => deleteGoal(ctx, { id: "G-BEN" })) as AppError).code).toBe("NotFound");
+    });
+  });
+
+  describe("stage CRUD", () => {
+    it("creates a stage at the end of the pool ladder with defaults", () => {
+      const uow = memoryUnitOfWork();
+      uow.state.stages.push({
+        id: "S1",
+        personId: null,
+        name: "Stage 1",
+        sort: 3,
+        exitGoalId: null,
+        fallbackThresholdBp: 8000,
+        completedSharePolicy: "rescale",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      const ctx = makeCtx(uow);
+
+      const created = createStage(ctx, { name: "Stage 2" });
+
+      expect(created.sort).toBe(4);
+      expect(created.personId).toBeNull();
+      expect(created.exitGoalId).toBeNull();
+      expect(created.fallbackThresholdBp).toBe(8000);
+      expect(created.completedSharePolicy).toBe("rescale");
+      const auditRow = uow.state.audit.find((a) => a.entity === "allocation_stage");
+      expect(auditRow?.action).toBe("stage-change");
+    });
+
+    it("rejects an exit goal from another pool, or an unknown one", () => {
+      const uow = memoryUnitOfWork();
+      uow.state.goals.push(sharedGoal("G-BEN", "Ben's goal", { personId: benId }));
+      const ctx = makeCtx(uow);
+      const asSystem = makeCtx(uow, null);
+
+      // A person viewer never sees Ben's goal; the system viewer sees it in the wrong pool.
+      expect(
+        (capture(() => createStage(ctx, { name: "S", exitGoalId: "G-BEN" })) as AppError).code,
+      ).toBe("NotFound");
+      expect(
+        (capture(() => createStage(asSystem, { name: "S", exitGoalId: "G-BEN" })) as AppError).code,
+      ).toBe("Conflict");
+      expect(
+        (capture(() => createStage(ctx, { name: "S", exitGoalId: "nope" })) as AppError).code,
+      ).toBe("NotFound");
+      expect(uow.state.stages).toHaveLength(0);
+    });
+
+    it("updates a stage partially and audits before and after", () => {
+      const uow = memoryUnitOfWork();
+      uow.state.stages.push({
+        id: "S1",
+        personId: null,
+        name: "Stage 1",
+        sort: 0,
+        exitGoalId: null,
+        fallbackThresholdBp: 8000,
+        completedSharePolicy: "rescale",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      uow.state.goals.push(sharedGoal("G1", "Rainy day"));
+      const ctx = makeCtx(uow);
+
+      const updated = updateStage(ctx, { id: "S1", fallbackThresholdBp: 9000, exitGoalId: "G1" });
+
+      expect(updated.name).toBe("Stage 1");
+      expect(updated.fallbackThresholdBp).toBe(9000);
+      expect(updated.exitGoalId).toBe("G1");
+      const auditRow = uow.state.audit.filter((a) => a.entity === "allocation_stage").at(-1);
+      expect(JSON.parse(String(auditRow?.before)).name as string).toBe("Stage 1");
+      expect(JSON.parse(String(auditRow?.after)).fallbackThresholdBp as number).toBe(9000);
+    });
+
+    it("answers NotFound when updating an unknown stage", () => {
+      const uow = memoryUnitOfWork();
+      const ctx = makeCtx(uow);
+      expect((capture(() => updateStage(ctx, { id: "nope", name: "X" })) as AppError).code).toBe(
+        "NotFound",
+      );
+    });
+
+    it("deletes a stage with its rules, keeping allocation history", () => {
+      const uow = memoryUnitOfWork();
+      uow.state.goals.push(sharedGoal("G1", "Kayak"));
+      uow.state.stages.push({
+        id: "S1",
+        personId: null,
+        name: "Stage 1",
+        sort: 0,
+        exitGoalId: null,
+        fallbackThresholdBp: 8000,
+        completedSharePolicy: "rescale",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      uow.state.goalRules.push({
+        id: "R1",
+        stageId: "S1",
+        goalId: "G1",
+        shareBp: 5000,
+        effectiveFrom: "2026-01-01",
+        effectiveUntil: null,
+        source: "rule",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      uow.state.goalAllocations.push({
+        id: "A1",
+        goalId: "G1",
+        periodStart: "2026-07-01",
+        allocatedCents: 5000,
+        createdAt: "2026-07-01T00:00:00Z",
+      } as any);
+      const ctx = makeCtx(uow);
+
+      deleteStage(ctx, { id: "S1" });
+
+      expect(uow.state.stages).toHaveLength(0);
+      expect(uow.state.goalRules).toHaveLength(0);
+      expect(uow.state.goalAllocations).toHaveLength(1);
+    });
+  });
+
+  describe("setStageRules", () => {
+    function seeded() {
+      const uow = memoryUnitOfWork();
+      uow.state.goals.push(sharedGoal("G1", "Kayak"), sharedGoal("G2", "Holiday"));
+      uow.state.goals.push(sharedGoal("G-BEN", "Ben's goal", { personId: benId }));
+      uow.state.stages.push({
+        id: "S1",
+        personId: null,
+        name: "Stage 1",
+        sort: 0,
+        exitGoalId: null,
+        fallbackThresholdBp: 8000,
+        completedSharePolicy: "rescale",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      uow.state.goalRules.push(
+        {
+          id: "R-RULE",
+          stageId: "S1",
+          goalId: "G1",
+          shareBp: 7000,
+          effectiveFrom: "2026-01-01",
+          effectiveUntil: null,
+          source: "rule",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        } as any,
+        {
+          id: "R-OVERRIDE",
+          stageId: "S1",
+          goalId: "G2",
+          shareBp: 500,
+          effectiveFrom: "2026-06-01",
+          effectiveUntil: null,
+          source: "shortfall_override",
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        } as any,
+      );
+      return { uow, ctx: makeCtx(uow) };
+    }
+
+    it("replaces the rule rows with today's effectiveFrom", () => {
+      const { uow, ctx } = seeded();
+
+      const rows = setStageRules(ctx, {
+        stageId: "S1",
+        rules: [
+          { goalId: "G1", shareBp: 4000 },
+          { goalId: "G2", shareBp: 1000 },
+        ],
+      });
+
+      expect(rows).toHaveLength(2);
+      const rules = uow.state.goalRules.filter((r) => r.source === "rule");
+      expect(rules).toHaveLength(2);
+      expect(rules.every((r) => r.effectiveFrom === "2026-07-15")).toBe(true);
+      expect(rules.map((r) => [r.goalId, r.shareBp]).sort()).toEqual([
+        ["G1", 4000],
+        ["G2", 1000],
+      ]);
+    });
+
+    it("leaves shortfall_override rows untouched", () => {
+      const { uow, ctx } = seeded();
+
+      setStageRules(ctx, { stageId: "S1", rules: [{ goalId: "G1", shareBp: 2000 }] });
+
+      const overrides = uow.state.goalRules.filter((r) => r.source === "shortfall_override");
+      expect(overrides).toHaveLength(1);
+      expect(overrides[0]?.id).toBe("R-OVERRIDE");
+    });
+
+    it("rejects shares that sum over 100% or repeat a goal, writing nothing", () => {
+      const { uow, ctx } = seeded();
+
+      const over = capture(() =>
+        setStageRules(ctx, {
+          stageId: "S1",
+          rules: [
+            { goalId: "G1", shareBp: 6000 },
+            { goalId: "G2", shareBp: 5000 },
+          ],
+        }),
+      );
+      expect((over as AppError).code).toBe("Validation");
+      const dupe = capture(() =>
+        setStageRules(ctx, {
+          stageId: "S1",
+          rules: [
+            { goalId: "G1", shareBp: 1000 },
+            { goalId: "G1", shareBp: 2000 },
+          ],
+        }),
+      );
+      expect((dupe as AppError).code).toBe("Validation");
+      expect(uow.state.goalRules.map((r) => r.id)).toEqual(["R-RULE", "R-OVERRIDE"]);
+    });
+
+    it("answers NotFound for an unknown goal, Conflict for another pool's goal", () => {
+      const { ctx, uow } = seeded();
+      const asSystem = makeCtx(uow, null);
+
+      expect(
+        (
+          capture(() =>
+            setStageRules(ctx, { stageId: "S1", rules: [{ goalId: "nope", shareBp: 100 }] }),
+          ) as AppError
+        ).code,
+      ).toBe("NotFound");
+      expect(
+        (
+          capture(() =>
+            setStageRules(ctx, { stageId: "S1", rules: [{ goalId: "G-BEN", shareBp: 100 }] }),
+          ) as AppError
+        ).code,
+      ).toBe("NotFound");
+      expect(
+        (
+          capture(() =>
+            setStageRules(asSystem, { stageId: "S1", rules: [{ goalId: "G-BEN", shareBp: 100 }] }),
+          ) as AppError
+        ).code,
+      ).toBe("Conflict");
+    });
+
+    it("feeds executeSavingsAllocation unchanged", () => {
+      const uow = memoryUnitOfWork();
+      uow.state.goals.push(
+        sharedGoal("EF", "Emergency Fund", { targetCents: 100_000, isEmergencyFund: true }),
+        sharedGoal("HOLIDAY", "Holiday", { targetCents: 200_000 }),
+      );
+      uow.state.stages.push({
+        id: "S1",
+        personId: null,
+        name: "Stage 1",
+        sort: 1,
+        exitGoalId: "EF",
+        fallbackThresholdBp: 8000,
+        completedSharePolicy: "rescale",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      const ctx = makeCtx(uow);
+
+      setStageRules(ctx, {
+        stageId: "S1",
+        rules: [
+          { goalId: "EF", shareBp: 6000 },
+          { goalId: "HOLIDAY", shareBp: 4000 },
+        ],
+      });
+      const result = executeSavingsAllocation(ctx, {
+        periodStart: "2026-07-01",
+        savingsCents: 50_000,
+        pool: "shared",
+      });
+
+      expect(
+        result.allocations
+          .map((a) => [a.goalId, a.allocatedCents])
+          .sort((x, y) => String(x[0]).localeCompare(String(y[0]))),
+      ).toEqual([
+        ["EF", 30_000],
+        ["HOLIDAY", 20_000],
+      ]);
+    });
+  });
+
+  describe("summary projections", () => {
+    it("projects each goal and names the next stage change", () => {
+      const uow = memoryUnitOfWork();
+      uow.state.goals.push(
+        sharedGoal("EF", "Emergency Fund", { targetCents: 100_000, isEmergencyFund: true }),
+        sharedGoal("NEWBIKE", "New bike"),
+      );
+      uow.state.stages.push({
+        id: "S1",
+        personId: null,
+        name: "Stage 1",
+        sort: 0,
+        exitGoalId: "EF",
+        fallbackThresholdBp: 8000,
+        completedSharePolicy: "rescale",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      uow.state.goalAllocations.push(
+        {
+          id: "A1",
+          goalId: "EF",
+          periodStart: "2026-05-01",
+          allocatedCents: 25_000,
+          createdAt: "2026-05-01T00:00:00Z",
+        } as any,
+        {
+          id: "A2",
+          goalId: "EF",
+          periodStart: "2026-06-01",
+          allocatedCents: 25_000,
+          createdAt: "2026-06-01T00:00:00Z",
+        } as any,
+        {
+          id: "A3",
+          goalId: "EF",
+          periodStart: "2026-07-01",
+          allocatedCents: 0,
+          createdAt: "2026-07-01T00:00:00Z",
+        } as any,
+      );
+      const ctx = makeCtx(uow);
+
+      const summary = getGoalsSummary(ctx);
+      const ef = summary.goals.find((g) => g.id === "EF");
+      const bike = summary.goals.find((g) => g.id === "NEWBIKE");
+
+      expect(ef?.currentBalance).toBe(50_000);
+      expect(ef?.projection).toMatchObject({
+        averagePerPeriodCents: 25_000,
+        pace: "monthly",
+        // Zero-net July is dropped, so the latest funded period is June.
+        periodsRemaining: 2,
+      });
+      expect(ef?.projection?.projectedCompletion).toBe("2026-08-01");
+      expect(bike?.projection).toBeNull();
+      expect(summary.nextStageChangeDate).toBe("2026-08-01");
+    });
+
+    it("honours a future asOf in summary projections", () => {
+      const uow = memoryUnitOfWork();
+      uow.state.goals.push(
+        sharedGoal("EF", "Emergency Fund", { targetCents: 100_000, isEmergencyFund: true }),
+      );
+      uow.state.stages.push({
+        id: "S1",
+        personId: null,
+        name: "Stage 1",
+        sort: 0,
+        exitGoalId: "EF",
+        fallbackThresholdBp: 8000,
+        completedSharePolicy: "rescale",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      uow.state.goalAllocations.push(
+        {
+          id: "A1",
+          goalId: "EF",
+          periodStart: "2026-05-01",
+          allocatedCents: 25_000,
+          createdAt: "2026-05-01T00:00:00Z",
+        } as any,
+        {
+          id: "A2",
+          goalId: "EF",
+          periodStart: "2026-06-01",
+          allocatedCents: 25_000,
+          createdAt: "2026-06-01T00:00:00Z",
+        } as any,
+        // In the future relative to the clock's today, but in scope for the asOf.
+        {
+          id: "A3",
+          goalId: "EF",
+          periodStart: "2026-08-01",
+          allocatedCents: 25_000,
+          createdAt: "2026-08-01T00:00:00Z",
+        } as any,
+      );
+      const ctx = makeCtx(uow);
+
+      const summary = getGoalsSummary(ctx, { asOf: "2026-08-15" });
+      const ef = summary.goals.find((g) => g.id === "EF");
+
+      // The August period is in scope for the requested asOf, moving the projection
+      // (default asOf would stop at the June period and project 2026-07-01).
+      expect(ef?.projection?.projectedCompletion).toBe("2026-09-01");
+      expect(summary.nextStageChangeDate).toBe("2026-09-01");
+    });
+
+    it("has no next stage change when the exit goal has no projection", () => {
+      const uow = memoryUnitOfWork();
+      uow.state.goals.push(sharedGoal("EF", "Emergency Fund", { isEmergencyFund: true }));
+      uow.state.stages.push({
+        id: "S1",
+        personId: null,
+        name: "Stage 1",
+        sort: 0,
+        exitGoalId: "EF",
+        fallbackThresholdBp: 8000,
+        completedSharePolicy: "rescale",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      const ctx = makeCtx(uow);
+
+      expect(getGoalsSummary(ctx).nextStageChangeDate).toBeNull();
+    });
+  });
 });
+
+function capture(fn: () => unknown): unknown {
+  try {
+    fn();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("Expected the call to throw");
+}

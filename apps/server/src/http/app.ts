@@ -31,12 +31,14 @@ import {
   createBudget,
   createCategory,
   createCategoryGroup,
+  createGoal,
   createHandoff,
   createInstitution,
   createLlmProvider,
   createPayee,
   createPayeeAlias,
   createRecurringSeries,
+  createStage,
   createTag,
   createTaxCategory,
   createTransaction,
@@ -45,10 +47,12 @@ import {
   deleteActivity,
   deleteBudget,
   deleteCategory,
+  deleteGoal,
   deleteLlmProvider,
   deletePayee,
   deletePayeeAlias,
   deleteRecurringSeries,
+  deleteStage,
   deleteTag,
   deleteTransaction,
   deleteTransferGroup,
@@ -114,6 +118,7 @@ import {
   listPayees,
   listRecurringSeries,
   listReviewCards,
+  listStages,
   listTags,
   listTaxCategories,
   listTransactions,
@@ -152,6 +157,7 @@ import {
   setSplitField,
   setSplits,
   setSplitTags,
+  setStageRules,
   sharedShare,
   spending,
   type TokenPort,
@@ -164,12 +170,14 @@ import {
   updateBudget,
   updateCategory,
   updateCategoryGroup,
+  updateGoal,
   updateHouseholdSettings,
   updateInstitution,
   updateLlmProvider,
   updatePayee,
   updatePayeeAlias,
   updatePreferences,
+  updateStage,
   updateTag,
   updateTaxCategory,
   updateTransaction,
@@ -523,7 +531,7 @@ export function createApi(deps: ApiDeps) {
     })
     .get("/api/planning/goals", (c) => {
       const asOf = c.req.query("asOf");
-      const goals = listGoals(ctx(c));
+      const goals = listGoals(ctx(c), { asOf });
       const poolResult = getSavingsPoolBalances(ctx(c), { asOf });
       return c.json({ asOf: poolResult.asOf, pools: poolResult.pools, goals }, 200);
     })
@@ -531,6 +539,45 @@ export function createApi(deps: ApiDeps) {
       const asOf = c.req.query("asOf");
       const summary = getGoalsSummary(ctx(c), { asOf });
       return c.json(summary, 200);
+    })
+    .post("/api/planning/goals", async (c) => {
+      writable();
+      const goal = createGoal(ctx(c), await objectBody(c));
+      return c.json({ goal }, 201);
+    })
+    .patch("/api/planning/goals/:id", async (c) => {
+      writable();
+      const id = c.req.param("id");
+      return c.json({ goal: updateGoal(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .delete("/api/planning/goals/:id", (c) => {
+      writable();
+      deleteGoal(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .get("/api/planning/stages", (c) => {
+      return c.json({ stages: listStages(ctx(c)) }, 200);
+    })
+    .post("/api/planning/stages", async (c) => {
+      writable();
+      const stage = createStage(ctx(c), await objectBody(c));
+      return c.json({ stage }, 201);
+    })
+    .patch("/api/planning/stages/:id", async (c) => {
+      writable();
+      const id = c.req.param("id");
+      return c.json({ stage: updateStage(ctx(c), await objectBody(c, { id })) }, 200);
+    })
+    .delete("/api/planning/stages/:id", (c) => {
+      writable();
+      deleteStage(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .put("/api/planning/stages/:id/rules", async (c) => {
+      writable();
+      const stageId = c.req.param("id");
+      const rules = setStageRules(ctx(c), await objectBody(c, { stageId }));
+      return c.json({ rules }, 200);
     })
     .get("/api/identity/preferences", (c) => {
       return c.json(getPreferences(ctx(c), {}), 200);

@@ -1418,6 +1418,13 @@ export interface GoalRuleData {
   readonly updatedAt?: string;
 }
 
+export interface GoalProjectionData {
+  readonly averagePerPeriodCents: number;
+  readonly pace: "weekly" | "fortnightly" | "monthly";
+  readonly periodsRemaining: number;
+  readonly projectedCompletion: string;
+}
+
 export interface GoalData {
   readonly id: string;
   readonly personId: string | null;
@@ -1432,6 +1439,10 @@ export interface GoalData {
   readonly updatedAt?: string;
   readonly archivedAt?: string | null;
   readonly pool: "shared" | string;
+  /** Sum of allocations so far; present on the goals list. */
+  readonly currentBalance?: number;
+  /** Completion projection from the goal's own history; null when not enough history. */
+  readonly projection?: GoalProjectionData | null;
 }
 
 export interface GoalsSummaryData {
@@ -1440,6 +1451,8 @@ export interface GoalsSummaryData {
   readonly goals: ReadonlyArray<GoalData>;
   readonly stages: ReadonlyArray<AllocationStageData>;
   readonly activeStage: AllocationStageData | null;
+  /** When the active stage's exit goal is projected to arrive; null without a projection. */
+  readonly nextStageChangeDate?: string | null;
   readonly rules: ReadonlyArray<GoalRuleData>;
 }
 
@@ -1463,4 +1476,104 @@ export async function fetchGoals(asOf?: string): Promise<{
     readonly pools: ReadonlyArray<SavingsPoolBalanceData>;
     readonly goals: ReadonlyArray<GoalData>;
   };
+}
+
+export interface CreateGoalInput {
+  readonly name: string;
+  readonly targetCents: number;
+  readonly targetDate?: string | null;
+  readonly priority?: number;
+  readonly kind?: "flexible" | "protected";
+  readonly isEmergencyFund?: boolean;
+  readonly pool?: string | null;
+}
+
+export interface UpdateGoalInput {
+  readonly name?: string;
+  readonly targetCents?: number;
+  readonly targetDate?: string | null;
+  readonly priority?: number;
+  readonly kind?: "flexible" | "protected";
+  readonly isEmergencyFund?: boolean;
+}
+
+export async function createGoal(input: CreateGoalInput): Promise<GoalData> {
+  const res = await sendJson<{ goal: GoalData }>("POST", "/api/planning/goals", input);
+  return res.goal;
+}
+
+export async function updateGoal(id: string, input: UpdateGoalInput): Promise<GoalData> {
+  const res = await sendJson<{ goal: GoalData }>(
+    "PATCH",
+    `/api/planning/goals/${encodeURIComponent(id)}`,
+    input,
+  );
+  return res.goal;
+}
+
+export async function deleteGoal(id: string): Promise<void> {
+  await sendJson("DELETE", `/api/planning/goals/${encodeURIComponent(id)}`);
+}
+
+export async function fetchStages(): Promise<AllocationStageData[]> {
+  const res = await fetch("/api/planning/stages");
+  if (!res.ok) throw await apiError(res);
+  const data = (await res.json()) as { stages: AllocationStageData[] };
+  return data.stages;
+}
+
+export interface CreateStageInput {
+  readonly name: string;
+  readonly pool?: string | null;
+  readonly sort?: number;
+  readonly exitGoalId?: string | null;
+  readonly fallbackThresholdBp?: number;
+  readonly completedSharePolicy?: "rescale" | "buffer";
+}
+
+export interface UpdateStageInput {
+  readonly name?: string;
+  readonly sort?: number;
+  readonly exitGoalId?: string | null;
+  readonly fallbackThresholdBp?: number;
+  readonly completedSharePolicy?: "rescale" | "buffer";
+}
+
+export async function createStage(input: CreateStageInput): Promise<AllocationStageData> {
+  const res = await sendJson<{ stage: AllocationStageData }>("POST", "/api/planning/stages", input);
+  return res.stage;
+}
+
+export async function updateStage(
+  id: string,
+  input: UpdateStageInput,
+): Promise<AllocationStageData> {
+  const res = await sendJson<{ stage: AllocationStageData }>(
+    "PATCH",
+    `/api/planning/stages/${encodeURIComponent(id)}`,
+    input,
+  );
+  return res.stage;
+}
+
+export async function deleteStage(id: string): Promise<void> {
+  await sendJson("DELETE", `/api/planning/stages/${encodeURIComponent(id)}`);
+}
+
+/** Per-goal share of the stage's savings, in basis points (the buffer is the remainder). */
+export interface StageRuleInput {
+  readonly goalId: string;
+  readonly shareBp: number;
+}
+
+export async function setStageRules(
+  stageId: string,
+  rules: ReadonlyArray<StageRuleInput>,
+): Promise<GoalRuleData[]> {
+  const res = await sendJson<{ rules: GoalRuleData[] }>(
+    "PUT",
+    `/api/planning/stages/${encodeURIComponent(stageId)}/rules`,
+    { rules },
+  );
+  return res.rules;
 }

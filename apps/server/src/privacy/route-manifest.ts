@@ -606,6 +606,49 @@ export const MANIFEST: readonly ManifestEntry[] = [
   // Goals (epic-goals-savings, story 7.1)
   read("/api/planning/goals"),
   read("/api/planning/goals/summary"),
+  {
+    kind: "exempt",
+    method: "POST",
+    path: "/api/planning/goals",
+    reason: "Creates a goal in a pool visible to the viewer; owner checked in the use case.",
+  },
+  {
+    kind: "exempt",
+    method: "PATCH",
+    path: "/api/planning/goals/:id",
+    reason: "Updates a goal visible to the viewer; partner-private goals answer 404.",
+  },
+  {
+    kind: "exempt",
+    method: "DELETE",
+    path: "/api/planning/goals/:id",
+    reason: "Deletes a goal visible to the viewer when nothing references it.",
+  },
+  read("/api/planning/stages"),
+  {
+    kind: "exempt",
+    method: "POST",
+    path: "/api/planning/stages",
+    reason: "Creates an allocation stage for a pool visible to the viewer.",
+  },
+  {
+    kind: "exempt",
+    method: "PATCH",
+    path: "/api/planning/stages/:id",
+    reason: "Updates a stage visible to the viewer; partner-owned stage answers 404.",
+  },
+  {
+    kind: "exempt",
+    method: "DELETE",
+    path: "/api/planning/stages/:id",
+    reason: "Deletes a stage visible to the viewer together with its rules.",
+  },
+  {
+    kind: "exempt",
+    method: "PUT",
+    path: "/api/planning/stages/:id/rules",
+    reason: "Replaces the rule rows of a stage visible to the viewer.",
+  },
 ];
 
 /** Entries that name a person's data, which the suite replays. */

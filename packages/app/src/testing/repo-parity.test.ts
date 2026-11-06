@@ -19,6 +19,7 @@ import { AppError } from "../errors.ts";
 import { fixedClockAt, personViewer, setPrivacy, type Viewer } from "../index.ts";
 import type {
   AccountRow,
+  AllocationStageRow,
   RuleRow,
   SplitRow,
   TransactionRow,
@@ -2074,6 +2075,190 @@ function scenario(
     r.transactions.sumSplitCents(system, [privA], [liveCat], sumSep),
   ]);
 
+  // ---- goals, stages and rules: update/delete parity (story 4) ----
+  {
+    const goalShared = newId<"Goal">();
+    const goalPersonal = newId<"Goal">();
+    const goalEF = newId<"Goal">();
+    const stageOne = newId<"AllocationStage">();
+    const stageTwo = newId<"AllocationStage">();
+    const ruleEF1 = newId<"GoalRule">();
+    const ruleEF2 = newId<"GoalRule">();
+    const overrideShared = newId<"GoalRule">();
+
+    const goal = (
+      id: Id<"Goal">,
+      personId: Id<"Person"> | null,
+      over: { emergency?: boolean } = {},
+    ) => ({
+      id,
+      personId,
+      name: `goal-${id.slice(-4)}`,
+      targetCents: 100_000,
+      targetDate: null,
+      kind: over.emergency ? ("protected" as const) : ("flexible" as const),
+      priority: 0,
+      isEmergencyFund: over.emergency === true,
+      completedAt: null,
+      createdAt: T,
+      updatedAt: T,
+    });
+    const stage = (
+      id: Id<"AllocationStage">,
+      sort: number,
+      over: Partial<AllocationStageRow> = {},
+    ): AllocationStageRow => ({
+      id,
+      personId: null,
+      name: `stage-${sort}`,
+      sort,
+      exitGoalId: null,
+      fallbackThresholdBp: 8000,
+      completedSharePolicy: "rescale",
+      createdAt: T,
+      updatedAt: T,
+      ...over,
+    });
+    const rule = (
+      id: Id<"GoalRule">,
+      stageId: Id<"AllocationStage">,
+      goalId: Id<"Goal">,
+      source: "rule" | "shortfall_override" = "rule",
+    ) => ({
+      id,
+      stageId,
+      goalId,
+      shareBp: 5000,
+      effectiveFrom: TODAY,
+      effectiveUntil: null,
+      source,
+      createdAt: T,
+      updatedAt: T,
+    });
+
+    out["goal.insert"] = attempt(() =>
+      uow.transaction((tx) => {
+        tx.goals.insert(goal(goalShared, null));
+        tx.goals.insert(goal(goalEF, null, { emergency: true }));
+        tx.goals.insert(goal(goalPersonal, a));
+      }),
+    );
+    out["goal.efSecondSamePool"] = attempt(() =>
+      uow.transaction((tx) => tx.goals.insert(goal(newId<"Goal">(), null, { emergency: true }))),
+    );
+    out["goal.update"] = attempt(() =>
+      uow.transaction((tx) =>
+        tx.goals.update({
+          ...goal(goalShared, null),
+          name: "goal-renamed",
+          targetCents: 150_000,
+          updatedAt: T2,
+        }),
+      ),
+    );
+    out["goal.updateReadBack"] = uow.transaction((r) => {
+      const row = r.goals.findById(system, goalShared);
+      return row ? [row.name, row.targetCents] : null;
+    });
+    out["goal.updateUnknown"] = attempt(() =>
+      uow.transaction((tx) => tx.goals.update(goal(newId<"Goal">(), null))),
+    );
+    out["goal.updateToEfConflict"] = attempt(() =>
+      uow.transaction((tx) => {
+        const other = newId<"Goal">();
+        tx.goals.insert(goal(other, null));
+        return tx.goals.update({ ...goal(other, null), isEmergencyFund: true });
+      }),
+    );
+
+    out["stage.insertUpdate"] = attempt(() =>
+      uow.transaction((tx) => {
+        tx.stages.insert(stage(stageOne, 0));
+        tx.stages.insert(stage(stageTwo, 1));
+        return tx.stages.update({
+          ...stage(stageOne, 0, { exitGoalId: goalEF }),
+          name: "stage-renamed",
+          fallbackThresholdBp: 9000,
+          updatedAt: T2,
+        });
+      }),
+    );
+    out["stage.updateUnknown"] = attempt(() =>
+      uow.transaction((tx) => tx.stages.update(stage(newId<"AllocationStage">(), 9))),
+    );
+    out["rule.insertReplaceUpdate"] = attempt(() =>
+      uow.transaction((tx) => {
+        tx.goalRules.insert(rule(ruleEF1, stageOne, goalEF));
+        tx.goalRules.insert(rule(overrideShared, stageOne, goalShared, "shortfall_override"));
+        tx.goalRules.insert(rule(ruleEF2, stageTwo, goalEF));
+        return tx.goalRules.update({ ...rule(ruleEF1, stageOne, goalEF), shareBp: 6000 });
+      }),
+    );
+    out["rule.updateReadBack"] = uow.transaction((r) =>
+      r.goalRules
+        .listForStage(system, stageOne)
+        .map((row) => [row.shareBp, row.source])
+        .sort(),
+    );
+
+    out["allocations.insert"] = attempt(() =>
+      uow.transaction((tx) =>
+        tx.goalAllocations.insertMany([
+          {
+            id: newId<"GoalAllocation">(),
+            goalId: goalEF,
+            periodStart: "2026-09-01",
+            allocatedCents: 40_000,
+            createdAt: T,
+          },
+          {
+            id: newId<"GoalAllocation">(),
+            goalId: goalEF,
+            periodStart: "2026-09-15",
+            allocatedCents: 35_000,
+            createdAt: T,
+          },
+        ]),
+      ),
+    );
+    // Deletions are blocked while rows reference the goal or the stage.
+    out["goal.deleteBlockedByAllocation"] = attempt(() =>
+      uow.transaction((tx) => tx.goals.delete(goalEF)),
+    );
+    out["goal.deleteBlockedByRule"] = attempt(() =>
+      uow.transaction((tx) => tx.goals.delete(goalShared)),
+    );
+    out["stage.deleteBlockedByRules"] = attempt(() =>
+      uow.transaction((tx) => tx.stages.delete(stageOne)),
+    );
+    // Removing the referencing rules frees the stage and the goal it pointed at;
+    // savings history keeps blocking its goal — the port never deletes allocations.
+    out["stage.rulesThenDelete"] = attempt(() =>
+      uow.transaction((tx) => {
+        tx.goalRules.deleteForStage(stageOne);
+        return [tx.goalRules.deleteForStage(stageOne), tx.stages.delete(stageOne)];
+      }),
+    );
+    out["goal.rulesThenStillBlocked"] = attempt(() =>
+      uow.transaction((tx) => {
+        tx.goalRules.deleteForGoal(goalEF);
+        return [tx.goalRules.deleteForGoal(goalEF), tx.goals.delete(goalEF)];
+      }),
+    );
+    out["goal.deleteHistoryBlocked"] = attempt(() =>
+      uow.transaction((tx) => tx.goals.delete(goalEF)),
+    );
+    out["goal.deletePersonal"] = attempt(() =>
+      uow.transaction((tx) => tx.goals.delete(goalPersonal)),
+    );
+    out["goalDelete.survivors"] = uow.transaction((r) => [
+      r.goals.listVisible(system).map((row) => row.id),
+      r.stages.listVisible(system).map((row) => row.id),
+      r.goalRules.listVisible(system).map((row) => [row.id, row.source]),
+      r.goalAllocations.listForGoal(system, goalEF).length,
+    ]);
+  }
+
   return out;
 }
 
@@ -2334,6 +2519,31 @@ describe("ledger and classification schema on SQLite", () => {
     );
     expect(ruleRowSqlite).toBeDefined();
     expect(Object.keys(ruleRowSqlite ?? {})).not.toContain("originAccountId");
+  });
+
+  it("agrees on the goal, stage and rule update and delete transcript", () => {
+    const out = scenario(createUnitOfWork(db), softDeleteInSqlite);
+    expect(out["goal.insert"]).toBe("ok");
+    expect(out["goal.efSecondSamePool"]).toBe("error:UNIQUE");
+    expect(out["goal.update"]).toBe(true);
+    expect(out["goal.updateReadBack"]).toEqual(["goal-renamed", 150_000]);
+    expect(out["goal.updateUnknown"]).toBe(false);
+    expect(out["goal.updateToEfConflict"]).toBe("error:UNIQUE");
+    expect(out["stage.insertUpdate"]).toBe(true);
+    expect(out["stage.updateUnknown"]).toBe(false);
+    expect(out["rule.insertReplaceUpdate"]).toBe(true);
+    expect(out["rule.updateReadBack"]).toEqual([
+      [5000, "shortfall_override"],
+      [6000, "rule"],
+    ]);
+    expect(out["allocations.insert"]).toBe("ok");
+    expect(out["goal.deleteBlockedByAllocation"]).toBe("error:FOREIGN KEY");
+    expect(out["goal.deleteBlockedByRule"]).toBe("error:FOREIGN KEY");
+    expect(out["stage.deleteBlockedByRules"]).toBe("error:FOREIGN KEY");
+    expect(out["stage.rulesThenDelete"]).toEqual([undefined, true]);
+    expect(out["goal.rulesThenStillBlocked"]).toBe("error:FOREIGN KEY");
+    expect(out["goal.deleteHistoryBlocked"]).toBe("error:FOREIGN KEY");
+    expect(out["goal.deletePersonal"]).toBe(true);
   });
 });
 

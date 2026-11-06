@@ -5053,4 +5053,305 @@ describe("GET /api/payees/:id/logo", () => {
       expect(summaryBody.goals.some((g) => g.name === "Sam Bike")).toBe(false);
     });
   });
+
+  describe("Planning Goals & Stages write endpoints (/api/planning/goals/*, /api/planning/stages/*)", () => {
+    function setupGoalsEnv(authn?: Authn) {
+      const db = openDb();
+      addPerson(db);
+      const d = deps(db, authn);
+      const sys: UseCaseContext = {
+        viewer: systemViewer("cli:test"),
+        clock: d.clock,
+        newId: d.newId,
+        uow: d.uow,
+      };
+      const app = createApp(d);
+      return { db, d, sys, app };
+    }
+    const alex = { headers: { Cookie: SESSION_COOKIE, Origin: ORIGIN } };
+    const jsonHeaders = { ...alex.headers, "Content-Type": "application/json" };
+
+    it("supports goal create, list, update and delete", async () => {
+      const { app } = setupGoalsEnv();
+
+      const createRes = await app.request("/api/planning/goals", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ name: "Holiday", targetCents: 500000, pool: "shared" }),
+      });
+      expect(createRes.status).toBe(201);
+      const { goal } = (await createRes.json()) as {
+        goal: { id: string; name: string; kind: string; personId: string | null };
+      };
+      expect(goal.name).toBe("Holiday");
+      expect(goal.kind).toBe("flexible");
+      expect(goal.personId).toBeNull();
+
+      const listRes = await app.request("/api/planning/goals", alex);
+      expect(listRes.status).toBe(200);
+      const listBody = (await listRes.json()) as {
+        goals: { id: string; currentBalance: number; projection: unknown }[];
+      };
+      const listed = listBody.goals.find((g) => g.id === goal.id);
+      expect(listed?.currentBalance).toBe(0);
+      expect(listed?.projection).toBeNull();
+
+      const patchRes = await app.request(`/api/planning/goals/${goal.id}`, {
+        method: "PATCH",
+        headers: jsonHeaders,
+        body: JSON.stringify({ name: "Holiday Fund" }),
+      });
+      expect(patchRes.status).toBe(200);
+      const patchBody = (await patchRes.json()) as { goal: { name: string } };
+      expect(patchBody.goal.name).toBe("Holiday Fund");
+
+      const delRes = await app.request(`/api/planning/goals/${goal.id}`, {
+        method: "DELETE",
+        headers: alex.headers,
+      });
+      expect(delRes.status).toBe(204);
+
+      const afterRes = await app.request("/api/planning/goals", alex);
+      const afterBody = (await afterRes.json()) as { goals: { id: string }[] };
+      expect(afterBody.goals.some((g) => g.id === goal.id)).toBe(false);
+    });
+
+    it("refuses a second emergency fund in the same pool with 409", async () => {
+      const { app } = setupGoalsEnv();
+      const first = await app.request("/api/planning/goals", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          name: "EF",
+          targetCents: 1000000,
+          kind: "protected",
+          isEmergencyFund: true,
+          pool: "shared",
+        }),
+      });
+      expect(first.status).toBe(201);
+
+      const second = await app.request("/api/planning/goals", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          name: "EF two",
+          targetCents: 2000000,
+          kind: "protected",
+          isEmergencyFund: true,
+          pool: "shared",
+        }),
+      });
+      expect(second.status).toBe(409);
+      const body = (await second.json()) as { error: { code: string; message: string } };
+      expect(body.error.code).toBe("Conflict");
+      expect(body.error.message).toBe("Pool already has an emergency fund");
+    });
+
+    it("supports stage CRUD and wholesale rule replacement", async () => {
+      const { app } = setupGoalsEnv();
+
+      const stageOne = await app.request("/api/planning/stages", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ name: "Debt first", pool: "shared" }),
+      });
+      expect(stageOne.status).toBe(201);
+      const { stage: s1 } = (await stageOne.json()) as {
+        stage: { id: string; sort: number; fallbackThresholdBp: number };
+      };
+      expect(s1.sort).toBe(0);
+      expect(s1.fallbackThresholdBp).toBe(8000);
+
+      const stageTwo = await app.request("/api/planning/stages", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ name: "Then travel", pool: "shared" }),
+      });
+      const { stage: s2 } = (await stageTwo.json()) as { stage: { id: string; sort: number } };
+      expect(s2.sort).toBe(1);
+
+      const patchRes = await app.request(`/api/planning/stages/${s1.id}`, {
+        method: "PATCH",
+        headers: jsonHeaders,
+        body: JSON.stringify({ name: "Pay off debt", fallbackThresholdBp: 9000 }),
+      });
+      expect(patchRes.status).toBe(200);
+      const patchBody = (await patchRes.json()) as {
+        stage: { name: string; fallbackThresholdBp: number };
+      };
+      expect(patchBody.stage.name).toBe("Pay off debt");
+      expect(patchBody.stage.fallbackThresholdBp).toBe(9000);
+
+      const goals = await Promise.all(
+        ["Guitar", "Bike"].map(async (name) => {
+          const res = await app.request("/api/planning/goals", {
+            method: "POST",
+            headers: jsonHeaders,
+            body: JSON.stringify({ name, targetCents: 200000, pool: "shared" }),
+          });
+          return ((await res.json()) as { goal: { id: string } }).goal;
+        }),
+      );
+
+      const rulesRes = await app.request(`/api/planning/stages/${s1.id}/rules`, {
+        method: "PUT",
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          rules: [
+            { goalId: goals[0]?.id, shareBp: 4000 },
+            { goalId: goals[1]?.id, shareBp: 5000 },
+          ],
+        }),
+      });
+      expect(rulesRes.status).toBe(200);
+      const rulesBody = (await rulesRes.json()) as {
+        rules: { shareBp: number; source: string; effectiveFrom: string; stageId: string }[];
+      };
+      expect(rulesBody.rules).toHaveLength(2);
+      expect(rulesBody.rules.every((r) => r.source === "rule")).toBe(true);
+      expect(rulesBody.rules.every((r) => r.stageId === s1.id)).toBe(true);
+      expect(rulesBody.rules[0]?.effectiveFrom).toBe("2026-09-27");
+
+      const overRes = await app.request(`/api/planning/stages/${s1.id}/rules`, {
+        method: "PUT",
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          rules: [
+            { goalId: goals[0]?.id, shareBp: 6000 },
+            { goalId: goals[1]?.id, shareBp: 6000 },
+          ],
+        }),
+      });
+      expect(overRes.status).toBe(400);
+      const overBody = (await overRes.json()) as { error: { message: string } };
+      expect(overBody.error.message).toContain("at most 100%");
+
+      const delRes = await app.request(`/api/planning/stages/${s1.id}`, {
+        method: "DELETE",
+        headers: alex.headers,
+      });
+      expect(delRes.status).toBe(204);
+      const listRes = await app.request("/api/planning/stages", alex);
+      const listBody = (await listRes.json()) as { stages: { id: string }[] };
+      expect(listBody.stages.map((s) => s.id)).toEqual([s2.id]);
+      // The remaining stage keeps its own rules; s1's rules are gone with it.
+      const summary = (await (await app.request("/api/planning/goals/summary", alex)).json()) as {
+        rules: { stageId: string }[];
+      };
+      expect(summary.rules.every((r) => r.stageId !== s1.id)).toBe(true);
+    });
+
+    it("blocks deleting a goal that a stage ends with, naming the stage", async () => {
+      const { app } = setupGoalsEnv();
+      const goal = (
+        (await (
+          await app.request("/api/planning/goals", {
+            method: "POST",
+            headers: jsonHeaders,
+            body: JSON.stringify({ name: "EF", targetCents: 1000000, pool: "shared" }),
+          })
+        ).json()) as { goal: { id: string } }
+      ).goal;
+      await app.request("/api/planning/stages", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ name: "Rebuild", exitGoalId: goal.id, pool: "shared" }),
+      });
+
+      const delRes = await app.request(`/api/planning/goals/${goal.id}`, {
+        method: "DELETE",
+        headers: alex.headers,
+      });
+      expect(delRes.status).toBe(409);
+      const body = (await delRes.json()) as { error: { code: string; message: string } };
+      expect(body.error.code).toBe("Conflict");
+      expect(body.error.message).toBe('Stage "Rebuild" still ends with this goal');
+    });
+
+    it("blocks deleting a goal that already has savings history", async () => {
+      const { app, sys } = setupGoalsEnv();
+      const goal = (
+        (await (
+          await app.request("/api/planning/goals", {
+            method: "POST",
+            headers: jsonHeaders,
+            body: JSON.stringify({ name: "Oldie", targetCents: 100000, pool: "shared" }),
+          })
+        ).json()) as { goal: { id: string } }
+      ).goal;
+      write(sys, (tx) => {
+        tx.goalAllocations.insertMany([
+          {
+            id: "alloc-1" as Id<"GoalAllocation">,
+            goalId: goal.id as Id<"Goal">,
+            periodStart: "2026-09-01",
+            allocatedCents: 5000,
+            createdAt: "2026-09-01T00:00:00.000Z",
+          },
+        ]);
+      });
+
+      const delRes = await app.request(`/api/planning/goals/${goal.id}`, {
+        method: "DELETE",
+        headers: alex.headers,
+      });
+      expect(delRes.status).toBe(409);
+      const body = (await delRes.json()) as { error: { message: string } };
+      expect(body.error.message).toBe("Goal already has savings history");
+    });
+
+    it("is read-only in demo mode", async () => {
+      const { app } = setupGoalsEnv({ kind: "demo" });
+      const res = await app.request("/api/planning/goals", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ name: "Nope", targetCents: 100000 }),
+      });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { error: { message: string } };
+      expect(body.error.message).toBe("Demo mode is read-only");
+    });
+
+    it("keeps another person's pool invisible", async () => {
+      const { app, sys } = setupGoalsEnv();
+      const samId = createPerson(sys, { displayName: "Sam", colour: "#10b981" });
+
+      // Alex cannot create into Sam's personal pool.
+      const createRes = await app.request("/api/planning/goals", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ name: "Sneaky", targetCents: 100000, pool: samId }),
+      });
+      expect(createRes.status).toBe(404);
+
+      // Sam's goal answers NotFound for Alex on PATCH and DELETE.
+      const samGoal = (
+        (await (
+          await app.request("/api/planning/goals", {
+            method: "POST",
+            headers: jsonHeaders,
+            body: JSON.stringify({ name: "Placeholder", targetCents: 100000 }),
+          })
+        ).json()) as { goal: { id: string } }
+      ).goal;
+      write(sys, (tx) => {
+        const row = tx.goals.findById(systemViewer("cli:test"), samGoal.id as Id<"Goal">);
+        if (row) {
+          tx.goals.update({ ...row, personId: samId });
+        }
+      });
+      const patchRes = await app.request(`/api/planning/goals/${samGoal.id}`, {
+        method: "PATCH",
+        headers: jsonHeaders,
+        body: JSON.stringify({ name: "Hijacked" }),
+      });
+      expect(patchRes.status).toBe(404);
+      const delRes = await app.request(`/api/planning/goals/${samGoal.id}`, {
+        method: "DELETE",
+        headers: alex.headers,
+      });
+      expect(delRes.status).toBe(404);
+    });
+  });
 });
