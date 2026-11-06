@@ -52,7 +52,7 @@ export interface GoalsSummaryResult {
  */
 export function getSavingsPoolBalances(
   ctx: UseCaseContext,
-  input: { readonly asOf?: string } = {},
+  input: { readonly asOf?: string | undefined } = {},
 ): SavingsPoolBalancesResult {
   const asOf = input.asOf ?? ctx.clock.today().toString();
   const visibleAccounts = ctx.uow.read((r) => r.accounts.list(ctx.viewer));
@@ -159,7 +159,7 @@ export function listStages(ctx: UseCaseContext): AllocationStageRow[] {
  */
 export function getGoalsSummary(
   ctx: UseCaseContext,
-  input: { readonly asOf?: string } = {},
+  input: { readonly asOf?: string | undefined } = {},
 ): GoalsSummaryResult {
   const asOf = input.asOf ?? ctx.clock.today().toString();
   const goals = listGoals(ctx);

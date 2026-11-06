@@ -171,7 +171,10 @@ function renderGoalsPage(me: api.Me = simonMe) {
   const session = {
     me,
     signOut: vi.fn(),
-    mutateMe: vi.fn(),
+    refresh: vi.fn(),
+    signedIn: vi.fn(),
+    signedUp: vi.fn(),
+    token: "",
   };
 
   return render(

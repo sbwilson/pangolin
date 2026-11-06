@@ -25,6 +25,7 @@ import {
   fixedClockAt,
   getTransaction,
   hideTransactionName,
+  type Id,
   type ImportBatchRow,
   importStatement,
   OVER_BUDGET_HOUSEHOLD_REVIEW,
@@ -4973,7 +4974,6 @@ describe("GET /api/payees/:id/logo", () => {
           completedAt: null,
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
-          archivedAt: null,
         });
 
         tx.goals.insert({
@@ -4988,7 +4988,6 @@ describe("GET /api/payees/:id/logo", () => {
           completedAt: null,
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
-          archivedAt: null,
         });
 
         tx.goals.insert({
@@ -5003,7 +5002,6 @@ describe("GET /api/payees/:id/logo", () => {
           completedAt: null,
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
-          archivedAt: null,
         });
 
         tx.goalRules.insert({
