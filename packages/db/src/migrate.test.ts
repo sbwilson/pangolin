@@ -340,9 +340,9 @@ describe("committed migrations", () => {
     expect(migrate(db, migrations.slice(0, 29)).applied).toEqual(["0028_goals_savings"]);
     expect(schemaVersion(db)).toBe(29);
 
-    const goalCols = (
-      db.pragma("table_info(goal)") as { name: string; notnull: number }[]
-    ).map((c) => c.name);
+    const goalCols = (db.pragma("table_info(goal)") as { name: string; notnull: number }[]).map(
+      (c) => c.name,
+    );
     expect(goalCols).toEqual([
       "id",
       "person_id",
@@ -416,12 +416,7 @@ describe("committed migrations", () => {
     const adjustmentCols = (
       db.pragma("table_info(goal_adjustment)") as { name: string; notnull: number }[]
     ).map((c) => c.name);
-    expect(adjustmentCols).toEqual([
-      "id",
-      "drawdown_id",
-      "goal_id",
-      "amount_cents",
-    ]);
+    expect(adjustmentCols).toEqual(["id", "drawdown_id", "goal_id", "amount_cents"]);
 
     const settingCols = (
       db.pragma("table_info(planning_setting)") as { name: string; notnull: number }[]
