@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type Session, SessionContext } from "../session.tsx";
@@ -187,8 +187,10 @@ describe("HouseholdSettings", () => {
     const netInput = await screen.findByRole("textbox", { name: "Expected net pay" });
     await waitFor(() => expect((netInput as HTMLInputElement).value).toBe("3200.00"));
 
-    await user.clear(netInput);
-    await user.type(netInput, "3500.00");
+    // fireEvent.change, not user.type: keystroke typing raced with query
+    // re-renders on CI (net state stayed "" at save) — see SearchBox.test.tsx.
+    fireEvent.change(netInput, { target: { value: "3500.00" } });
+    await waitFor(() => expect((netInput as HTMLInputElement).value).toBe("3500.00"));
 
     const saveBtn = screen.getByRole("button", { name: "Save Pay Anchor" });
     await user.click(saveBtn);
