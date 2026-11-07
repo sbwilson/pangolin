@@ -35,9 +35,11 @@ import type {
   CredentialRepo,
   FewShotExample,
   FlowBreakdownRow,
+  GoalAdjustmentRepo,
   GoalAdjustmentRow,
   GoalAllocationRepo,
   GoalAllocationRow,
+  GoalDrawdownRepo,
   GoalDrawdownRow,
   GoalRepo,
   GoalRow,
@@ -3859,6 +3861,187 @@ function goalAllocationRepo(working: MemoryState, check: () => void): GoalAlloca
   };
 }
 
+function goalDrawdownRepo(working: MemoryState, check: () => void): GoalDrawdownRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.goalDrawdowns.some((d) => d.id === row.id)) {
+        throw new Error(`UNIQUE constraint failed: goal_drawdown.id (${row.id})`);
+      }
+      working.goalDrawdowns.push(row);
+    },
+
+    findById: (viewer, id) => {
+      check();
+      const row = working.goalDrawdowns.find((d) => d.id === id);
+      if (!row) return undefined;
+      if (viewer.kind !== "system" && row.personId !== null && row.personId !== viewer.personId) {
+        return undefined;
+      }
+      return row;
+    },
+
+    listActiveForPool: (viewer, pool) => {
+      check();
+      const targetPersonId = pool === "shared" ? null : pool;
+      if (viewer.kind === "person" && targetPersonId !== null && targetPersonId !== viewer.personId) {
+        return [];
+      }
+      return working.goalDrawdowns
+        .filter((d) => {
+          if (d.undoneAt !== null) return false;
+          if (d.personId !== targetPersonId) return false;
+          if (viewer.kind !== "system" && d.personId !== null && d.personId !== viewer.personId) {
+            return false;
+          }
+          return true;
+        })
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    },
+
+    listForPool: (viewer, pool) => {
+      check();
+      const targetPersonId = pool === "shared" ? null : pool;
+      if (viewer.kind === "person" && targetPersonId !== null && targetPersonId !== viewer.personId) {
+        return [];
+      }
+      return working.goalDrawdowns
+        .filter((d) => {
+          if (d.personId !== targetPersonId) return false;
+          if (viewer.kind !== "system" && d.personId !== null && d.personId !== viewer.personId) {
+            return false;
+          }
+          return true;
+        })
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    },
+
+    listForGoal: (viewer, goalId) => {
+      check();
+      const adjustments = working.goalAdjustments.filter((a) => a.goalId === goalId);
+      const drawdownIds = new Set(adjustments.map((a) => a.drawdownId));
+      return working.goalDrawdowns
+        .filter((d) => {
+          if (!drawdownIds.has(d.id)) return false;
+          if (viewer.kind !== "system" && d.personId !== null && d.personId !== viewer.personId) {
+            return false;
+          }
+          return true;
+        })
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    },
+
+    markUndone: (id, undoneAt) => {
+      check();
+      const idx = working.goalDrawdowns.findIndex((d) => d.id === id && d.undoneAt === null);
+      if (idx === -1) return false;
+      const existing = working.goalDrawdowns[idx]!;
+      working.goalDrawdowns[idx] = { ...existing, undoneAt };
+      return true;
+    },
+
+    deleteForPerson: (personId) => {
+      check();
+      const personalDrawdownIds = new Set(
+        working.goalDrawdowns.filter((d) => d.personId === personId).map((d) => d.id),
+      );
+      working.goalAdjustments = working.goalAdjustments.filter(
+        (a) => !personalDrawdownIds.has(a.drawdownId),
+      );
+      working.goalDrawdowns = working.goalDrawdowns.filter((d) => d.personId !== personId);
+    },
+  };
+}
+
+function goalAdjustmentRepo(working: MemoryState, check: () => void): GoalAdjustmentRepo {
+  return {
+    insert: (row) => {
+      check();
+      if (working.goalAdjustments.some((a) => a.id === row.id)) {
+        throw new Error(`UNIQUE constraint failed: goal_adjustment.id (${row.id})`);
+      }
+      working.goalAdjustments.push(row);
+    },
+
+    insertMany: (rows) => {
+      check();
+      for (const row of rows) {
+        if (working.goalAdjustments.some((a) => a.id === row.id)) {
+          throw new Error(`UNIQUE constraint failed: goal_adjustment.id (${row.id})`);
+        }
+      }
+      working.goalAdjustments.push(...rows);
+    },
+
+    listForDrawdown: (viewer, drawdownId) => {
+      check();
+      const drawdown = working.goalDrawdowns.find((d) => d.id === drawdownId);
+      if (!drawdown) return [];
+      if (viewer.kind !== "system" && drawdown.personId !== null && drawdown.personId !== viewer.personId) {
+        return [];
+      }
+      return working.goalAdjustments.filter((a) => a.drawdownId === drawdownId);
+    },
+
+    listActiveForGoal: (viewer, goalId) => {
+      check();
+      const targetGoal = working.goals.find((g) => g.id === goalId);
+      if (
+        viewer.kind !== "system" &&
+        targetGoal &&
+        targetGoal.personId !== null &&
+        targetGoal.personId !== viewer.personId
+      ) {
+        return [];
+      }
+      const activeDrawdowns = new Set(
+        working.goalDrawdowns.filter((d) => d.undoneAt === null).map((d) => d.id),
+      );
+      return working.goalAdjustments.filter(
+        (a) => a.goalId === goalId && activeDrawdowns.has(a.drawdownId),
+      );
+    },
+
+    listActiveForPool: (viewer, pool) => {
+      check();
+      const targetPersonId = pool === "shared" ? null : pool;
+      if (viewer.kind === "person" && targetPersonId !== null && targetPersonId !== viewer.personId) {
+        return [];
+      }
+      const poolActiveDrawdowns = new Set(
+        working.goalDrawdowns
+          .filter((d) => d.undoneAt === null && d.personId === targetPersonId)
+          .map((d) => d.id),
+      );
+      return working.goalAdjustments.filter((a) => poolActiveDrawdowns.has(a.drawdownId));
+    },
+
+    sumActiveForGoal: (viewer, goalId) => {
+      check();
+      const targetGoal = working.goals.find((g) => g.id === goalId);
+      if (
+        viewer.kind !== "system" &&
+        targetGoal &&
+        targetGoal.personId !== null &&
+        targetGoal.personId !== viewer.personId
+      ) {
+        return 0;
+      }
+      const activeDrawdowns = new Set(
+        working.goalDrawdowns.filter((d) => d.undoneAt === null).map((d) => d.id),
+      );
+      return working.goalAdjustments
+        .filter((a) => a.goalId === goalId && activeDrawdowns.has(a.drawdownId))
+        .reduce((sum, a) => sum + a.amountCents, 0);
+    },
+
+    deleteForDrawdown: (drawdownId) => {
+      check();
+      working.goalAdjustments = working.goalAdjustments.filter((a) => a.drawdownId !== drawdownId);
+    },
+  };
+}
+
 export function memoryUnitOfWork(
   settings: HouseholdSettingsRow = DEFAULT_SETTINGS,
 ): MemoryUnitOfWork {
@@ -4029,6 +4212,8 @@ export function memoryUnitOfWork(
         stages: allocationStageRepo(working, check),
         goalRules: goalRuleRepo(working, check),
         goalAllocations: goalAllocationRepo(working, check),
+        goalDrawdowns: goalDrawdownRepo(working, check),
+        goalAdjustments: goalAdjustmentRepo(working, check),
         planningSettings: planningSettingRepo(working, check),
         recoveryBundle: {
           get: () => {
@@ -4297,6 +4482,25 @@ export function memoryUnitOfWork(
             goalAllocationRepo(uow.state, check).listForPeriod(viewer, periodStart),
           sumForGoal: (viewer, goalId) =>
             goalAllocationRepo(uow.state, check).sumForGoal(viewer, goalId),
+        },
+        goalDrawdowns: {
+          findById: (viewer, id) => goalDrawdownRepo(uow.state, check).findById(viewer, id),
+          listActiveForPool: (viewer, pool) =>
+            goalDrawdownRepo(uow.state, check).listActiveForPool(viewer, pool),
+          listForPool: (viewer, pool) =>
+            goalDrawdownRepo(uow.state, check).listForPool(viewer, pool),
+          listForGoal: (viewer, goalId) =>
+            goalDrawdownRepo(uow.state, check).listForGoal(viewer, goalId),
+        },
+        goalAdjustments: {
+          listForDrawdown: (viewer, drawdownId) =>
+            goalAdjustmentRepo(uow.state, check).listForDrawdown(viewer, drawdownId),
+          listActiveForGoal: (viewer, goalId) =>
+            goalAdjustmentRepo(uow.state, check).listActiveForGoal(viewer, goalId),
+          listActiveForPool: (viewer, pool) =>
+            goalAdjustmentRepo(uow.state, check).listActiveForPool(viewer, pool),
+          sumActiveForGoal: (viewer, goalId) =>
+            goalAdjustmentRepo(uow.state, check).sumActiveForGoal(viewer, goalId),
         },
         planningSettings: {
           get: (viewer, personId) => planningSettingRepo(uow.state, check).get(viewer, personId),

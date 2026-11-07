@@ -494,12 +494,15 @@ export function executeSavingsAllocation(
 
     // 4. Compute current balances from historical allocations and adjustments
     const historicalAllocations: GoalAllocationRow[] = [];
+    const historicalAdjustments: { readonly goalId: Id<"Goal">; readonly amountCents: number }[] = [];
     for (const goal of poolGoals) {
       const allocs = tx.goalAllocations.listForGoal(ctx.viewer, goal.id);
       historicalAllocations.push(...allocs);
+      const adjs = tx.goalAdjustments.listActiveForGoal(ctx.viewer, goal.id);
+      historicalAdjustments.push(...adjs);
     }
 
-    const initialBalances = calculateGoalBalances(historicalAllocations);
+    const initialBalances = calculateGoalBalances(historicalAllocations, historicalAdjustments);
 
     // 5. Run allocation engine
     const allocationResult = allocatePeriodSavings(
@@ -557,7 +560,10 @@ export function executeSavingsAllocation(
     const bufferCents = input.savingsCents - totalAllocatedCents;
 
     // Active stage after allocation
-    const finalBalances = calculateGoalBalances([...historicalAllocations, ...insertedAllocations]);
+    const finalBalances = calculateGoalBalances(
+      [...historicalAllocations, ...insertedAllocations],
+      historicalAdjustments,
+    );
     const finalActiveStageRes = resolveActiveStage(poolStages, poolGoals, finalBalances);
 
     return {

@@ -5353,5 +5353,130 @@ describe("GET /api/payees/:id/logo", () => {
       });
       expect(delRes.status).toBe(404);
     });
+
+    describe("Planning Drawdown endpoints (/api/planning/drawdowns/*)", () => {
+      it("proposes, executes, lists, and undoes a drawdown via HTTP", async () => {
+        const { app, d } = setupGoalsEnv();
+
+        // 1. Create emergency fund and flexible goals
+        const efRes = await app.request("/api/planning/goals", {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            name: "Emergency Fund",
+            targetCents: 500_000,
+            isEmergencyFund: true,
+            pool: "shared",
+          }),
+        });
+        expect(efRes.status).toBe(201);
+        const efGoal = ((await efRes.json()) as any).goal;
+
+        const flexRes = await app.request("/api/planning/goals", {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            name: "Holiday",
+            targetCents: 300_000,
+            kind: "flexible",
+            pool: "shared",
+          }),
+        });
+        expect(flexRes.status).toBe(201);
+        const flexGoal = ((await flexRes.json()) as any).goal;
+
+        // Seed allocations
+        d.uow.transaction((tx) => {
+          tx.goalAllocations.insertMany([
+            {
+              id: d.newId("GoalAllocation"),
+              goalId: efGoal.id,
+              periodStart: "2026-01-01",
+              allocatedCents: 200_000,
+              createdAt: "2026-01-01T00:00:00Z",
+            },
+            {
+              id: d.newId("GoalAllocation"),
+              goalId: flexGoal.id,
+              periodStart: "2026-01-01",
+              allocatedCents: 100_000,
+              createdAt: "2026-01-01T00:00:00Z",
+            },
+          ]);
+        });
+
+        // 2. Propose drawdown
+        const propRes = await app.request("/api/planning/drawdowns/propose", {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            pool: "shared",
+            reason: "large_purchase",
+            amountCents: 250_000,
+          }),
+        });
+        expect(propRes.status).toBe(200);
+        const proposal = (await propRes.json()) as any;
+        expect(proposal.coveredCents).toBe(250_000);
+        expect(proposal.remainingCents).toBe(0);
+        expect(proposal.proposals.find((p: any) => p.goalId === efGoal.id)?.proposedAmountCents).toBe(200_000);
+        expect(proposal.proposals.find((p: any) => p.goalId === flexGoal.id)?.proposedAmountCents).toBe(50_000);
+
+        // 3. Execute drawdown
+        const execRes = await app.request("/api/planning/drawdowns", {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            pool: "shared",
+            reason: "large_purchase",
+            label: "Sofa Purchase",
+            amountCents: 250_000,
+            adjustments: [
+              { goalId: efGoal.id, amountCents: 200_000 },
+              { goalId: flexGoal.id, amountCents: 50_000 },
+            ],
+          }),
+        });
+        expect(execRes.status).toBe(201);
+        const execution = (await execRes.json()) as any;
+        expect(execution.drawdown.id).toBeDefined();
+
+        // Check goals list reflects debits
+        const listGoalsRes = await app.request("/api/planning/goals", alex);
+        const listGoalsBody = (await listGoalsRes.json()) as any;
+        expect(listGoalsBody.goals.find((g: any) => g.id === efGoal.id)?.currentBalance).toBe(0);
+        expect(listGoalsBody.goals.find((g: any) => g.id === flexGoal.id)?.currentBalance).toBe(50_000);
+
+        // 4. List drawdowns
+        const listDdRes = await app.request("/api/planning/drawdowns?pool=shared", alex);
+        expect(listDdRes.status).toBe(200);
+        const listDdBody = (await listDdRes.json()) as any;
+        expect(listDdBody.drawdowns).toHaveLength(1);
+        expect(listDdBody.drawdowns[0].id).toBe(execution.drawdown.id);
+        expect(listDdBody.drawdowns[0].adjustments).toHaveLength(2);
+
+        // 5. Undo drawdown
+        const undoRes = await app.request(`/api/planning/drawdowns/${execution.drawdown.id}/undo`, {
+          method: "POST",
+          headers: alex.headers,
+        });
+        expect(undoRes.status).toBe(200);
+        const undoBody = (await undoRes.json()) as any;
+        expect(undoBody.drawdown.undoneAt).not.toBeNull();
+
+        // Check goals restored
+        const restoredRes = await app.request("/api/planning/goals", alex);
+        const restoredBody = (await restoredRes.json()) as any;
+        expect(restoredBody.goals.find((g: any) => g.id === efGoal.id)?.currentBalance).toBe(200_000);
+        expect(restoredBody.goals.find((g: any) => g.id === flexGoal.id)?.currentBalance).toBe(100_000);
+
+        // Undo again answers 400
+        const redoUndoRes = await app.request(`/api/planning/drawdowns/${execution.drawdown.id}/undo`, {
+          method: "POST",
+          headers: alex.headers,
+        });
+        expect(redoUndoRes.status).toBe(400);
+      });
+    });
   });
 });

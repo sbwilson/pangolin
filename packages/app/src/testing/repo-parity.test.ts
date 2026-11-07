@@ -2257,6 +2257,58 @@ function scenario(
       r.goalRules.listVisible(system).map((row) => [row.id, row.source]),
       r.goalAllocations.listForGoal(system, goalEF).length,
     ]);
+
+    // Drawdowns and adjustments parity
+    const dd1 = newId<"GoalDrawdown">();
+    const dd2 = newId<"GoalDrawdown">();
+    const adj1 = newId<"GoalAdjustment">();
+    const adj2 = newId<"GoalAdjustment">();
+
+    out["drawdown.insert"] = attempt(() =>
+      uow.transaction((tx) => {
+        tx.goalDrawdowns.insert({
+          id: dd1,
+          personId: null,
+          reason: "large_purchase",
+          label: "Test Purchase",
+          amountCents: 5000,
+          transactionId: null,
+          createdBy: a,
+          createdAt: T,
+          undoneAt: null,
+        });
+        tx.goalAdjustments.insertMany([
+          {
+            id: adj1,
+            drawdownId: dd1,
+            goalId: goalEF,
+            amountCents: 5000,
+          },
+        ]);
+      }),
+    );
+
+    out["drawdown.readBack"] = uow.transaction((r) => [
+      r.goalDrawdowns.findById(asA, dd1)?.amountCents,
+      r.goalDrawdowns.listActiveForPool(asA, "shared").length,
+      r.goalAdjustments.listForDrawdown(asA, dd1).length,
+      r.goalAdjustments.sumActiveForGoal(asA, goalEF),
+    ]);
+
+    out["drawdown.undo"] = attempt(() =>
+      uow.transaction((tx) => {
+        const marked = tx.goalDrawdowns.markUndone(dd1, T2);
+        const secondAttempt = tx.goalDrawdowns.markUndone(dd1, T2);
+        return [marked, secondAttempt];
+      }),
+    );
+
+    out["drawdown.afterUndo"] = uow.transaction((r) => [
+      r.goalDrawdowns.findById(asA, dd1)?.undoneAt,
+      r.goalDrawdowns.listActiveForPool(asA, "shared").length,
+      r.goalAdjustments.listActiveForGoal(asA, goalEF).length,
+      r.goalAdjustments.sumActiveForGoal(asA, goalEF),
+    ]);
   }
 
   return out;

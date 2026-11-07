@@ -166,4 +166,107 @@ describe("Goal repos", () => {
       expect(allocsPeriodB[0]?.goalId).toBe("01J000000000000000000GOAL1");
     });
   });
+
+  it("persists drawdowns and adjustments, enforces pool privacy and handles undo", () => {
+    const uow = createUnitOfWork(db);
+    const personA = "01J0000000000000000000000A" as any;
+    const personB = "01J0000000000000000000000B" as any;
+
+    const viewerA: Viewer = {
+      kind: "person",
+      personId: personA,
+      role: "owner",
+    };
+    const viewerB: Viewer = {
+      kind: "person",
+      personId: personB,
+      role: "owner",
+    };
+
+    const ddId = "01J00000000000000000000DD1" as any;
+    const adjId = "01J0000000000000000000ADJ1" as any;
+
+    uow.transaction((tx) => {
+      tx.person.insert({
+        id: personA,
+        userId: "userA",
+        displayName: "Person A",
+        colour: "#111111",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+      });
+      tx.person.insert({
+        id: personB,
+        userId: "userB",
+        displayName: "Person B",
+        colour: "#222222",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+      });
+
+      // Goals
+      tx.goals.insert({
+        id: "01J000000000000000000GOAL1" as any,
+        personId: null,
+        name: "Shared Goal",
+        targetCents: 100000,
+        targetDate: null,
+        priority: 0,
+        kind: "flexible",
+        isEmergencyFund: false,
+        completedAt: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+
+      tx.goalDrawdowns.insert({
+        id: ddId,
+        personId: null,
+        reason: "large_purchase",
+        label: "Furniture",
+        amountCents: 20000,
+        transactionId: null,
+        createdBy: personA,
+        createdAt: "2026-01-10T00:00:00Z",
+        undoneAt: null,
+      });
+
+      tx.goalAdjustments.insert({
+        id: adjId,
+        drawdownId: ddId,
+        goalId: "01J000000000000000000GOAL1" as any,
+        amountCents: 20000,
+      });
+    });
+
+    uow.read((r) => {
+      expect(r.goalDrawdowns.findById(viewerA, ddId)?.amountCents).toBe(20000);
+      expect(r.goalDrawdowns.findById(viewerB, ddId)?.amountCents).toBe(20000);
+
+      const activeDrawdowns = r.goalDrawdowns.listActiveForPool(viewerA, "shared");
+      expect(activeDrawdowns).toHaveLength(1);
+      expect(activeDrawdowns[0]?.id).toBe(ddId);
+
+      const adjs = r.goalAdjustments.listForDrawdown(viewerA, ddId);
+      expect(adjs).toHaveLength(1);
+      expect(adjs[0]?.amountCents).toBe(20000);
+
+      expect(r.goalAdjustments.sumActiveForGoal(viewerA, "01J000000000000000000GOAL1" as any)).toBe(20000);
+      expect(r.goalAdjustments.sumActiveForGoal(viewerB, "01J000000000000000000GOAL1" as any)).toBe(20000);
+    });
+
+    // Mark undone
+    uow.transaction((tx) => {
+      const undone = tx.goalDrawdowns.markUndone(ddId, "2026-01-11T00:00:00Z");
+      expect(undone).toBe(true);
+    });
+
+    uow.read((r) => {
+      expect(r.goalDrawdowns.findById(viewerA, ddId)?.undoneAt).toBe("2026-01-11T00:00:00Z");
+      expect(r.goalDrawdowns.listActiveForPool(viewerA, "shared")).toHaveLength(0);
+      expect(r.goalAdjustments.sumActiveForGoal(viewerA, "01J000000000000000000GOAL1" as any)).toBe(0);
+    });
+  });
 });

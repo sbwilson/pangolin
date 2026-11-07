@@ -148,7 +148,9 @@ export function listGoals(
   const asOf = input.asOf ?? ctx.clock.today().toString();
   const goals = ctx.uow.read((r) => r.goals.listVisible(ctx.viewer));
   return goals.map((g) => {
-    const currentBalance = ctx.uow.read((r) => r.goalAllocations.sumForGoal(ctx.viewer, g.id));
+    const allocatedCents = ctx.uow.read((r) => r.goalAllocations.sumForGoal(ctx.viewer, g.id));
+    const adjustedCents = ctx.uow.read((r) => r.goalAdjustments.sumActiveForGoal(ctx.viewer, g.id));
+    const currentBalance = allocatedCents - adjustedCents;
     const rows = ctx.uow.read((r) => r.goalAllocations.listForGoal(ctx.viewer, g.id));
     return {
       ...g,

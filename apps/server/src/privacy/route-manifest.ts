@@ -649,6 +649,30 @@ export const MANIFEST: readonly ManifestEntry[] = [
     path: "/api/planning/stages/:id/rules",
     reason: "Replaces the rule rows of a stage visible to the viewer.",
   },
+  {
+    kind: "exempt",
+    method: "GET",
+    path: "/api/planning/drawdowns",
+    reason: "Lists drawdowns visible to the viewer in the requested pool.",
+  },
+  {
+    kind: "exempt",
+    method: "POST",
+    path: "/api/planning/drawdowns/propose",
+    reason: "Calculates a proposed drawdown split across goals visible in the requested pool.",
+  },
+  {
+    kind: "exempt",
+    method: "POST",
+    path: "/api/planning/drawdowns",
+    reason: "Executes a confirmed drawdown and debits visible goals in the pool.",
+  },
+  {
+    kind: "exempt",
+    method: "POST",
+    path: "/api/planning/drawdowns/:id/undo",
+    reason: "Undoes an active drawdown visible to the viewer, restoring goal balances.",
+  },
 ];
 
 /** Entries that name a person's data, which the suite replays. */

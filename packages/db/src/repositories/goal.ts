@@ -2,8 +2,13 @@ import type {
   AllocationStagePolicy,
   AllocationStageRepo,
   AllocationStageRow,
+  GoalAdjustmentRepo,
+  GoalAdjustmentRow,
   GoalAllocationRepo,
   GoalAllocationRow,
+  GoalDrawdownReason,
+  GoalDrawdownRepo,
+  GoalDrawdownRow,
   GoalKind,
   GoalRepo,
   GoalRow,
@@ -15,12 +20,14 @@ import type {
   PlanningSettingRow,
   Viewer,
 } from "@pangolin/app";
-import { and, asc, desc, eq, isNull, or, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, type SQL, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import {
   allocationStage,
   goal,
+  goalAdjustment,
   goalAllocation,
+  goalDrawdown,
   goalRule,
   planningSetting,
 } from "../schema/goal.ts";
@@ -450,6 +457,269 @@ export function createGoalAllocationRepo(orm: Orm, check: () => void): GoalAlloc
     deleteForGoal: (goalId: Id<"Goal">) => {
       check();
       orm.delete(goalAllocation).where(eq(goalAllocation.goalId, goalId)).run();
+    },
+  };
+}
+
+function drawdownVisibilityPredicate(viewer: Viewer): SQL | undefined {
+  if (viewer.kind === "system") return undefined;
+  if (viewer.personId) {
+    return or(isNull(goalDrawdown.personId), eq(goalDrawdown.personId, viewer.personId));
+  }
+  return isNull(goalDrawdown.personId);
+}
+
+export function createGoalDrawdownRepo(orm: Orm, check: () => void): GoalDrawdownRepo {
+  return {
+    insert: (row: GoalDrawdownRow) => {
+      check();
+      orm
+        .insert(goalDrawdown)
+        .values({
+          id: row.id,
+          personId: row.personId,
+          reason: row.reason,
+          label: row.label,
+          amountCents: row.amountCents,
+          transactionId: row.transactionId,
+          createdBy: row.createdBy,
+          createdAt: row.createdAt,
+          undoneAt: row.undoneAt,
+        })
+        .run();
+    },
+
+    findById: (viewer: Viewer, id: Id<"GoalDrawdown">) => {
+      check();
+      const row = orm.select().from(goalDrawdown).where(eq(goalDrawdown.id, id)).get();
+      if (!row) return undefined;
+      if (!isPersonVisible(viewer, row.personId)) return undefined;
+      return {
+        ...row,
+        reason: row.reason as GoalDrawdownReason,
+      } as GoalDrawdownRow;
+    },
+
+    listActiveForPool: (viewer: Viewer, pool: "shared" | string) => {
+      check();
+      const visibility = drawdownVisibilityPredicate(viewer);
+      const targetPersonId = pool === "shared" ? null : pool;
+      if (viewer.kind === "person" && targetPersonId !== null && targetPersonId !== viewer.personId) {
+        return [];
+      }
+      const poolCondition =
+        targetPersonId === null ? isNull(goalDrawdown.personId) : eq(goalDrawdown.personId, targetPersonId);
+
+      const rows = orm
+        .select()
+        .from(goalDrawdown)
+        .where(
+          visibility
+            ? and(poolCondition, isNull(goalDrawdown.undoneAt), visibility)
+            : and(poolCondition, isNull(goalDrawdown.undoneAt)),
+        )
+        .orderBy(desc(goalDrawdown.createdAt))
+        .all();
+
+      return rows.map((r) => ({
+        ...r,
+        reason: r.reason as GoalDrawdownReason,
+      })) as GoalDrawdownRow[];
+    },
+
+    listForPool: (viewer: Viewer, pool: "shared" | string) => {
+      check();
+      const visibility = drawdownVisibilityPredicate(viewer);
+      const targetPersonId = pool === "shared" ? null : pool;
+      if (viewer.kind === "person" && targetPersonId !== null && targetPersonId !== viewer.personId) {
+        return [];
+      }
+      const poolCondition =
+        targetPersonId === null ? isNull(goalDrawdown.personId) : eq(goalDrawdown.personId, targetPersonId);
+
+      const rows = orm
+        .select()
+        .from(goalDrawdown)
+        .where(visibility ? and(poolCondition, visibility) : poolCondition)
+        .orderBy(desc(goalDrawdown.createdAt))
+        .all();
+
+      return rows.map((r) => ({
+        ...r,
+        reason: r.reason as GoalDrawdownReason,
+      })) as GoalDrawdownRow[];
+    },
+
+    listForGoal: (viewer: Viewer, goalId: Id<"Goal">) => {
+      check();
+      const visibility = drawdownVisibilityPredicate(viewer);
+      const rows = orm
+        .selectDistinct({
+          drawdown: goalDrawdown,
+        })
+        .from(goalDrawdown)
+        .innerJoin(goalAdjustment, eq(goalAdjustment.drawdownId, goalDrawdown.id))
+        .where(
+          visibility
+            ? and(eq(goalAdjustment.goalId, goalId), visibility)
+            : eq(goalAdjustment.goalId, goalId),
+        )
+        .orderBy(desc(goalDrawdown.createdAt))
+        .all();
+
+      return rows.map((r) => ({
+        ...r.drawdown,
+        reason: r.drawdown.reason as GoalDrawdownReason,
+      })) as GoalDrawdownRow[];
+    },
+
+    markUndone: (id: Id<"GoalDrawdown">, undoneAt: string) => {
+      check();
+      const res = orm
+        .update(goalDrawdown)
+        .set({ undoneAt })
+        .where(and(eq(goalDrawdown.id, id), isNull(goalDrawdown.undoneAt)))
+        .run();
+      return res.changes > 0;
+    },
+
+    deleteForPerson: (personId: Id<"Person">) => {
+      check();
+      // First delete adjustments of drawdowns created for this person
+      const drawdowns = orm
+        .select({ id: goalDrawdown.id })
+        .from(goalDrawdown)
+        .where(eq(goalDrawdown.personId, personId))
+        .all();
+      for (const d of drawdowns) {
+        orm.delete(goalAdjustment).where(eq(goalAdjustment.drawdownId, d.id)).run();
+      }
+      orm.delete(goalDrawdown).where(eq(goalDrawdown.personId, personId)).run();
+    },
+  };
+}
+
+export function createGoalAdjustmentRepo(orm: Orm, check: () => void): GoalAdjustmentRepo {
+  return {
+    insert: (row: GoalAdjustmentRow) => {
+      check();
+      orm
+        .insert(goalAdjustment)
+        .values({
+          id: row.id,
+          drawdownId: row.drawdownId,
+          goalId: row.goalId,
+          amountCents: row.amountCents,
+        })
+        .run();
+    },
+
+    insertMany: (rows: readonly GoalAdjustmentRow[]) => {
+      check();
+      if (rows.length === 0) return;
+      orm
+        .insert(goalAdjustment)
+        .values(
+          rows.map((row) => ({
+            id: row.id,
+            drawdownId: row.drawdownId,
+            goalId: row.goalId,
+            amountCents: row.amountCents,
+          })),
+        )
+        .run();
+    },
+
+    listForDrawdown: (viewer: Viewer, drawdownId: Id<"GoalDrawdown">) => {
+      check();
+      const visibility = drawdownVisibilityPredicate(viewer);
+      const rows = orm
+        .select({
+          adjustment: goalAdjustment,
+        })
+        .from(goalAdjustment)
+        .innerJoin(goalDrawdown, eq(goalDrawdown.id, goalAdjustment.drawdownId))
+        .where(
+          visibility
+            ? and(eq(goalAdjustment.drawdownId, drawdownId), visibility)
+            : eq(goalAdjustment.drawdownId, drawdownId),
+        )
+        .all();
+      return rows.map((r) => r.adjustment) as GoalAdjustmentRow[];
+    },
+
+    listActiveForGoal: (viewer: Viewer, goalId: Id<"Goal">) => {
+      check();
+      const visibility = drawdownVisibilityPredicate(viewer);
+      const rows = orm
+        .select({
+          adjustment: goalAdjustment,
+        })
+        .from(goalAdjustment)
+        .innerJoin(goalDrawdown, eq(goalDrawdown.id, goalAdjustment.drawdownId))
+        .where(
+          visibility
+            ? and(
+                eq(goalAdjustment.goalId, goalId),
+                isNull(goalDrawdown.undoneAt),
+                visibility,
+              )
+            : and(eq(goalAdjustment.goalId, goalId), isNull(goalDrawdown.undoneAt)),
+        )
+        .all();
+      return rows.map((r) => r.adjustment) as GoalAdjustmentRow[];
+    },
+
+    listActiveForPool: (viewer: Viewer, pool: "shared" | string) => {
+      check();
+      const visibility = drawdownVisibilityPredicate(viewer);
+      const targetPersonId = pool === "shared" ? null : pool;
+      if (viewer.kind === "person" && targetPersonId !== null && targetPersonId !== viewer.personId) {
+        return [];
+      }
+      const poolCondition =
+        targetPersonId === null ? isNull(goalDrawdown.personId) : eq(goalDrawdown.personId, targetPersonId);
+
+      const rows = orm
+        .select({
+          adjustment: goalAdjustment,
+        })
+        .from(goalAdjustment)
+        .innerJoin(goalDrawdown, eq(goalDrawdown.id, goalAdjustment.drawdownId))
+        .where(
+          visibility
+            ? and(poolCondition, isNull(goalDrawdown.undoneAt), visibility)
+            : and(poolCondition, isNull(goalDrawdown.undoneAt)),
+        )
+        .all();
+      return rows.map((r) => r.adjustment) as GoalAdjustmentRow[];
+    },
+
+    sumActiveForGoal: (viewer: Viewer, goalId: Id<"Goal">) => {
+      check();
+      const visibility = drawdownVisibilityPredicate(viewer);
+      const res = orm
+        .select({
+          total: sql<number>`coalesce(sum(${goalAdjustment.amountCents}), 0)`,
+        })
+        .from(goalAdjustment)
+        .innerJoin(goalDrawdown, eq(goalDrawdown.id, goalAdjustment.drawdownId))
+        .where(
+          visibility
+            ? and(
+                eq(goalAdjustment.goalId, goalId),
+                isNull(goalDrawdown.undoneAt),
+                visibility,
+              )
+            : and(eq(goalAdjustment.goalId, goalId), isNull(goalDrawdown.undoneAt)),
+        )
+        .get();
+      return res?.total ?? 0;
+    },
+
+    deleteForDrawdown: (drawdownId: Id<"GoalDrawdown">) => {
+      check();
+      orm.delete(goalAdjustment).where(eq(goalAdjustment.drawdownId, drawdownId)).run();
     },
   };
 }

@@ -69,6 +69,7 @@ import {
   type ErrorCode,
   type ExtractAndImportPdfStatementInput,
   enrolmentNeeds,
+  executeDrawdown,
   exportTransactionsCsv,
   extractAndImportPdfStatement,
   fixSetAsideRowItem,
@@ -111,6 +112,7 @@ import {
   listBudgets,
   listCategories,
   listCategoryGroups,
+  listDrawdowns,
   listGoals,
   listInstitutions,
   listPayAnchors,
@@ -152,6 +154,7 @@ import {
   type SetSplitFieldInput,
   type SpendingInput,
   type SystemHealthPort,
+  proposeDrawdown,
   searchTransactions,
   setPrivacy,
   setSplitField,
@@ -164,6 +167,7 @@ import {
   testLlmProvider,
   type UnitOfWork,
   type UseCaseContext,
+  undoDrawdown,
   unhideTransactionName,
   updateAccount,
   updateActivity,
@@ -578,6 +582,26 @@ export function createApi(deps: ApiDeps) {
       const stageId = c.req.param("id");
       const rules = setStageRules(ctx(c), await objectBody(c, { stageId }));
       return c.json({ rules }, 200);
+    })
+    .get("/api/planning/drawdowns", (c) => {
+      const pool = c.req.query("pool") ?? "shared";
+      const drawdowns = listDrawdowns(ctx(c), { pool });
+      return c.json({ drawdowns }, 200);
+    })
+    .post("/api/planning/drawdowns/propose", async (c) => {
+      const proposal = proposeDrawdown(ctx(c), await objectBody(c));
+      return c.json(proposal, 200);
+    })
+    .post("/api/planning/drawdowns", async (c) => {
+      writable();
+      const result = executeDrawdown(ctx(c), await objectBody(c));
+      return c.json(result, 201);
+    })
+    .post("/api/planning/drawdowns/:id/undo", (c) => {
+      writable();
+      const id = c.req.param("id");
+      const result = undoDrawdown(ctx(c), { drawdownId: id });
+      return c.json(result, 200);
     })
     .get("/api/identity/preferences", (c) => {
       return c.json(getPreferences(ctx(c), {}), 200);

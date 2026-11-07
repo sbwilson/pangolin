@@ -1488,6 +1488,26 @@ export interface GoalAdjustmentRow {
   readonly amountCents: number;
 }
 
+export interface GoalDrawdownRepo {
+  insert(row: GoalDrawdownRow): void;
+  findById(viewer: Viewer, id: Id<"GoalDrawdown">): GoalDrawdownRow | undefined;
+  listActiveForPool(viewer: Viewer, pool: "shared" | string): GoalDrawdownRow[];
+  listForPool(viewer: Viewer, pool: "shared" | string): GoalDrawdownRow[];
+  listForGoal(viewer: Viewer, goalId: Id<"Goal">): GoalDrawdownRow[];
+  markUndone(id: Id<"GoalDrawdown">, undoneAt: string): boolean;
+  deleteForPerson(personId: Id<"Person">): void;
+}
+
+export interface GoalAdjustmentRepo {
+  insert(row: GoalAdjustmentRow): void;
+  insertMany(rows: readonly GoalAdjustmentRow[]): void;
+  listForDrawdown(viewer: Viewer, drawdownId: Id<"GoalDrawdown">): GoalAdjustmentRow[];
+  listActiveForGoal(viewer: Viewer, goalId: Id<"Goal">): GoalAdjustmentRow[];
+  listActiveForPool(viewer: Viewer, pool: "shared" | string): GoalAdjustmentRow[];
+  sumActiveForGoal(viewer: Viewer, goalId: Id<"Goal">): number;
+  deleteForDrawdown(drawdownId: Id<"GoalDrawdown">): void;
+}
+
 export interface PlanningSettingRow {
   readonly id: Id<"PlanningSetting">;
   readonly personId: Id<"Person"> | null;
@@ -2092,6 +2112,8 @@ export interface TxRepos {
   readonly stages: AllocationStageRepo;
   readonly goalRules: GoalRuleRepo;
   readonly goalAllocations: GoalAllocationRepo;
+  readonly goalDrawdowns: GoalDrawdownRepo;
+  readonly goalAdjustments: GoalAdjustmentRepo;
   readonly planningSettings: PlanningSettingRepo;
 }
 
@@ -2189,6 +2211,14 @@ export interface ReadRepos {
   readonly goalAllocations: Pick<
     GoalAllocationRepo,
     "listForGoal" | "listForPeriod" | "sumForGoal"
+  >;
+  readonly goalDrawdowns: Pick<
+    GoalDrawdownRepo,
+    "findById" | "listActiveForPool" | "listForPool" | "listForGoal"
+  >;
+  readonly goalAdjustments: Pick<
+    GoalAdjustmentRepo,
+    "listForDrawdown" | "listActiveForGoal" | "listActiveForPool" | "sumActiveForGoal"
   >;
   readonly planningSettings: Pick<PlanningSettingRepo, "get">;
 }

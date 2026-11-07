@@ -32,6 +32,8 @@ const SCOPED_REPOS = [
   "stages",
   "goalRules",
   "goalAllocations",
+  "goalDrawdowns",
+  "goalAdjustments",
   "planningSettings",
 ] as const;
 
@@ -146,6 +148,12 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
   "GoalAllocationRepo.insert": "a new allocation; the use case enforces goal scope",
   "GoalAllocationRepo.insertMany": "new allocations; the use case enforces goal scope",
   "GoalAllocationRepo.deleteForGoal": "cascade deletion of allocations for a goal",
+  "GoalDrawdownRepo.insert": "a new drawdown; the use case enforces pool scope",
+  "GoalDrawdownRepo.markUndone": "marks drawdown undone; the use case checked through viewer",
+  "GoalDrawdownRepo.deleteForPerson": "hard-deletes the leaver's drawdowns (the leave)",
+  "GoalAdjustmentRepo.insert": "a new adjustment; the use case enforces drawdown and goal scope",
+  "GoalAdjustmentRepo.insertMany": "new adjustments; the use case enforces drawdown and goal scope",
+  "GoalAdjustmentRepo.deleteForDrawdown": "cascade deletion of adjustments for a drawdown",
   "PlanningSettingRepo.upsert": "the use case checked scope through viewer",
   "PlanningSettingRepo.deleteForPerson": "hard-deletes the leaver's planning settings (the leave)",
   "ImportHandoffRepo.insert": "a new hand-off; the use case set the sender to the viewer",

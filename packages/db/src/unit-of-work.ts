@@ -47,7 +47,9 @@ import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
 import { createBudgetRepo } from "./repositories/budget.ts";
 import {
   createAllocationStageRepo,
+  createGoalAdjustmentRepo,
   createGoalAllocationRepo,
+  createGoalDrawdownRepo,
   createGoalRepo,
   createGoalRuleRepo,
   createPlanningSettingRepo,
@@ -289,6 +291,8 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     stages: createAllocationStageRepo(orm, () => guard(scope)),
     goalRules: createGoalRuleRepo(orm, () => guard(scope)),
     goalAllocations: createGoalAllocationRepo(orm, () => guard(scope)),
+    goalDrawdowns: createGoalDrawdownRepo(orm, () => guard(scope)),
+    goalAdjustments: createGoalAdjustmentRepo(orm, () => guard(scope)),
     planningSettings: createPlanningSettingRepo(orm, () => guard(scope)),
   };
 }
@@ -467,6 +471,18 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               listForGoal: repos.goalAllocations.listForGoal,
               listForPeriod: repos.goalAllocations.listForPeriod,
               sumForGoal: repos.goalAllocations.sumForGoal,
+            },
+            goalDrawdowns: {
+              findById: repos.goalDrawdowns.findById,
+              listActiveForPool: repos.goalDrawdowns.listActiveForPool,
+              listForPool: repos.goalDrawdowns.listForPool,
+              listForGoal: repos.goalDrawdowns.listForGoal,
+            },
+            goalAdjustments: {
+              listForDrawdown: repos.goalAdjustments.listForDrawdown,
+              listActiveForGoal: repos.goalAdjustments.listActiveForGoal,
+              listActiveForPool: repos.goalAdjustments.listActiveForPool,
+              sumActiveForGoal: repos.goalAdjustments.sumActiveForGoal,
             },
             planningSettings: {
               get: repos.planningSettings.get,

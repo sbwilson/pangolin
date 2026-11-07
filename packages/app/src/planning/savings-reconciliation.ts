@@ -126,7 +126,7 @@ function interestCategoryIds(repos: ReadRepos, viewer: Viewer): Id<"Category">[]
     .map((category) => category.id);
 }
 
-/** What the pool's goals hold: every visible goal of the pool, balances from the allocation history. */
+/** What the pool's goals hold: every visible goal of the pool, balances from allocation history minus active adjustments. */
 function poolGoalTotalCents(
   repos: ReadRepos,
   viewer: Viewer,
@@ -134,11 +134,13 @@ function poolGoalTotalCents(
 ): number {
   const goals = repos.goals.listVisible(viewer).filter((goal) => goal.personId === targetPersonId);
   const allocations = [];
+  const adjustments = [];
   for (const goal of goals) {
     allocations.push(...repos.goalAllocations.listForGoal(viewer, goal.id));
+    adjustments.push(...repos.goalAdjustments.listActiveForGoal(viewer, goal.id));
   }
   let totalCents = 0;
-  for (const balance of calculateGoalBalances(allocations).values()) {
+  for (const balance of calculateGoalBalances(allocations, adjustments).values()) {
     totalCents += balance.currentBalance;
   }
   return totalCents;
@@ -245,6 +247,23 @@ export function runSavingsReconciliation(
     return flags;
   });
 
+  const excludedWithdrawalCentsByPool = ctx.uow.read((repos) => {
+    const totals = new Map<string, number>();
+    for (const pool of derived) {
+      const activeDrawdowns = repos.goalDrawdowns.listActiveForPool(ctx.viewer, pool.pool);
+      // Covered withdrawals: active drawdowns with transactionId != null created within [periodStart, periodEnd)
+      const sumCovered = activeDrawdowns
+        .filter((d) => {
+          if (d.transactionId === null) return false;
+          const createdDay = d.createdAt.slice(0, 10);
+          return createdDay >= input.periodStart && createdDay < input.periodEnd;
+        })
+        .reduce((sum, d) => sum + d.amountCents, 0);
+      totals.set(pool.pool, sumCovered);
+    }
+    return totals;
+  });
+
   // Positive, not-yet-allocated months allocate — each run opens its own write transaction.
   const allocatedCentsByPool = new Map<string, number>();
   for (const pool of derived) {
@@ -252,6 +271,7 @@ export function runSavingsReconciliation(
       startTotalCents: pool.startTotalCents,
       endTotalCents: pool.endTotalCents,
       interestCents: interestCentsByPool.get(pool.pool) ?? 0,
+      excludedGoalWithdrawalCents: excludedWithdrawalCentsByPool.get(pool.pool) ?? 0,
     });
     const already = alreadyAllocatedByPool.get(pool.pool) ?? false;
     let allocatedCents = 0;
