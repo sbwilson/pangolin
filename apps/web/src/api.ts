@@ -1577,3 +1577,121 @@ export async function setStageRules(
   );
   return res.rules;
 }
+
+export type DrawdownReason = "large_purchase" | "shortfall";
+
+export interface GoalProposalSplitData {
+  readonly goalId: string;
+  readonly goalName: string;
+  readonly kind: "flexible" | "protected";
+  readonly isEmergencyFund: boolean;
+  readonly currentBalanceCents: number;
+  readonly proposedAmountCents: number;
+}
+
+export interface ProposeDrawdownResultData {
+  readonly pool: "shared" | string;
+  readonly reason: DrawdownReason;
+  readonly amountCents: number;
+  readonly coveredCents: number;
+  readonly remainingCents: number;
+  readonly unlockedProtected: boolean;
+  readonly warnings: readonly string[];
+  readonly proposals: readonly GoalProposalSplitData[];
+}
+
+export interface ProposeDrawdownInput {
+  readonly pool?: "shared" | string | null;
+  readonly reason: DrawdownReason;
+  readonly amountCents: number;
+  readonly unlockProtected?: boolean;
+}
+
+export interface GoalAdjustmentData {
+  readonly id: string;
+  readonly goalId: string;
+  readonly goalDrawdownId: string | null;
+  readonly periodStart: string | null;
+  readonly amountCents: number;
+  readonly source: "drawdown" | "shortfall_fix" | "manual";
+  readonly note: string | null;
+  readonly createdAt: string;
+}
+
+export interface DrawdownData {
+  readonly id: string;
+  readonly personId: string | null;
+  readonly pool: "shared" | string;
+  readonly reason: DrawdownReason;
+  readonly label: string | null;
+  readonly amountCents: number;
+  readonly transactionId: string | null;
+  readonly undoneAt: string | null;
+  readonly createdAt: string;
+  readonly adjustments?: readonly GoalAdjustmentData[];
+}
+
+export interface ExecuteDrawdownInput {
+  readonly pool?: "shared" | string | null;
+  readonly reason: DrawdownReason;
+  readonly label?: string | null;
+  readonly amountCents: number;
+  readonly transactionId?: string | null;
+  readonly adjustments: ReadonlyArray<{
+    readonly goalId: string;
+    readonly amountCents: number;
+  }>;
+}
+
+export interface ExecuteDrawdownResultData {
+  readonly drawdown: DrawdownData;
+  readonly adjustments: readonly GoalAdjustmentData[];
+}
+
+export async function fetchDrawdowns(pool: string = "shared"): Promise<DrawdownData[]> {
+  const res = await sendJson<{ drawdowns: DrawdownData[] }>(
+    "GET",
+    `/api/planning/drawdowns?pool=${encodeURIComponent(pool)}`,
+  );
+  return res.drawdowns;
+}
+
+export async function proposeDrawdown(input: ProposeDrawdownInput): Promise<ProposeDrawdownResultData> {
+  return await sendJson<ProposeDrawdownResultData>("POST", "/api/planning/drawdowns/propose", input);
+}
+
+export async function executeDrawdown(input: ExecuteDrawdownInput): Promise<ExecuteDrawdownResultData> {
+  return await sendJson<ExecuteDrawdownResultData>("POST", "/api/planning/drawdowns", input);
+}
+
+export async function undoDrawdown(drawdownId: string): Promise<{ drawdown: DrawdownData }> {
+  return await sendJson<{ drawdown: DrawdownData }>(
+    "POST",
+    `/api/planning/drawdowns/${encodeURIComponent(drawdownId)}/undo`,
+  );
+}
+
+export interface ApplyBufferDivertInput {
+  readonly pool?: "shared" | string | null;
+  readonly stageId?: string;
+  readonly goalId?: string;
+  readonly shareBp?: number;
+  readonly shortfallCents?: number;
+  readonly effectiveUntil?: string | null;
+}
+
+export interface BufferDivertResultData {
+  readonly rule: GoalRuleData;
+  readonly activeStageId: string;
+  readonly shareBp: number;
+  readonly effectiveUntil: string | null;
+}
+
+export async function applyBufferDivert(input: ApplyBufferDivertInput): Promise<BufferDivertResultData> {
+  return await sendJson<BufferDivertResultData>("POST", "/api/planning/buffer-divert", input);
+}
+
+export async function clearBufferDivert(pool: "shared" | string = "shared"): Promise<{ cleared: boolean }> {
+  return await sendJson<{ cleared: boolean }>("POST", "/api/planning/buffer-divert/undo", { pool });
+}
+

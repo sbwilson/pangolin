@@ -1,12 +1,19 @@
 import { Temporal } from "@pangolin/shared/temporal";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   type AllocationStageData,
+  applyBufferDivert,
+  clearBufferDivert,
+  type DrawdownData,
+  type ExecuteDrawdownResultData,
+  fetchDrawdowns,
   fetchGoalsSummary,
   type GoalData,
   type GoalsSummaryData,
+  undoDrawdown,
 } from "../api.ts";
+import { CoverExpenseSheet } from "../components/CoverExpenseSheet.tsx";
 import { GoalEditorSheet } from "../components/GoalEditorSheet.tsx";
 import { StageEditorSheet } from "../components/StageEditorSheet.tsx";
 import { formatCents } from "../lib/money.ts";
@@ -101,11 +108,41 @@ export function GoalsPage() {
   const [stageSheet, setStageSheet] = useState<{ pool: "shared" | string; label: string } | null>(
     null,
   );
+  const [coverSheet, setCoverSheet] = useState<{
+    isOpen: boolean;
+    pool: "shared" | string;
+    reason: "large_purchase" | "shortfall";
+    amountCents?: number;
+    label?: string;
+  }>({
+    isOpen: false,
+    pool: "shared",
+    reason: "large_purchase",
+  });
+
+  const activePool = filterScope === "personal" ? me.personId : "shared";
+
+  const [toast, setToast] = useState<{
+    id: string;
+    message: string;
+    undoAction?: () => Promise<void>;
+  } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const goalsSummaryQuery = useQuery({
     queryKey: ["planning", "goals", "summary"],
     queryFn: () => fetchGoalsSummary(),
   });
+
+  const drawdownsQuery = useQuery({
+    queryKey: ["planning", "drawdowns", activePool],
+    queryFn: () => fetchDrawdowns(activePool),
+  });
+
+  const drawdowns = drawdownsQuery.data ?? [];
+  const latestDrawdown = useMemo(() => {
+    return drawdowns.filter((d) => d.undoneAt === null)[0] ?? null;
+  }, [drawdowns]);
 
   const summary = goalsSummaryQuery.data;
   const isLoading = goalsSummaryQuery.isLoading;
@@ -122,6 +159,7 @@ export function GoalsPage() {
     () => (summary ? stageViewFor(me.personId, summary, balanceOf) : null),
     [summary, me.personId],
   );
+  const activeStage = filterScope === "personal" ? (personalView?.stage ?? null) : activeSharedStage;
 
   const allGoals = summary?.goals ?? [];
   const filteredGoals = useMemo(() => {
@@ -140,6 +178,8 @@ export function GoalsPage() {
     .filter((g) => g.pool === "shared")
     .reduce((sum, g) => sum + balanceOf(g), 0);
   const sharedBufferCents = Math.max(0, (sharedPool?.totalCents ?? 0) - sharedSetAside);
+  const sharedShortfallCents = Math.max(0, sharedSetAside - (sharedPool?.totalCents ?? 0));
+  const hasShortfall = sharedShortfallCents > 0;
 
   if (isLoading) {
     return (
@@ -171,6 +211,54 @@ export function GoalsPage() {
 
   const refetch = () => {
     void queryClient.invalidateQueries({ queryKey: ["planning", "goals", "summary"] });
+    void queryClient.invalidateQueries({ queryKey: ["planning", "drawdowns"] });
+  };
+
+  const showToast = (message: string, undoAction?: () => Promise<void>) => {
+    if (toastTimerRef.current !== null) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    const id = String(Date.now());
+    setToast({ id, message, undoAction });
+    toastTimerRef.current = setTimeout(() => {
+      setToast((curr) => (curr?.id === id ? null : curr));
+      toastTimerRef.current = null;
+    }, 10000); // 10s auto-dismiss
+  };
+
+  const handleUndoDrawdown = async (drawdownId: string) => {
+    try {
+      if (toastTimerRef.current !== null) {
+        clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+      await undoDrawdown(drawdownId);
+      setToast(null);
+      refetch();
+    } catch (err) {
+      alert((err as Error).message);
+    }
+  };
+
+  const handleApplyBufferDivert = async () => {
+    try {
+      await applyBufferDivert({
+        pool: activePool,
+        shareBp: 0,
+        shortfallCents: sharedShortfallCents,
+      });
+      refetch();
+      showToast(
+        "Buffer divert applied: moving $50/fortnight from the buffer until the shortfall is covered.",
+        async () => {
+          await clearBufferDivert(activePool);
+          refetch();
+        },
+      );
+    } catch (err) {
+      alert((err as Error).message);
+    }
   };
 
   return (
@@ -202,19 +290,79 @@ export function GoalsPage() {
             ))}
           </div>
           {!me.demo && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditingGoal(null);
-                setGoalSheetOpen(true);
-              }}
-              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
-            >
-              Add a goal
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCoverSheet({
+                    isOpen: true,
+                    pool: filterScope === "personal" ? me.personId : "shared",
+                    reason: "large_purchase",
+                  });
+                }}
+                className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
+              >
+                Cover an expense
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingGoal(null);
+                  setGoalSheetOpen(true);
+                }}
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+              >
+                Add a goal
+              </button>
+            </div>
           )}
         </div>
       </div>
+
+      {/* Shortfall warning banner */}
+      {(filterScope === "all" || filterScope === "shared") && hasShortfall && (
+        <div
+          role="status"
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-xs text-foreground"
+        >
+          <div className="flex items-start gap-2.5">
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-warning text-[10px] font-bold text-white">
+              !
+            </span>
+            <div className="leading-relaxed">
+              <span>
+                Your goals are {formatCents(sharedShortfallCents)} ahead of what's in the bank. Cover it from your goals?
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setCoverSheet({
+                  isOpen: true,
+                  pool: "shared",
+                  reason: "shortfall",
+                  amountCents: sharedShortfallCents,
+                  label: "Goals ahead of the bank",
+                });
+              }}
+              className="rounded-lg bg-card border border-border px-3 py-1 font-semibold text-foreground hover:bg-muted"
+            >
+              Cover it
+            </button>
+            {(sharedView?.bufferBp ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={handleApplyBufferDivert}
+                className="text-xs font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
+              >
+                Or move $50/fortnight from the buffer
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Active allocation stage + pool tiles */}
       {(filterScope === "all" || filterScope === "shared") && (
@@ -384,6 +532,38 @@ export function GoalsPage() {
 
       {/* Goals List */}
       <div className="flex flex-col gap-3">
+        {/* Most recent drawdown history line */}
+        {latestDrawdown && (
+          <div
+            data-testid="drawdown-history-line"
+            className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 px-3.5 py-2 text-xs text-muted-foreground"
+          >
+            <div className="flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 14 14" />
+              </svg>
+              <span>
+                <b className="font-semibold text-foreground">
+                  {latestDrawdown.label || "Covered expense"}
+                </b>{" "}
+                &bull; {formatDay(latestDrawdown.createdAt.split("T")[0] ?? "")} &bull;{" "}
+                {formatCents(latestDrawdown.amountCents)} from{" "}
+                {latestDrawdown.adjustments?.length ?? "multiple"} goals
+              </span>
+            </div>
+            {!me.demo && (
+              <button
+                type="button"
+                onClick={() => handleUndoDrawdown(latestDrawdown.id)}
+                className="font-medium text-primary hover:underline ml-2"
+              >
+                Undo
+              </button>
+            )}
+          </div>
+        )}
+
         <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           Goals ({filteredGoals.length})
         </h3>
@@ -522,6 +702,30 @@ export function GoalsPage() {
       </div>
 
       {/* Editors */}
+      <CoverExpenseSheet
+        isOpen={coverSheet.isOpen}
+        onClose={() => setCoverSheet((c) => ({ ...c, isOpen: false }))}
+        pool={coverSheet.pool}
+        initialReason={coverSheet.reason}
+        initialAmountCents={coverSheet.amountCents}
+        initialLabel={coverSheet.label}
+        goals={allGoals}
+        activeStage={coverSheet.pool === "shared" ? activeSharedStage : (personalView?.stage ?? null)}
+        rules={summary?.rules ?? []}
+        onCovered={(res, summaryMessage) => {
+          refetch();
+          showToast(summaryMessage, async () => {
+            await handleUndoDrawdown(res.drawdown.id);
+          });
+        }}
+        onBufferDiverted={(msg) => {
+          refetch();
+          showToast(msg, async () => {
+            await clearBufferDivert(coverSheet.pool);
+            refetch();
+          });
+        }}
+      />
       <GoalEditorSheet
         me={me}
         goal={editingGoal}
@@ -544,6 +748,35 @@ export function GoalsPage() {
           onClose={() => setStageSheet(null)}
           onSaved={refetch}
         />
+      )}
+
+      {/* Floating Undo Toast */}
+      {toast && (
+        <div
+          role="status"
+          data-testid="undo-toast"
+          className="fixed bottom-6 right-6 z-50 flex max-w-md items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-xl text-xs text-foreground"
+        >
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-money-in/20 text-money-in">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </span>
+          <span className="flex-1 leading-normal">{toast.message}</span>
+          {toast.undoAction && (
+            <button
+              type="button"
+              onClick={async () => {
+                const act = toast.undoAction;
+                setToast(null);
+                if (act) await act();
+              }}
+              className="shrink-0 rounded-md border border-border bg-background px-2.5 py-1 font-semibold text-foreground hover:bg-muted"
+            >
+              Undo
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

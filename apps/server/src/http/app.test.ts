@@ -5476,6 +5476,43 @@ describe("GET /api/payees/:id/logo", () => {
           headers: alex.headers,
         });
         expect(redoUndoRes.status).toBe(400);
+
+        // 6. Buffer divert override (D8)
+        // First create a stage in shared pool so buffer divert has an active stage
+        const stageRes = await app.request("/api/planning/stages", {
+          method: "POST",
+          headers: jsonHeaders,
+          body: JSON.stringify({
+            name: "Stage 1",
+            sort: 1,
+            pool: "shared",
+          }),
+        });
+        expect(stageRes.status).toBe(201);
+
+        const divertRes = await app.request("/api/planning/buffer-divert", {
+          method: "POST",
+          headers: { ...alex.headers, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pool: "shared",
+            shareBp: 0,
+            effectiveUntil: "2027-01-15",
+          }),
+        });
+        expect(divertRes.status).toBe(200);
+        const divertBody = (await divertRes.json()) as any;
+        expect(divertBody.rule.source).toBe("shortfall_override");
+        expect(divertBody.effectiveUntil).toBe("2027-01-15");
+
+        // Clear buffer divert
+        const clearDivertRes = await app.request("/api/planning/buffer-divert/undo", {
+          method: "POST",
+          headers: { ...alex.headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ pool: "shared" }),
+        });
+        expect(clearDivertRes.status).toBe(200);
+        const clearDivertBody = (await clearDivertRes.json()) as any;
+        expect(clearDivertBody.cleared).toBe(true);
       });
     });
   });

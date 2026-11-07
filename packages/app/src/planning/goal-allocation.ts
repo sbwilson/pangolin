@@ -485,10 +485,12 @@ export function executeSavingsAllocation(
     const allStages = tx.stages.listVisible(ctx.viewer);
     const poolStages = allStages.filter((s) => s.personId === targetPersonId);
 
-    // 3. Fetch rules by stage
+    // 3. Fetch rules by stage (only standard rules apply to goal allocations)
     const rulesByStage = new Map<Id<"AllocationStage">, GoalRuleRow[]>();
     for (const stage of poolStages) {
-      const stageRules = tx.goalRules.listForStage(ctx.viewer, stage.id);
+      const stageRules = tx.goalRules
+        .listForStage(ctx.viewer, stage.id)
+        .filter((r) => r.source === "rule");
       rulesByStage.set(stage.id, stageRules);
     }
 

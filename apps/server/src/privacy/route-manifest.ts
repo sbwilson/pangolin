@@ -673,6 +673,18 @@ export const MANIFEST: readonly ManifestEntry[] = [
     path: "/api/planning/drawdowns/:id/undo",
     reason: "Undoes an active drawdown visible to the viewer, restoring goal balances.",
   },
+  {
+    kind: "exempt",
+    method: "POST",
+    path: "/api/planning/buffer-divert",
+    reason: "Applies a time-boxed buffer divert override on the active stage in the requested pool.",
+  },
+  {
+    kind: "exempt",
+    method: "POST",
+    path: "/api/planning/buffer-divert/undo",
+    reason: "Clears any active buffer divert override for the pool.",
+  },
 ];
 
 /** Entries that name a person's data, which the suite replays. */

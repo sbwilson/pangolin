@@ -8,6 +8,8 @@ import { personViewer } from "../viewer.ts";
 import type { UseCaseContext } from "../write.ts";
 import { executeSavingsAllocation } from "./goal-allocation.ts";
 import {
+  applyBufferDivert,
+  clearBufferDivert,
   createGoal,
   createStage,
   deleteGoal,
@@ -785,6 +787,91 @@ describe("planning/goals", () => {
         ["EF", 30_000],
         ["HOLIDAY", 20_000],
       ]);
+    });
+  });
+
+  describe("buffer divert override (D8)", () => {
+    function seeded() {
+      const uow = memoryUnitOfWork();
+      uow.state.goals.push(
+        sharedGoal("G1", "House", { targetCents: 500_000 }),
+        sharedGoal("G2", "Holiday", { targetCents: 300_000 }),
+      );
+      uow.state.stages.push({
+        id: "S1",
+        personId: null,
+        name: "Stage 1",
+        sort: 1,
+        exitGoalId: "G1",
+        fallbackThresholdBp: 8000,
+        completedSharePolicy: "rescale",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      uow.state.goalRules.push({
+        id: "R-RULE",
+        stageId: "S1",
+        goalId: "G1",
+        shareBp: 9000,
+        effectiveFrom: "2026-01-01",
+        effectiveUntil: null,
+        source: "rule",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as any);
+      return { uow, ctx: makeCtx(uow) };
+    }
+
+    it("applies a shortfall_override rule on the active stage and clears it on undo", () => {
+      const { uow, ctx } = seeded();
+
+      const result = applyBufferDivert(ctx, {
+        pool: "shared",
+        shareBp: 0,
+        effectiveUntil: "2027-01-15",
+      });
+
+      expect(result.rule.source).toBe("shortfall_override");
+      expect(result.rule.effectiveUntil).toBe("2027-01-15");
+      expect(result.activeStageId).toBe("S1");
+
+      const inDb = uow.state.goalRules.find((r) => r.source === "shortfall_override");
+      expect(inDb).toBeDefined();
+      expect(inDb?.id).toBe(result.rule.id);
+
+      // Re-applying updates existing override
+      const updated = applyBufferDivert(ctx, {
+        pool: "shared",
+        shareBp: 500,
+        effectiveUntil: "2027-02-15",
+      });
+      expect(updated.rule.id).toBe(result.rule.id);
+      expect(updated.rule.shareBp).toBe(500);
+      expect(updated.rule.effectiveUntil).toBe("2027-02-15");
+
+      // Clear / undo
+      const cleared = clearBufferDivert(ctx, { pool: "shared" });
+      expect(cleared.cleared).toBe(true);
+
+      const remaining = uow.state.goalRules.filter((r) => r.source === "shortfall_override");
+      expect(remaining).toHaveLength(0);
+      // Standard rule remains intact
+      expect(uow.state.goalRules.filter((r) => r.source === "rule")).toHaveLength(1);
+    });
+
+    it("projects shortfall clearance date from shortfallCents when effectiveUntil is omitted", () => {
+      const { ctx } = seeded();
+
+      // Today is 2026-07-15. Shortfall of $320 (32_000 cents).
+      // $320 / $50 per fortnight = ceil(6.4) = 7 fortnights = 98 days.
+      // 2026-07-15 + 98 days = 2026-10-21.
+      const result = applyBufferDivert(ctx, {
+        pool: "shared",
+        shortfallCents: 32_000,
+      });
+
+      expect(result.rule.source).toBe("shortfall_override");
+      expect(result.effectiveUntil).toBe("2026-10-21");
     });
   });
 

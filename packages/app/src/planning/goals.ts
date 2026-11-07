@@ -676,3 +676,211 @@ export function setStageRules(ctx: UseCaseContext, rawInput: SetStageRulesInput)
     return rows;
   });
 }
+
+export const applyBufferDivertInput = z.object({
+  pool: z.string().nullable().optional(), // "shared" / null or personId
+  stageId: idInput.optional(),
+  goalId: idInput.optional(),
+  shareBp: z.number().int().min(0).max(10000).optional(),
+  shortfallCents: z.number().int().min(0).optional(),
+  effectiveUntil: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
+});
+
+export type ApplyBufferDivertInput = z.infer<typeof applyBufferDivertInput>;
+
+export interface BufferDivertResult {
+  readonly rule: GoalRuleRow;
+  readonly activeStageId: Id<"AllocationStage">;
+  readonly shareBp: number;
+  readonly effectiveUntil: string | null;
+}
+
+/**
+ * Creates or updates a time-boxed buffer divert override (`source: "shortfall_override"`)
+ * for the active stage of the pool.
+ */
+export function applyBufferDivert(
+  ctx: UseCaseContext,
+  rawInput: ApplyBufferDivertInput = {},
+): BufferDivertResult {
+  const input = parseInput(applyBufferDivertInput, rawInput);
+  const pool = input.pool ?? "shared";
+  const targetPersonId = pool === "shared" || pool === null ? null : (pool as Id<"Person">);
+
+  if (
+    targetPersonId !== null &&
+    ctx.viewer.kind === "person" &&
+    ctx.viewer.personId !== targetPersonId
+  ) {
+    throw new AppError("NotFound", "Pool not found");
+  }
+
+  return write(ctx, (tx, audit) => {
+    const stages = tx.stages.listVisible(ctx.viewer).filter((s) => s.personId === targetPersonId);
+    if (stages.length === 0) {
+      throw new AppError("NotFound", "No allocation stages found for pool");
+    }
+
+    let targetStage: AllocationStageRow | null = null;
+    if (input.stageId) {
+      const found = stages.find((s) => s.id === input.stageId);
+      if (!found) {
+        throw new AppError("NotFound", `Stage ${input.stageId} not found in pool`);
+      }
+      targetStage = found;
+    } else {
+      const goals = tx.goals.listVisible(ctx.viewer).filter((g) => g.personId === targetPersonId);
+      const balances = new Map<
+        Id<"Goal">,
+        { goalId: Id<"Goal">; allocatedCents: number; adjustedCents: number; currentBalance: number }
+      >();
+      for (const g of goals) {
+        const allocs = tx.goalAllocations.listForGoal(ctx.viewer, g.id);
+        const adjs = tx.goalAdjustments.listActiveForGoal(ctx.viewer, g.id);
+        const allocatedCents = allocs.reduce((sum, a) => sum + a.allocatedCents, 0);
+        const adjustedCents = adjs.reduce((sum, a) => sum + a.amountCents, 0);
+        balances.set(g.id, {
+          goalId: g.id,
+          allocatedCents,
+          adjustedCents,
+          currentBalance: allocatedCents + adjustedCents,
+        });
+      }
+      const activeRes = resolveActiveStage(stages, goals, balances);
+      targetStage = activeRes.activeStage ?? stages.sort((a, b) => a.sort - b.sort)[0] ?? null;
+    }
+
+    if (!targetStage) {
+      throw new AppError("NotFound", "No active stage resolved for pool");
+    }
+
+    // A goal must be referenced by goal_rule (or pick the first goal in stage / emergency fund)
+    const existingRules = tx.goalRules.listForStage(ctx.viewer, targetStage.id);
+    const existingGoal =
+      (input.goalId as Id<"Goal"> | undefined) ??
+      existingRules.find((r) => r.source === "rule")?.goalId ??
+      tx.goals.listVisible(ctx.viewer).find((g) => g.personId === targetPersonId)?.id;
+
+    if (!existingGoal) {
+      throw new AppError("NotFound", "No goals found in stage to attach buffer divert rule");
+    }
+
+    const now = formatInstant(ctx.clock.now());
+    const today = ctx.clock.today();
+    const existingOverride = existingRules.find((r) => r.source === "shortfall_override");
+
+    const shareBp = input.shareBp ?? 0;
+
+    // Project horizon based on shortfall amount and buffer rate (default $50/fortnight = 5000 cents/14 days)
+    let effectiveUntil = input.effectiveUntil ?? null;
+    if (!effectiveUntil && input.shortfallCents && input.shortfallCents > 0) {
+      const fortnightlyBufferCents = 50_00; // $50/fortnight standard shortfall divert rate
+      const fortnightsNeeded = Math.max(1, Math.ceil(input.shortfallCents / fortnightlyBufferCents));
+      const daysNeeded = fortnightsNeeded * 14;
+      effectiveUntil = today.add({ days: daysNeeded }).toString();
+    }
+
+    let resultRule: GoalRuleRow;
+
+    if (existingOverride) {
+      resultRule = {
+        ...existingOverride,
+        goalId: existingGoal,
+        shareBp,
+        effectiveUntil,
+        updatedAt: now,
+      };
+      tx.goalRules.update(resultRule);
+    } else {
+      resultRule = {
+        id: ctx.newId<"GoalRule">(),
+        goalId: existingGoal,
+        stageId: targetStage.id,
+        shareBp,
+        effectiveFrom: today.toString(),
+        effectiveUntil,
+        source: "shortfall_override",
+        createdAt: now,
+        updatedAt: now,
+      };
+      tx.goalRules.insert(resultRule);
+    }
+
+    audit({
+      entity: "allocation_stage",
+      entityId: targetStage.id,
+      ...(targetStage.personId ? { personId: targetStage.personId } : {}),
+      action: "stage-change",
+      before: existingOverride ? { override: existingOverride } : null,
+      after: { override: resultRule },
+    });
+
+    return {
+      rule: resultRule,
+      activeStageId: targetStage.id,
+      shareBp: resultRule.shareBp,
+      effectiveUntil: resultRule.effectiveUntil,
+    };
+  });
+}
+
+export const clearBufferDivertInput = z.object({
+  pool: z.string().nullable().optional(),
+  stageId: idInput.optional(),
+});
+
+export type ClearBufferDivertInput = z.infer<typeof clearBufferDivertInput>;
+
+/**
+ * Clears any active `shortfall_override` rule for the pool's active stage.
+ */
+export function clearBufferDivert(
+  ctx: UseCaseContext,
+  rawInput: ClearBufferDivertInput = {},
+): { readonly cleared: boolean } {
+  const input = parseInput(clearBufferDivertInput, rawInput);
+  const pool = input.pool ?? "shared";
+  const targetPersonId = pool === "shared" || pool === null ? null : (pool as Id<"Person">);
+
+  if (
+    targetPersonId !== null &&
+    ctx.viewer.kind === "person" &&
+    ctx.viewer.personId !== targetPersonId
+  ) {
+    throw new AppError("NotFound", "Pool not found");
+  }
+
+  return write(ctx, (tx, audit) => {
+    const stages = tx.stages.listVisible(ctx.viewer).filter((s) => s.personId === targetPersonId);
+    let stageIds: Id<"AllocationStage">[] = [];
+    if (input.stageId) {
+      stageIds = [input.stageId as Id<"AllocationStage">];
+    } else {
+      stageIds = stages.map((s) => s.id);
+    }
+
+    let cleared = false;
+    for (const sId of stageIds) {
+      const stageRules = tx.goalRules.listForStage(ctx.viewer, sId);
+      const overrides = stageRules.filter((r) => r.source === "shortfall_override");
+      for (const override of overrides) {
+        tx.goalRules.delete(override.id);
+        cleared = true;
+        audit({
+          entity: "allocation_stage",
+          entityId: sId,
+          ...(targetPersonId ? { personId: targetPersonId } : {}),
+          action: "stage-change",
+          before: { override },
+          after: null,
+        });
+      }
+    }
+
+    return { cleared };
+  });
+}

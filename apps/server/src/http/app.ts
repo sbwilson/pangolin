@@ -4,6 +4,8 @@ import { getConnInfo } from "@hono/node-server/conninfo";
 import { serveStatic } from "@hono/node-server/serve-static";
 import {
   AppError,
+  applyBufferDivert,
+  clearBufferDivert,
   type AttachmentContext,
   type AttachmentStore,
   acceptHandoffItem,
@@ -601,6 +603,16 @@ export function createApi(deps: ApiDeps) {
       writable();
       const id = c.req.param("id");
       const result = undoDrawdown(ctx(c), { drawdownId: id });
+      return c.json(result, 200);
+    })
+    .post("/api/planning/buffer-divert", async (c) => {
+      writable();
+      const result = applyBufferDivert(ctx(c), await objectBody(c));
+      return c.json(result, 200);
+    })
+    .post("/api/planning/buffer-divert/undo", async (c) => {
+      writable();
+      const result = clearBufferDivert(ctx(c), await objectBody(c));
       return c.json(result, 200);
     })
     .get("/api/identity/preferences", (c) => {
