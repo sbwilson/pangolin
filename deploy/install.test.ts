@@ -1357,9 +1357,7 @@ describe("install.sh, boot safety", () => {
   });
 
   it("allowlists local LLM servers, persists them to .env, and adds them back to an edited allowlist", () => {
-    expect(
-      install("--llm-hosts", "http://192.168.1.50:11434, ollama.lan:11434").status,
-    ).toBe(0);
+    expect(install("--llm-hosts", "http://192.168.1.50:11434, ollama.lan:11434").status).toBe(0);
     expect(read("opt/pangolin/.env")).toContain(
       "PANGOLIN_LLM_HOSTS=http://192.168.1.50:11434, ollama.lan:11434\n",
     );

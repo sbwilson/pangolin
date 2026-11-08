@@ -1687,11 +1687,19 @@ export async function fetchDrawdowns(pool: string = "shared"): Promise<DrawdownD
   return res.drawdowns;
 }
 
-export async function proposeDrawdown(input: ProposeDrawdownInput): Promise<ProposeDrawdownResultData> {
-  return await sendJson<ProposeDrawdownResultData>("POST", "/api/planning/drawdowns/propose", input);
+export async function proposeDrawdown(
+  input: ProposeDrawdownInput,
+): Promise<ProposeDrawdownResultData> {
+  return await sendJson<ProposeDrawdownResultData>(
+    "POST",
+    "/api/planning/drawdowns/propose",
+    input,
+  );
 }
 
-export async function executeDrawdown(input: ExecuteDrawdownInput): Promise<ExecuteDrawdownResultData> {
+export async function executeDrawdown(
+  input: ExecuteDrawdownInput,
+): Promise<ExecuteDrawdownResultData> {
   return await sendJson<ExecuteDrawdownResultData>("POST", "/api/planning/drawdowns", input);
 }
 
@@ -1718,11 +1726,14 @@ export interface BufferDivertResultData {
   readonly effectiveUntil: string | null;
 }
 
-export async function applyBufferDivert(input: ApplyBufferDivertInput): Promise<BufferDivertResultData> {
+export async function applyBufferDivert(
+  input: ApplyBufferDivertInput,
+): Promise<BufferDivertResultData> {
   return await sendJson<BufferDivertResultData>("POST", "/api/planning/buffer-divert", input);
 }
 
-export async function clearBufferDivert(pool: "shared" | string = "shared"): Promise<{ cleared: boolean }> {
+export async function clearBufferDivert(
+  pool: "shared" | string = "shared",
+): Promise<{ cleared: boolean }> {
   return await sendJson<{ cleared: boolean }>("POST", "/api/planning/buffer-divert/undo", { pool });
 }
-

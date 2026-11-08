@@ -60,7 +60,10 @@ export function LargeWithdrawalCard({
 
         {linkingGoal ? (
           <div className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2">
-            <label htmlFor={`link-goal-select-${card.id}`} className="text-xs font-medium text-muted-foreground">
+            <label
+              htmlFor={`link-goal-select-${card.id}`}
+              className="text-xs font-medium text-muted-foreground"
+            >
               Select goal:
             </label>
             <select
@@ -205,7 +208,8 @@ export function ShortfallCard({
           <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-foreground">
             <p className="m-0 font-medium">Large withdrawal detected in this pool</p>
             <p className="m-0 mt-1 text-xs text-muted-foreground">
-              This pool has an open large withdrawal review item. Resolve or cover the withdrawal above to eliminate this shortfall.
+              This pool has an open large withdrawal review item. Resolve or cover the withdrawal
+              above to eliminate this shortfall.
             </p>
           </div>
         ) : (
@@ -262,7 +266,8 @@ export function MismatchCard({
       <div className="mt-1 space-y-3">
         <p className="m-0 font-medium text-foreground">{summaryLine}</p>
         <p className="m-0 text-xs text-muted-foreground">
-          A change in your savings accounts or balance adjustments has created a difference with your goal targets.
+          A change in your savings accounts or balance adjustments has created a difference with
+          your goal targets.
         </p>
 
         <div className="flex flex-wrap items-center justify-end gap-2 pt-2">

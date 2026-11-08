@@ -10,7 +10,6 @@ import {
   OVER_BUDGET_HOUSEHOLD_REVIEW,
   OVER_BUDGET_PERSONAL_REVIEW,
   syncAllBudgetReviewItems,
-  syncBudgetReviewItem,
 } from "./budget-review.ts";
 import { createBudget } from "./budgets.ts";
 
@@ -216,7 +215,7 @@ describe("budget-review", () => {
       viewer: personViewer("person-b" as Id<"Person">, ctxA.clock.now()),
     };
 
-    const budgetA = createBudget(ctxA, {
+    const _budgetA = createBudget(ctxA, {
       personId: "person-a",
       categoryId: "cat-groceries",
       cadence: "fortnight",

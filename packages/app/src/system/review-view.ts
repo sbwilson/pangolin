@@ -5,8 +5,8 @@
 import { calculatePriceRisePercentage, shiftDay, TRANSFER_WINDOW_DAYS } from "@pangolin/domain";
 import type { Id } from "@pangolin/shared";
 import { z } from "zod";
-import { poolOf } from "../accounts/pool.ts";
 import { CLOSING_BALANCE_REVIEW } from "../accounts/closing-balance.ts";
+import { poolOf } from "../accounts/pool.ts";
 import { CLASSIFY_RULE_OFFER_REVIEW, CLASSIFY_UNCLASSIFIED_REVIEW } from "../classify/rules.ts";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
@@ -35,6 +35,8 @@ import {
   OVER_BUDGET_PERSONAL_REVIEW,
 } from "../planning/budget-review.ts";
 import { getBudgetSummary } from "../planning/budgets.ts";
+import { getSavingsPoolBalances } from "../planning/goals.ts";
+import { poolGoalTotalCents, reconcilePool } from "../planning/savings-reconciliation.ts";
 import {
   SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW,
   SAVINGS_LARGE_WITHDRAWAL_PERSONAL_REVIEW,
@@ -43,8 +45,6 @@ import {
   SAVINGS_SHORTFALL_HOUSEHOLD_REVIEW,
   SAVINGS_SHORTFALL_PERSONAL_REVIEW,
 } from "../planning/savings-review.ts";
-import { getSavingsPoolBalances } from "../planning/goals.ts";
-import { poolGoalTotalCents, reconcilePool } from "../planning/savings-reconciliation.ts";
 import type { ReadRepos, ReviewItemRow } from "../ports/unit-of-work.ts";
 import { redact } from "../redact.ts";
 import type { Viewer } from "../viewer.ts";
@@ -464,7 +464,7 @@ function detailOf(repos: ReadRepos, ctx: UseCaseContext, row: ReviewItemRow): Re
     }
     case SAVINGS_SHORTFALL_HOUSEHOLD_REVIEW.kind:
     case SAVINGS_SHORTFALL_PERSONAL_REVIEW.kind: {
-      const pool = refId(row.entityRef, "savings_pool") ?? (row.personId ?? "shared");
+      const pool = refId(row.entityRef, "savings_pool") ?? row.personId ?? "shared";
       const isPersonal = row.kind === SAVINGS_SHORTFALL_PERSONAL_REVIEW.kind;
       const targetPersonId = pool === "shared" ? null : (pool as Id<"Person">);
 
@@ -511,7 +511,7 @@ function detailOf(repos: ReadRepos, ctx: UseCaseContext, row: ReviewItemRow): Re
     }
     case SAVINGS_MISMATCH_HOUSEHOLD_REVIEW.kind:
     case SAVINGS_MISMATCH_PERSONAL_REVIEW.kind: {
-      const pool = refId(row.entityRef, "savings_pool") ?? (row.personId ?? "shared");
+      const pool = refId(row.entityRef, "savings_pool") ?? row.personId ?? "shared";
       const isPersonal = row.kind === SAVINGS_MISMATCH_PERSONAL_REVIEW.kind;
       const targetPersonId = pool === "shared" ? null : (pool as Id<"Person">);
 

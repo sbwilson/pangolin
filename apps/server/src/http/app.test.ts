@@ -14,7 +14,6 @@ import {
   createCategory,
   createCategoryGroup,
   createIdGenerator,
-  createInstitution,
   createPayee,
   createPayeeAlias,
   createPerson,
@@ -29,7 +28,6 @@ import {
   type ImportBatchRow,
   importStatement,
   OVER_BUDGET_HOUSEHOLD_REVIEW,
-  OVER_BUDGET_PERSONAL_REVIEW,
   type PdfTextExtractor,
   personViewer,
   raiseReviewItem,
@@ -5419,8 +5417,12 @@ describe("GET /api/payees/:id/logo", () => {
         const proposal = (await propRes.json()) as any;
         expect(proposal.coveredCents).toBe(250_000);
         expect(proposal.remainingCents).toBe(0);
-        expect(proposal.proposals.find((p: any) => p.goalId === efGoal.id)?.proposedAmountCents).toBe(200_000);
-        expect(proposal.proposals.find((p: any) => p.goalId === flexGoal.id)?.proposedAmountCents).toBe(50_000);
+        expect(
+          proposal.proposals.find((p: any) => p.goalId === efGoal.id)?.proposedAmountCents,
+        ).toBe(200_000);
+        expect(
+          proposal.proposals.find((p: any) => p.goalId === flexGoal.id)?.proposedAmountCents,
+        ).toBe(50_000);
 
         // 3. Execute drawdown
         const execRes = await app.request("/api/planning/drawdowns", {
@@ -5445,7 +5447,9 @@ describe("GET /api/payees/:id/logo", () => {
         const listGoalsRes = await app.request("/api/planning/goals", alex);
         const listGoalsBody = (await listGoalsRes.json()) as any;
         expect(listGoalsBody.goals.find((g: any) => g.id === efGoal.id)?.currentBalance).toBe(0);
-        expect(listGoalsBody.goals.find((g: any) => g.id === flexGoal.id)?.currentBalance).toBe(50_000);
+        expect(listGoalsBody.goals.find((g: any) => g.id === flexGoal.id)?.currentBalance).toBe(
+          50_000,
+        );
 
         // 4. List drawdowns
         const listDdRes = await app.request("/api/planning/drawdowns?pool=shared", alex);
@@ -5467,14 +5471,21 @@ describe("GET /api/payees/:id/logo", () => {
         // Check goals restored
         const restoredRes = await app.request("/api/planning/goals", alex);
         const restoredBody = (await restoredRes.json()) as any;
-        expect(restoredBody.goals.find((g: any) => g.id === efGoal.id)?.currentBalance).toBe(200_000);
-        expect(restoredBody.goals.find((g: any) => g.id === flexGoal.id)?.currentBalance).toBe(100_000);
+        expect(restoredBody.goals.find((g: any) => g.id === efGoal.id)?.currentBalance).toBe(
+          200_000,
+        );
+        expect(restoredBody.goals.find((g: any) => g.id === flexGoal.id)?.currentBalance).toBe(
+          100_000,
+        );
 
         // Undo again answers 400
-        const redoUndoRes = await app.request(`/api/planning/drawdowns/${execution.drawdown.id}/undo`, {
-          method: "POST",
-          headers: alex.headers,
-        });
+        const redoUndoRes = await app.request(
+          `/api/planning/drawdowns/${execution.drawdown.id}/undo`,
+          {
+            method: "POST",
+            headers: alex.headers,
+          },
+        );
         expect(redoUndoRes.status).toBe(400);
 
         // 6. Buffer divert override (D8)

@@ -1,7 +1,6 @@
 // Savings reconciliation review items: large withdrawal detection, shortfall alerts, and buffer mismatch fixes.
 // AD-17, AD-22, CAP-6, CAP-7
-import type { Cents, Id } from "@pangolin/shared";
-import { formatInstant } from "@pangolin/shared/temporal";
+import type { Id } from "@pangolin/shared";
 import { z } from "zod";
 import { poolOf } from "../accounts/pool.ts";
 import type { UseCaseContext } from "../context.ts";
@@ -11,9 +10,7 @@ import type {
   AccountRow,
   GoalAdjustmentRow,
   GoalDrawdownRow,
-  GoalRow,
   ReviewItemRow,
-  TransactionRow,
   TxRepos,
 } from "../ports/unit-of-work.ts";
 import {
@@ -142,7 +139,7 @@ export function getLargeWithdrawalThresholdCents(
 /**
  * Helper to get the pool and privacy of a savings account.
  */
-function getAccountPoolInfo(
+function _getAccountPoolInfo(
   tx: TxRepos,
   account: AccountRow,
 ): { pool: string; isSavings: boolean; isPrivate: boolean } {
@@ -203,7 +200,7 @@ export function syncLargeWithdrawalReviewItems(
   }
 
   // Also query open large withdrawal review items to check if any resolved transactions need auto-resolution
-  const openItems = tx.reviewItems
+  const _openItems = tx.reviewItems
     .listOpenFor(ctx.viewer)
     .filter(
       (item) =>
@@ -418,7 +415,7 @@ export function takeFromBufferReviewItem(
     }
 
     const acc = tx.accounts.findVisible(ctx.viewer, txn.accountId);
-    if (!acc || !acc.isSavings) {
+    if (!acc?.isSavings) {
       throw new AppError("Validation", "Account is not a savings account");
     }
 
@@ -486,7 +483,7 @@ export function linkWithdrawalToGoal(
     }
 
     const acc = tx.accounts.findVisible(ctx.viewer, txn.accountId);
-    if (!acc || !acc.isSavings) {
+    if (!acc?.isSavings) {
       throw new AppError("Validation", "Account is not a savings account");
     }
 

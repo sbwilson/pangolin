@@ -1,18 +1,14 @@
 import type { Id } from "@pangolin/shared";
-import { allocate, cents } from "@pangolin/shared";
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import { AppError, parseInput } from "../errors.ts";
-import { dayInput } from "../inputs.ts";
 import type {
   GoalAdjustmentRow,
   GoalDrawdownReason,
   GoalDrawdownRow,
   GoalRow,
-  Viewer,
 } from "../ports/unit-of-work.ts";
 import { type UseCaseContext, write } from "../write.ts";
-import { calculateGoalBalances } from "./goal-allocation.ts";
 
 export interface GoalProposalSplit {
   readonly goalId: Id<"Goal">;
@@ -91,10 +87,7 @@ export function proposeDrawdownSplit(input: PureProposalInput): {
   const coverFlexible = () => {
     if (remaining <= 0) return;
     const eligibleFlex = flexGoals.filter((g) => (input.balances.get(g.id) ?? 0) > 0);
-    const totalFlexBal = eligibleFlex.reduce(
-      (sum, g) => sum + (input.balances.get(g.id) ?? 0),
-      0,
-    );
+    const totalFlexBal = eligibleFlex.reduce((sum, g) => sum + (input.balances.get(g.id) ?? 0), 0);
     if (totalFlexBal <= 0) return;
 
     const neededFromFlex = Math.min(totalFlexBal, remaining);
@@ -117,7 +110,7 @@ export function proposeDrawdownSplit(input: PureProposalInput): {
         const exact = Math.floor((neededFromFlex * balance) / totalFlexBal);
         return { goal, balance, amount: exact };
       });
-      let assigned = splits.reduce((sum, s) => sum + s.amount, 0);
+      const assigned = splits.reduce((sum, s) => sum + s.amount, 0);
       let remainder = neededFromFlex - assigned;
       // Remainder cents allocated to largest balance goal (sorted by balance desc, then goal id for stability)
       const order = [...splits].sort(
@@ -205,7 +198,11 @@ export function proposeDrawdown(
   const input = parseInput(proposeDrawdownInput, rawInput);
   const targetPersonId = input.pool === "shared" ? null : input.pool;
 
-  if (ctx.viewer.kind === "person" && targetPersonId !== null && targetPersonId !== ctx.viewer.personId) {
+  if (
+    ctx.viewer.kind === "person" &&
+    targetPersonId !== null &&
+    targetPersonId !== ctx.viewer.personId
+  ) {
     throw new AppError("NotFound", "Pool not found");
   }
 
@@ -265,7 +262,11 @@ export function executeDrawdown(
   const input = parseInput(executeDrawdownInput, rawInput);
   const targetPersonId = input.pool === "shared" ? null : (input.pool as Id<"Person">);
 
-  if (ctx.viewer.kind === "person" && targetPersonId !== null && targetPersonId !== ctx.viewer.personId) {
+  if (
+    ctx.viewer.kind === "person" &&
+    targetPersonId !== null &&
+    targetPersonId !== ctx.viewer.personId
+  ) {
     throw new AppError("NotFound", "Pool not found");
   }
 
@@ -292,7 +293,10 @@ export function executeDrawdown(
     for (const adj of input.adjustments) {
       const g = poolGoalsMap.get(adj.goalId);
       if (!g) {
-        throw new AppError("Validation", `Goal ${adj.goalId} does not belong to pool ${input.pool}`);
+        throw new AppError(
+          "Validation",
+          `Goal ${adj.goalId} does not belong to pool ${input.pool}`,
+        );
       }
       const allocTotal = tx.goalAllocations.sumForGoal(ctx.viewer, g.id);
       const adjTotal = tx.goalAdjustments.sumActiveForGoal(ctx.viewer, g.id);
@@ -422,7 +426,11 @@ export function listDrawdowns(
   const input = parseInput(listDrawdownsInput, rawInput);
   const targetPersonId = input.pool === "shared" ? null : input.pool;
 
-  if (ctx.viewer.kind === "person" && targetPersonId !== null && targetPersonId !== ctx.viewer.personId) {
+  if (
+    ctx.viewer.kind === "person" &&
+    targetPersonId !== null &&
+    targetPersonId !== ctx.viewer.personId
+  ) {
     throw new AppError("NotFound", "Pool not found");
   }
 

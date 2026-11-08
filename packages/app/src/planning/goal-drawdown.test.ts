@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import type { GoalRow } from "../ports/unit-of-work.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
 import { type UseCaseContext, write } from "../write.ts";
-import { listGoals } from "./goals.ts";
 import {
   executeDrawdown,
   listDrawdowns,
@@ -11,7 +10,7 @@ import {
   proposeDrawdownSplit,
   undoDrawdown,
 } from "./goal-drawdown.ts";
-import { getSavingsReconciliation } from "./savings-reconciliation.ts";
+import { listGoals } from "./goals.ts";
 
 function fakeClock(iso: string) {
   return {
@@ -190,7 +189,9 @@ describe("proposeDrawdownSplit (pure logic)", () => {
 
     expect(res.proposals.find((p) => p.goalId === flexA.id)?.proposedAmountCents).toBe(100_000);
     expect(res.proposals.find((p) => p.goalId === ef.id)?.proposedAmountCents).toBe(200_000);
-    expect(res.proposals.find((p) => p.goalId === protectedGoal.id)?.proposedAmountCents).toBe(100_000);
+    expect(res.proposals.find((p) => p.goalId === protectedGoal.id)?.proposedAmountCents).toBe(
+      100_000,
+    );
   });
 
   it("handles insufficient pool balance (partial cover)", () => {

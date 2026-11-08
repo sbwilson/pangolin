@@ -496,7 +496,8 @@ export function executeSavingsAllocation(
 
     // 4. Compute current balances from historical allocations and adjustments
     const historicalAllocations: GoalAllocationRow[] = [];
-    const historicalAdjustments: { readonly goalId: Id<"Goal">; readonly amountCents: number }[] = [];
+    const historicalAdjustments: { readonly goalId: Id<"Goal">; readonly amountCents: number }[] =
+      [];
     for (const goal of poolGoals) {
       const allocs = tx.goalAllocations.listForGoal(ctx.viewer, goal.id);
       historicalAllocations.push(...allocs);

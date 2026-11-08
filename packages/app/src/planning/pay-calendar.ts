@@ -83,7 +83,7 @@ export function resolvePayCalendar(ctx: UseCaseContext, anchor: PayAnchorRow): P
     const start = dep.postedOn;
     let end: PlainDate;
     if (i + 1 < deposits.length) {
-      end = deposits[i + 1]!.postedOn;
+      end = deposits[i + 1]?.postedOn;
     } else {
       // Last deposit: end follows calendar cadence from this start
       if (cadence.kind === "fortnightly") {
@@ -106,7 +106,7 @@ export function resolvePayCalendar(ctx: UseCaseContext, anchor: PayAnchorRow): P
     });
   }
 
-  const firstDepositDate = deposits[0]!.postedOn;
+  const firstDepositDate = deposits[0]?.postedOn;
   const lastDepositPeriod = depositPeriods[depositPeriods.length - 1]!;
 
   function getPeriodContaining(date: PlainDate): PayPeriod {

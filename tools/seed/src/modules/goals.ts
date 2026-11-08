@@ -9,7 +9,7 @@ import type {
 } from "../world.ts";
 import { PERSON_KEYS } from "./people-and-household.ts";
 
-const [A, B] = PERSON_KEYS;
+const [A, _B] = PERSON_KEYS;
 
 export const GOAL_KEYS = {
   rainyDay: "goal-rainy-day",
@@ -34,7 +34,7 @@ export const GOAL_RULE_KEYS = {
 export const goalsAndSavings: SeedModule = {
   name: "goals-and-savings",
   dependsOn: ["budgets-and-bills"],
-  generate(world: World): { events: readonly SeedEvent[]; expectations: Record<string, Json> } {
+  generate(_world: World): { events: readonly SeedEvent[]; expectations: Record<string, Json> } {
     // 1. Goals
     // Goal 1: Rainy day emergency fund (Shared, emergency fund, target $20,000 / 2_000_000 cents, kind protected)
     const rainyDayGoal: GoalCreatedEvent = {

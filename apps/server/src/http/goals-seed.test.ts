@@ -24,8 +24,6 @@ import {
   executeSavingsAllocation,
   fixedClockAt,
   getGoalsSummary,
-  getSavingsPoolBalances,
-  getSavingsReconciliation,
   linkWithdrawalToGoal,
   listAccounts,
   listDrawdowns,
@@ -37,11 +35,8 @@ import {
   recordBalanceSnapshot,
   rescaleGoalRules,
   resolveActiveStage,
-  runSavingsReconciliation,
   SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW,
   SAVINGS_SHORTFALL_HOUSEHOLD_REVIEW,
-  savingsLargeWithdrawalDedupeKey,
-  savingsShortfallDedupeKey,
   syncAllSavingsReviewItems,
   type UseCaseContext,
   undoDrawdown,
@@ -195,7 +190,7 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
     expect(houseAlloc1?.allocatedCents).toBe(50_000); // 10% of $5,000 = $500
 
     // 3. Allocate enough to fund the Emergency Fund to $20,000 ($16,000 more needed at 80% = $20,000 new savings)
-    const alloc2 = executeSavingsAllocation(ctxA, {
+    const _alloc2 = executeSavingsAllocation(ctxA, {
       pool: "shared",
       periodStart: "2026-05-01",
       savingsCents: 2_000_000,
@@ -209,12 +204,35 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
     expect(summaryAfterAlloc2.activeStage?.name).toBe("Stage 2: Build");
 
     // Rescale evaluation: when a goal completes under "rescale" policy, remaining rules rescale shares proportionally
-    const stage1Rules = ctxA.uow.read((r) => r.goalRules.listForStage(ctxA.viewer, summary.activeStage!.id));
+    const stage1Rules = ctxA.uow.read((r) =>
+      r.goalRules.listForStage(ctxA.viewer, summary.activeStage?.id),
+    );
     const efGoalBalances = new Map([
-      [rainyDay!.id, { goalId: rainyDay!.id, allocatedCents: 2_000_000, adjustedCents: 0, currentBalance: 2_000_000 }],
-      [houseDeposit!.id, { goalId: houseDeposit!.id, allocatedCents: 250_000, adjustedCents: 0, currentBalance: 250_000 }],
+      [
+        rainyDay?.id,
+        {
+          goalId: rainyDay?.id,
+          allocatedCents: 2_000_000,
+          adjustedCents: 0,
+          currentBalance: 2_000_000,
+        },
+      ],
+      [
+        houseDeposit?.id,
+        {
+          goalId: houseDeposit?.id,
+          allocatedCents: 250_000,
+          adjustedCents: 0,
+          currentBalance: 250_000,
+        },
+      ],
     ]);
-    const rescaled = rescaleGoalRules(stage1Rules, summaryAfterAlloc2.goals, efGoalBalances, "rescale");
+    const rescaled = rescaleGoalRules(
+      stage1Rules,
+      summaryAfterAlloc2.goals,
+      efGoalBalances,
+      "rescale",
+    );
     const efRescaled = rescaled.find((r) => r.goalId === rainyDay?.id);
     const houseRescaled = rescaled.find((r) => r.goalId === houseDeposit?.id);
     // EF completed -> 0 bp, remaining goals get 100% of the active rule pool
@@ -235,7 +253,7 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
       reason: "large_purchase",
       label: "Emergency expense",
       amountCents: 500_000,
-      adjustments: [{ goalId: rainyDay!.id, amountCents: 500_000 }],
+      adjustments: [{ goalId: rainyDay?.id, amountCents: 500_000 }],
     });
     expect(drawdownRes.drawdown.id).toBeDefined();
 
@@ -244,8 +262,12 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
     expect(summaryAfterDrawdown.activeStage?.name).toBe("Stage 1: Emergency fund first");
     const balancesAfterDrawdown = new Map(
       summaryAfterDrawdown.goals.map((g) => {
-        const allocatedCents = ctxA.uow.read((r) => r.goalAllocations.sumForGoal(ctxA.viewer, g.id));
-        const adjustedCents = ctxA.uow.read((r) => r.goalAdjustments.sumActiveForGoal(ctxA.viewer, g.id));
+        const allocatedCents = ctxA.uow.read((r) =>
+          r.goalAllocations.sumForGoal(ctxA.viewer, g.id),
+        );
+        const adjustedCents = ctxA.uow.read((r) =>
+          r.goalAdjustments.sumActiveForGoal(ctxA.viewer, g.id),
+        );
         return [
           g.id,
           {
@@ -257,7 +279,11 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
         ];
       }),
     );
-    const stage1Fallback = resolveActiveStage(summaryAfterDrawdown.stages, summaryAfterDrawdown.goals, balancesAfterDrawdown as any);
+    const stage1Fallback = resolveActiveStage(
+      summaryAfterDrawdown.stages,
+      summaryAfterDrawdown.goals,
+      balancesAfterDrawdown as any,
+    );
     expect(stage1Fallback.isFallback).toBe(true);
 
     // Clean up drawdown via undo so balances restore
@@ -365,7 +391,7 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
 
     // Drop joint savings balance to trigger actual over-commitment in shared pool ($1,000 < $20,000 goals)
     recordBalanceSnapshot(ctxA, {
-      accountId: sharedSavingsAcc!.id,
+      accountId: sharedSavingsAcc?.id,
       asOf: seed.today,
       balanceCents: 100_000,
     });
@@ -373,9 +399,7 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
     syncAllSavingsReviewItems(sysCtx);
 
     const itemsA = listReviewItems(ctxA);
-    const shortfallItem = itemsA.find(
-      (i) => i.kind === SAVINGS_SHORTFALL_HOUSEHOLD_REVIEW.kind,
-    );
+    const shortfallItem = itemsA.find((i) => i.kind === SAVINGS_SHORTFALL_HOUSEHOLD_REVIEW.kind);
     expect(shortfallItem).toBeDefined();
     expect(shortfallItem?.entityRef).toBe("savings_pool:shared");
 
@@ -388,7 +412,7 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
     }
     // Restore savings account balance for subsequent tests
     recordBalanceSnapshot(ctxA, {
-      accountId: sharedSavingsAcc!.id,
+      accountId: sharedSavingsAcc?.id,
       asOf: seed.today,
       balanceCents: 20_000_000,
     });
@@ -429,7 +453,7 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
     expect(sharedSavings).toBeDefined();
 
     const largeWithdrawalTxnId = createTransaction(ctxA, {
-      accountId: sharedSavings!.id,
+      accountId: sharedSavings?.id,
       postedOn: seed.today,
       amountCents: -250_000,
       description: "Car repairs",
@@ -442,10 +466,14 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
     const itemsPersonA = listReviewItems(ctxA);
     const itemsPersonB = listReviewItems(ctxB);
     const lwA = itemsPersonA.find(
-      (i) => i.kind === SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW.kind && i.entityRef === `transaction:${largeWithdrawalTxnId}`,
+      (i) =>
+        i.kind === SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW.kind &&
+        i.entityRef === `transaction:${largeWithdrawalTxnId}`,
     );
     const lwB = itemsPersonB.find(
-      (i) => i.kind === SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW.kind && i.entityRef === `transaction:${largeWithdrawalTxnId}`,
+      (i) =>
+        i.kind === SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW.kind &&
+        i.entityRef === `transaction:${largeWithdrawalTxnId}`,
     );
     expect(lwA).toBeDefined();
     expect(lwB).toBeDefined();
@@ -457,8 +485,8 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
     expect(efGoalForLink).toBeDefined();
 
     const linkResult = linkWithdrawalToGoal(ctxA, {
-      id: lwA!.id,
-      goalId: efGoalForLink!.id,
+      id: lwA?.id,
+      goalId: efGoalForLink?.id,
     });
     expect(linkResult.drawdown.id).toBeDefined();
     expect(linkResult.drawdown.transactionId).toBe(largeWithdrawalTxnId);
@@ -466,8 +494,8 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
     // After linking to goal, the review item is resolved and no longer open for either partner
     const itemsPersonAAfter = listReviewItems(ctxA);
     const itemsPersonBAfter = listReviewItems(ctxB);
-    expect(itemsPersonAAfter.find((i) => i.id === lwA!.id)).toBeUndefined();
-    expect(itemsPersonBAfter.find((i) => i.id === lwB!.id)).toBeUndefined();
+    expect(itemsPersonAAfter.find((i) => i.id === lwA?.id)).toBeUndefined();
+    expect(itemsPersonBAfter.find((i) => i.id === lwB?.id)).toBeUndefined();
 
     // 2. Proposal for large purchase: draws EF first, then Flexible, then Protected (warned)
     const sharedGoals = listGoals(ctxA).filter((g) => g.personId === null);

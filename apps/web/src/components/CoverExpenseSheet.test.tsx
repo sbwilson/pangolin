@@ -305,7 +305,11 @@ describe("CoverExpenseSheet", () => {
     fireEvent.click(screen.getByText("Use protected goals"));
 
     await waitFor(() => {
-      expect(screen.getByText("Protected goals are unlocked. Drawing from them will postpone their target arrival dates.")).toBeDefined();
+      expect(
+        screen.getByText(
+          "Protected goals are unlocked. Drawing from them will postpone their target arrival dates.",
+        ),
+      ).toBeDefined();
     });
   });
 

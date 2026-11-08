@@ -3,7 +3,7 @@ import { calculateRollover } from "@pangolin/domain";
 import type { Id } from "@pangolin/shared";
 import { cents } from "@pangolin/shared";
 import type { UseCaseContext } from "../context.ts";
-import type { BudgetRow, TxRepos } from "../ports/unit-of-work.ts";
+import type { TxRepos } from "../ports/unit-of-work.ts";
 import { defineReviewKind, raiseReviewItem, resolveReviewItem } from "../system/review-items.ts";
 import { personViewer } from "../viewer.ts";
 import type { Audit } from "../write.ts";

@@ -1,31 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { memoryContext, manualClock } from "../testing/fixtures.ts";
-import { personViewer } from "../viewer.ts";
 import { createAccount } from "../accounts/create-account.ts";
 import { createTransaction } from "../ledger/create-transaction.ts";
-import { createGoal } from "./goals.ts";
+import { createTransferGroup } from "../ledger/transfer-groups.ts";
+import { listReviewCards } from "../system/review-view.ts";
+import { manualClock, memoryContext } from "../testing/fixtures.ts";
+import { personViewer } from "../viewer.ts";
 import { executeDrawdown } from "./goal-drawdown.ts";
+import { createGoal } from "./goals.ts";
 import {
   adjustBufferForMismatch,
-  DEFAULT_LARGE_WITHDRAWAL_THRESHOLD_CENTS,
-  dismissSavingsReviewItem,
-  getLargeWithdrawalThresholdCents,
   linkWithdrawalToGoal,
   SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW,
   SAVINGS_LARGE_WITHDRAWAL_PERSONAL_REVIEW,
   SAVINGS_MISMATCH_HOUSEHOLD_REVIEW,
   SAVINGS_SHORTFALL_HOUSEHOLD_REVIEW,
-  SAVINGS_SHORTFALL_PERSONAL_REVIEW,
   savingsLargeWithdrawalDedupeKey,
   savingsMismatchDedupeKey,
   savingsShortfallDedupeKey,
   syncAllSavingsReviewItems,
-  syncLargeWithdrawalReviewItems,
-  syncSavingsReconciliationReviewItems,
   takeFromBufferReviewItem,
 } from "./savings-review.ts";
-import { createTransferGroup } from "../ledger/transfer-groups.ts";
-import { listReviewCards } from "../system/review-view.ts";
 
 describe("planning/savings-review", () => {
   const alice = "01HF7YAT000000000000000001";
@@ -35,8 +29,24 @@ describe("planning/savings-review", () => {
   it("detects large savings withdrawal >= threshold ($2,000 default) with household scope for shared pool", () => {
     const { ctx, uow } = memoryContext(personViewer(alice, clock.now()), clock);
     uow.state.people = [
-      { id: alice, displayName: "Alice", role: "primary", authRole: "admin", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
-      { id: bob, displayName: "Bob", role: "partner", authRole: "member", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
+      {
+        id: alice,
+        displayName: "Alice",
+        role: "primary",
+        authRole: "admin",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
+      {
+        id: bob,
+        displayName: "Bob",
+        role: "partner",
+        authRole: "member",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
     ];
 
     // Shared savings account with $10,000 opening snapshot
@@ -71,7 +81,7 @@ describe("planning/savings-review", () => {
     });
 
     // Transaction < threshold ($1,500 withdrawal)
-    const smallTxn = createTransaction(ctx, {
+    const _smallTxn = createTransaction(ctx, {
       accountId: sharedSavingsId,
       postedOn: "2026-01-11",
       amountCents: -150_000,
@@ -96,8 +106,24 @@ describe("planning/savings-review", () => {
   it("detects personal large savings withdrawal with person scope", () => {
     const { ctx, uow } = memoryContext(personViewer(alice, clock.now()), clock);
     uow.state.people = [
-      { id: alice, displayName: "Alice", role: "primary", authRole: "admin", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
-      { id: bob, displayName: "Bob", role: "partner", authRole: "member", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
+      {
+        id: alice,
+        displayName: "Alice",
+        role: "primary",
+        authRole: "admin",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
+      {
+        id: bob,
+        displayName: "Bob",
+        role: "partner",
+        authRole: "member",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
     ];
 
     // Alice personal savings account
@@ -120,7 +146,7 @@ describe("planning/savings-review", () => {
       capturedAt: "2026-01-01T00:00:00Z",
     });
 
-    const largeTxn = createTransaction(ctx, {
+    const _largeTxn = createTransaction(ctx, {
       accountId: personalSavingsId,
       postedOn: "2026-01-10",
       amountCents: -300_000,
@@ -142,8 +168,24 @@ describe("planning/savings-review", () => {
   it("does not raise review item for internal transfer between savings accounts in same pool", () => {
     const { ctx, uow } = memoryContext(personViewer(alice, clock.now()), clock);
     uow.state.people = [
-      { id: alice, displayName: "Alice", role: "primary", authRole: "admin", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
-      { id: bob, displayName: "Bob", role: "partner", authRole: "member", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
+      {
+        id: alice,
+        displayName: "Alice",
+        role: "primary",
+        authRole: "admin",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
+      {
+        id: bob,
+        displayName: "Bob",
+        role: "partner",
+        authRole: "member",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
     ];
 
     const s1Id = createAccount(ctx, {
@@ -203,8 +245,24 @@ describe("planning/savings-review", () => {
   it("does not raise review item if withdrawal is already linked to goal drawdown", () => {
     const { ctx, uow } = memoryContext(personViewer(alice, clock.now()), clock);
     uow.state.people = [
-      { id: alice, displayName: "Alice", role: "primary", authRole: "admin", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
-      { id: bob, displayName: "Bob", role: "partner", authRole: "member", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
+      {
+        id: alice,
+        displayName: "Alice",
+        role: "primary",
+        authRole: "admin",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
+      {
+        id: bob,
+        displayName: "Bob",
+        role: "partner",
+        authRole: "member",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
     ];
 
     const s1Id = createAccount(ctx, {
@@ -266,8 +324,24 @@ describe("planning/savings-review", () => {
   it("raises shortfall review item when pool is over-committed and cures it when status is ok", () => {
     const { ctx, uow } = memoryContext(personViewer(alice, clock.now()), clock);
     uow.state.people = [
-      { id: alice, displayName: "Alice", role: "primary", authRole: "admin", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
-      { id: bob, displayName: "Bob", role: "partner", authRole: "member", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
+      {
+        id: alice,
+        displayName: "Alice",
+        role: "primary",
+        authRole: "admin",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
+      {
+        id: bob,
+        displayName: "Bob",
+        role: "partner",
+        authRole: "member",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
     ];
 
     // Shared pool with goals = $1,000, savings = $800 -> shortfall = $200
@@ -330,15 +404,33 @@ describe("planning/savings-review", () => {
     openItems = uow.state.reviewItems.filter((i) => i.resolvedAt === null);
     expect(openItems).toHaveLength(0);
 
-    const cured = uow.state.reviewItems.find((i) => i.dedupeKey === savingsShortfallDedupeKey("shared"));
+    const cured = uow.state.reviewItems.find(
+      (i) => i.dedupeKey === savingsShortfallDedupeKey("shared"),
+    );
     expect(cured?.resolution).toBe("cured");
   });
 
   it("handles 'Take it from the buffer' action when buffer is sufficient", () => {
     const { ctx, uow } = memoryContext(personViewer(alice, clock.now()), clock);
     uow.state.people = [
-      { id: alice, displayName: "Alice", role: "primary", authRole: "admin", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
-      { id: bob, displayName: "Bob", role: "partner", authRole: "member", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
+      {
+        id: alice,
+        displayName: "Alice",
+        role: "primary",
+        authRole: "admin",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
+      {
+        id: bob,
+        displayName: "Bob",
+        role: "partner",
+        authRole: "member",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
     ];
 
     const savingsId = createAccount(ctx, {
@@ -381,7 +473,7 @@ describe("planning/savings-review", () => {
     // Withdrawal of $2,000 on 2026-01-15 -> balance becomes $3,000
     // Buffer = actualSavings ($3,000) - goalTotal ($1,000) = $2,000.
     // canTakeFromBuffer = buffer ($2,000) >= abs(withdrawal) ($2,000) = true!
-    const txnId = createTransaction(ctx, {
+    const _txnId = createTransaction(ctx, {
       accountId: savingsId,
       postedOn: "2026-01-15",
       amountCents: -200_000,
@@ -390,7 +482,9 @@ describe("planning/savings-review", () => {
 
     syncAllSavingsReviewItems(ctx);
 
-    const openItem = uow.state.reviewItems.find((i) => i.resolvedAt === null && i.kind === SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW.kind);
+    const openItem = uow.state.reviewItems.find(
+      (i) => i.resolvedAt === null && i.kind === SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW.kind,
+    );
     expect(openItem).toBeDefined();
 
     // Verify detail in review cards
@@ -402,9 +496,9 @@ describe("planning/savings-review", () => {
     }
 
     // Act: Take it from the buffer
-    takeFromBufferReviewItem(ctx, { id: openItem!.id });
+    takeFromBufferReviewItem(ctx, { id: openItem?.id });
 
-    const resolved = uow.state.reviewItems.find((i) => i.id === openItem!.id);
+    const resolved = uow.state.reviewItems.find((i) => i.id === openItem?.id);
     expect(resolved?.resolvedAt).not.toBeNull();
     expect(resolved?.resolution).toBe("buffer");
   });
@@ -412,8 +506,24 @@ describe("planning/savings-review", () => {
   it("handles 'It's for a goal' action, creating drawdown and resolving item", () => {
     const { ctx, uow } = memoryContext(personViewer(alice, clock.now()), clock);
     uow.state.people = [
-      { id: alice, displayName: "Alice", role: "primary", authRole: "admin", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
-      { id: bob, displayName: "Bob", role: "partner", authRole: "member", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
+      {
+        id: alice,
+        displayName: "Alice",
+        role: "primary",
+        authRole: "admin",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
+      {
+        id: bob,
+        displayName: "Bob",
+        role: "partner",
+        authRole: "member",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
     ];
 
     const savingsId = createAccount(ctx, {
@@ -461,12 +571,14 @@ describe("planning/savings-review", () => {
 
     syncAllSavingsReviewItems(ctx);
 
-    const openItem = uow.state.reviewItems.find((i) => i.resolvedAt === null && i.kind === SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW.kind);
+    const openItem = uow.state.reviewItems.find(
+      (i) => i.resolvedAt === null && i.kind === SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW.kind,
+    );
     expect(openItem).toBeDefined();
 
     // Act: link withdrawal to goal
     const result = linkWithdrawalToGoal(ctx, {
-      id: openItem!.id,
+      id: openItem?.id,
       goalId: goal.id,
     });
 
@@ -475,7 +587,7 @@ describe("planning/savings-review", () => {
     expect(result.adjustments[0]?.goalId).toBe(goal.id);
     expect(result.adjustments[0]?.amountCents).toBe(200_000);
 
-    const resolved = uow.state.reviewItems.find((i) => i.id === openItem!.id);
+    const resolved = uow.state.reviewItems.find((i) => i.id === openItem?.id);
     expect(resolved?.resolvedAt).not.toBeNull();
     expect(resolved?.resolution).toBe("linked");
   });
@@ -483,8 +595,24 @@ describe("planning/savings-review", () => {
   it("handles 'Put difference in buffer' for mismatch", () => {
     const { ctx, uow } = memoryContext(personViewer(alice, clock.now()), clock);
     uow.state.people = [
-      { id: alice, displayName: "Alice", role: "primary", authRole: "admin", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
-      { id: bob, displayName: "Bob", role: "partner", authRole: "member", createdAt: "2026-01-01T00:00:00Z", deletedAt: null, userId: null },
+      {
+        id: alice,
+        displayName: "Alice",
+        role: "primary",
+        authRole: "admin",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
+      {
+        id: bob,
+        displayName: "Bob",
+        role: "partner",
+        authRole: "member",
+        createdAt: "2026-01-01T00:00:00Z",
+        deletedAt: null,
+        userId: null,
+      },
     ];
 
     // Raise mismatch item manually or via sync

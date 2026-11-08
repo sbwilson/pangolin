@@ -1,23 +1,23 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Temporal } from "@pangolin/shared/temporal";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils.ts";
 import {
   type AllocationStageData,
   applyBufferDivert,
-  executeDrawdown,
   type ExecuteDrawdownResultData,
+  executeDrawdown,
   type GoalData,
   type GoalRuleData,
-  proposeDrawdown,
   type ProposeDrawdownResultData,
+  proposeDrawdown,
 } from "../api.ts";
 import { centsToText, formatCents, parseCents } from "../lib/money.ts";
 import { Button } from "./ui/button.tsx";
 
-const FOCUSABLE =
+const _FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-function formatMonthYear(isoDay: string): string {
+function _formatMonthYear(isoDay: string): string {
   try {
     return Temporal.PlainDate.from(isoDay).toLocaleString("en-AU", {
       month: "short",
@@ -168,7 +168,7 @@ export function CoverExpenseSheet({
   }, [isOpen, pool, reason, targetAmountCents, isProtectedUnlocked]);
 
   // Visible goals belonging to this pool
-  const poolGoals = useMemo(() => {
+  const _poolGoals = useMemo(() => {
     return goals.filter((g) => (g.personId === null ? "shared" : g.personId) === pool);
   }, [goals, pool]);
 
@@ -258,8 +258,7 @@ export function CoverExpenseSheet({
   const allEligibleExhausted = useMemo(() => {
     if (isProtectedUnlocked) {
       return (
-        earlierExhausted &&
-        protectedRows.every((r) => r.userAmountCents >= r.currentBalanceCents)
+        earlierExhausted && protectedRows.every((r) => r.userAmountCents >= r.currentBalanceCents)
       );
     }
     return earlierExhausted;
@@ -405,7 +404,17 @@ export function CoverExpenseSheet({
               aria-label="Close"
               className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                aria-hidden="true"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
             </button>
@@ -489,28 +498,26 @@ export function CoverExpenseSheet({
           </div>
 
           <p className="mt-1 text-xs text-muted-foreground">
-            {leftToCoverCents === 0 ? (
-              reason === "large_purchase" && efRow && efRow.userAmountCents > 0 ? (
-                (() => {
-                  const efTarget = goals.find((g) => g.id === efRow.goalId)?.targetCents ?? efRow.currentBalanceCents;
-                  const postBal = efRow.currentBalanceCents - efRow.userAmountCents;
-                  const fallsBelow80 = postBal < efTarget * 0.8;
-                  return fallsBelow80 ? (
-                    <span className="text-warning">
-                      {efRow.goalName}'s below 80%. Stage 1 comes back until it's topped up.
-                    </span>
-                  ) : (
-                    "Covered from savings. Prior goals untouched."
-                  );
-                })()
-              ) : (
-                "Covered from flexible goals. Emergency fund untouched."
-              )
-            ) : allEligibleExhausted ? (
-              `Goals can cover ${formatCents(totalUserCoveredCents)} of ${formatCents(targetAmountCents)}. The rest stays with the buffer.`
-            ) : (
-              "Adjust sliders to distribute the remaining amount."
-            )}
+            {leftToCoverCents === 0
+              ? reason === "large_purchase" && efRow && efRow.userAmountCents > 0
+                ? (() => {
+                    const efTarget =
+                      goals.find((g) => g.id === efRow.goalId)?.targetCents ??
+                      efRow.currentBalanceCents;
+                    const postBal = efRow.currentBalanceCents - efRow.userAmountCents;
+                    const fallsBelow80 = postBal < efTarget * 0.8;
+                    return fallsBelow80 ? (
+                      <span className="text-warning">
+                        {efRow.goalName}'s below 80%. Stage 1 comes back until it's topped up.
+                      </span>
+                    ) : (
+                      "Covered from savings. Prior goals untouched."
+                    );
+                  })()
+                : "Covered from flexible goals. Emergency fund untouched."
+              : allEligibleExhausted
+                ? `Goals can cover ${formatCents(totalUserCoveredCents)} of ${formatCents(targetAmountCents)}. The rest stays with the buffer.`
+                : "Adjust sliders to distribute the remaining amount."}
           </p>
 
           <div className="mt-4 flex items-center justify-between gap-3">
@@ -569,9 +576,7 @@ export function CoverExpenseSheet({
             {isAltered ? "you changed Pangolin's split" : "Pangolin's split, by balance"}
           </span>
         </div>
-        <div className="space-y-4">
-          {flexRows.map((row) => renderRow(row))}
-        </div>
+        <div className="space-y-4">{flexRows.map((row) => renderRow(row))}</div>
       </div>
     );
   }
@@ -598,11 +603,13 @@ export function CoverExpenseSheet({
             <div className="flex-1 leading-relaxed">
               {isProtectedUnlocked ? (
                 <span>
-                  Protected goals are unlocked. Drawing from them will postpone their target arrival dates.
+                  Protected goals are unlocked. Drawing from them will postpone their target arrival
+                  dates.
                 </span>
               ) : (
                 <span>
-                  Protected goals are set aside and shielded from routine drawdowns. Unlocking them will delay their target arrival dates.
+                  Protected goals are set aside and shielded from routine drawdowns. Unlocking them
+                  will delay their target arrival dates.
                 </span>
               )}
             </div>
@@ -632,7 +639,9 @@ export function CoverExpenseSheet({
       <div className="rounded-lg border border-border bg-muted/30 p-3.5 text-xs text-foreground">
         <div className="font-semibold text-foreground">Rather leave your goals alone?</div>
         <p className="mt-1 leading-relaxed text-muted-foreground">
-          {activeStage?.name ?? "Active stage"} gives the buffer {divertPct}% of each period. Move $50/fortnight from the buffer until the shortfall is covered. The shortfall stays flagged till then.
+          {activeStage?.name ?? "Active stage"} gives the buffer {divertPct}% of each period. Move
+          $50/fortnight from the buffer until the shortfall is covered. The shortfall stays flagged
+          till then.
         </p>
         <div className="mt-2.5">
           <Button
@@ -672,17 +681,25 @@ export function CoverExpenseSheet({
               </span>
             )}
             {isLocked && (
-              <span className="text-muted-foreground" aria-label="Locked">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <span className="text-muted-foreground" title="Locked">
+                <svg
+                  aria-hidden="true"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
               </span>
             )}
           </div>
-          <span className="tabular-nums text-muted-foreground">
-            {formatCents(balance)} saved
-          </span>
+          <span className="tabular-nums text-muted-foreground">{formatCents(balance)} saved</span>
         </div>
 
         {/* Slider + numeric text input */}
@@ -714,7 +731,8 @@ export function CoverExpenseSheet({
                 const text = e.target.value;
                 // Allow empty or numbers with optional decimal point and up to 2 decimal places
                 if (text === "" || /^\d*\.?\d{0,2}$/.test(text)) {
-                  const centsParsed = text === "" || text === "." ? 0 : Math.round(parseFloat(text) * 100);
+                  const centsParsed =
+                    text === "" || text === "." ? 0 : Math.round(parseFloat(text) * 100);
                   handleSliderOrInputChange(row.goalId, balance, centsParsed, text);
                 }
               }}
@@ -734,18 +752,14 @@ export function CoverExpenseSheet({
         <div className="text-[11px] text-muted-foreground">
           {row.isEmergencyFund ? (
             balanceAfter === 0 ? (
-              <span className="text-warning">
-                Drops to $0. Stage 1 comes back until topped up.
-              </span>
+              <span className="text-warning">Drops to $0. Stage 1 comes back until topped up.</span>
             ) : userVal > 0 ? (
               <span>Drops to {formatCents(balanceAfter)}.</span>
             ) : (
               <span>Not needed. Stays full.</span>
             )
           ) : userVal > 0 ? (
-            <span>
-              Balance drops to {formatCents(balanceAfter)}. Arrival date may shift.
-            </span>
+            <span>Balance drops to {formatCents(balanceAfter)}. Arrival date may shift.</span>
           ) : (
             <span>Untouched. Arrival date unchanged.</span>
           )}

@@ -253,8 +253,12 @@ describe("Goal repos", () => {
       expect(adjs).toHaveLength(1);
       expect(adjs[0]?.amountCents).toBe(20000);
 
-      expect(r.goalAdjustments.sumActiveForGoal(viewerA, "01J000000000000000000GOAL1" as any)).toBe(20000);
-      expect(r.goalAdjustments.sumActiveForGoal(viewerB, "01J000000000000000000GOAL1" as any)).toBe(20000);
+      expect(r.goalAdjustments.sumActiveForGoal(viewerA, "01J000000000000000000GOAL1" as any)).toBe(
+        20000,
+      );
+      expect(r.goalAdjustments.sumActiveForGoal(viewerB, "01J000000000000000000GOAL1" as any)).toBe(
+        20000,
+      );
     });
 
     // Mark undone
@@ -266,7 +270,9 @@ describe("Goal repos", () => {
     uow.read((r) => {
       expect(r.goalDrawdowns.findById(viewerA, ddId)?.undoneAt).toBe("2026-01-11T00:00:00Z");
       expect(r.goalDrawdowns.listActiveForPool(viewerA, "shared")).toHaveLength(0);
-      expect(r.goalAdjustments.sumActiveForGoal(viewerA, "01J000000000000000000GOAL1" as any)).toBe(0);
+      expect(r.goalAdjustments.sumActiveForGoal(viewerA, "01J000000000000000000GOAL1" as any)).toBe(
+        0,
+      );
     });
   });
 });

@@ -1,5 +1,5 @@
 // Over-budget review actions (AD-1, AD-17, AD-22, CAP-4).
-import type { Cents, Id } from "@pangolin/shared";
+import type { Id } from "@pangolin/shared";
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";

@@ -45,7 +45,7 @@ export function OverBudgetCard({
   const handleAdjustSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const dollars = parseFloat(newLimitStr);
-    if (isNaN(dollars) || dollars <= 0) return;
+    if (Number.isNaN(dollars) || dollars <= 0) return;
     const cents = Math.round(dollars * 100);
     void run(async () => {
       await adjustBudgetLimitFromReview(card.id, cents);

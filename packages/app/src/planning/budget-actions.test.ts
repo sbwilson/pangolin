@@ -6,7 +6,7 @@ import { AppError } from "../errors.ts";
 import { type MemoryUnitOfWork, memoryUnitOfWork } from "../testing/memory-uow.ts";
 import { personViewer } from "../viewer.ts";
 import { adjustBudgetLimitFromReview, dismissBudgetReviewItem } from "./budget-actions.ts";
-import { budgetOverBudgetDedupeKey, syncAllBudgetReviewItems } from "./budget-review.ts";
+import { syncAllBudgetReviewItems } from "./budget-review.ts";
 import { createBudget } from "./budgets.ts";
 
 function createTestContext(viewerPersonId: string = "person-a"): {
@@ -132,7 +132,7 @@ function createTestContext(viewerPersonId: string = "person-a"): {
 describe("budget-actions", () => {
   it("dismisses an over-budget review item with resolution 'acknowledged'", () => {
     const { ctx, uow } = createTestContext("person-a");
-    const budget = createBudget(ctx, {
+    const _budget = createBudget(ctx, {
       categoryId: "cat-groceries",
       cadence: "fortnight",
       limitCents: 10000,
@@ -183,18 +183,18 @@ describe("budget-actions", () => {
     const [item] = ctx.uow.read((r) => r.reviewItems.listOpenFor(ctx.viewer));
     expect(item).toBeDefined();
 
-    dismissBudgetReviewItem(ctx, { id: item!.id });
+    dismissBudgetReviewItem(ctx, { id: item?.id });
 
     const openItems = ctx.uow.read((r) => r.reviewItems.listOpenFor(ctx.viewer));
     expect(openItems).toHaveLength(0);
 
-    const resolved = uow.state.reviewItems.find((r) => r.id === item!.id);
+    const resolved = uow.state.reviewItems.find((r) => r.id === item?.id);
     expect(resolved?.resolution).toBe("acknowledged");
   });
 
   it("adjusts budget limit from review item and resolves with 'limit adjusted'", () => {
     const { ctx, uow } = createTestContext("person-a");
-    const budget = createBudget(ctx, {
+    const _budget = createBudget(ctx, {
       categoryId: "cat-groceries",
       cadence: "fortnight",
       limitCents: 10000,
@@ -246,7 +246,7 @@ describe("budget-actions", () => {
     expect(item).toBeDefined();
 
     const updatedBudget = adjustBudgetLimitFromReview(ctx, {
-      id: item!.id,
+      id: item?.id,
       limitCents: 20000,
     });
 
@@ -255,7 +255,7 @@ describe("budget-actions", () => {
     const openItems = ctx.uow.read((r) => r.reviewItems.listOpenFor(ctx.viewer));
     expect(openItems).toHaveLength(0);
 
-    const resolved = uow.state.reviewItems.find((r) => r.id === item!.id);
+    const resolved = uow.state.reviewItems.find((r) => r.id === item?.id);
     expect(resolved?.resolution).toBe("limit adjusted");
   });
 

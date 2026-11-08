@@ -20,7 +20,7 @@ import type {
   PlanningSettingRow,
   Viewer,
 } from "@pangolin/app";
-import { and, asc, desc, eq, inArray, isNull, or, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, or, type SQL, sql } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import {
   allocationStage,
@@ -504,11 +504,17 @@ export function createGoalDrawdownRepo(orm: Orm, check: () => void): GoalDrawdow
       check();
       const visibility = drawdownVisibilityPredicate(viewer);
       const targetPersonId = pool === "shared" ? null : pool;
-      if (viewer.kind === "person" && targetPersonId !== null && targetPersonId !== viewer.personId) {
+      if (
+        viewer.kind === "person" &&
+        targetPersonId !== null &&
+        targetPersonId !== viewer.personId
+      ) {
         return [];
       }
       const poolCondition =
-        targetPersonId === null ? isNull(goalDrawdown.personId) : eq(goalDrawdown.personId, targetPersonId);
+        targetPersonId === null
+          ? isNull(goalDrawdown.personId)
+          : eq(goalDrawdown.personId, targetPersonId);
 
       const rows = orm
         .select()
@@ -531,11 +537,17 @@ export function createGoalDrawdownRepo(orm: Orm, check: () => void): GoalDrawdow
       check();
       const visibility = drawdownVisibilityPredicate(viewer);
       const targetPersonId = pool === "shared" ? null : pool;
-      if (viewer.kind === "person" && targetPersonId !== null && targetPersonId !== viewer.personId) {
+      if (
+        viewer.kind === "person" &&
+        targetPersonId !== null &&
+        targetPersonId !== viewer.personId
+      ) {
         return [];
       }
       const poolCondition =
-        targetPersonId === null ? isNull(goalDrawdown.personId) : eq(goalDrawdown.personId, targetPersonId);
+        targetPersonId === null
+          ? isNull(goalDrawdown.personId)
+          : eq(goalDrawdown.personId, targetPersonId);
 
       const rows = orm
         .select()
@@ -659,11 +671,7 @@ export function createGoalAdjustmentRepo(orm: Orm, check: () => void): GoalAdjus
         .innerJoin(goalDrawdown, eq(goalDrawdown.id, goalAdjustment.drawdownId))
         .where(
           visibility
-            ? and(
-                eq(goalAdjustment.goalId, goalId),
-                isNull(goalDrawdown.undoneAt),
-                visibility,
-              )
+            ? and(eq(goalAdjustment.goalId, goalId), isNull(goalDrawdown.undoneAt), visibility)
             : and(eq(goalAdjustment.goalId, goalId), isNull(goalDrawdown.undoneAt)),
         )
         .all();
@@ -674,11 +682,17 @@ export function createGoalAdjustmentRepo(orm: Orm, check: () => void): GoalAdjus
       check();
       const visibility = drawdownVisibilityPredicate(viewer);
       const targetPersonId = pool === "shared" ? null : pool;
-      if (viewer.kind === "person" && targetPersonId !== null && targetPersonId !== viewer.personId) {
+      if (
+        viewer.kind === "person" &&
+        targetPersonId !== null &&
+        targetPersonId !== viewer.personId
+      ) {
         return [];
       }
       const poolCondition =
-        targetPersonId === null ? isNull(goalDrawdown.personId) : eq(goalDrawdown.personId, targetPersonId);
+        targetPersonId === null
+          ? isNull(goalDrawdown.personId)
+          : eq(goalDrawdown.personId, targetPersonId);
 
       const rows = orm
         .select({
@@ -706,11 +720,7 @@ export function createGoalAdjustmentRepo(orm: Orm, check: () => void): GoalAdjus
         .innerJoin(goalDrawdown, eq(goalDrawdown.id, goalAdjustment.drawdownId))
         .where(
           visibility
-            ? and(
-                eq(goalAdjustment.goalId, goalId),
-                isNull(goalDrawdown.undoneAt),
-                visibility,
-              )
+            ? and(eq(goalAdjustment.goalId, goalId), isNull(goalDrawdown.undoneAt), visibility)
             : and(eq(goalAdjustment.goalId, goalId), isNull(goalDrawdown.undoneAt)),
         )
         .get();

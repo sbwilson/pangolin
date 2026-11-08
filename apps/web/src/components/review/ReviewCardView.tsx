@@ -5,11 +5,7 @@ import { NoticeCard } from "./NoticeCard.tsx";
 import { OverBudgetCard } from "./OverBudgetCard.tsx";
 import { PdfStatementCard } from "./PdfStatementCard.tsx";
 import { ReadOnlyCard } from "./ReadOnlyCard.tsx";
-import {
-  LargeWithdrawalCard,
-  MismatchCard,
-  ShortfallCard,
-} from "./SavingsReviewCard.tsx";
+import { LargeWithdrawalCard, MismatchCard, ShortfallCard } from "./SavingsReviewCard.tsx";
 import { SetAsideCard } from "./SetAsideCard.tsx";
 import { AiSuggestionCard } from "./SuggestionCards.tsx";
 import {

@@ -5,8 +5,6 @@ import {
   type AllocationStageData,
   applyBufferDivert,
   clearBufferDivert,
-  type DrawdownData,
-  type ExecuteDrawdownResultData,
   fetchDrawdowns,
   fetchGoalsSummary,
   type GoalData,
@@ -159,7 +157,8 @@ export function GoalsPage() {
     () => (summary ? stageViewFor(me.personId, summary, balanceOf) : null),
     [summary, me.personId],
   );
-  const activeStage = filterScope === "personal" ? (personalView?.stage ?? null) : activeSharedStage;
+  const _activeStage =
+    filterScope === "personal" ? (personalView?.stage ?? null) : activeSharedStage;
 
   const allGoals = summary?.goals ?? [];
   const filteredGoals = useMemo(() => {
@@ -273,7 +272,10 @@ export function GoalsPage() {
         </div>
         <div className="flex items-center gap-2">
           {/* Scope Filter Controls */}
-          <div data-testid="goals-scope-filters" className="inline-flex rounded-lg border border-border p-1 bg-muted/40 text-xs">
+          <div
+            data-testid="goals-scope-filters"
+            className="inline-flex rounded-lg border border-border p-1 bg-muted/40 text-xs"
+          >
             {(["all", "shared", "personal"] as const).map((scope) => (
               <button
                 key={scope}
@@ -331,7 +333,8 @@ export function GoalsPage() {
             </span>
             <div className="leading-relaxed">
               <span>
-                Your goals are {formatCents(sharedShortfallCents)} ahead of what's in the bank. Cover it from your goals?
+                Your goals are {formatCents(sharedShortfallCents)} ahead of what's in the bank.
+                Cover it from your goals?
               </span>
             </div>
           </div>
@@ -539,7 +542,18 @@ export function GoalsPage() {
             className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 px-3.5 py-2 text-xs text-muted-foreground"
           >
             <div className="flex items-center gap-2">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
+              <svg
+                aria-hidden="true"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-muted-foreground"
+              >
                 <circle cx="12" cy="12" r="10" />
                 <polyline points="12 6 12 12 14 14" />
               </svg>
@@ -710,7 +724,9 @@ export function GoalsPage() {
         initialAmountCents={coverSheet.amountCents}
         initialLabel={coverSheet.label}
         goals={allGoals}
-        activeStage={coverSheet.pool === "shared" ? activeSharedStage : (personalView?.stage ?? null)}
+        activeStage={
+          coverSheet.pool === "shared" ? activeSharedStage : (personalView?.stage ?? null)
+        }
         rules={summary?.rules ?? []}
         onCovered={(res, summaryMessage) => {
           refetch();
@@ -758,7 +774,17 @@ export function GoalsPage() {
           className="fixed bottom-6 right-6 z-50 flex max-w-md items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-xl text-xs text-foreground"
         >
           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-money-in/20 text-money-in">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              aria-hidden="true"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </span>

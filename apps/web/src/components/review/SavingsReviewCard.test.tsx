@@ -10,7 +10,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as api from "../../api.ts";
-import { LargeWithdrawalCard, ShortfallCard, MismatchCard } from "./SavingsReviewCard.tsx";
+import { LargeWithdrawalCard, MismatchCard, ShortfallCard } from "./SavingsReviewCard.tsx";
 
 afterEach(() => {
   cleanup();
@@ -172,7 +172,10 @@ describe("SavingsReviewCard", () => {
   };
 
   it("renders LargeWithdrawalCard with summary and actions", async () => {
-    const detail = largeWithdrawalCard.detail as Extract<api.ReviewDetail, { type: "savings_large_withdrawal" }>;
+    const detail = largeWithdrawalCard.detail as Extract<
+      api.ReviewDetail,
+      { type: "savings_large_withdrawal" }
+    >;
     renderLargeWithdrawal(largeWithdrawalCard, detail);
 
     expect(await screen.findByText(/\$2,500\.00 came out of Shared savings/)).toBeTruthy();
@@ -189,7 +192,10 @@ describe("SavingsReviewCard", () => {
   });
 
   it("handles 'Take it from the buffer' click", async () => {
-    const detail = largeWithdrawalCard.detail as Extract<api.ReviewDetail, { type: "savings_large_withdrawal" }>;
+    const detail = largeWithdrawalCard.detail as Extract<
+      api.ReviewDetail,
+      { type: "savings_large_withdrawal" }
+    >;
     renderLargeWithdrawal(largeWithdrawalCard, detail);
 
     expect(await screen.findByRole("button", { name: "Take it from the buffer" })).toBeTruthy();
@@ -215,7 +221,9 @@ describe("SavingsReviewCard", () => {
     const detail = shortfallCard.detail as Extract<api.ReviewDetail, { type: "savings_shortfall" }>;
     renderShortfall(shortfallCard, detail);
 
-    expect(await screen.findByText(/Your goals are \$1,500\.00 ahead of what's in the bank/)).toBeTruthy();
+    expect(
+      await screen.findByText(/Your goals are \$1,500\.00 ahead of what's in the bank/),
+    ).toBeTruthy();
     expect(screen.getByText("Large withdrawal detected in this pool")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Cover it" })).toBeNull();
   });
@@ -237,7 +245,9 @@ describe("SavingsReviewCard", () => {
     const detail = shortfallCard.detail as Extract<api.ReviewDetail, { type: "savings_shortfall" }>;
     renderShortfall(shortfallCard, detail);
 
-    expect(await screen.findByText(/Your goals are \$1,500\.00 ahead of what's in the bank/)).toBeTruthy();
+    expect(
+      await screen.findByText(/Your goals are \$1,500\.00 ahead of what's in the bank/),
+    ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cover it" })).toBeTruthy();
   });
 

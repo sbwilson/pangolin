@@ -2260,9 +2260,9 @@ function scenario(
 
     // Drawdowns and adjustments parity
     const dd1 = newId<"GoalDrawdown">();
-    const dd2 = newId<"GoalDrawdown">();
+    const _dd2 = newId<"GoalDrawdown">();
     const adj1 = newId<"GoalAdjustment">();
-    const adj2 = newId<"GoalAdjustment">();
+    const _adj2 = newId<"GoalAdjustment">();
 
     out["drawdown.insert"] = attempt(() =>
       uow.transaction((tx) => {

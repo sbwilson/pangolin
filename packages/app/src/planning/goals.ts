@@ -738,7 +738,12 @@ export function applyBufferDivert(
       const goals = tx.goals.listVisible(ctx.viewer).filter((g) => g.personId === targetPersonId);
       const balances = new Map<
         Id<"Goal">,
-        { goalId: Id<"Goal">; allocatedCents: number; adjustedCents: number; currentBalance: number }
+        {
+          goalId: Id<"Goal">;
+          allocatedCents: number;
+          adjustedCents: number;
+          currentBalance: number;
+        }
       >();
       for (const g of goals) {
         const allocs = tx.goalAllocations.listForGoal(ctx.viewer, g.id);
@@ -781,7 +786,10 @@ export function applyBufferDivert(
     let effectiveUntil = input.effectiveUntil ?? null;
     if (!effectiveUntil && input.shortfallCents && input.shortfallCents > 0) {
       const fortnightlyBufferCents = 50_00; // $50/fortnight standard shortfall divert rate
-      const fortnightsNeeded = Math.max(1, Math.ceil(input.shortfallCents / fortnightlyBufferCents));
+      const fortnightsNeeded = Math.max(
+        1,
+        Math.ceil(input.shortfallCents / fortnightlyBufferCents),
+      );
       const daysNeeded = fortnightsNeeded * 14;
       effectiveUntil = today.add({ days: daysNeeded }).toString();
     }

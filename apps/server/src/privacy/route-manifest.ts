@@ -684,7 +684,8 @@ export const MANIFEST: readonly ManifestEntry[] = [
     kind: "exempt",
     method: "POST",
     path: "/api/planning/buffer-divert",
-    reason: "Applies a time-boxed buffer divert override on the active stage in the requested pool.",
+    reason:
+      "Applies a time-boxed buffer divert override on the active stage in the requested pool.",
   },
   {
     kind: "exempt",

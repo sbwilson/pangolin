@@ -3884,7 +3884,11 @@ function goalDrawdownRepo(working: MemoryState, check: () => void): GoalDrawdown
     listActiveForPool: (viewer, pool) => {
       check();
       const targetPersonId = pool === "shared" ? null : pool;
-      if (viewer.kind === "person" && targetPersonId !== null && targetPersonId !== viewer.personId) {
+      if (
+        viewer.kind === "person" &&
+        targetPersonId !== null &&
+        targetPersonId !== viewer.personId
+      ) {
         return [];
       }
       return working.goalDrawdowns
@@ -3902,7 +3906,11 @@ function goalDrawdownRepo(working: MemoryState, check: () => void): GoalDrawdown
     listForPool: (viewer, pool) => {
       check();
       const targetPersonId = pool === "shared" ? null : pool;
-      if (viewer.kind === "person" && targetPersonId !== null && targetPersonId !== viewer.personId) {
+      if (
+        viewer.kind === "person" &&
+        targetPersonId !== null &&
+        targetPersonId !== viewer.personId
+      ) {
         return [];
       }
       return working.goalDrawdowns
@@ -3977,7 +3985,11 @@ function goalAdjustmentRepo(working: MemoryState, check: () => void): GoalAdjust
       check();
       const drawdown = working.goalDrawdowns.find((d) => d.id === drawdownId);
       if (!drawdown) return [];
-      if (viewer.kind !== "system" && drawdown.personId !== null && drawdown.personId !== viewer.personId) {
+      if (
+        viewer.kind !== "system" &&
+        drawdown.personId !== null &&
+        drawdown.personId !== viewer.personId
+      ) {
         return [];
       }
       return working.goalAdjustments.filter((a) => a.drawdownId === drawdownId);
@@ -4005,7 +4017,11 @@ function goalAdjustmentRepo(working: MemoryState, check: () => void): GoalAdjust
     listActiveForPool: (viewer, pool) => {
       check();
       const targetPersonId = pool === "shared" ? null : pool;
-      if (viewer.kind === "person" && targetPersonId !== null && targetPersonId !== viewer.personId) {
+      if (
+        viewer.kind === "person" &&
+        targetPersonId !== null &&
+        targetPersonId !== viewer.personId
+      ) {
         return [];
       }
       const poolActiveDrawdowns = new Set(

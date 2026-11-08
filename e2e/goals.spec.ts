@@ -112,7 +112,9 @@ test.describe("Goals workspace", () => {
     const largeWithdrawal = page.locator('[data-kind="planning.savings.large_withdrawal"]').first();
     await expect(largeWithdrawal).toBeVisible();
     await expect(largeWithdrawal.getByRole("button", { name: "Cover it" })).toBeVisible();
-    await expect(largeWithdrawal.getByRole("button", { name: "Take it from the buffer" })).toBeVisible();
+    await expect(
+      largeWithdrawal.getByRole("button", { name: "Take it from the buffer" }),
+    ).toBeVisible();
 
     const shortfall = page.locator('[data-kind="planning.savings.shortfall"]').first();
     await expect(shortfall).toBeVisible();
