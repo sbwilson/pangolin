@@ -18,9 +18,9 @@ import type {
 } from "../ports/unit-of-work.ts";
 import {
   defineReviewKind,
+  type ReviewKind,
   raiseReviewItem,
   resolveReviewItem,
-  type ReviewKind,
 } from "../system/review-items.ts";
 import { personViewer } from "../viewer.ts";
 import type { Audit } from "../write.ts";
@@ -203,11 +203,13 @@ export function syncLargeWithdrawalReviewItems(
   }
 
   // Also query open large withdrawal review items to check if any resolved transactions need auto-resolution
-  const openItems = tx.reviewItems.listOpenFor(ctx.viewer).filter(
-    (item) =>
-      item.kind === SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW.kind ||
-      item.kind === SAVINGS_LARGE_WITHDRAWAL_PERSONAL_REVIEW.kind,
-  );
+  const openItems = tx.reviewItems
+    .listOpenFor(ctx.viewer)
+    .filter(
+      (item) =>
+        item.kind === SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW.kind ||
+        item.kind === SAVINGS_LARGE_WITHDRAWAL_PERSONAL_REVIEW.kind,
+    );
 
   let raisedCount = 0;
 

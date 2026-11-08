@@ -482,6 +482,19 @@ test.describe("WCAG 2.2 AA accessibility audit", () => {
           violations,
           `Violations on /planning/goals (${mode}): ${JSON.stringify(violations, null, 2)}`,
         ).toEqual([]);
+
+        // Audit the Cover an expense modal sheet when open
+        const coverButton = page.getByRole("button", { name: "Cover an expense" }).first();
+        if (await coverButton.isVisible()) {
+          await coverButton.click();
+          await expect(page.getByRole("dialog")).toBeVisible();
+          const modalViolations = await auditPage(page);
+          expect(
+            modalViolations,
+            `Violations on Cover an expense modal (${mode}): ${JSON.stringify(modalViolations, null, 2)}`,
+          ).toEqual([]);
+          await page.getByRole("button", { name: "Close" }).click();
+        }
       } finally {
         await context.close();
       }
@@ -791,6 +804,7 @@ test.describe("WCAG 1.4.10 320 px reflow audit", () => {
     { path: "/spending?from=2026-04-01&to=2026-06-30", name: "Spending", testId: "bar-lists-card" },
     { path: "/net-worth", name: "Net worth", testId: "net-worth-kpis" },
     { path: "/planning/budgets", name: "Budgets", testId: "budget-summary-line" },
+    { path: "/planning/goals", name: "Goals & Savings", testId: "goals-scope-filters" },
   ] as const;
 
   for (const { path, name, testId } of routes) {

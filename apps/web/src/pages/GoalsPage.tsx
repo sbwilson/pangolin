@@ -273,7 +273,7 @@ export function GoalsPage() {
         </div>
         <div className="flex items-center gap-2">
           {/* Scope Filter Controls */}
-          <div className="inline-flex rounded-lg border border-border p-1 bg-muted/40 text-xs">
+          <div data-testid="goals-scope-filters" className="inline-flex rounded-lg border border-border p-1 bg-muted/40 text-xs">
             {(["all", "shared", "personal"] as const).map((scope) => (
               <button
                 key={scope}

@@ -197,16 +197,18 @@ export function getGoalsSummary(
   }
 
   // Active stage for shared pool (or viewer's personal pool if querying personal)
-  // Derive balances map from goal views
+  // Derive balances map from goal views: preserve real allocatedCents and adjustedCents
   const balancesMap = new Map<
     Id<"Goal">,
     { goalId: Id<"Goal">; allocatedCents: number; adjustedCents: number; currentBalance: number }
   >();
   for (const g of goals) {
+    const allocatedCents = ctx.uow.read((r) => r.goalAllocations.sumForGoal(ctx.viewer, g.id));
+    const adjustedCents = ctx.uow.read((r) => r.goalAdjustments.sumActiveForGoal(ctx.viewer, g.id));
     balancesMap.set(g.id, {
       goalId: g.id,
-      allocatedCents: g.currentBalance,
-      adjustedCents: 0,
+      allocatedCents,
+      adjustedCents,
       currentBalance: g.currentBalance,
     });
   }

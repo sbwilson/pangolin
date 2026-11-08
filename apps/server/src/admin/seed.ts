@@ -18,6 +18,7 @@ import {
   DEFAULT_CATEGORIES,
   emptySeedKnown,
   hideTransactionName,
+  type Id,
   type IdGenerator,
   INSTITUTION_KINDS,
   listCategories,
@@ -525,9 +526,9 @@ function applyEvents(
   const payAnchors: Record<string, string> = {};
   const budgets: Record<string, string> = {};
   const recurringSeries: Record<string, string> = {};
-  const goals: Record<string, string> = {};
-  const stages: Record<string, string> = {};
-  const goalRules: Record<string, string> = {};
+  const goals: Record<string, Id<"Goal">> = {};
+  const stages: Record<string, Id<"AllocationStage">> = {};
+  const goalRules: Record<string, Id<"GoalRule">> = {};
   let categoryIds: Map<string, string> | undefined;
   let categoryGroupIds: Map<string, string> | undefined;
 
@@ -754,15 +755,15 @@ function applyEvents(
         break;
       }
       case "stage.created": {
-        const id = deps.newId();
+        const id = deps.newId<"AllocationStage">();
         const now = deps.clock.now().toString();
         uow.transaction((tx) => {
           tx.stages.insert({
-            id: id as any,
-            personId: event.person != null ? (people[event.person] as any) : null,
+            id,
+            personId: event.person != null ? (people[event.person] as PersonId) : null,
             name: event.name,
             sort: event.sort,
-            exitGoalId: event.exitGoal != null ? (goals[event.exitGoal] as any) : null,
+            exitGoalId: event.exitGoal != null ? (goals[event.exitGoal] ?? null) : null,
             fallbackThresholdBp: event.fallbackThresholdBp,
             completedSharePolicy: event.completedSharePolicy,
             createdAt: now,
@@ -773,12 +774,12 @@ function applyEvents(
         break;
       }
       case "goal.created": {
-        const id = deps.newId();
+        const id = deps.newId<"Goal">();
         const now = deps.clock.now().toString();
         uow.transaction((tx) => {
           tx.goals.insert({
-            id: id as any,
-            personId: event.person != null ? (people[event.person] as any) : null,
+            id,
+            personId: event.person != null ? (people[event.person] as PersonId) : null,
             name: event.name,
             targetCents: event.targetCents,
             targetDate: event.targetDate ?? null,
@@ -794,13 +795,13 @@ function applyEvents(
         break;
       }
       case "goal-rule.created": {
-        const id = deps.newId();
+        const id = deps.newId<"GoalRule">();
         const now = deps.clock.now().toString();
         uow.transaction((tx) => {
           tx.goalRules.insert({
-            id: id as any,
-            goalId: goals[event.goal] as any,
-            stageId: stages[event.stage] as any,
+            id,
+            goalId: goals[event.goal] as Id<"Goal">,
+            stageId: stages[event.stage] as Id<"AllocationStage">,
             shareBp: event.shareBp,
             effectiveFrom: event.effectiveFrom,
             effectiveUntil: event.effectiveUntil ?? null,

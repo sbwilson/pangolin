@@ -11,10 +11,10 @@ import { dayInput } from "../inputs.ts";
 import type { ReadRepos } from "../ports/unit-of-work.ts";
 import type { Viewer } from "../viewer.ts";
 import type { UseCaseContext } from "../write.ts";
+import { write } from "../write.ts";
 import { calculateGoalBalances, executeSavingsAllocation } from "./goal-allocation.ts";
 import { getSavingsPoolBalances, type SavingsPoolBalance } from "./goals.ts";
 import { syncSavingsReconciliationReviewItems } from "./savings-review.ts";
-import { write } from "../write.ts";
 
 /** The category name that marks interest income, under an income-kind group (`classify/defaults.ts`). */
 export const INTEREST_CATEGORY_NAME = "Interest";
