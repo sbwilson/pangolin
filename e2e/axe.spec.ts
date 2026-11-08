@@ -493,7 +493,7 @@ test.describe("WCAG 2.2 AA accessibility audit", () => {
             modalViolations,
             `Violations on Cover an expense modal (${mode}): ${JSON.stringify(modalViolations, null, 2)}`,
           ).toEqual([]);
-          await page.getByRole("button", { name: "Close" }).click();
+          await page.getByRole("button", { name: "Close", exact: true }).click();
         }
       } finally {
         await context.close();

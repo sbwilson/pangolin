@@ -261,7 +261,7 @@ export function GoalsPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6 p-4 md:p-8 max-w-6xl mx-auto w-full">
+    <div className="flex flex-col gap-6 w-full">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -270,7 +270,7 @@ export function GoalsPage() {
             Staged allocations, savings pools, and emergency fund targets.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Scope Filter Controls */}
           <div
             data-testid="goals-scope-filters"
@@ -292,7 +292,7 @@ export function GoalsPage() {
             ))}
           </div>
           {!me.demo && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -338,7 +338,7 @@ export function GoalsPage() {
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
             <button
               type="button"
               onClick={() => {
