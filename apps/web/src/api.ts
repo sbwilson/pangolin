@@ -657,7 +657,7 @@ async function sendJson<T>(
   method: "POST" | "PATCH" | "PUT" | "DELETE",
   path: string,
   body?: unknown,
-) {
+): Promise<T> {
   const res = await fetch(path, {
     method,
     ...(body === undefined
@@ -665,6 +665,7 @@ async function sendJson<T>(
       : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   });
   if (!res.ok) throw await apiError(res);
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 

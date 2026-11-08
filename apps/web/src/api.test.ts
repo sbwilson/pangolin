@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  deleteBudget,
+  deleteGoal,
+  deleteRecurringSeries,
+  deleteStage,
   exportTransactions,
   fetchAccounts,
   fetchBackupStatus,
@@ -447,5 +451,43 @@ describe("account lifecycle", () => {
     expect(url).toBe("/api/accounts/leave-household");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body as string)).toEqual({ confirm: true });
+  });
+
+  it("handles 204 No Content for DELETE routes without failing JSON parse", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(null, {
+            status: 204,
+          }),
+      ),
+    );
+
+    const latestSent = () => {
+      const calls = vi.mocked(fetch).mock.calls;
+      const call = calls[calls.length - 1] as [string | Request, RequestInit?];
+      const request = call[0];
+      return {
+        url: typeof request === "string" ? request : request.url,
+        init: call[1] ?? {},
+      };
+    };
+
+    await expect(deleteStage("stage-1")).resolves.toBeUndefined();
+    expect(latestSent().url).toBe("/api/planning/stages/stage-1");
+    expect(latestSent().init.method).toBe("DELETE");
+
+    await expect(deleteGoal("goal-1")).resolves.toBeUndefined();
+    expect(latestSent().url).toBe("/api/planning/goals/goal-1");
+    expect(latestSent().init.method).toBe("DELETE");
+
+    await expect(deleteBudget("budget-1")).resolves.toBeUndefined();
+    expect(latestSent().url).toBe("/api/planning/budgets/budget-1");
+    expect(latestSent().init.method).toBe("DELETE");
+
+    await expect(deleteRecurringSeries("bill-1")).resolves.toBeUndefined();
+    expect(latestSent().url).toBe("/api/planning/recurring-bills/bill-1");
+    expect(latestSent().init.method).toBe("DELETE");
   });
 });
