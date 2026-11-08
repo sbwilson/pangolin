@@ -50,7 +50,7 @@ test.describe("Goals workspace", () => {
     await page.getByRole("button", { name: "Cover an expense" }).first().click();
     await expect(page.getByTestId("cover-expense-sheet")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Cover an expense" })).toBeVisible();
-    await page.getByRole("button", { name: "Close" }).click();
+    await page.getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByTestId("cover-expense-sheet")).toBeHidden();
 
     await context.close();
