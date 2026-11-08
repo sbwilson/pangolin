@@ -50,7 +50,7 @@ RUN --mount=type=secret,id=ca,required=false \
       arm64) sha="$RESTIC_SHA256_ARM64" ;; \
       *) echo "no restic checksum pinned for $TARGETARCH" >&2; exit 1 ;; \
     esac \
- && curl -fsSL -o /tmp/restic.bz2 \
+ && curl -fsSL --retry 5 --retry-connrefused --retry-delay 2 -o /tmp/restic.bz2 \
       "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${TARGETARCH:-amd64}.bz2" \
  && echo "$sha  /tmp/restic.bz2" | sha256sum -c - \
  && bunzip2 /tmp/restic.bz2 \
