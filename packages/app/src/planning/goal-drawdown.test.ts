@@ -1,7 +1,10 @@
 import type { Id } from "@pangolin/shared";
 import { describe, expect, it } from "vitest";
+import { fixedClockAt } from "../clock.ts";
 import type { GoalRow } from "../ports/unit-of-work.ts";
+import { systemViewer } from "../system-viewer.ts";
 import { memoryUnitOfWork } from "../testing/memory-uow.ts";
+import { personViewer } from "../viewer.ts";
 import { type UseCaseContext, write } from "../write.ts";
 import {
   executeDrawdown,
@@ -12,23 +15,17 @@ import {
 } from "./goal-drawdown.ts";
 import { listGoals } from "./goals.ts";
 
-function fakeClock(iso: string) {
-  return {
-    now: () => new Date(iso),
-    today: () => iso.slice(0, 10),
-  };
-}
-
 function testContext(viewerPersonId: string | null = "person-1"): UseCaseContext {
   const uow = memoryUnitOfWork();
   let idCounter = 1;
+  const clock = fixedClockAt("2026-11-08");
   return {
     viewer:
       viewerPersonId === null
-        ? { kind: "system", role: "system" }
-        : { kind: "person", personId: viewerPersonId as Id<"Person">, role: "owner" },
+        ? systemViewer("job:test")
+        : personViewer(viewerPersonId as Id<"Person">, clock.now()),
     uow,
-    clock: fakeClock("2026-11-08T10:00:00.000Z"),
+    clock,
     newId: <T extends string>() => `test-id-${idCounter++}` as Id<T>,
   };
 }
@@ -235,8 +232,7 @@ describe("executeDrawdown & undoDrawdown use cases", () => {
         id: "person-1" as Id<"Person">,
         userId: "user-1",
         displayName: "Alex",
-        role: "owner",
-        email: "alex@example.com",
+        colour: "#FF0000",
         deletedAt: null,
         createdAt: "2026-01-01",
         updatedAt: "2026-01-01",

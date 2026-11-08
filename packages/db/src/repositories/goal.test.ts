@@ -1,7 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Id } from "@pangolin/app";
+import type { Id, Viewer } from "@pangolin/app";
+import { personViewer } from "@pangolin/app";
+import { Temporal } from "@pangolin/shared/temporal";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadMigrations, migrate, packageMigrationsDir } from "../migrate.ts";
 import { type Db, openDatabase } from "../open.ts";
@@ -172,16 +174,9 @@ describe("Goal repos", () => {
     const personA = "01J0000000000000000000000A" as any;
     const personB = "01J0000000000000000000000B" as any;
 
-    const viewerA: Viewer = {
-      kind: "person",
-      personId: personA,
-      role: "owner",
-    };
-    const viewerB: Viewer = {
-      kind: "person",
-      personId: personB,
-      role: "owner",
-    };
+    const now = Temporal.Instant.from("2026-09-27T00:00:00Z");
+    const viewerA: Viewer = personViewer(personA, now);
+    const viewerB: Viewer = personViewer(personB, now);
 
     const ddId = "01J00000000000000000000DD1" as any;
     const adjId = "01J0000000000000000000ADJ1" as any;

@@ -165,8 +165,6 @@ describe("SavingsReviewCard", () => {
         description: "Car Repair",
         payeeName: "Auto Shop",
         accountName: "Shared Savings",
-        categoryId: null,
-        transferGroupId: null,
       },
     },
   };
@@ -216,6 +214,7 @@ describe("SavingsReviewCard", () => {
         shortfallCents: 150_000,
         isPersonal: false,
         hasOpenLargeWithdrawal: true,
+        openLargeWithdrawalId: "rev-lw-1",
       },
     };
     const detail = shortfallCard.detail as Extract<api.ReviewDetail, { type: "savings_shortfall" }>;
@@ -240,6 +239,7 @@ describe("SavingsReviewCard", () => {
         shortfallCents: 150_000,
         isPersonal: false,
         hasOpenLargeWithdrawal: false,
+        openLargeWithdrawalId: null,
       },
     };
     const detail = shortfallCard.detail as Extract<api.ReviewDetail, { type: "savings_shortfall" }>;

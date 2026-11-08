@@ -31,16 +31,16 @@ function _formatMonthYear(isoDay: string): string {
 export interface CoverExpenseSheetProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
-  readonly pool?: "shared" | string;
-  readonly initialReason?: "large_purchase" | "shortfall";
-  readonly initialAmountCents?: number;
-  readonly initialLabel?: string;
-  readonly initialTransactionId?: string;
+  readonly pool?: "shared" | string | undefined;
+  readonly initialReason?: "large_purchase" | "shortfall" | undefined;
+  readonly initialAmountCents?: number | undefined;
+  readonly initialLabel?: string | undefined;
+  readonly initialTransactionId?: string | undefined;
   readonly goals: readonly GoalData[];
   readonly activeStage: AllocationStageData | null;
   readonly rules: readonly GoalRuleData[];
   readonly onCovered: (result: ExecuteDrawdownResultData, summaryMessage: string) => void;
-  readonly onBufferDiverted?: (message: string) => void;
+  readonly onBufferDiverted?: ((message: string) => void) | undefined;
 }
 
 interface GoalCoverRow {

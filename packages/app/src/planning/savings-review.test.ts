@@ -1,3 +1,4 @@
+import type { Id } from "@pangolin/shared";
 import { describe, expect, it } from "vitest";
 import { createAccount } from "../accounts/create-account.ts";
 import { createTransaction } from "../ledger/create-transaction.ts";
@@ -22,8 +23,8 @@ import {
 } from "./savings-review.ts";
 
 describe("planning/savings-review", () => {
-  const alice = "01HF7YAT000000000000000001";
-  const bob = "01HF7YAT000000000000000002";
+  const alice = "01HF7YAT000000000000000001" as Id<"Person">;
+  const bob = "01HF7YAT000000000000000002" as Id<"Person">;
   const clock = manualClock("2026-01-15T12:00:00Z");
 
   it("detects large savings withdrawal >= threshold ($2,000 default) with household scope for shared pool", () => {
@@ -32,8 +33,8 @@ describe("planning/savings-review", () => {
       {
         id: alice,
         displayName: "Alice",
-        role: "primary",
-        authRole: "admin",
+        colour: "#FF0000",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -41,8 +42,8 @@ describe("planning/savings-review", () => {
       {
         id: bob,
         displayName: "Bob",
-        role: "partner",
-        authRole: "member",
+        colour: "#00FF00",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -69,7 +70,9 @@ describe("planning/savings-review", () => {
       asOf: "2026-01-01",
       balanceCents: 1_000_000,
       source: "manual",
-      capturedAt: "2026-01-01T00:00:00Z",
+      importBatchId: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
     });
 
     // Transaction >= $2,000 ($2,500 withdrawal)
@@ -109,8 +112,8 @@ describe("planning/savings-review", () => {
       {
         id: alice,
         displayName: "Alice",
-        role: "primary",
-        authRole: "admin",
+        colour: "#FF0000",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -118,8 +121,8 @@ describe("planning/savings-review", () => {
       {
         id: bob,
         displayName: "Bob",
-        role: "partner",
-        authRole: "member",
+        colour: "#00FF00",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -143,7 +146,9 @@ describe("planning/savings-review", () => {
       asOf: "2026-01-01",
       balanceCents: 1_000_000,
       source: "manual",
-      capturedAt: "2026-01-01T00:00:00Z",
+      importBatchId: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
     });
 
     const _largeTxn = createTransaction(ctx, {
@@ -171,8 +176,8 @@ describe("planning/savings-review", () => {
       {
         id: alice,
         displayName: "Alice",
-        role: "primary",
-        authRole: "admin",
+        colour: "#FF0000",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -180,8 +185,8 @@ describe("planning/savings-review", () => {
       {
         id: bob,
         displayName: "Bob",
-        role: "partner",
-        authRole: "member",
+        colour: "#00FF00",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -214,7 +219,9 @@ describe("planning/savings-review", () => {
       asOf: "2026-01-01",
       balanceCents: 500_000,
       source: "manual",
-      capturedAt: "2026-01-01T00:00:00Z",
+      importBatchId: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
     });
 
     const t1 = createTransaction(ctx, {
@@ -248,8 +255,8 @@ describe("planning/savings-review", () => {
       {
         id: alice,
         displayName: "Alice",
-        role: "primary",
-        authRole: "admin",
+        colour: "#FF0000",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -257,8 +264,8 @@ describe("planning/savings-review", () => {
       {
         id: bob,
         displayName: "Bob",
-        role: "partner",
-        authRole: "member",
+        colour: "#00FF00",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -281,7 +288,9 @@ describe("planning/savings-review", () => {
       asOf: "2026-01-01",
       balanceCents: 500_000,
       source: "manual",
-      capturedAt: "2026-01-01T00:00:00Z",
+      importBatchId: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
     });
 
     const txnId = createTransaction(ctx, {
@@ -327,8 +336,8 @@ describe("planning/savings-review", () => {
       {
         id: alice,
         displayName: "Alice",
-        role: "primary",
-        authRole: "admin",
+        colour: "#FF0000",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -336,8 +345,8 @@ describe("planning/savings-review", () => {
       {
         id: bob,
         displayName: "Bob",
-        role: "partner",
-        authRole: "member",
+        colour: "#00FF00",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -379,7 +388,9 @@ describe("planning/savings-review", () => {
       asOf: "2026-01-10",
       balanceCents: 80_000,
       source: "manual",
-      capturedAt: "2026-01-10T00:00:00Z",
+      importBatchId: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
     });
 
     syncAllSavingsReviewItems(ctx);
@@ -396,7 +407,9 @@ describe("planning/savings-review", () => {
       asOf: "2026-01-15",
       balanceCents: 120_000,
       source: "manual",
-      capturedAt: "2026-01-15T00:00:00Z",
+      importBatchId: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
     });
 
     syncAllSavingsReviewItems(ctx);
@@ -416,8 +429,8 @@ describe("planning/savings-review", () => {
       {
         id: alice,
         displayName: "Alice",
-        role: "primary",
-        authRole: "admin",
+        colour: "#FF0000",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -425,8 +438,8 @@ describe("planning/savings-review", () => {
       {
         id: bob,
         displayName: "Bob",
-        role: "partner",
-        authRole: "member",
+        colour: "#00FF00",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -453,7 +466,9 @@ describe("planning/savings-review", () => {
       asOf: "2026-01-01",
       balanceCents: 500_000,
       source: "manual",
-      capturedAt: "2026-01-01T00:00:00Z",
+      importBatchId: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
     });
 
     const goal = createGoal(ctx, {
@@ -496,7 +511,7 @@ describe("planning/savings-review", () => {
     }
 
     // Act: Take it from the buffer
-    takeFromBufferReviewItem(ctx, { id: openItem?.id });
+    takeFromBufferReviewItem(ctx, { id: openItem!.id });
 
     const resolved = uow.state.reviewItems.find((i) => i.id === openItem?.id);
     expect(resolved?.resolvedAt).not.toBeNull();
@@ -509,8 +524,8 @@ describe("planning/savings-review", () => {
       {
         id: alice,
         displayName: "Alice",
-        role: "primary",
-        authRole: "admin",
+        colour: "#FF0000",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -518,8 +533,8 @@ describe("planning/savings-review", () => {
       {
         id: bob,
         displayName: "Bob",
-        role: "partner",
-        authRole: "member",
+        colour: "#00FF00",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -545,7 +560,9 @@ describe("planning/savings-review", () => {
       asOf: "2026-01-01",
       balanceCents: 1_000_000,
       source: "manual",
-      capturedAt: "2026-01-01T00:00:00Z",
+      importBatchId: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
     });
 
     const goal = createGoal(ctx, {
@@ -578,7 +595,7 @@ describe("planning/savings-review", () => {
 
     // Act: link withdrawal to goal
     const result = linkWithdrawalToGoal(ctx, {
-      id: openItem?.id,
+      id: openItem!.id,
       goalId: goal.id,
     });
 
@@ -598,8 +615,8 @@ describe("planning/savings-review", () => {
       {
         id: alice,
         displayName: "Alice",
-        role: "primary",
-        authRole: "admin",
+        colour: "#FF0000",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,
@@ -607,8 +624,8 @@ describe("planning/savings-review", () => {
       {
         id: bob,
         displayName: "Bob",
-        role: "partner",
-        authRole: "member",
+        colour: "#00FF00",
+        updatedAt: "2026-01-01T00:00:00Z",
         createdAt: "2026-01-01T00:00:00Z",
         deletedAt: null,
         userId: null,

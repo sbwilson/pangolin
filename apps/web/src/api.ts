@@ -1680,11 +1680,10 @@ export interface ExecuteDrawdownResultData {
 }
 
 export async function fetchDrawdowns(pool: string = "shared"): Promise<DrawdownData[]> {
-  const res = await sendJson<{ drawdowns: DrawdownData[] }>(
-    "GET",
-    `/api/planning/drawdowns?pool=${encodeURIComponent(pool)}`,
-  );
-  return res.drawdowns;
+  const res = await fetch(`/api/planning/drawdowns?pool=${encodeURIComponent(pool)}`);
+  if (!res.ok) throw new Error(`GET /api/planning/drawdowns failed with ${res.status}`);
+  const data = (await res.json()) as { drawdowns: DrawdownData[] };
+  return data.drawdowns;
 }
 
 export async function proposeDrawdown(

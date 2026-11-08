@@ -5387,14 +5387,14 @@ describe("GET /api/payees/:id/logo", () => {
         d.uow.transaction((tx) => {
           tx.goalAllocations.insertMany([
             {
-              id: d.newId("GoalAllocation"),
+              id: d.newId<"GoalAllocation">(),
               goalId: efGoal.id,
               periodStart: "2026-01-01",
               allocatedCents: 200_000,
               createdAt: "2026-01-01T00:00:00Z",
             },
             {
-              id: d.newId("GoalAllocation"),
+              id: d.newId<"GoalAllocation">(),
               goalId: flexGoal.id,
               periodStart: "2026-01-01",
               allocatedCents: 100_000,

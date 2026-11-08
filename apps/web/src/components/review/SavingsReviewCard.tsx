@@ -76,7 +76,7 @@ export function LargeWithdrawalCard({
               <option value="">-- Choose goal --</option>
               {poolGoals.map((g) => (
                 <option key={g.id} value={g.id}>
-                  {g.name} ({formatCents(g.currentBalance)})
+                  {g.name} ({formatCents(g.currentBalance ?? 0)})
                 </option>
               ))}
             </select>
@@ -224,7 +224,7 @@ export function ShortfallCard({
               Cover it
             </Button>
             <Button asChild variant="ghost" size="sm">
-              <Link to="/goals">Open goals</Link>
+              <Link to="/planning/goals">Open goals</Link>
             </Button>
           </div>
         )}
@@ -281,7 +281,7 @@ export function MismatchCard({
             Put the difference in the buffer
           </Button>
           <Button asChild variant="ghost" size="sm">
-            <Link to="/goals">Open goals</Link>
+            <Link to="/planning/goals">Open goals</Link>
           </Button>
         </div>
       </div>

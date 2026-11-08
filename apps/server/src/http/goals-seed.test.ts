@@ -205,22 +205,22 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
 
     // Rescale evaluation: when a goal completes under "rescale" policy, remaining rules rescale shares proportionally
     const stage1Rules = ctxA.uow.read((r) =>
-      r.goalRules.listForStage(ctxA.viewer, summary.activeStage?.id),
+      r.goalRules.listForStage(ctxA.viewer, summary.activeStage!.id),
     );
     const efGoalBalances = new Map([
       [
-        rainyDay?.id,
+        rainyDay!.id,
         {
-          goalId: rainyDay?.id,
+          goalId: rainyDay!.id,
           allocatedCents: 2_000_000,
           adjustedCents: 0,
           currentBalance: 2_000_000,
         },
       ],
       [
-        houseDeposit?.id,
+        houseDeposit!.id,
         {
-          goalId: houseDeposit?.id,
+          goalId: houseDeposit!.id,
           allocatedCents: 250_000,
           adjustedCents: 0,
           currentBalance: 250_000,
@@ -253,7 +253,7 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
       reason: "large_purchase",
       label: "Emergency expense",
       amountCents: 500_000,
-      adjustments: [{ goalId: rainyDay?.id, amountCents: 500_000 }],
+      adjustments: [{ goalId: rainyDay!.id, amountCents: 500_000 }],
     });
     expect(drawdownRes.drawdown.id).toBeDefined();
 
@@ -391,7 +391,7 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
 
     // Drop joint savings balance to trigger actual over-commitment in shared pool ($1,000 < $20,000 goals)
     recordBalanceSnapshot(ctxA, {
-      accountId: sharedSavingsAcc?.id,
+      accountId: sharedSavingsAcc!.id,
       asOf: seed.today,
       balanceCents: 100_000,
     });
@@ -412,7 +412,7 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
     }
     // Restore savings account balance for subsequent tests
     recordBalanceSnapshot(ctxA, {
-      accountId: sharedSavingsAcc?.id,
+      accountId: sharedSavingsAcc!.id,
       asOf: seed.today,
       balanceCents: 20_000_000,
     });
@@ -453,7 +453,7 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
     expect(sharedSavings).toBeDefined();
 
     const largeWithdrawalTxnId = createTransaction(ctxA, {
-      accountId: sharedSavings?.id,
+      accountId: sharedSavings!.id,
       postedOn: seed.today,
       amountCents: -250_000,
       description: "Car repairs",
@@ -485,8 +485,8 @@ describe("Goals & Savings on default seed (Epic 7 Done-when verification)", () =
     expect(efGoalForLink).toBeDefined();
 
     const linkResult = linkWithdrawalToGoal(ctxA, {
-      id: lwA?.id,
-      goalId: efGoalForLink?.id,
+      id: lwA!.id,
+      goalId: efGoalForLink!.id,
     });
     expect(linkResult.drawdown.id).toBeDefined();
     expect(linkResult.drawdown.transactionId).toBe(largeWithdrawalTxnId);

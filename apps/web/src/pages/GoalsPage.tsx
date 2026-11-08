@@ -123,7 +123,7 @@ export function GoalsPage() {
   const [toast, setToast] = useState<{
     id: string;
     message: string;
-    undoAction?: () => Promise<void>;
+    undoAction?: (() => Promise<void>) | undefined;
   } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

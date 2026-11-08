@@ -183,7 +183,7 @@ describe("budget-actions", () => {
     const [item] = ctx.uow.read((r) => r.reviewItems.listOpenFor(ctx.viewer));
     expect(item).toBeDefined();
 
-    dismissBudgetReviewItem(ctx, { id: item?.id });
+    dismissBudgetReviewItem(ctx, { id: item!.id });
 
     const openItems = ctx.uow.read((r) => r.reviewItems.listOpenFor(ctx.viewer));
     expect(openItems).toHaveLength(0);
@@ -246,7 +246,7 @@ describe("budget-actions", () => {
     expect(item).toBeDefined();
 
     const updatedBudget = adjustBudgetLimitFromReview(ctx, {
-      id: item?.id,
+      id: item!.id,
       limitCents: 20000,
     });
 
