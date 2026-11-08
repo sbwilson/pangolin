@@ -11,6 +11,7 @@ import {
   acceptHandoffItem,
   acceptRuleOfferItem,
   acceptSuggestionItem,
+  adjustBufferForMismatchAction,
   adjustBudgetLimitFromReviewAction,
   assignLlmPurpose,
   backupStatus,
@@ -65,6 +66,7 @@ import {
   dismissHandoffItem,
   dismissNoticeItem,
   dismissRuleOfferItem,
+  dismissSavingsReviewItemAction,
   dismissSuggestionItem,
   dismissTransferItem,
   ERROR_CODES,
@@ -107,6 +109,7 @@ import {
   leaks,
   leaveHousehold,
   linkTransferItem,
+  linkWithdrawalToGoalAction,
   listAccounts,
   listActivities,
   listAudit,
@@ -169,6 +172,7 @@ import {
   testLlmProvider,
   type UnitOfWork,
   type UseCaseContext,
+  takeFromBufferReviewItemAction,
   undoDrawdown,
   unhideTransactionName,
   updateAccount,
@@ -1136,6 +1140,39 @@ export function createApi(deps: ApiDeps) {
         id: c.req.param("id"),
         limitCents: body.limitCents,
       });
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/dismiss-savings", async (c) => {
+      writable();
+      let body: { resolution?: string } = {};
+      try {
+        body = await objectBody<{ resolution?: string }>(c);
+      } catch {
+        // body is optional
+      }
+      dismissSavingsReviewItemAction(ctx(c), {
+        id: c.req.param("id"),
+        resolution: body.resolution,
+      });
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/take-from-buffer", (c) => {
+      writable();
+      takeFromBufferReviewItemAction(ctx(c), { id: c.req.param("id") });
+      return c.body(null, 204);
+    })
+    .post("/api/review/:id/link-to-goal", async (c) => {
+      writable();
+      const body = await objectBody<{ goalId: string }>(c);
+      const result = linkWithdrawalToGoalAction(ctx(c), {
+        id: c.req.param("id"),
+        goalId: body.goalId,
+      });
+      return c.json(result, 200);
+    })
+    .post("/api/review/:id/adjust-buffer-mismatch", (c) => {
+      writable();
+      adjustBufferForMismatchAction(ctx(c), { id: c.req.param("id") });
       return c.body(null, 204);
     })
     .post("/api/review/:id/revoke-links", (c) => {

@@ -5,6 +5,11 @@ import { NoticeCard } from "./NoticeCard.tsx";
 import { OverBudgetCard } from "./OverBudgetCard.tsx";
 import { PdfStatementCard } from "./PdfStatementCard.tsx";
 import { ReadOnlyCard } from "./ReadOnlyCard.tsx";
+import {
+  LargeWithdrawalCard,
+  MismatchCard,
+  ShortfallCard,
+} from "./SavingsReviewCard.tsx";
 import { SetAsideCard } from "./SetAsideCard.tsx";
 import { AiSuggestionCard } from "./SuggestionCards.tsx";
 import {
@@ -56,6 +61,24 @@ export function ReviewCardView({ card }: { readonly card: ReviewCard }) {
     case "planning.bill_alert.missed_payment":
     case "planning.bill_alert.price_rise":
       if (detail.type === "bill_alert") return <BillAlertCard card={card} detail={detail} />;
+      break;
+    case "planning.savings.large_withdrawal":
+    case "planning.savings.large_withdrawal.personal":
+      if (detail.type === "savings_large_withdrawal") {
+        return <LargeWithdrawalCard card={card} detail={detail} />;
+      }
+      break;
+    case "planning.savings.shortfall":
+    case "planning.savings.shortfall.personal":
+      if (detail.type === "savings_shortfall") {
+        return <ShortfallCard card={card} detail={detail} />;
+      }
+      break;
+    case "planning.savings.mismatch":
+    case "planning.savings.mismatch.personal":
+      if (detail.type === "savings_mismatch") {
+        return <MismatchCard card={card} detail={detail} />;
+      }
       break;
   }
   return <ReadOnlyCard card={card} detail={detail} />;

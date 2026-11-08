@@ -277,6 +277,13 @@ export const MANIFEST: readonly ManifestEntry[] = [
     params: { id: "notice" },
     body: () => ({ limitCents: 50000 }),
   }),
+  write("POST", "/api/review/:id/dismiss-savings", { params: { id: "notice" } }),
+  write("POST", "/api/review/:id/take-from-buffer", { params: { id: "notice" } }),
+  write("POST", "/api/review/:id/link-to-goal", {
+    params: { id: "notice" },
+    body: () => ({ goalId: "01J0000000000000000000GOAL1" }),
+  }),
+  write("POST", "/api/review/:id/adjust-buffer-mismatch", { params: { id: "notice" } }),
   write("POST", "/api/review/:id/revoke-links", { params: { id: "notice" } }),
 
   // Import (ticket 9). The account in the body is the slot aimed at A's private account: B

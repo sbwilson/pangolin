@@ -13,6 +13,8 @@ import type { Viewer } from "../viewer.ts";
 import type { UseCaseContext } from "../write.ts";
 import { calculateGoalBalances, executeSavingsAllocation } from "./goal-allocation.ts";
 import { getSavingsPoolBalances, type SavingsPoolBalance } from "./goals.ts";
+import { syncSavingsReconciliationReviewItems } from "./savings-review.ts";
+import { write } from "../write.ts";
 
 /** The category name that marks interest income, under an income-kind group (`classify/defaults.ts`). */
 export const INTEREST_CATEGORY_NAME = "Interest";
@@ -127,7 +129,7 @@ function interestCategoryIds(repos: ReadRepos, viewer: Viewer): Id<"Category">[]
 }
 
 /** What the pool's goals hold: every visible goal of the pool, balances from allocation history minus active adjustments. */
-function poolGoalTotalCents(
+export function poolGoalTotalCents(
   repos: ReadRepos,
   viewer: Viewer,
   targetPersonId: Id<"Person"> | null,
@@ -288,7 +290,7 @@ export function runSavingsReconciliation(
   }
 
   // Goal totals are read after the allocations so the invariant sees this run's work.
-  return ctx.uow.read((repos) =>
+  const reports = ctx.uow.read((repos) =>
     derived.map((pool) => ({
       ...reconcilePool(
         pool.pool,
@@ -300,6 +302,13 @@ export function runSavingsReconciliation(
       alreadyAllocated: alreadyAllocatedByPool.get(pool.pool) ?? false,
     })),
   );
+
+  // Sync reconciliation review items (shortfalls) so any over-commitment or cure is reflected
+  write(ctx, (tx, audit) => {
+    syncSavingsReconciliationReviewItems(tx, audit, ctx, reports);
+  });
+
+  return reports;
 }
 
 /**

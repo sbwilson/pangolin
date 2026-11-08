@@ -5,6 +5,7 @@
 import { calculatePriceRisePercentage, shiftDay, TRANSFER_WINDOW_DAYS } from "@pangolin/domain";
 import type { Id } from "@pangolin/shared";
 import { z } from "zod";
+import { poolOf } from "../accounts/pool.ts";
 import { CLOSING_BALANCE_REVIEW } from "../accounts/closing-balance.ts";
 import { CLASSIFY_RULE_OFFER_REVIEW, CLASSIFY_UNCLASSIFIED_REVIEW } from "../classify/rules.ts";
 import type { UseCaseContext } from "../context.ts";
@@ -34,6 +35,16 @@ import {
   OVER_BUDGET_PERSONAL_REVIEW,
 } from "../planning/budget-review.ts";
 import { getBudgetSummary } from "../planning/budgets.ts";
+import {
+  SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW,
+  SAVINGS_LARGE_WITHDRAWAL_PERSONAL_REVIEW,
+  SAVINGS_MISMATCH_HOUSEHOLD_REVIEW,
+  SAVINGS_MISMATCH_PERSONAL_REVIEW,
+  SAVINGS_SHORTFALL_HOUSEHOLD_REVIEW,
+  SAVINGS_SHORTFALL_PERSONAL_REVIEW,
+} from "../planning/savings-review.ts";
+import { getSavingsPoolBalances } from "../planning/goals.ts";
+import { poolGoalTotalCents, reconcilePool } from "../planning/savings-reconciliation.ts";
 import type { ReadRepos, ReviewItemRow } from "../ports/unit-of-work.ts";
 import { redact } from "../redact.ts";
 import type { Viewer } from "../viewer.ts";
@@ -154,6 +165,28 @@ export type ReviewDetail =
       readonly dueDate: string;
       readonly kind: "missed" | "price_rise";
       readonly transactionId?: string;
+    }
+  | {
+      readonly type: "savings_large_withdrawal";
+      readonly transaction: ReviewTransaction | null;
+      readonly pool: string;
+      readonly bufferCents: number;
+      readonly canTakeFromBuffer: boolean;
+      readonly isPersonal: boolean;
+    }
+  | {
+      readonly type: "savings_shortfall";
+      readonly pool: string;
+      readonly shortfallCents: number;
+      readonly hasOpenLargeWithdrawal: boolean;
+      readonly openLargeWithdrawalId: string | null;
+      readonly isPersonal: boolean;
+    }
+  | {
+      readonly type: "savings_mismatch";
+      readonly pool: string;
+      readonly differenceCents: number;
+      readonly isPersonal: boolean;
     }
   | { readonly type: "none" };
 
@@ -393,6 +426,106 @@ function detailOf(repos: ReadRepos, ctx: UseCaseContext, row: ReviewItemRow): Re
         ...(actualCents !== undefined ? { actualCents } : {}),
         ...(increasePct !== undefined ? { increasePct } : {}),
         ...(transactionId !== undefined ? { transactionId } : {}),
+      };
+    }
+    case SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW.kind:
+    case SAVINGS_LARGE_WITHDRAWAL_PERSONAL_REVIEW.kind: {
+      const transactionId = refId(row.entityRef, "transaction") ?? "";
+      const transaction = transactionBrief(repos, ctx, transactionId);
+      const isPersonal = row.kind === SAVINGS_LARGE_WITHDRAWAL_PERSONAL_REVIEW.kind;
+
+      let pool = "shared";
+      let bufferCents = 0;
+      let canTakeFromBuffer = false;
+
+      if (transaction) {
+        const acc = repos.accounts.findVisible(ctx.viewer, transaction.accountId);
+        if (acc) {
+          const owners = repos.accounts.owners(acc.id);
+          pool = poolOf(owners);
+          const targetPersonId = pool === "shared" ? null : (pool as Id<"Person">);
+          const poolBalances = getSavingsPoolBalances(ctx, { asOf: ctx.clock.today().toString() });
+          const poolEntry = poolBalances.pools.find((p) => p.pool === pool);
+          const actualSavings = poolEntry?.totalCents ?? 0;
+          const goalTotal = poolGoalTotalCents(repos, ctx.viewer, targetPersonId);
+          bufferCents = Math.max(0, actualSavings - goalTotal);
+          canTakeFromBuffer = bufferCents >= Math.abs(transaction.amountCents);
+        }
+      }
+
+      return {
+        type: "savings_large_withdrawal",
+        transaction,
+        pool,
+        bufferCents,
+        canTakeFromBuffer,
+        isPersonal,
+      };
+    }
+    case SAVINGS_SHORTFALL_HOUSEHOLD_REVIEW.kind:
+    case SAVINGS_SHORTFALL_PERSONAL_REVIEW.kind: {
+      const pool = refId(row.entityRef, "savings_pool") ?? (row.personId ?? "shared");
+      const isPersonal = row.kind === SAVINGS_SHORTFALL_PERSONAL_REVIEW.kind;
+      const targetPersonId = pool === "shared" ? null : (pool as Id<"Person">);
+
+      const poolBalances = getSavingsPoolBalances(ctx, { asOf: ctx.clock.today().toString() });
+      const poolEntry = poolBalances.pools.find((p) => p.pool === pool);
+      const actualSavings = poolEntry?.totalCents ?? 0;
+      const goalTotal = poolGoalTotalCents(repos, ctx.viewer, targetPersonId);
+      const report = reconcilePool(pool, actualSavings, goalTotal);
+
+      // Check if there is an open large withdrawal for this pool
+      const openLargeWithdrawals = repos.reviewItems
+        .listOpenFor(ctx.viewer)
+        .filter(
+          (item) =>
+            item.kind === SAVINGS_LARGE_WITHDRAWAL_HOUSEHOLD_REVIEW.kind ||
+            item.kind === SAVINGS_LARGE_WITHDRAWAL_PERSONAL_REVIEW.kind,
+        );
+
+      let matchingLargeWithdrawal: ReviewItemRow | undefined;
+      for (const lw of openLargeWithdrawals) {
+        const txnId = refId(lw.entityRef, "transaction") ?? "";
+        const txn = repos.transactions.findVisible(ctx.viewer, txnId, ctx.clock.today().toString());
+        if (txn) {
+          const acc = repos.accounts.findVisible(ctx.viewer, txn.accountId);
+          if (acc) {
+            const owners = repos.accounts.owners(acc.id);
+            const txnPool = poolOf(owners);
+            if (txnPool === pool) {
+              matchingLargeWithdrawal = lw;
+              break;
+            }
+          }
+        }
+      }
+
+      return {
+        type: "savings_shortfall",
+        pool,
+        shortfallCents: report.shortfallCents,
+        hasOpenLargeWithdrawal: matchingLargeWithdrawal !== undefined,
+        openLargeWithdrawalId: matchingLargeWithdrawal?.id ?? null,
+        isPersonal,
+      };
+    }
+    case SAVINGS_MISMATCH_HOUSEHOLD_REVIEW.kind:
+    case SAVINGS_MISMATCH_PERSONAL_REVIEW.kind: {
+      const pool = refId(row.entityRef, "savings_pool") ?? (row.personId ?? "shared");
+      const isPersonal = row.kind === SAVINGS_MISMATCH_PERSONAL_REVIEW.kind;
+      const targetPersonId = pool === "shared" ? null : (pool as Id<"Person">);
+
+      const poolBalances = getSavingsPoolBalances(ctx, { asOf: ctx.clock.today().toString() });
+      const poolEntry = poolBalances.pools.find((p) => p.pool === pool);
+      const actualSavings = poolEntry?.totalCents ?? 0;
+      const goalTotal = poolGoalTotalCents(repos, ctx.viewer, targetPersonId);
+      const differenceCents = Math.abs(actualSavings - goalTotal);
+
+      return {
+        type: "savings_mismatch",
+        pool,
+        differenceCents,
+        isPersonal,
       };
     }
     default:

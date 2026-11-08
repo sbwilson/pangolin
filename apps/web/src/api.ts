@@ -401,6 +401,10 @@ type ReviewAction =
   | "dismiss-budget"
   | "dismiss-bill-alert"
   | "adjust-budget-limit"
+  | "dismiss-savings"
+  | "take-from-buffer"
+  | "link-to-goal"
+  | "adjust-buffer-mismatch"
   | "revoke-links";
 
 /** The outcome of a Re-check: `ok` false carries the exact remaining error (HTTP 200). */
@@ -461,6 +465,33 @@ export async function dismissBillAlert(id: string): Promise<void> {
 /** Adjusts a budget limit from an over-budget review item and resolves it. */
 export async function adjustBudgetLimitFromReview(id: string, limitCents: number): Promise<void> {
   await reviewAction(id, "adjust-budget-limit", { limitCents });
+}
+
+/** Dismisses a savings review item (e.g. "Not an expense" or "Got it"). */
+export async function dismissSavingsReviewItem(id: string, resolution?: string): Promise<void> {
+  await reviewAction(id, "dismiss-savings", resolution ? { resolution } : undefined);
+}
+
+/** Resolves a large withdrawal review item by taking it from the pool buffer. */
+export async function takeFromBufferReviewItem(id: string): Promise<void> {
+  await reviewAction(id, "take-from-buffer");
+}
+
+/** Links a large withdrawal review item to a goal. */
+export async function linkWithdrawalToGoal(
+  id: string,
+  goalId: string,
+): Promise<{ drawdown: DrawdownData; adjustments: readonly unknown[] }> {
+  return await sendJson<{ drawdown: DrawdownData; adjustments: readonly unknown[] }>(
+    "POST",
+    `/api/review/${encodeURIComponent(id)}/link-to-goal`,
+    { goalId },
+  );
+}
+
+/** Adjusts buffer for mismatch from review card. */
+export async function adjustBufferForMismatch(id: string): Promise<void> {
+  await reviewAction(id, "adjust-buffer-mismatch");
 }
 
 /** A tag as a split carries it. */

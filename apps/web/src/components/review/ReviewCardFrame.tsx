@@ -30,6 +30,12 @@ const KIND_LABEL: Readonly<Record<string, string>> = {
   "planning.over_budget.personal": "Over budget",
   "planning.bill_alert.missed_payment": "Missed bill payment",
   "planning.bill_alert.price_rise": "Bill price increase",
+  "planning.savings.large_withdrawal": "Large withdrawal",
+  "planning.savings.large_withdrawal.personal": "Large withdrawal",
+  "planning.savings.shortfall": "Goal shortfall",
+  "planning.savings.shortfall.personal": "Goal shortfall",
+  "planning.savings.mismatch": "Goal mismatch",
+  "planning.savings.mismatch.personal": "Goal mismatch",
 };
 
 export function kindLabel(kind: string): string {

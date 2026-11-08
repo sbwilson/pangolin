@@ -56,6 +56,16 @@ import {
   adjustBudgetLimitFromReview,
   dismissBudgetReviewItem,
 } from "../planning/budget-actions.ts";
+import {
+  adjustBufferForMismatch,
+  type AdjustBufferForMismatchInput,
+  dismissSavingsReviewItem,
+  type DismissSavingsReviewItemInput,
+  linkWithdrawalToGoal,
+  type LinkWithdrawalToGoalInput,
+  takeFromBufferReviewItem,
+  type TakeFromBufferReviewItemInput,
+} from "../planning/savings-review.ts";
 import type { ReviewItemRow, TxRepos, UnitOfWork } from "../ports/unit-of-work.ts";
 import { write } from "../write.ts";
 import { resolveReviewItem } from "./review-items.ts";
@@ -452,4 +462,38 @@ export function dismissBillAlertReviewItemAction(
   input: { readonly id: string },
 ): void {
   dismissBillAlertReviewItem(ctx, input);
+}
+
+// -------------------------------------------------------------------------------- savings review
+
+/** Dismisses a savings reconciliation review item ("Got it" or "Not an expense"). */
+export function dismissSavingsReviewItemAction(
+  ctx: UseCaseContext,
+  input: DismissSavingsReviewItemInput,
+): void {
+  dismissSavingsReviewItem(ctx, input);
+}
+
+/** "Take it from the buffer": resolves the large withdrawal review item from buffer. */
+export function takeFromBufferReviewItemAction(
+  ctx: UseCaseContext,
+  input: TakeFromBufferReviewItemInput,
+): void {
+  takeFromBufferReviewItem(ctx, input);
+}
+
+/** "It's for a goal": links a large withdrawal to a goal. */
+export function linkWithdrawalToGoalAction(
+  ctx: UseCaseContext,
+  input: LinkWithdrawalToGoalInput,
+): { drawdown: any; adjustments: readonly any[] } {
+  return linkWithdrawalToGoal(ctx, input);
+}
+
+/** "Put the difference in the buffer": adjusts buffer for mismatch. */
+export function adjustBufferForMismatchAction(
+  ctx: UseCaseContext,
+  input: AdjustBufferForMismatchInput,
+): void {
+  adjustBufferForMismatch(ctx, input);
 }
