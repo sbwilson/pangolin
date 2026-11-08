@@ -28,7 +28,7 @@ test.describe("Goals workspace", () => {
     await page.getByRole("button", { name: "Save" }).click();
 
     // 3. The stage card now carries the stage with its share chips.
-    await expect(page.getByText("E2E stage")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "E2E stage" })).toBeVisible();
     await expect(page.getByText("E2E goal", { exact: true }).first()).toBeVisible();
 
     // 4. Clean up: delete the stage, then the goal, from the same sheets.
