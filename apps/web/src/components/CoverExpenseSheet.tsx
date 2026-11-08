@@ -375,7 +375,7 @@ export function CoverExpenseSheet({
       <button
         type="button"
         tabIndex={-1}
-        aria-label="Close"
+        aria-label="Close modal backdrop"
         className="fixed inset-0 h-full w-full cursor-default bg-black/40 transition-opacity"
         onClick={onClose}
       />
