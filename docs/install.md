@@ -129,6 +129,7 @@ sudo sh deploy/install.sh --non-interactive \
 | `--hostname NAME` | The public host name; the app is served at `https://NAME` |
 | `--backup-server URL` | A restic REST URL (stored in `.env` and allowlisted). Set or changed on a re-run, it writes a new recovery bundle (new id) that includes it as `RESTIC_REPOSITORY`. An explicit empty value (`--backup-server ""`) turns backups off: on a re-run it empties `PANGOLIN_BACKUP_REPOSITORY` in `.env` and removes the old server's entry that the installer added to `allowlist.conf` (no new bundle is written) |
 | `--tang-url URL` | The Tang server that unlocks the data disk (stored in `.env` and allowlisted) |
+| `--llm-hosts HOSTS` | Local LLM server host/s or URLs (e.g. `http://192.168.1.50:11434`, `ollama.lan:11434`; comma-separated). Stored in `.env` as `PANGOLIN_LLM_HOSTS` and allowlisted in `allowlist.conf` for outbound firewall egress |
 | `--npm-host IP` | The NPM host's IPv4 address; also becomes `PANGOLIN_TRUSTED_PROXIES` |
 | `--admin-network CIDR` | Where SSH is allowed from |
 | `--ghcr-token-file FILE` / `--ghcr-token TOKEN` | A GHCR read-only token for `docker login ghcr.io` (a file keeps it out of the process list). It is kept in `secrets/ghcr-token`, and `docker login` also stores it in `/root/.docker/config.json` |

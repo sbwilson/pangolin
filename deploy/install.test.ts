@@ -1356,6 +1356,27 @@ describe("install.sh, boot safety", () => {
     expect(read("opt/pangolin/allowlist.conf")).toMatch(/^tang\.lan:80$/m);
   });
 
+  it("allowlists local LLM servers, persists them to .env, and adds them back to an edited allowlist", () => {
+    expect(
+      install("--llm-hosts", "http://192.168.1.50:11434, ollama.lan:11434").status,
+    ).toBe(0);
+    expect(read("opt/pangolin/.env")).toContain(
+      "PANGOLIN_LLM_HOSTS=http://192.168.1.50:11434, ollama.lan:11434\n",
+    );
+    const allowlist = read("opt/pangolin/allowlist.conf");
+    expect(allowlist).toMatch(/^192\.168\.1\.50:11434$/m);
+    expect(allowlist).toMatch(/^ollama\.lan:11434$/m);
+
+    // Re-run with edited allowlist
+    writeFileSync(at("opt/pangolin/allowlist.conf"), "example.org:443\n");
+    const rerun = install();
+    expect(rerun.status, rerun.stderr).toBe(0);
+    const rerunAllowlist = read("opt/pangolin/allowlist.conf");
+    expect(rerunAllowlist).toMatch(/^example\.org:443$/m);
+    expect(rerunAllowlist).toMatch(/^192\.168\.1\.50:11434$/m);
+    expect(rerunAllowlist).toMatch(/^ollama\.lan:11434$/m);
+  });
+
   it("makes Docker wait for a mounted data root, and warns when it is not a mount point", () => {
     const mounted = run("sh", [INSTALL, "--root", root, ...ANSWERS], {
       PANGOLIN_INSTALL_STUB_MOUNTPOINT: "1",
@@ -1563,8 +1584,8 @@ describe("install.sh with Docker (a stub docker)", () => {
   });
 
   it("offers to build when the pull is refused, and switches .env to the built image", () => {
-    // Proxy mode, Tang server and GHCR token (empty: a public image) are asked first.
-    const result = installInteractively("\n\n\nb\n", [], { STUB_PULL_DENIED: "1" });
+    // Proxy mode, Tang server, LLM hosts, and GHCR token (empty: a public image) are asked first.
+    const result = installInteractively("\n\n\n\nb\n", [], { STUB_PULL_DENIED: "1" });
     expect(result.status, result.stdout).toBe(0);
     expect(result.stdout).toContain("Could not pull ghcr.io/sbwilson/pangolin:latest");
     expect(result.stdout).toContain("Replacing PANGOLIN_IMAGE in .env: pangolin:local");
@@ -1574,7 +1595,7 @@ describe("install.sh with Docker (a stub docker)", () => {
   });
 
   it("asks again for a refused token, then stores a good one 0600 and pulls with it", () => {
-    const result = installInteractively("\n\n\nt\nbad-token\nt\ngood-token\n", [], {
+    const result = installInteractively("\n\n\n\nt\nbad-token\nt\ngood-token\n", [], {
       STUB_PULL_DENIED: "1",
     });
     expect(result.status, result.stdout).toBe(0);

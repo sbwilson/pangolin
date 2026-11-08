@@ -15,6 +15,8 @@
 #   --admin-network CIDR          the network SSH is allowed from, e.g. 192.168.1.0/24
 #   --tang-url URL                the Tang server that unlocks the data disk, e.g. http://tang.lan
 #                                 (allowlisted, so the disk still unlocks behind the firewall)
+#   --llm-hosts HOSTS             local LLM server host/s or URLs (e.g. http://192.168.1.50:11434,
+#                                 ollama.lan:11434; comma-separated), allowlisted for VM egress
 #   --ghcr-token-file FILE        a GHCR read-only token (packages: read) for a private image
 #   --ghcr-token TOKEN            the same, inline (visible in the process list; prefer a file)
 #   --ghcr-user NAME              the GHCR user name (default: the image's owner)
@@ -69,6 +71,8 @@ ARG_SSH_PORT=
 ARG_IMAGE=
 ARG_TANG=
 ARG_TANG_SET=0
+ARG_LLM_HOSTS=
+ARG_LLM_HOSTS_SET=0
 ROOT_SET=0
 
 WORK=
@@ -147,7 +151,7 @@ parse_args() {
     case "$opt" in
       --proxy | --hostname | --backup-server | --npm-host | --admin-network | --ghcr-token | \
         --ghcr-token-file | --ghcr-user | --dns | --data-root | --http-port | --ssh-port | \
-        --image | --ref | --repo | --root | --tang-url)
+        --image | --ref | --repo | --root | --tang-url | --llm-hosts)
         if [ "$has_value" -eq 0 ]; then
           [ $# -ge 2 ] || die "$opt needs a value"
           value=$2
@@ -173,6 +177,7 @@ parse_args() {
       --repo) REPO=$value ;;
       --root) ROOT=$value; ROOT_SET=1 ;;
       --tang-url) ARG_TANG=$value; ARG_TANG_SET=1 ;;
+      --llm-hosts) ARG_LLM_HOSTS=$value; ARG_LLM_HOSTS_SET=1 ;;
       --build) BUILD=1 ;;
       --bundle) BUNDLE=1 ;;
       --non-interactive) NON_INTERACTIVE=1 ;;
@@ -280,6 +285,57 @@ url_entry() {
     *:*) printf '%s\n' "$backup_hostport" ;;
     *) printf '%s:%s\n' "$backup_hostport" "$backup_port" ;;
   esac
+}
+
+is_hostname() {
+  printf '%s\n' "$1" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$' &&
+    printf '%s\n' "$1" | grep -Eq '(^|\.)[A-Za-z0-9-]*[A-Za-z][A-Za-z0-9-]*$'
+}
+
+# Normalizes a single host, host:port, or http(s) URL into an allowlist entry (host[:port]),
+# or returns non-zero / prints nothing if invalid.
+normalize_allowlist_entry() {
+  entry_raw=$1
+  # Strip leading/trailing whitespace
+  entry_raw=$(printf '%s' "$entry_raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  [ -n "$entry_raw" ] || return 1
+  # If it looks like a URL with scheme, use url_entry
+  case "$entry_raw" in
+    *://*)
+      url_entry "$entry_raw"
+      return 0
+      ;;
+  esac
+  # Check host[:port]
+  h=$entry_raw
+  p=
+  has_p=0
+  case "$entry_raw" in
+    \[*\]:*) h=${entry_raw#\[}; h=${h%%\]*}; p=${entry_raw##*\]:}; has_p=1 ;;
+    \[*\]) h=${entry_raw#\[}; h=${h%\]} ;;
+    *:*:*) ;; # bare IPv6
+    *:*) h=${entry_raw%:*}; p=${entry_raw##*:}; has_p=1 ;;
+  esac
+  if [ "$has_p" -eq 1 ] && ! is_port "$p"; then return 1; fi
+  if is_ipv4 "$h" || is_ipv6 "$h" || is_hostname "$h"; then
+    printf '%s\n' "$entry_raw"
+    return 0
+  fi
+  return 1
+}
+
+# Normalizes a comma- or space-separated list of local LLM hosts or URLs, printing each valid
+# allowlist entry on its own line. Returns 1 if any item is invalid.
+parse_llm_hosts() {
+  raw_list=$1
+  [ -n "$raw_list" ] || return 0
+  # Convert commas to newlines
+  printf '%s\n' "$raw_list" | tr ',' '\n' | while IFS= read -r item || [ -n "$item" ]; do
+    item=$(printf '%s' "$item" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    [ -n "$item" ] || continue
+    norm=$(normalize_allowlist_entry "$item") || return 1
+    printf '%s\n' "$norm"
+  done
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -451,6 +507,23 @@ settings() {
     die "not a Tang URL: use http://host[:port]"
   fi
 
+  LLM_HOSTS=$ARG_LLM_HOSTS
+  if [ "$ARG_LLM_HOSTS_SET" -eq 0 ]; then
+    default=$(existing PANGOLIN_LLM_HOSTS)
+    while :; do
+      LLM_HOSTS=$(ask "Local LLM server host/s or URLs to allow (e.g. http://192.168.1.50:11434; comma-separated, empty if none)" "$default")
+      [ -z "$LLM_HOSTS" ] && break
+      if parse_llm_hosts "$LLM_HOSTS" >/dev/null 2>&1; then break; fi
+      [ "$NON_INTERACTIVE" -eq 0 ] || break
+      say "Enter one or more hosts/URLs separated by comma, e.g. http://192.168.1.50:11434 or ollama.lan:11434." >/dev/tty
+    done
+  fi
+  if [ -n "$LLM_HOSTS" ]; then
+    if ! parse_llm_hosts "$LLM_HOSTS" >/dev/null 2>&1; then
+      die "invalid local LLM host or URL in: $LLM_HOSTS"
+    fi
+  fi
+
   NPM_HOST=$ARG_NPM
   if [ -z "$NPM_HOST" ]; then
     default=$(existing PANGOLIN_NPM_HOST)
@@ -601,6 +674,11 @@ settle_all() {
     fi
   fi
   settle TANG_URL PANGOLIN_TANG_URL
+  if [ -n "$ARG_LLM_HOSTS" ]; then
+    settle LLM_HOSTS PANGOLIN_LLM_HOSTS replace
+  else
+    settle LLM_HOSTS PANGOLIN_LLM_HOSTS
+  fi
   previous_data_root=$(existing PANGOLIN_DATA_ROOT)
   settle DATA_ROOT PANGOLIN_DATA_ROOT replace
   # A changed data root starts the app on whatever is there: say so when the household's
@@ -1001,6 +1079,7 @@ write_env() {
       PANGOLIN_DATA_ROOT) env_replace "$key" "$DATA_ROOT" ;;
       PANGOLIN_BACKUP_REPOSITORY) env_replace "$key" "$BACKUP" ;;
       PANGOLIN_DNS_SERVERS) env_replace "$key" "$DNS_SERVERS" ;;
+      PANGOLIN_LLM_HOSTS) env_replace "$key" "$LLM_HOSTS" ;;
     esac
     say "Replaced $key in .env"
   done
@@ -1018,6 +1097,7 @@ write_env() {
   env_add PANGOLIN_DATA_ROOT "$DATA_ROOT"
   if [ -n "$BACKUP" ]; then env_add PANGOLIN_BACKUP_REPOSITORY "$BACKUP"; fi
   if [ -n "$TANG_URL" ]; then env_add PANGOLIN_TANG_URL "$TANG_URL"; fi
+  if [ -n "$LLM_HOSTS" ]; then env_add PANGOLIN_LLM_HOSTS "$LLM_HOSTS"; fi
   # An install from before bundle ids (story 1.17), or with an empty one, gets an id now, so the
   # server warns until the bundle it already has is confirmed stored safely; no bundle is
   # written for it. When this run writes a bundle (new secrets, a pending mark, --bundle or a
@@ -1352,6 +1432,11 @@ write_allowlist() {
       printf '%s\n' "" "# Tang server: unlocks the data disk (added by install.sh)" "$tang_entry" >>"$allowlist"
       say "Added the Tang server $tang_entry to allowlist.conf"
     fi
+    llm_entries=$(parse_llm_hosts "$LLM_HOSTS") || true
+    if [ -n "$llm_entries" ]; then
+      # shellcheck disable=SC2086 # one entry per word
+      allowlist_add "$allowlist" "Local LLM servers" $llm_entries || true
+    fi
   else
     {
       cat "$SUPPORT/allowlist.conf.default"
@@ -1360,6 +1445,11 @@ write_allowlist() {
       if [ -n "$entry" ]; then printf '%s\n' "" "# $BACKUP_ALLOWLIST_LABEL" "$entry"; fi
       if [ -n "$tang_entry" ]; then
         printf '%s\n' "" "# Tang server: unlocks the data disk" "$tang_entry"
+      fi
+      llm_entries=$(parse_llm_hosts "$LLM_HOSTS") || true
+      if [ -n "$llm_entries" ]; then
+        printf '%s\n' "" "# Local LLM servers"
+        printf '%s\n' "$llm_entries"
       fi
     } >"$allowlist.new"
     if [ "$PKG" = apt ]; then
