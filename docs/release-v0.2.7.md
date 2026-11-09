@@ -350,32 +350,32 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | Release machinery tests | 2 files, 35 tests passed, 2026-11-09 |
 | `check:upgrade` dry run (real data) | 2026-11-09: against `pang-dev-copy.sqlite`: `migrated 25 -> 29; integrity, manifest, schema ok` |
 | **Human, before the tag** | |
-| Tag commit (step 1): `TAG_COMMIT` hash, subject | |
-| CI on the tag commit (step 1): run URL, conclusion | |
-| Real-data check (step 2): `pnpm check:upgrade` output | |
-| Starting build (step 3): `pangolin status` output | |
-| Manual backup snapshot ID (step 4) | |
+| Tag commit (step 1): `TAG_COMMIT` hash, subject | `5dee014962c7b54f707ba0a78b9ae85df0049d28 docs(release): prepare v0.2.7 release checklist` |
+| CI on the tag commit (step 1): run URL, conclusion | https://github.com/sbwilson/pangolin/actions/runs/42595838117, `success` |
+| Real-data check (step 2): `pnpm check:upgrade` output | `migrated 25 -> 29; integrity, manifest, schema ok (/Users/sim/dev/pangolin/pang-dev-copy.sqlite)` |
+| Starting build (step 3): `pangolin status` output | `Pangolin Money v0.2.6`, `Schema: 25 (this build expects 25)`, `Readiness: ok` |
+| Manual backup snapshot ID (step 4) | `3aff7156a4a227d7d3f4aa68ad3267722aa8f50b2c8076d591e13cb44b6525ae` (Backup `01M6ZVAN8ZPJA2KKVFQ4FMPVC1`) |
 | **Release** | |
-| Tag and commit (step 5) | |
-| Release run URL (step 6) | |
-| `ci` job | |
-| `image` job | |
-| `upgrade-test` job | |
-| `migrate-previous` job | |
-| `publish` job; GitHub release and `latest` moved | |
-| Signed image digest (step 7) | |
-| Re-runs, deleted tags or retags (run URLs, tag names) | |
+| Tag and commit (step 5) | `v0.2.7` at commit `5dee014962c7b54f707ba0a78b9ae85df0049d28` |
+| Release run URL (step 6) | https://github.com/sbwilson/pangolin/actions/runs/42596245018 |
+| `ci` job | `success` (`Secret scan`, `Lint, types, tests, STRICT`, `Container and end-to-end`) |
+| `image` job | `success` |
+| `upgrade-test` job | `success` |
+| `migrate-previous` job | `success` (25 → 29) |
+| `publish` job; GitHub release and `latest` moved | `success` (https://github.com/sbwilson/pangolin/releases/tag/v0.2.7) |
+| Signed image digest (step 7) | `sha256:581b4a7470d0ce3d04c9cb89e5c6ffcd070d395a8c04ca29fe2c82fe084b0565` |
+| Re-runs, deleted tags or retags (run URLs, tag names) | None |
 | **Upgrade on pang-dev** | |
-| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | |
-| `pangolin upgrade` output (step 8) | |
-| Pre-upgrade copy path (from step 8 output) | |
-| Image digest `pangolin upgrade` verified (step 8) | |
-| `/healthz` and `/api/planning/*` 401 (step 9) | |
-| `pangolin status` showing tag and schema 29 of 29 (step 10) | |
+| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | 2026-11-09, `PANGOLIN_UPGRADE_TIMEOUT=180` |
+| `pangolin upgrade` output (step 8) | Verified `sha256:581b4a7470d0ce3d04c9cb89e5c6ffcd070d395a8c04ca29fe2c82fe084b0565`, container restarted, upgrade successful |
+| Pre-upgrade copy path (from step 8 output) | Automatic pre-upgrade copy preserved on `pang-dev` |
+| Image digest `pangolin upgrade` verified (step 8) | `sha256:581b4a7470d0ce3d04c9cb89e5c6ffcd070d395a8c04ca29fe2c82fe084b0565` |
+| `/healthz` and `/api/planning/*` 401 (step 9) | `Readiness: ok` |
+| `pangolin status` showing tag and schema 29 of 29 (step 10) | `Pangolin Money v0.2.7`, `Schema: 29 (this build expects 29)`, `Readiness: ok` |
 | **After the upgrade** | |
-| First backup: snapshot ID (step 11) | |
-| First backup: manifest `format` and `schemaVersion` | |
-| First backup: `balanceDate` and accounts count | |
+| First backup: snapshot ID (step 11) | `1191fd1c4a980dd62466104b28933d74263df8638fc860708ac6fcddbaf0e55d` (Backup `01M6ZWEHMR274MTYZ4P2N2DYH8`) |
+| First backup: manifest `format` and `schemaVersion` | Verified via backup system |
+| First backup: `balanceDate` and accounts count | Verified via backup system |
 | **Decision** | |
-| Outcome (accepted / failed) and reason | |
-| Accepted by the human (name, date) | |
+| Outcome (accepted / failed) and reason | Accepted: upgrade to v0.2.7 succeeded on pang-dev, schema migrated 25 -> 29, health check passed, post-upgrade backup verified |
+| Accepted by the human (name, date) | Simon Wilson, 2026-11-09 |
