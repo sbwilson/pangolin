@@ -167,3 +167,13 @@ export function validateCashFlowSearch(search: object): CashFlowSearch {
   if (!isRealDay(from) || !isRealDay(to) || from > to) return scope;
   return { from, to, ...scope };
 }
+
+/** `/planning/forecast`'s horizon in months; anything else means the server default (3). */
+export interface ForecastSearch {
+  readonly horizon?: "3" | "6" | "12";
+}
+
+export function validateForecastSearch(search: object): ForecastSearch {
+  const { horizon } = search as Record<string, unknown>;
+  return horizon === "3" || horizon === "6" || horizon === "12" ? { horizon } : {};
+}

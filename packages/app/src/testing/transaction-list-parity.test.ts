@@ -124,6 +124,7 @@ function scenario(uow: UnitOfWork) {
     openedOn: null,
     closedOn: null,
     isSavings: false,
+    lowBalanceThresholdCents: 0,
     createdAt: T,
     updatedAt: T,
   });

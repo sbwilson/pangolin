@@ -76,7 +76,9 @@ import {
   executeDrawdown,
   exportTransactionsCsv,
   extractAndImportPdfStatement,
+  type ForecastCashFlowInput,
   fixSetAsideRowItem,
+  forecastCashFlow,
   getAccount,
   getActivity,
   getBudget,
@@ -618,6 +620,13 @@ export function createApi(deps: ApiDeps) {
       writable();
       const result = clearBufferDivert(ctx(c), await objectBody(c));
       return c.json(result, 200);
+    })
+    .get("/api/planning/forecast", (c) => {
+      // Per viewer (AD-3): a read-only cash-flow projection over `horizon` months (3, 6 or 12;
+      // anything else means 3) for the visible transaction accounts, with first-dip warnings.
+      const horizon = c.req.query("horizon");
+      const input = horizon !== undefined ? ({ horizon } as ForecastCashFlowInput) : {};
+      return c.json(forecastCashFlow(ctx(c), input), 200);
     })
     .get("/api/identity/preferences", (c) => {
       return c.json(getPreferences(ctx(c), {}), 200);

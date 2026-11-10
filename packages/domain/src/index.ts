@@ -51,6 +51,16 @@ export {
   calculateRollover,
 } from "./planning/budget-math.ts";
 export {
+  type ForecastAccountInput,
+  type ForecastAccountProjection,
+  type ForecastDipWarning,
+  type ForecastInput,
+  type ForecastMovement,
+  type ForecastPoint,
+  type ForecastProjection,
+  projectCashFlow,
+} from "./planning/forecast-cashflow.ts";
+export {
   calculateMedian,
   classifyCadence,
   type DetectedRecurringSeries,

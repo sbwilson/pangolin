@@ -18,6 +18,8 @@ export const account = sqliteTable(
     openedOn: text("opened_on"),
     closedOn: text("closed_on"),
     isSavings: integer("is_savings", { mode: "boolean" }).notNull().default(false),
+    /** The forecast's low-balance warning line (AD-11 reads it; 0 means unset). */
+    lowBalanceThresholdCents: integer("low_balance_threshold_cents").notNull().default(0),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
     deletedAt: text("deleted_at"),
@@ -29,5 +31,6 @@ export const account = sqliteTable(
     ),
     check("account_is_private", sql`${t.isPrivate} IN (0, 1)`),
     check("account_is_savings", sql`${t.isSavings} IN (0, 1)`),
+    check("account_low_balance_threshold", sql`${t.lowBalanceThresholdCents} >= 0`),
   ],
 );

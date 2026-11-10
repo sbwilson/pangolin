@@ -292,6 +292,8 @@ export interface AccountRow {
   readonly closedOn: string | null;
   /** Counts toward savings (a flag on the account, not its type). */
   readonly isSavings: boolean;
+  /** The forecast's low-balance warning line in cents; 0 means unset. Never negative. */
+  readonly lowBalanceThresholdCents: number;
   /** UTC ISO-8601 timestamp. */
   readonly createdAt: string;
   /** UTC ISO-8601 timestamp. */

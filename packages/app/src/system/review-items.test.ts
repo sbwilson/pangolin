@@ -64,6 +64,7 @@ function setup() {
     openedOn: null,
     closedOn: null,
     isSavings: false,
+    lowBalanceThresholdCents: 0,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   });
@@ -356,6 +357,7 @@ describe("suggestion review actions", () => {
         openedOn: null,
         closedOn: null,
         isSavings: false,
+        lowBalanceThresholdCents: 0,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       },
@@ -369,6 +371,7 @@ describe("suggestion review actions", () => {
         openedOn: null,
         closedOn: null,
         isSavings: false,
+        lowBalanceThresholdCents: 0,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       },

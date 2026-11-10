@@ -136,6 +136,7 @@ const EVENT_SCHEMAS = {
     owners: z.array(z.strictObject({ person: key, shareBp: z.int() })).min(1),
     institution: key.nullable(),
     isSavings: z.boolean(),
+    lowBalanceThresholdCents: z.int().min(0).optional(),
   }),
   "tag.created": z.strictObject({
     type: z.literal("tag.created"),
@@ -631,6 +632,9 @@ function applyEvents(
             ? {}
             : { institutionId: institutions[event.institution] as string }),
           isSavings: event.isSavings,
+          ...(event.lowBalanceThresholdCents === undefined
+            ? {}
+            : { lowBalanceThresholdCents: event.lowBalanceThresholdCents }),
         });
         accounts[event.key] = id;
         accountOwners.set(id, {

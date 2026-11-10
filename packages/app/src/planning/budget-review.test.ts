@@ -81,6 +81,7 @@ function createTestContext(viewerPersonId: string = "person-a"): {
       openedOn: "2026-01-01",
       closedOn: null,
       isSavings: false,
+      lowBalanceThresholdCents: 0,
       createdAt: "2026-09-01T00:00:00Z",
       updatedAt: "2026-09-01T00:00:00Z",
     },

@@ -21,6 +21,7 @@ describe("scopeFor", () => {
           openedOn: null,
           closedOn: null,
           isSavings: false,
+          lowBalanceThresholdCents: 0,
           createdAt: at,
           updatedAt: at,
         },

@@ -87,6 +87,7 @@ const accountColumns = {
   openedOn: account.openedOn,
   closedOn: account.closedOn,
   isSavings: account.isSavings,
+  lowBalanceThresholdCents: account.lowBalanceThresholdCents,
   createdAt: account.createdAt,
   updatedAt: account.updatedAt,
 };

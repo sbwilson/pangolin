@@ -48,6 +48,7 @@ function setup() {
       openedOn: "2024-01-01",
       closedOn: null,
       isSavings: false,
+      lowBalanceThresholdCents: 0,
       createdAt: stamp,
       updatedAt: stamp,
     });

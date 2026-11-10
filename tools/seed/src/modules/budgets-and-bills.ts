@@ -1,3 +1,7 @@
+import type { Cadence, PayCalendar } from "@pangolin/shared/period";
+import { createCalendarPayCalendar } from "@pangolin/shared/period";
+import type { PlainDate } from "@pangolin/shared/temporal";
+import { parseDate, Temporal } from "@pangolin/shared/temporal";
 import type { Json, SeedModule } from "../module.ts";
 import type {
   BudgetCreatedEvent,
@@ -5,8 +9,10 @@ import type {
   RecurringSeriesCreatedEvent,
   SeedEvent,
   World,
+  WorldAccount,
 } from "../world.ts";
-import { ACCOUNT_KEYS, cat } from "./catalogue.ts";
+import { ACCOUNT_KEYS, cat, OPENING_CENTS } from "./catalogue.ts";
+import { iso } from "./dates.ts";
 import { PERSON_KEYS } from "./people-and-household.ts";
 
 const [A, B] = PERSON_KEYS;
@@ -236,9 +242,24 @@ export const budgetsAndBills: SeedModule = {
       closed6Periods.reduce((a, b) => a + b, 0) / closed6Periods.length,
     );
 
+    // 4. Forecast expectations (planning-forecast tracer story). Mirrors the read-only
+    //    `planning.forecastCashFlow` projection: per viewer, walk every visible `transaction`
+    //    account from today through today + 3 months, adding calendar-aligned pay deposits
+    //    (AD-25), confirmed bill series rolled forward, and budget limits pro-rated daily to the
+    //    scope's deposit account; report each account's first balance strictly below its
+    //    low-balance threshold. Shared budgets contribute nothing — the household has no
+    //    household pay anchor, so they resolve to no scope.
+    const forecast = forecastDipExpectations(
+      world,
+      [anchorA, anchorB],
+      [sydneyWaterSeries, telstraSeries, netflixSeries],
+      [sharedGroceriesBudget, personalCoffeeBudgetA, personalFitnessBudgetB],
+    );
+
     return {
       events,
       expectations: {
+        forecast,
         payAnchors: {
           personA: {
             key: anchorA.key,
@@ -275,3 +296,177 @@ export const budgetsAndBills: SeedModule = {
     };
   },
 };
+
+/** One projected dip: the first balance strictly below the account's threshold. */
+interface ForecastDip {
+  readonly account: string;
+  readonly cents: number;
+  readonly dateOn: string;
+}
+
+/** The calendar `createCalendarPayCalendar` builds for a seeded calendar-aligned pay anchor. */
+function payCalendarOf(anchor: PayAnchorCreatedEvent): PayCalendar {
+  if (anchor.alignment !== "calendar" || anchor.anchorDate === null) {
+    throw new Error(
+      `forecast mirror only handles calendar-aligned anchored pay anchors: ${anchor.key}`,
+    );
+  }
+  const cadence: Cadence =
+    anchor.cadence === "fortnightly"
+      ? { kind: "fortnightly", anchor: parseDate(anchor.anchorDate) }
+      : { kind: "monthly", day: anchor.dayOfMonth ?? parseDate(anchor.anchorDate).day };
+  return createCalendarPayCalendar(anchor.key, cadence);
+}
+
+/**
+ * Occurrence `stepIndex` of a series due first on `nextDueOn`, mirroring the app forecast's
+ * roll-forward: day-based cadences step days, month-based ones step months (clamping).
+ */
+function seriesOccurrence(
+  nextDueOn: PlainDate,
+  stepIndex: number,
+  cadence: RecurringSeriesCreatedEvent["cadence"],
+): PlainDate {
+  switch (cadence) {
+    case "weekly":
+      return nextDueOn.add({ days: 7 * stepIndex });
+    case "fortnightly":
+      return nextDueOn.add({ days: 14 * stepIndex });
+    case "monthly":
+      return nextDueOn.add({ months: stepIndex });
+    case "quarterly":
+      return nextDueOn.add({ months: 3 * stepIndex });
+    case "annual":
+      return nextDueOn.add({ months: 12 * stepIndex });
+  }
+}
+
+/**
+ * Mirrors `planning.forecastCashFlow` for the seeded world: per viewer person key, the first
+ * dip below threshold for each of their visible `transaction` accounts over the next three
+ * months. Deliberately a mirror, not a re-import — if the use case's arithmetic changes, this
+ * expectation changes with it and `forecast-seed.test.ts` says so.
+ */
+function forecastDipExpectations(
+  world: World,
+  anchors: readonly PayAnchorCreatedEvent[],
+  series: readonly RecurringSeriesCreatedEvent[],
+  budgets: readonly BudgetCreatedEvent[],
+): Json {
+  const today = world.today;
+  const through = today.add({ months: 3 });
+  const accountsByKey = new Map(world.accounts.map((a) => [a.key, a]));
+  const visibleTo = (account: WorldAccount, viewer: string): boolean =>
+    !account.isPrivate || account.owners.some((o) => o.person === viewer);
+
+  // Balance as of `today`: the opening snapshot plus every movement up to and including it,
+  // the same chain `balance-snapshots` writes and `balanceAsOf` reads.
+  const openingOf = (accountKey: string): number => {
+    const opening = OPENING_CENTS[accountKey];
+    if (opening === undefined) throw new Error(`No opening balance for account "${accountKey}"`);
+    let balance = opening;
+    for (const t of world.transactions) {
+      if (t.account === accountKey && t.postedOn <= iso(today)) balance += t.amountCents;
+    }
+    return balance;
+  };
+
+  const warnings: Record<string, Json> = {};
+  for (const viewer of PERSON_KEYS) {
+    const projected = world.accounts.filter(
+      (a) => a.accountType === "transaction" && visibleTo(a, viewer),
+    );
+    const projectedKeys = new Set(projected.map((a) => a.key));
+    const moves = new Map<string, Map<string, number>>();
+    const addMove = (accountKey: string, day: PlainDate, cents: number): void => {
+      if (!projectedKeys.has(accountKey)) return;
+      let byDay = moves.get(accountKey);
+      if (byDay === undefined) {
+        byDay = new Map();
+        moves.set(accountKey, byDay);
+      }
+      byDay.set(iso(day), (byDay.get(iso(day)) ?? 0) + cents);
+    };
+
+    // Deposits: the viewer's own anchors, on each period's expected pay day (AD-25).
+    for (const anchor of anchors) {
+      if (anchor.person !== viewer || anchor.expectedNetCents === null) continue;
+      for (const period of payCalendarOf(anchor).periodsBetween(today, through.add({ days: 6 }))) {
+        if (
+          Temporal.PlainDate.compare(period.expectedPayDate, today) >= 0 &&
+          Temporal.PlainDate.compare(period.expectedPayDate, through) <= 0
+        ) {
+          addMove(anchor.account, period.expectedPayDate, anchor.expectedNetCents);
+        }
+      }
+    }
+
+    // Confirmed bill series rolled forward from `nextDueOn`.
+    for (const s of series) {
+      if (s.status !== "confirmed" || s.direction !== "bill") continue;
+      const account = accountsByKey.get(s.account);
+      if (account === undefined || !visibleTo(account, viewer)) continue;
+      const nextDue = parseDate(s.nextDueOn);
+      for (let i = 0; ; i++) {
+        const due = seriesOccurrence(nextDue, i, s.cadence);
+        if (Temporal.PlainDate.compare(due, through) > 0) break;
+        if (Temporal.PlainDate.compare(due, today) >= 0) addMove(s.account, due, -s.expectedCents);
+      }
+    }
+
+    // Budget limits pro-rated daily across each pay-cycle period, charged to the scope's
+    // deposit account. A shared budget needs a household pay anchor of matching cadence; this
+    // household has none, so the shared groceries budget contributes nothing.
+    for (const budget of budgets) {
+      let scopeAnchor: PayAnchorCreatedEvent | undefined;
+      if (budget.person !== null) {
+        if (budget.person !== viewer) continue;
+        scopeAnchor = anchors.find((a) => a.person === budget.person);
+      } else {
+        const householdPerson = world.household?.householdPayAnchorPersonId ?? null;
+        const target = budget.cadence === "fortnight" ? "fortnightly" : "monthly";
+        scopeAnchor = anchors.find((a) => a.person === householdPerson && a.cadence === target);
+      }
+      if (scopeAnchor === undefined) continue;
+      for (const period of payCalendarOf(scopeAnchor).periodsBetween(
+        today.subtract({ days: 1 }),
+        through,
+      )) {
+        const periodDays = period.end.since(period.start, { largestUnit: "days" }).days;
+        if (periodDays <= 0) continue;
+        const daily = Math.round(budget.limitCents / periodDays);
+        const remainder = budget.limitCents - daily * periodDays;
+        const lastDay = period.end.subtract({ days: 1 });
+        for (let day = period.start; Temporal.PlainDate.compare(day, lastDay) <= 0; ) {
+          if (
+            Temporal.PlainDate.compare(day, today) >= 0 &&
+            Temporal.PlainDate.compare(day, through) <= 0
+          ) {
+            const onLastDay = Temporal.PlainDate.compare(day, lastDay) === 0;
+            addMove(scopeAnchor.account, day, -(daily + (onLastDay ? remainder : 0)));
+          }
+          day = day.add({ days: 1 });
+        }
+      }
+    }
+
+    const dips: ForecastDip[] = [];
+    for (const account of projected) {
+      let balance = openingOf(account.key);
+      const byDay = moves.get(account.key);
+      const threshold = account.lowBalanceThresholdCents ?? 0;
+      for (let day = today; Temporal.PlainDate.compare(day, through) <= 0; ) {
+        balance += byDay?.get(iso(day)) ?? 0;
+        if (balance < threshold) {
+          dips.push({ account: account.key, cents: balance, dateOn: iso(day) });
+          break;
+        }
+        day = day.add({ days: 1 });
+      }
+    }
+    dips.sort((x, y) => (x.dateOn < y.dateOn ? -1 : x.dateOn > y.dateOn ? 1 : 0));
+    warnings[viewer] = dips.map((d): Json => ({ ...d }));
+  }
+
+  return { horizonMonths: 3, warnings };
+}

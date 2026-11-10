@@ -48,6 +48,7 @@ function setupTestEnvironment() {
     openedOn: null,
     closedOn: null,
     isSavings: false,
+    lowBalanceThresholdCents: 0,
     createdAt: now.toString(),
     updatedAt: now.toString(),
   });
@@ -63,6 +64,7 @@ function setupTestEnvironment() {
     openedOn: null,
     closedOn: null,
     isSavings: false,
+    lowBalanceThresholdCents: 0,
     createdAt: now.toString(),
     updatedAt: now.toString(),
   });

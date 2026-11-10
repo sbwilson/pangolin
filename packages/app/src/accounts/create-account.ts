@@ -28,6 +28,8 @@ export const createAccountInput = z
     openedOn: dayInput.nullish(),
     /** Counts toward savings. Defaults to false. */
     isSavings: z.boolean().optional(),
+    /** The forecast's low-balance warning line in cents. Defaults to 0 (unset). */
+    lowBalanceThresholdCents: z.int().nonnegative().optional(),
   })
   .strict();
 export type CreateAccountInput = z.input<typeof createAccountInput>;
@@ -65,6 +67,7 @@ export function createAccount(ctx: UseCaseContext, input: CreateAccountInput): I
       openedOn,
       closedOn: null,
       isSavings: parsed.isSavings ?? false,
+      lowBalanceThresholdCents: parsed.lowBalanceThresholdCents ?? 0,
       createdAt: at,
       updatedAt: at,
     };

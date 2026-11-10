@@ -728,6 +728,18 @@ export {
   detectPayDeposits,
 } from "./planning/detect-pay-deposits.ts";
 export {
+  FORECAST_HORIZONS,
+  type ForecastAccountView,
+  type ForecastCashFlowInput,
+  type ForecastDipView,
+  type ForecastHorizon,
+  type ForecastPointView,
+  type ForecastReport,
+  forecastCashFlow,
+  forecastCashFlowInput,
+  parseForecastHorizon,
+} from "./planning/forecast.ts";
+export {
   allocatePeriodSavings,
   calculateGoalBalances,
   type ExecuteSavingsAllocationInput,

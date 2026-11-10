@@ -1737,3 +1737,45 @@ export async function clearBufferDivert(
 ): Promise<{ cleared: boolean }> {
   return await sendJson<{ cleared: boolean }>("POST", "/api/planning/buffer-divert/undo", { pool });
 }
+
+// ---------------------------------------------------------------------------
+// Planning: cash-flow forecast (read-only projection, per account per day)
+
+export interface ForecastPointData {
+  readonly date: string;
+  readonly balanceCents: number;
+}
+
+export interface ForecastAccountData {
+  readonly accountId: string;
+  readonly name: string;
+  readonly lowBalanceThresholdCents: number;
+  /** One point per day from `from` to `through`, after that day's movements. */
+  readonly points: ReadonlyArray<ForecastPointData>;
+}
+
+export interface ForecastDipData {
+  readonly accountId: string;
+  readonly accountName: string;
+  /** The projected balance on `date`, in signed cents. */
+  readonly cents: number;
+  /** `YYYY-MM-DD`; the first day below the threshold. */
+  readonly date: string;
+}
+
+export interface ForecastData {
+  readonly from: string;
+  readonly through: string;
+  readonly horizonMonths: number;
+  /** True when no visible pay anchor carries an expected net amount. */
+  readonly missingDepositSource: boolean;
+  readonly accounts: ReadonlyArray<ForecastAccountData>;
+  readonly warnings: ReadonlyArray<ForecastDipData>;
+}
+
+/** The projection for the visible transaction accounts over `horizon` (3, 6 or 12) months. */
+export async function fetchForecast(horizon: 3 | 6 | 12): Promise<ForecastData> {
+  const res = await fetch(`/api/planning/forecast?horizon=${horizon}`);
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()) as ForecastData;
+}

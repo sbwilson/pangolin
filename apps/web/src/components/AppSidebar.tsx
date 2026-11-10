@@ -246,9 +246,13 @@ export function AppSidebar({ me, signOut, className }: AppSidebarProps) {
             <span>Home buying</span>
           </span>
 
-          <span
-            aria-disabled="true"
-            className="flex cursor-default items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground"
+          <Link
+            to="/planning/forecast"
+            className="flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            activeProps={{
+              className: "bg-accent font-semibold text-primary",
+              "aria-current": "page",
+            }}
           >
             <svg
               width="16"
@@ -264,7 +268,7 @@ export function AppSidebar({ me, signOut, className }: AppSidebarProps) {
               <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />
             </svg>
             <span>Forecast</span>
-          </span>
+          </Link>
         </nav>
       </div>
 

@@ -148,6 +148,7 @@ function scenario(uow: UnitOfWork) {
         openedOn: null,
         closedOn: null,
         isSavings: false,
+        lowBalanceThresholdCents: 0,
         createdAt: T,
         updatedAt: T,
       };
@@ -777,6 +778,7 @@ describe("flowKind parity (AD-23)", () => {
             openedOn: null,
             closedOn: null,
             isSavings: false,
+            lowBalanceThresholdCents: 0,
             createdAt: T,
             updatedAt: T,
           },

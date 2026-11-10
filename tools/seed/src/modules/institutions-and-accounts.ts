@@ -9,6 +9,13 @@ import { PERSON_KEYS } from "./people-and-household.ts";
 
 export { ACCOUNT_KEYS, INSTITUTION_KEYS } from "./catalogue.ts";
 
+/**
+ * The joint everyday account's low-balance threshold: set above the balance the account holds
+ * today, so the seeded forecast always projects a dip and a warning
+ * (the planning-forecast tracer story).
+ */
+export const FORECAST_WARNING_THRESHOLD_CENTS = 6_000_000;
+
 const INSTITUTIONS: readonly InstitutionCreatedEvent[] = [
   {
     type: "institution.created",
@@ -41,7 +48,11 @@ export const institutionsAndAccounts: SeedModule = {
       accountType: string,
       institution: string,
       owners: AccountCreatedEvent["owners"],
-      options: { isPrivate?: boolean; isSavings?: boolean } = {},
+      options: {
+        isPrivate?: boolean;
+        isSavings?: boolean;
+        lowBalanceThresholdCents?: number;
+      } = {},
     ): AccountCreatedEvent => ({
       type: "account.created",
       key,
@@ -52,6 +63,9 @@ export const institutionsAndAccounts: SeedModule = {
       owners,
       institution,
       isSavings: options.isSavings ?? false,
+      ...(options.lowBalanceThresholdCents === undefined
+        ? {}
+        : { lowBalanceThresholdCents: options.lowBalanceThresholdCents }),
     });
     const even = [
       { person: a, shareBp: 5000 },
@@ -65,6 +79,7 @@ export const institutionsAndAccounts: SeedModule = {
         "transaction",
         INSTITUTION_KEYS.harbour,
         even,
+        { lowBalanceThresholdCents: FORECAST_WARNING_THRESHOLD_CENTS },
       ),
       account(ACCOUNT_KEYS.offset, "Joint offset", "offset", INSTITUTION_KEYS.harbour, even),
       account(

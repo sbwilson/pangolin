@@ -84,6 +84,7 @@ function setup() {
     openedOn: "2024-01-01",
     closedOn: null,
     isSavings: false,
+    lowBalanceThresholdCents: 0,
     createdAt: now.toString(),
     updatedAt: now.toString(),
   });
@@ -791,6 +792,7 @@ describe("extractAndImportPdfStatement", () => {
       openedOn: "2024-01-01",
       closedOn: "2024-09-10", // closed on 10 Sept
       isSavings: false,
+      lowBalanceThresholdCents: 0,
       createdAt: now.toString(),
       updatedAt: now.toString(),
     });

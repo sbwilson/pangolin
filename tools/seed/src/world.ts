@@ -49,6 +49,8 @@ export interface WorldAccount {
   readonly institution: string | null;
   /** Counts toward savings. */
   readonly isSavings: boolean;
+  /** The account's low-balance warning threshold in signed cents; omitted means unset (0). */
+  readonly lowBalanceThresholdCents?: number;
 }
 
 /** A default category named by its group and its own name, e.g. `Food` / `Groceries`. */
@@ -461,6 +463,9 @@ export function applyEvents(world: World, events: readonly SeedEvent[]): World {
           owners: event.owners,
           institution: event.institution,
           isSavings: event.isSavings,
+          ...(event.lowBalanceThresholdCents === undefined
+            ? {}
+            : { lowBalanceThresholdCents: event.lowBalanceThresholdCents }),
         });
         break;
       case "tag.created":

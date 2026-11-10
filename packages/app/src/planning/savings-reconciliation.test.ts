@@ -69,6 +69,7 @@ function accountRow(
     openedOn: null,
     closedOn,
     isSavings: true,
+    lowBalanceThresholdCents: 0,
     createdAt: NOW,
     updatedAt: NOW,
   };

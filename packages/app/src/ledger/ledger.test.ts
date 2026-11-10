@@ -183,6 +183,7 @@ describe("ledger.createTransaction with a payee", () => {
           closedOn: null,
           openedOn: null,
           isSavings: false,
+          lowBalanceThresholdCents: 0,
           createdAt: clock.now().toString(),
           updatedAt: clock.now().toString(),
         },
