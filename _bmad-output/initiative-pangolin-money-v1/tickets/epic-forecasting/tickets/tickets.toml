@@ -1,0 +1,138 @@
+# tickets.toml — epic-forecasting
+# Table order is build order; id is permanent and never reused.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Tracer bullet: /planning/forecast cash flow projection with low-balance warning"
+description = "Implements the read-only cash flow forecast query in packages/domain (PayCalendar pay deposits, confirmed outgoing series, discretionary budget limits pro-rated across each pay cycle, balances via balanceAsOf) and surfaces /planning/forecast with a per-account projection chart and the first-dip low-balance warning line."
+verify = "A seeded scenario of pay cycles, bills, and budgets shows a warning line on /planning/forecast naming account, amount, and date on the expected date, and unit tests pin the projection math."
+covers = ["CAP-8"]
+after = ["6.1", "6.2", "6.6"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Full cash flow model: funding accounts, series exclusions, and goal allocations"
+description = "Completes the cash flow model per AD-25: budgets draw on their funding account, categories covered by a confirmed series are excluded from discretionary spend, and goal allocations reduce the pay deposit account across the horizon."
+verify = "Projections shift correctly when a budget's funding account changes, a confirmed series covers a budgeted category, or an allocation stage is active, with no double-counting."
+covers = ["CAP-8"]
+after = [1, "7.2"]
+hitl = false
+risk = "medium"
+unknown = "Budgeted discretionary spend is pro-rated within each pay cycle at a daily rate; revisit if a demo looks wrong."
+
+[[entry]]
+id = 3
+type = "story"
+title = "domain/amortise: mortgage schedule with offset"
+description = "Implements packages/domain amortise as the shared module epic-loans-property extends: monthly mortgage schedules with constant rate and payment, interest accruing on the balance net of offset, and extra repayments."
+verify = "Unit tests reproduce hand-computed principal-and-interest schedules, including an offset case and an extra-repayment case."
+covers = ["CAP-8"]
+after = []
+hitl = false
+risk = "high"
+unknown = "Interest accrues monthly on balance minus offset; extra repayments shorten the term rather than cut the payment."
+
+[[entry]]
+id = 4
+type = "story"
+title = "Forecast assumption storage and API"
+description = "Stores person-scoped forecast assumptions (savings rate, low, mid, and high returns, super contribution rate, mortgage-with-offset selection) per AD-22 with defaults and GET/PUT API routes."
+verify = "A PUT then GET round-trips changed assumptions per person, defaults apply when nothing is set, and values stay visible only to their person."
+covers = ["CAP-8"]
+after = [1]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Net-worth projection query with low, mid, and high return lines"
+description = "Implements the read-only net-worth projection: today's netWorth() carried forward by savings rate, low/mid/high returns, super contributions, and mortgage paydown through domain/amortise, returning three series over 1/2/5/10-year horizons."
+verify = "The projection returns low ≤ mid ≤ high series matching hand-computed values, and changing any assumption moves the lines."
+covers = ["CAP-8"]
+after = [3, 4, "4.8"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Net-worth view: segmented control, projection lines, and year horizons"
+description = "Adds Net-worth mode to /planning/forecast: the Cash flow · Net worth segmented control, the three return lines with hover tooltip, the \"In N years: about $X (mid)\" headline, 1/2/5/10-year horizons, and View as table."
+verify = "Switching to Net worth redraws the chart with three lines, a headline, working horizons, and a table view."
+covers = ["CAP-8"]
+after = [1, 5]
+hitl = false
+risk = "medium"
+unknown = "The headline copy is a UX assumption."
+
+[[entry]]
+id = 7
+type = "story"
+title = "Assumption chips with inline edit, changed state, and reset"
+description = "Adds the assumption chips (savings rate, returns, mortgage with offset, super contributions, plus the cash flow context chips) with inline editing, a changed dot, per-chip reset, and Reset all, wired to the assumptions API."
+verify = "Editing the savings-rate chip redraws the projection immediately, marks the chip changed, and reset restores the default."
+covers = ["CAP-8"]
+after = [4, 6]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Editable per-account low-balance thresholds"
+description = "Makes each transaction account's low-balance threshold editable, defaulting to zero, with the chart's threshold and warning line following the stored value."
+verify = "Editing an account's threshold moves or removes its warning line, and the change persists across reload."
+covers = ["CAP-8"]
+after = [7]
+hitl = false
+risk = "low"
+unknown = "Threshold default is zero; the $200/$500 values in the mockup are seed data."
+
+[[entry]]
+id = 9
+type = "story"
+title = "Not-enough-data and all-clear forecast states"
+description = "Implements the forecast states: \"Not enough to forecast yet\" naming each missing input (pay cycle, confirmed bills, budgets) with links to Settings and Needs review, and the all-clear caption when no dip occurs."
+verify = "A world missing an input lists each gap with its link, and a safe world shows \"No dips below your thresholds in the next 3 months.\""
+covers = ["CAP-8"]
+after = [8]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Refactor sweep"
+description = "Cleans up code hygiene across the epic, worked from the build records and the review findings deferred during it."
+verify = "Lint, typecheck, and unit tests pass, and each deferred finding is resolved or recorded."
+covers = ["CAP-8"]
+after = [2, 3, 9]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 11
+type = "story"
+title = "End-to-end forecasting journey"
+description = "Adds the Playwright journey through the seeded cash-flow warning, a net-worth assumption edit, and a threshold edit, with axe checks on /planning/forecast."
+verify = "e2e and axe pass on CI for the forecast routes."
+covers = ["CAP-8"]
+after = [2, 9]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 12
+type = "story"
+title = "Release and deploy"
+description = "Deploys the epic to the home server with pangolin upgrade and cuts the release tag."
+verify = "CI (lint, types, unit, migration, Playwright, axe on its routes) is green on the release tag and /planning/forecast works on the home server."
+covers = ["CAP-8"]
+after = [10, 11]
+hitl = true
+risk = "medium"

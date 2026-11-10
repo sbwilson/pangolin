@@ -44,3 +44,9 @@ Projection services and their views, the per-account low-balance threshold, and 
 - Waits on epic-budgets-bills because: budgets and confirmed recurring series feed the projection.
 - Waits on epic-goals-savings because: the savings definition and goal allocations.
 - Waits on epic-spending-insight because: the net-worth projection starts from its net worth queries.
+- Decision (2026-11-10, inception): the tracer bullet is entry 1 — seeded cash-flow warning end to end through domain, query, API, and chart; the model is completed in entry 2.
+- Decision (2026-11-10, inception): projection model — pay deposits from PayCalendar, confirmed series dated on their cycles, discretionary budget limits pro-rated within each pay cycle at a daily rate, goal allocations drawn from the pay deposit account; categories covered by a confirmed series are left out of discretionary spend (AD-25).
+- Decision (2026-11-10, inception): low-balance threshold defaults to 0 per transaction account, editable and stored on the account; mockup values are seed data.
+- Decision (2026-11-10, inception): the low-balance warning is the chart warning line and page caption only; no review-item kind (AD-17's kind list does not include it).
+- Decision (2026-11-10, inception): forecast assumptions are person-scoped rows per AD-22; horizons follow the UX assumptions — cash flow 3/6/12 months (default 3), net worth 1/2/5/10 years (default 2).
+- Decision (2026-11-10, inception): deferred scope — Monte Carlo bands remain the spec non-goal; extra-repayment depth beyond domain/amortise basics waits on epic-loans-property.
