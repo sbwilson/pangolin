@@ -397,16 +397,6 @@ function forecastDipExpectations(
   const visibleTo = (account: WorldAccount, viewer: string): boolean =>
     !account.isPrivate || account.owners.some((o) => o.person === viewer);
 
-  // The categories confirmed bill series already project: each series' payee default category.
-  const coveredCategories = new Set<string>();
-  for (const s of series) {
-    if (s.status !== "confirmed" || s.direction !== "bill") continue;
-    const payee = world.payees.find((p) => p.key === s.payee);
-    if (payee !== undefined && payee.defaultCategory !== null) {
-      coveredCategories.add(catKey(payee.defaultCategory));
-    }
-  }
-
   // Balance as of `today`: the opening snapshot plus every movement up to and including it,
   // the same chain `balance-snapshots` writes and `balanceAsOf` reads.
   const openingOf = (accountKey: string): number => {
@@ -426,6 +416,18 @@ function forecastDipExpectations(
       (a) => a.accountType === "transaction" && visibleTo(a, viewer),
     );
     const projectedKeys = new Set(projected.map((a) => a.key));
+    // The categories confirmed bill series already project: each series' payee default
+    // category. A series whose account is outside the projected set covers nothing — the
+    // engine drops its movements, and a budget must keep projecting alongside it.
+    const coveredCategories = new Set<string>();
+    for (const s of series) {
+      if (s.status !== "confirmed" || s.direction !== "bill") continue;
+      if (!projectedKeys.has(s.account)) continue;
+      const payee = world.payees.find((p) => p.key === s.payee);
+      if (payee !== undefined && payee.defaultCategory !== null) {
+        coveredCategories.add(catKey(payee.defaultCategory));
+      }
+    }
     const moves = new Map<string, Map<string, number>>();
     const addMove = (accountKey: string, day: PlainDate, cents: number): void => {
       if (!projectedKeys.has(accountKey)) return;
@@ -513,9 +515,11 @@ function forecastDipExpectations(
     }
 
     // Virtual goal allocations: each pay-period close debits the deposit account with the
-    // active stage's shares of the period's projected positive savings (all base movements
-    // landing there, floored at 0), split largest-remainder (AD-13). The base is snapshotted
-    // so one period's debit never shrinks a later period's savings.
+    // active stage's shares of the period's projected positive savings — all base movements
+    // landing there from the period's own expected pay day (a weekend-rolled deposit lands
+    // before `start`, and belongs to the period it pays for) through the close, floored at 0 —
+    // split largest-remainder (AD-13). The base is snapshotted so one period's debit never
+    // shrinks a later period's savings.
     const allocationDebits: Record<string, { readonly date: string; readonly parts: number[] }[]> =
       {};
     for (const [accountKey, calendar] of calendars) {
@@ -526,7 +530,7 @@ function forecastDipExpectations(
         const closeDay = period.end.subtract({ days: 1 });
         if (Temporal.PlainDate.compare(closeDay, projectedFrom) < 0) continue;
         if (Temporal.PlainDate.compare(closeDay, through) > 0) continue;
-        const startIso = iso(period.start);
+        const startIso = iso(period.expectedPayDate);
         const closeIso = iso(closeDay);
         const savings = Math.max(
           0,
@@ -536,8 +540,9 @@ function forecastDipExpectations(
           ),
         );
         if (savings <= 0) continue;
-        // Same split as the app (and `executeSavingsAllocation`): the rules' shareBp of the
-        // savings, then largest-remainder across the goals.
+        // Mirrors the app's sweep arithmetic only — the rules' summed shareBp of the savings,
+        // floored, then split largest-remainder — not the engine's completed-goal rescale or
+        // exit-capacity caps.
         const totalShares = STAGE_ONE_SHARES.reduce((sum, share) => sum + share, 0);
         const toAllocate = Math.floor((savings * totalShares) / 10_000);
         if (toAllocate <= 0) continue;

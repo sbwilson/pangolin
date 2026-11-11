@@ -580,16 +580,95 @@ describe("forecastCashFlow", () => {
       categoryGroupId: "grp-entertainment" as Id<"CategoryGroup">,
       limitCents: 1_400,
     });
-    // A group with no categories is covered vacuously: it projects nothing.
+
+    const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
+    const byDay = deltas(report, "acc-main");
+    expect(byDay.get("2026-01-16")).toBe(-100); // 1,400 / 14 days
+    expect(byDay.get("2026-02-20")).toBe(-100 - 300);
+  });
+
+  it("projects a budget over a category group with no live categories", () => {
+    const uow = baseUow();
+    fortnightlyAnchor(uow, "person-a", null);
+    // Nothing of an empty group is projected as bills, so it is not covered: the budget's
+    // own proration (2,800 / 14 days) still projects.
     budget(uow, "bud-empty-group", {
       categoryGroupId: "grp-nowhere" as Id<"CategoryGroup">,
       limitCents: 2_800,
     });
 
     const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
+    expect(deltas(report, "acc-main").get("2026-01-16")).toBe(-200);
+  });
+
+  it("drops a confirmed series on a closed account without letting it cover its category", () => {
+    const uow = baseUow();
+    fortnightlyAnchor(uow, "person-a", null);
+    category(uow, "cat-mobile", "grp-utilities", "Mobile");
+    payee(uow, "payee-telstra", "Telstra", "cat-mobile");
+    uow.state.accounts.push({
+      id: "acc-closed" as Id<"Account">,
+      name: "Old cheque account",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      institutionId: null,
+      openedOn: "2026-01-01",
+      closedOn: "2026-01-10",
+      isSavings: false,
+      lowBalanceThresholdCents: 0,
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+    uow.state.recurringSeries.push({
+      id: "ser-telstra" as Id<"RecurringSeries">,
+      accountId: "acc-closed" as Id<"Account">,
+      payeeId: "payee-telstra" as Id<"Payee">,
+      direction: "bill",
+      cadence: "monthly",
+      expectedCents: 500,
+      toleranceBp: 1000,
+      nextDueOn: "2026-02-10",
+      status: "confirmed",
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+    // The series' movements are dropped with the closed account, so it must not silence
+    // the covered-category exclusion either: the Mobile budget keeps projecting.
+    budget(uow, "bud-mobile", { categoryId: "cat-mobile" as Id<"Category">, limitCents: 1_400 });
+
+    const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
+    expect(report.accounts.map((a) => a.accountId)).not.toContain("acc-closed");
     const byDay = deltas(report, "acc-main");
     expect(byDay.get("2026-01-16")).toBe(-100); // 1,400 / 14 days
-    expect(byDay.get("2026-02-20")).toBe(-100 - 300);
+    expect(byDay.get("2026-02-10")).toBe(-100); // no Telstra bill walked, only the proration
+  });
+
+  it("does not let a confirmed series cover anything when its payee has no default category", () => {
+    const uow = baseUow();
+    fortnightlyAnchor(uow, "person-a", null);
+    category(uow, "cat-coffee", "grp-food", "Coffee");
+    payee(uow, "payee-cafe", "Corner Cafe", null);
+    uow.state.recurringSeries.push({
+      id: "ser-cafe" as Id<"RecurringSeries">,
+      accountId: "acc-main" as Id<"Account">,
+      payeeId: "payee-cafe" as Id<"Payee">,
+      direction: "bill",
+      cadence: "monthly",
+      expectedCents: 300,
+      toleranceBp: 1000,
+      nextDueOn: "2026-02-10",
+      status: "confirmed",
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+    budget(uow, "bud-coffee", { categoryId: "cat-coffee" as Id<"Category">, limitCents: 1_400 });
+
+    const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
+    const byDay = deltas(report, "acc-main");
+    // The budget projects in full alongside the rolled-forward series.
+    expect(byDay.get("2026-01-16")).toBe(-100);
+    expect(byDay.get("2026-02-10")).toBe(-100 - 300);
   });
 
   it("debits the active stage's shares of each period's savings at the period close", () => {
@@ -623,6 +702,22 @@ describe("forecastCashFlow", () => {
     const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
     const byDay = deltas(report, "acc-main");
     expect(byDay.get("2026-02-25")).toBe(-10_000); // full sweep again, not 0
+  });
+
+  it("debits nothing at a close whose period base movements net negative", () => {
+    const uow = baseUow();
+    fortnightlyAnchor(uow, "person-a", 1_000); // deposits 01-29, 02-12, ...
+    budget(uow, "bud-coffee", { limitCents: 5_000 }); // -357 a day, -359 on period last days
+    goal(uow, "goal-0", 5_000_000);
+    goal(uow, "goal-1", 5_000_000);
+    stageWithShares(uow, [6000, 4000]);
+
+    const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
+    const byDay = deltas(report, "acc-main");
+    // Movements inside [01-29, 02-12) net 1,000 - 5,000 < 0: savings floor at zero, no debit.
+    expect(byDay.get("2026-01-29")).toBe(1_000 - 357); // deposit and proration slice share the day
+    expect(byDay.get("2026-02-11")).toBe(-359); // close day: remainder only, no allocation debit
+    expect(byDay.get("2026-02-25")).toBe(-359); // same at the next close
   });
 
   it("projects no allocation debit without an active stage", () => {

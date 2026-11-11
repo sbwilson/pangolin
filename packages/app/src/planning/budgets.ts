@@ -34,7 +34,9 @@ export const createBudgetInput = z
     personId: z.string().nullable().optional(),
     categoryId: z.string().nullable().optional(),
     categoryGroupId: z.string().nullable().optional(),
-    fundingAccountId: z.string().nullable().optional(),
+    // `""` is rejected outright: it must reach the existence guard or answer 4xx like an
+    // unknown id, never slip through to an FK violation.
+    fundingAccountId: z.string().min(1).nullable().optional(),
     cadence: z.enum(["fortnight", "month"]),
     limitCents: z.number().int().positive(),
     rollover: z.boolean().default(false),
@@ -56,7 +58,9 @@ export const updateBudgetInput = z
     id: z.string().min(1),
     categoryId: z.string().nullable().optional(),
     categoryGroupId: z.string().nullable().optional(),
-    fundingAccountId: z.string().nullable().optional(),
+    // `""` is rejected outright: it must reach the existence guard or answer 4xx like an
+    // unknown id, never slip through to an FK violation.
+    fundingAccountId: z.string().min(1).nullable().optional(),
     cadence: z.enum(["fortnight", "month"]).optional(),
     limitCents: z.number().int().positive().optional(),
     rollover: z.boolean().optional(),

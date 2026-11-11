@@ -134,11 +134,14 @@ function forecastBudgetScope(
 
 /**
  * The categories confirmed bill series already project: each series' payee `defaultCategoryId`
- * (AD-25). A payee without a default category covers nothing.
+ * (AD-25). A payee without a default category covers nothing, and neither does a series whose
+ * account is outside the projected set — its movements are dropped, so it must not silence a
+ * budget's proration either.
  */
 function coveredCategories(
   billSeries: readonly RecurringSeriesRow[],
   payees: readonly PayeeRow[],
+  projectedIds: ReadonlySet<string>,
 ): Set<string> {
   const defaultOf = new Map<string, string | null>(
     payees.map((p) => [p.id as string, p.defaultCategoryId]),
@@ -146,6 +149,7 @@ function coveredCategories(
   const covered = new Set<string>();
   for (const series of billSeries) {
     if (series.direction !== "bill") continue;
+    if (!projectedIds.has(series.accountId)) continue;
     const categoryId = defaultOf.get(series.payeeId as string);
     if (categoryId !== null && categoryId !== undefined) covered.add(categoryId);
   }
@@ -155,7 +159,8 @@ function coveredCategories(
 /**
  * Whether a budget's spend is already projected as bill series: a category budget when its
  * category is covered, a group budget only when every live category of its group is (the
- * all-covered rule — a partially covered group still projects fully).
+ * all-covered rule — a partially covered group still projects fully). A group with no live
+ * categories covers nothing: nothing of it is projected, so the budget keeps projecting.
  */
 function budgetIsCovered(
   budget: BudgetRow,
@@ -164,9 +169,8 @@ function budgetIsCovered(
 ): boolean {
   if (budget.categoryId !== null) return covered.has(budget.categoryId);
   if (budget.categoryGroupId === null) return false;
-  return categories
-    .filter((c) => c.groupId === budget.categoryGroupId)
-    .every((c) => covered.has(c.id as string));
+  const live = categories.filter((c) => c.groupId === budget.categoryGroupId);
+  return live.length > 0 && live.every((c) => covered.has(c.id as string));
 }
 
 /**
@@ -284,7 +288,7 @@ export function forecastCashFlow(
   //    horizon, the rounding remainder on the period's last day. Spend charges the budget's
   //    funding account (unset: the scope's deposit account); series-covered budgets project
   //    nothing — the series already roll those categories forward.
-  const covered = coveredCategories(billSeries, payeeRows);
+  const covered = coveredCategories(billSeries, payeeRows, projectedIds);
   for (const budget of budgets) {
     if (budgetIsCovered(budget, covered, categoryRows)) continue;
     const scope = forecastBudgetScope(ctx, budget);
@@ -299,9 +303,11 @@ export function forecastCashFlow(
   }
 
   // 4. Virtual goal allocations: each pay-period close inside the horizon debits the deposit
-  //    account with the active stage's shares of the period's projected positive savings (all
-  //    base movements landing there, floored at 0), split largest-remainder (AD-13). The base
-  //    is snapshotted so one period's debit never shrinks a later period's savings.
+  //    account with the active stage's shares of the period's projected positive savings — all
+  //    base movements landing there from the period's own expected pay day (a weekend-rolled
+  //    deposit lands before `start`, and belongs to the period it pays for) through the close,
+  //    floored at 0 — split largest-remainder (AD-13). The base is snapshotted so one period's
+  //    debit never shrinks a later period's savings.
   const shares = activeAllocationShares(ctx);
   if (shares.some((share) => share > 0)) {
     for (const [accountId, calendar] of depositCalendars) {
@@ -314,7 +320,7 @@ export function forecastCashFlow(
           0,
           base.reduce(
             (sum, m) =>
-              Temporal.PlainDate.compare(m.date, period.start) >= 0 &&
+              Temporal.PlainDate.compare(m.date, period.expectedPayDate) >= 0 &&
               Temporal.PlainDate.compare(m.date, closeDay) <= 0
                 ? sum + m.cents
                 : sum,
@@ -322,8 +328,10 @@ export function forecastCashFlow(
           ),
         );
         if (savings <= 0) continue;
-        // Same split as `executeSavingsAllocation`: the rules' shareBp of the savings, then
-        // largest-remainder across the goals; shares summing below 100% leave a buffer.
+        // Mirrors `executeSavingsAllocation`'s sweep arithmetic only — the rules' summed shareBp
+        // of the savings, floored, then split largest-remainder, shares summing below 100%
+        // leaving a buffer. It does not mirror the engine's completed-goal rescale or its
+        // exit-capacity caps: this projection never mutates goals or stages.
         const totalShares = shares.reduce((sum, share) => sum + share, 0);
         const toAllocate = Math.floor((savings * totalShares) / 10_000);
         if (toAllocate <= 0) continue;

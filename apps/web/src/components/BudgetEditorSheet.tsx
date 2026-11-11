@@ -152,6 +152,18 @@ export function BudgetEditorSheet({
   const categories = categoriesQuery.data ?? [];
   const groups = categoryGroupsQuery.data ?? [];
 
+  // Funding select: open transaction accounts, plus a stored funding account that no longer
+  // qualifies (closed, savings, gone) as its own labelled option — never silently rewritten
+  // to the default, because that stale id is what saving re-sends.
+  const openAccounts = (accountsQuery.data ?? []).filter(
+    (acc) => acc.type === "transaction" && acc.closedOn === null,
+  );
+  const storedFundingMissing =
+    fundingAccountId !== "" && !openAccounts.some((acc) => acc.id === fundingAccountId);
+  const storedFundingAccount = storedFundingMissing
+    ? (accountsQuery.data ?? []).find((acc) => acc.id === fundingAccountId)
+    : undefined;
+
   const handleSave = async () => {
     setError(null);
     if (!targetId) {
@@ -369,13 +381,18 @@ export function BudgetEditorSheet({
             className="flex h-9 w-full rounded-md border border-border bg-card px-3 py-1 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
           >
             <option value="">Pay account (default)</option>
-            {(accountsQuery.data ?? [])
-              .filter((acc) => acc.type === "transaction" && acc.closedOn === null)
-              .map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.name}
-                </option>
-              ))}
+            {storedFundingMissing && (
+              <option value={fundingAccountId}>
+                {storedFundingAccount
+                  ? `${storedFundingAccount.name} (unavailable)`
+                  : "Unavailable"}
+              </option>
+            )}
+            {openAccounts.map((acc) => (
+              <option key={acc.id} value={acc.id}>
+                {acc.name}
+              </option>
+            ))}
           </select>
           <span className="text-xs text-muted-foreground">
             The forecast charges this budget&#8217;s daily spend to that account. The default is the

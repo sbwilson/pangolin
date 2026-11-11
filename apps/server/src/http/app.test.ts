@@ -4593,6 +4593,66 @@ describe("GET /api/payees/:id/logo", () => {
       const verifyRes = await app.request(`/api/planning/budgets/${budget.id}`, signedInAlex);
       expect(verifyRes.status).toBe(404);
     });
+
+    it("answers 404 for an unknown funding account and 400 for an empty one", async () => {
+      const { app, catGroceries } = setupBudgetsEnv();
+      const headers = {
+        Cookie: SESSION_COOKIE,
+        Origin: ORIGIN,
+        "Content-Type": "application/json",
+      };
+
+      const unknownCreate = await app.request("/api/planning/budgets", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          categoryId: catGroceries.id,
+          cadence: "fortnight",
+          limitCents: 60000,
+          fundingAccountId: "no-such-account",
+        }),
+      });
+      expect(unknownCreate.status).toBe(404);
+
+      const emptyCreate = await app.request("/api/planning/budgets", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          categoryId: catGroceries.id,
+          cadence: "fortnight",
+          limitCents: 60000,
+          fundingAccountId: "",
+        }),
+      });
+      expect(emptyCreate.status).toBe(400);
+
+      // Once the budget exists, updates answer the same way.
+      const created = await app.request("/api/planning/budgets", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          categoryId: catGroceries.id,
+          cadence: "fortnight",
+          limitCents: 60000,
+        }),
+      });
+      expect(created.status).toBe(201);
+      const { budget } = (await created.json()) as { budget: { id: string } };
+
+      const unknownPatch = await app.request(`/api/planning/budgets/${budget.id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ fundingAccountId: "no-such-account" }),
+      });
+      expect(unknownPatch.status).toBe(404);
+
+      const emptyPatch = await app.request(`/api/planning/budgets/${budget.id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ fundingAccountId: "" }),
+      });
+      expect(emptyPatch.status).toBe(400);
+    });
   });
 
   describe("Planning Recurring Bills API endpoints (/api/planning/recurring-bills/*)", () => {
