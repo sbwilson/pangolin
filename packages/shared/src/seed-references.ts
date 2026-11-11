@@ -61,6 +61,8 @@ export type SeedReferenceEvent =
       readonly person?: string | null | undefined;
       readonly category?: { readonly group: string; readonly name: string } | null | undefined;
       readonly categoryGroup?: string | null | undefined;
+      /** Optional funding account key; unset means the forecast charges the pay deposit account. */
+      readonly fundingAccount?: string | null | undefined;
       readonly cadence: "fortnight" | "month";
       readonly limitCents: number;
       readonly rollover: boolean;
@@ -271,6 +273,9 @@ export function checkSeedReferences(event: SeedReferenceEvent, known: SeedKnown)
         (event.category == null && event.categoryGroup == null)
       ) {
         bad("budget must target either category or categoryGroup, but not both");
+      }
+      if (event.fundingAccount != null && !known.accounts.has(event.fundingAccount)) {
+        bad(`unknown account "${event.fundingAccount}"`);
       }
       known.budgets.add(event.key);
       break;

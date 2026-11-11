@@ -56,6 +56,7 @@ const sampleSummaries: api.BudgetSummaryData[] = [
       personId: null, // Shared
       categoryId: "cat-eating-out",
       categoryGroupId: null,
+      fundingAccountId: null,
       cadence: "fortnight",
       limitCents: 40000,
       rollover: false,
@@ -80,6 +81,7 @@ const sampleSummaries: api.BudgetSummaryData[] = [
       personId: null, // Shared
       categoryId: "cat-groceries",
       categoryGroupId: null,
+      fundingAccountId: null,
       cadence: "fortnight",
       limitCents: 60000,
       rollover: false,
@@ -104,6 +106,7 @@ const sampleSummaries: api.BudgetSummaryData[] = [
       personId: "person-simon", // Personal Simon
       categoryId: "cat-transport",
       categoryGroupId: null,
+      fundingAccountId: null,
       cadence: "fortnight",
       limitCents: 18000,
       rollover: false,
@@ -128,6 +131,7 @@ const sampleSummaries: api.BudgetSummaryData[] = [
       personId: "person-simon", // Personal Simon
       categoryId: null,
       categoryGroupId: "grp-lifestyle",
+      fundingAccountId: null,
       cadence: "month",
       limitCents: 25000,
       rollover: true,
@@ -327,6 +331,7 @@ describe("BudgetsPage", () => {
       personId: null,
       categoryId: "cat-groceries",
       categoryGroupId: null,
+      fundingAccountId: null,
       cadence: "fortnight",
       limitCents: 18500,
       rollover: false,

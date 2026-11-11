@@ -1,10 +1,13 @@
-// Verification test for the planning forecast tracer on the default seed:
-// GET /api/planning/forecast projects each viewer's visible `transaction` accounts from today
-// through `today + horizon months`, and the joint everyday account — whose low-balance threshold
-// sits above the balance it holds today — produces a dip warning that matches the expectation the
-// seed module derives from the same arithmetic. The other partner never sees Person A's private
-// account, an unknown horizon falls back to 3 months, and every warning names the first day
-// below its account's threshold, not the lowest point of the series.
+// Verification test for the planning forecast on the default seed:
+// GET /api/planning/forecast projects each viewer's visible `transaction` accounts with day 0
+// carrying today's actual balance and projections from tomorrow through `today + horizon
+// months`. Every projected day-delta equals the movement map the seed module derives from the
+// same arithmetic (deposits, confirmed series, funding-account proration, covered-category
+// exclusions and virtual period-close allocation debits), and the joint everyday account — whose
+// low-balance threshold sits above the balance it holds today — produces a dip warning that
+// matches the expectation the seed module derives. The other partner never sees Person A's
+// private account, an unknown horizon falls back to 3 months, and every warning names the first
+// day below its account's threshold, not the lowest point of the series.
 
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -142,10 +145,43 @@ function expectedWarnings(person: string): { account: string; cents: number; dat
   return seed.expectations["budgets-and-bills.forecast"].warnings[person];
 }
 
+function forecastMirror(person: string): {
+  day0: Record<string, number>;
+  byDay: Record<string, Record<string, number>>;
+  allocationDebits: Record<string, { date: string; parts: number[] }[]>;
+} {
+  return seed.expectations["budgets-and-bills.forecast"].perViewer[person];
+}
+
 const ACCOUNT_NAMES: Record<string, string> = {
   "joint-everyday": "Joint everyday",
   "person-a-private": "Person A private",
 };
+
+const NAME_KEYS: Record<string, string> = {
+  "Joint everyday": "joint-everyday",
+  "Person A private": "person-a-private",
+};
+
+/**
+ * Every projected point of every account must equal the seed mirror's day-0 balance plus the
+ * mirror's movements up to that day — the whole model (deposits, bills, funding accounts,
+ * exclusions, allocation debits) checked day by day.
+ */
+function expectMatchesMirror(body: ForecastBody, person: string): void {
+  const mirror = forecastMirror(person);
+  for (const account of body.accounts) {
+    const key = NAME_KEYS[account.name]!;
+    const day0 = mirror.day0[key];
+    expect(day0).toBeDefined();
+    expect(account.points[0]!.balanceCents).toBe(day0!);
+    let balance = day0!;
+    for (const point of account.points) {
+      balance += mirror.byDay[key]?.[point.date] ?? 0;
+      expect([point.date, point.balanceCents]).toEqual([point.date, balance]);
+    }
+  }
+}
 
 describe("Cash-flow forecast on default seed (planning-forecast tracer)", () => {
   it("warns for Person A's joint everyday dip, matching the seed's derived expectation", async () => {
@@ -206,11 +242,34 @@ describe("Cash-flow forecast on default seed (planning-forecast tracer)", () => 
       expect(got?.cents).toBe(w.cents);
       expect(got?.date).toBe(w.dateOn);
     }
-    // B's walk charges Telstra and fitness, but not A's coffee: on day 0 the balance sits at
-    // opening - 7500 (Telstra) - 286 (fitness daily), which is B's expected first-day figure.
+    // Day 0 is today's actual snapshot: Telstra paid today is already inside it, and B's
+    // mobile budget is covered by the confirmed series, so nothing is re-projected on day 0.
     const everyday = body.accounts[0]!;
     const opening = seed.expectations["balance-snapshots.closingCents"]["joint-everyday"];
-    expect(everyday.points[0]?.balanceCents).toBe(opening - 7_500 - 286);
+    expect(everyday.points[0]?.balanceCents).toBe(opening);
+  });
+
+  it("walks exactly the movements the seed mirror derives, both viewers", async () => {
+    expectMatchesMirror(await forecast("3"), "person-a");
+
+    const res = await app.request("/api/planning/forecast?horizon=3", {
+      headers: { Cookie: "session=user-b" },
+    });
+    expect(res.status).toBe(200);
+    expectMatchesMirror((await res.json()) as ForecastBody, "person-b");
+
+    // The joint account's closes carry the stage-one (80/10/10) allocation debits derived from
+    // each period's projected savings — and the current period, with no projected savings yet,
+    // carries none.
+    for (const person of ["person-a", "person-b"]) {
+      const debits = forecastMirror(person).allocationDebits["joint-everyday"];
+      expect(debits).toBeDefined();
+      expect(debits!.length).toBeGreaterThan(0);
+      for (const debit of debits!) {
+        expect(debit.parts).toHaveLength(3);
+        expect(debit.parts.reduce((sum, part) => sum + part, 0)).toBeGreaterThan(0);
+      }
+    }
   });
 
   it("defaults an unknown or missing horizon to 3 months, and honours 6 and 12", async () => {

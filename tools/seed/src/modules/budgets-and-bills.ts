@@ -1,3 +1,4 @@
+import { allocate, cents } from "@pangolin/shared";
 import type { Cadence, PayCalendar } from "@pangolin/shared/period";
 import { createCalendarPayCalendar } from "@pangolin/shared/period";
 import type { PlainDate } from "@pangolin/shared/temporal";
@@ -5,6 +6,7 @@ import { parseDate, Temporal } from "@pangolin/shared/temporal";
 import type { Json, SeedModule } from "../module.ts";
 import type {
   BudgetCreatedEvent,
+  CategoryRef,
   PayAnchorCreatedEvent,
   RecurringSeriesCreatedEvent,
   SeedEvent,
@@ -17,10 +19,17 @@ import { PERSON_KEYS } from "./people-and-household.ts";
 
 const [A, B] = PERSON_KEYS;
 
+// The pay-period close split the forecast mirrors: the goals module's stage one allocates the
+// shared pool's savings 80% / 10% / 10% (rainyDay / houseDeposit / japanTrip — see goals.ts).
+// The goals module runs after this one, so its stages are not yet folded into the world; if
+// its stage-one rules change, the day-delta comparison in `forecast-seed.test.ts` fails loudly.
+const STAGE_ONE_SHARES = [8000, 1000, 1000] as const;
+
 export const BUDGET_KEYS = {
   sharedGroceries: "budget-shared-groceries",
   personalCoffeeA: "budget-personal-coffee-a",
   personalFitnessB: "budget-personal-fitness-b",
+  personalMobileA: "budget-personal-mobile-a",
 } as const;
 
 export const PAY_ANCHOR_KEYS = {
@@ -77,18 +86,21 @@ export const budgetsAndBills: SeedModule = {
       person: null, // shared
       category: cat("Food", "Groceries"),
       categoryGroup: null,
+      fundingAccount: null,
       cadence: "fortnight",
       limitCents: 30_000,
       rollover: true,
     };
 
-    // Personal Coffee budget for Person A: limit $20 ($20.00 / 2000 cents), rollover false
+    // Personal Coffee budget for Person A: limit $20 ($20.00 / 2000 cents), rollover false.
+    // Its spend is charged to Person A's private account — the funding-account override demo.
     const personalCoffeeBudgetA: BudgetCreatedEvent = {
       type: "budget.created",
       key: BUDGET_KEYS.personalCoffeeA,
       person: A,
       category: cat("Food", "Coffee"),
       categoryGroup: null,
+      fundingAccount: ACCOUNT_KEYS.privateA,
       cadence: "fortnight",
       limitCents: 2_000,
       rollover: false,
@@ -101,8 +113,24 @@ export const budgetsAndBills: SeedModule = {
       person: B,
       category: cat("Health", "Fitness"),
       categoryGroup: null,
+      fundingAccount: null,
       cadence: "fortnight",
       limitCents: 4_000,
+      rollover: false,
+    };
+
+    // Personal Mobile budget for Person A: limit $200, rollover false.
+    // Its category is the Telstra payee's default category, which the confirmed Telstra series
+    // rolls forward — so the forecast excludes this budget entirely (the series-exclusion demo).
+    const personalMobileBudgetA: BudgetCreatedEvent = {
+      type: "budget.created",
+      key: BUDGET_KEYS.personalMobileA,
+      person: A,
+      category: cat("Utilities", "Mobile"),
+      categoryGroup: null,
+      fundingAccount: null,
+      cadence: "fortnight",
+      limitCents: 20_000,
       rollover: false,
     };
 
@@ -167,6 +195,7 @@ export const budgetsAndBills: SeedModule = {
       sharedGroceriesBudget,
       personalCoffeeBudgetA,
       personalFitnessBudgetB,
+      personalMobileBudgetA,
       sydneyWaterSeries,
       telstraSeries,
       netflixSeries,
@@ -242,18 +271,19 @@ export const budgetsAndBills: SeedModule = {
       closed6Periods.reduce((a, b) => a + b, 0) / closed6Periods.length,
     );
 
-    // 4. Forecast expectations (planning-forecast tracer story). Mirrors the read-only
-    //    `planning.forecastCashFlow` projection: per viewer, walk every visible `transaction`
-    //    account from today through today + 3 months, adding calendar-aligned pay deposits
-    //    (AD-25), confirmed bill series rolled forward, and budget limits pro-rated daily to the
-    //    scope's deposit account; report each account's first balance strictly below its
-    //    low-balance threshold. Shared budgets contribute nothing — the household has no
-    //    household pay anchor, so they resolve to no scope.
+    // 4. Forecast expectations (planning-forecast, full cash-flow model). Mirrors the read-only
+    //    `planning.forecastCashFlow` projection: per viewer, day 0 carries each visible
+    //    `transaction` account's actual balance today and projections run from tomorrow through
+    //    today + 3 months — calendar-aligned pay deposits (AD-25), confirmed bill series rolled
+    //    forward, budget limits pro-rated daily to the budget's funding account (default: the
+    //    scope's deposit account), and a virtual allocation debit of the stage-one shares at
+    //    each pay-period close. Series-covered budgets contribute nothing; shared budgets
+    //    contribute nothing — the household has no household pay anchor.
     const forecast = forecastDipExpectations(
       world,
       [anchorA, anchorB],
       [sydneyWaterSeries, telstraSeries, netflixSeries],
-      [sharedGroceriesBudget, personalCoffeeBudgetA, personalFitnessBudgetB],
+      [sharedGroceriesBudget, personalCoffeeBudgetA, personalFitnessBudgetB, personalMobileBudgetA],
     );
 
     return {
@@ -341,10 +371,16 @@ function seriesOccurrence(
   }
 }
 
+// A category is identified by its `group/name` pair, matching how the payee default-category
+// reference identifies the categories confirmed series cover.
+const catKey = (category: CategoryRef): string => `${category.group}/${category.name}`;
+
 /**
- * Mirrors `planning.forecastCashFlow` for the seeded world: per viewer person key, the first
- * dip below threshold for each of their visible `transaction` accounts over the next three
- * months. Deliberately a mirror, not a re-import — if the use case's arithmetic changes, this
+ * Mirrors `planning.forecastCashFlow` for the seeded world: per viewer person key, day 0's
+ * actual balance, every projected movement by account and day (including the virtual
+ * period-close allocation debits), the allocation debit list, and the first dip below
+ * threshold for each of their visible `transaction` accounts over the next three months.
+ * Deliberately a mirror, not a re-import — if the use case's arithmetic changes, this
  * expectation changes with it and `forecast-seed.test.ts` says so.
  */
 function forecastDipExpectations(
@@ -355,9 +391,21 @@ function forecastDipExpectations(
 ): Json {
   const today = world.today;
   const through = today.add({ months: 3 });
+  // Day 0 is today's actual balance; projected movements start tomorrow.
+  const projectedFrom = today.add({ days: 1 });
   const accountsByKey = new Map(world.accounts.map((a) => [a.key, a]));
   const visibleTo = (account: WorldAccount, viewer: string): boolean =>
     !account.isPrivate || account.owners.some((o) => o.person === viewer);
+
+  // The categories confirmed bill series already project: each series' payee default category.
+  const coveredCategories = new Set<string>();
+  for (const s of series) {
+    if (s.status !== "confirmed" || s.direction !== "bill") continue;
+    const payee = world.payees.find((p) => p.key === s.payee);
+    if (payee !== undefined && payee.defaultCategory !== null) {
+      coveredCategories.add(catKey(payee.defaultCategory));
+    }
+  }
 
   // Balance as of `today`: the opening snapshot plus every movement up to and including it,
   // the same chain `balance-snapshots` writes and `balanceAsOf` reads.
@@ -372,6 +420,7 @@ function forecastDipExpectations(
   };
 
   const warnings: Record<string, Json> = {};
+  const perViewer: Record<string, Json> = {};
   for (const viewer of PERSON_KEYS) {
     const projected = world.accounts.filter(
       (a) => a.accountType === "transaction" && visibleTo(a, viewer),
@@ -388,17 +437,21 @@ function forecastDipExpectations(
       byDay.set(iso(day), (byDay.get(iso(day)) ?? 0) + cents);
     };
 
-    // Deposits: the viewer's own anchors, on each period's expected pay day (AD-25).
+    // Deposits: the viewer's own anchors, on each period's expected pay day (AD-25) from
+    // tomorrow. Each deposit account's calendar also drives its period-close allocations.
+    const calendars = new Map<string, PayCalendar>();
     for (const anchor of anchors) {
       if (anchor.person !== viewer || anchor.expectedNetCents === null) continue;
-      for (const period of payCalendarOf(anchor).periodsBetween(today, through.add({ days: 6 }))) {
+      const calendar = payCalendarOf(anchor);
+      for (const period of calendar.periodsBetween(today, through.add({ days: 6 }))) {
         if (
-          Temporal.PlainDate.compare(period.expectedPayDate, today) >= 0 &&
+          Temporal.PlainDate.compare(period.expectedPayDate, projectedFrom) >= 0 &&
           Temporal.PlainDate.compare(period.expectedPayDate, through) <= 0
         ) {
           addMove(anchor.account, period.expectedPayDate, anchor.expectedNetCents);
         }
       }
+      if (!calendars.has(anchor.account)) calendars.set(anchor.account, calendar);
     }
 
     // Confirmed bill series rolled forward from `nextDueOn`.
@@ -410,14 +463,22 @@ function forecastDipExpectations(
       for (let i = 0; ; i++) {
         const due = seriesOccurrence(nextDue, i, s.cadence);
         if (Temporal.PlainDate.compare(due, through) > 0) break;
-        if (Temporal.PlainDate.compare(due, today) >= 0) addMove(s.account, due, -s.expectedCents);
+        if (Temporal.PlainDate.compare(due, projectedFrom) >= 0) {
+          addMove(s.account, due, -s.expectedCents);
+        }
       }
     }
 
-    // Budget limits pro-rated daily across each pay-cycle period, charged to the scope's
-    // deposit account. A shared budget needs a household pay anchor of matching cadence; this
-    // household has none, so the shared groceries budget contributes nothing.
+    // Budget limits pro-rated daily across each pay-cycle period, charged to the budget's
+    // funding account (default: the scope's deposit account). A category a confirmed series
+    // already covers projects nothing. A shared budget needs a household pay anchor of
+    // matching cadence; this household has none, so the shared groceries budget contributes
+    // nothing.
     for (const budget of budgets) {
+      if (budget.categoryGroup !== null) {
+        throw new Error(`forecast mirror does not mirror group budgets: ${budget.key}`);
+      }
+      if (budget.category !== null && coveredCategories.has(catKey(budget.category))) continue;
       let scopeAnchor: PayAnchorCreatedEvent | undefined;
       if (budget.person !== null) {
         if (budget.person !== viewer) continue;
@@ -428,6 +489,7 @@ function forecastDipExpectations(
         scopeAnchor = anchors.find((a) => a.person === householdPerson && a.cadence === target);
       }
       if (scopeAnchor === undefined) continue;
+      const targetAccount = budget.fundingAccount ?? scopeAnchor.account;
       for (const period of payCalendarOf(scopeAnchor).periodsBetween(
         today.subtract({ days: 1 }),
         through,
@@ -439,14 +501,49 @@ function forecastDipExpectations(
         const lastDay = period.end.subtract({ days: 1 });
         for (let day = period.start; Temporal.PlainDate.compare(day, lastDay) <= 0; ) {
           if (
-            Temporal.PlainDate.compare(day, today) >= 0 &&
+            Temporal.PlainDate.compare(day, projectedFrom) >= 0 &&
             Temporal.PlainDate.compare(day, through) <= 0
           ) {
             const onLastDay = Temporal.PlainDate.compare(day, lastDay) === 0;
-            addMove(scopeAnchor.account, day, -(daily + (onLastDay ? remainder : 0)));
+            addMove(targetAccount, day, -(daily + (onLastDay ? remainder : 0)));
           }
           day = day.add({ days: 1 });
         }
+      }
+    }
+
+    // Virtual goal allocations: each pay-period close debits the deposit account with the
+    // active stage's shares of the period's projected positive savings (all base movements
+    // landing there, floored at 0), split largest-remainder (AD-13). The base is snapshotted
+    // so one period's debit never shrinks a later period's savings.
+    const allocationDebits: Record<string, { readonly date: string; readonly parts: number[] }[]> =
+      {};
+    for (const [accountKey, calendar] of calendars) {
+      const base = [...(moves.get(accountKey)?.entries() ?? [])];
+      const debits: { readonly date: string; readonly parts: number[] }[] = [];
+      allocationDebits[accountKey] = debits;
+      for (const period of calendar.periodsBetween(projectedFrom, through)) {
+        const closeDay = period.end.subtract({ days: 1 });
+        if (Temporal.PlainDate.compare(closeDay, projectedFrom) < 0) continue;
+        if (Temporal.PlainDate.compare(closeDay, through) > 0) continue;
+        const startIso = iso(period.start);
+        const closeIso = iso(closeDay);
+        const savings = Math.max(
+          0,
+          base.reduce(
+            (sum, [day, cents]) => (day >= startIso && day <= closeIso ? sum + cents : sum),
+            0,
+          ),
+        );
+        if (savings <= 0) continue;
+        // Same split as the app (and `executeSavingsAllocation`): the rules' shareBp of the
+        // savings, then largest-remainder across the goals.
+        const totalShares = STAGE_ONE_SHARES.reduce((sum, share) => sum + share, 0);
+        const toAllocate = Math.floor((savings * totalShares) / 10_000);
+        if (toAllocate <= 0) continue;
+        const parts = allocate(cents(toAllocate), STAGE_ONE_SHARES);
+        for (const part of parts) addMove(accountKey, closeDay, -part);
+        debits.push({ date: closeIso, parts: [...parts] });
       }
     }
 
@@ -466,7 +563,15 @@ function forecastDipExpectations(
     }
     dips.sort((x, y) => (x.dateOn < y.dateOn ? -1 : x.dateOn > y.dateOn ? 1 : 0));
     warnings[viewer] = dips.map((d): Json => ({ ...d }));
+
+    const day0: Record<string, number> = {};
+    const byDayOut: Record<string, Record<string, number>> = {};
+    for (const account of projected) {
+      day0[account.key] = openingOf(account.key);
+      byDayOut[account.key] = Object.fromEntries(moves.get(account.key) ?? []);
+    }
+    perViewer[viewer] = { day0, byDay: byDayOut, allocationDebits };
   }
 
-  return { horizonMonths: 3, warnings };
+  return { horizonMonths: 3, warnings, perViewer };
 }

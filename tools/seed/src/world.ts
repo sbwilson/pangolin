@@ -116,6 +116,8 @@ export interface WorldBudget {
   readonly person: string | null;
   readonly category: CategoryRef | null;
   readonly categoryGroup: string | null;
+  /** Forecast funding account key; `null` charges the pay-cycle scope's deposit account. */
+  readonly fundingAccount: string | null;
   readonly cadence: "fortnight" | "month";
   readonly limitCents: number;
   readonly rollover: boolean;
@@ -511,6 +513,7 @@ export function applyEvents(world: World, events: readonly SeedEvent[]): World {
           person: event.person ?? null,
           category: event.category ?? null,
           categoryGroup: event.categoryGroup ?? null,
+          fundingAccount: event.fundingAccount ?? null,
           cadence: event.cadence,
           limitCents: event.limitCents,
           rollover: event.rollover,

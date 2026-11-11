@@ -209,6 +209,7 @@ const EVENT_SCHEMAS = {
     person: key.nullable().optional(),
     category: categoryRef.nullable().optional(),
     categoryGroup: key.nullable().optional(),
+    fundingAccount: key.nullable().optional(),
     cadence: z.enum(["fortnight", "month"]),
     limitCents: z.number().int().positive(),
     rollover: z.boolean().default(false),
@@ -737,6 +738,8 @@ function applyEvents(
           categoryId: event.category != null ? categoryId(event.category) : null,
           categoryGroupId:
             event.categoryGroup != null ? categoryGroupId(event.categoryGroup) : null,
+          fundingAccountId:
+            event.fundingAccount != null ? (accounts[event.fundingAccount] as string) : null,
           cadence: event.cadence,
           limitCents: event.limitCents,
           rollover: event.rollover,

@@ -1204,6 +1204,8 @@ export interface BudgetData {
   readonly personId: string | null;
   readonly categoryId: string | null;
   readonly categoryGroupId: string | null;
+  /** Forecast funding account; null charges the pay-cycle scope's deposit account. */
+  readonly fundingAccountId: string | null;
   readonly cadence: "fortnight" | "month";
   readonly limitCents: number;
   readonly rollover: boolean;
@@ -1230,6 +1232,7 @@ export interface CreateBudgetInput {
   readonly personId?: string | null;
   readonly categoryId?: string | null;
   readonly categoryGroupId?: string | null;
+  readonly fundingAccountId?: string | null;
   readonly cadence: "fortnight" | "month";
   readonly limitCents: number;
   readonly rollover?: boolean;
@@ -1238,6 +1241,7 @@ export interface CreateBudgetInput {
 export interface UpdateBudgetInput {
   readonly categoryId?: string | null;
   readonly categoryGroupId?: string | null;
+  readonly fundingAccountId?: string | null;
   readonly cadence?: "fortnight" | "month";
   readonly limitCents?: number;
   readonly rollover?: boolean;

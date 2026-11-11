@@ -75,6 +75,8 @@ describe("committed migrations", () => {
       "0026_budget",
       "0027_recurring_series",
       "0028_goals_savings",
+      "0029_account_low_balance_threshold",
+      "0030_budget_funding_account",
     ];
     expect(migrate(db, migrations)).toEqual({ applied: names, schemaVersion: migrations.length });
     expect(migrate(db, migrations)).toEqual({ applied: [], schemaVersion: migrations.length });

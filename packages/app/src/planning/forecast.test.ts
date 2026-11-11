@@ -1,13 +1,16 @@
-// `planning.forecastCashFlow` — per-viewer daily projection from the clock's today, with
-// first-dip warnings. Fixtures pin: deposits on rolled pay days (AD-25, never series), confirmed
-// `bill` series only rolled by cadence (monthly day 29-31 clamps), budget limits pro-rated daily
-// with the remainder on the period's last day charged to the scope's deposit account, shared
-// budgets without a household anchor contributing nothing, unknown horizons defaulting to 3, and
-// private accounts visible only to their owner.
+// `planning.forecastCashFlow` — per-viewer daily projection with day 0 pinned to today's actual
+// balance (AD: no day-0 double count) and projections from tomorrow, first-dip warnings, funding
+// accounts, series-covered category exclusion, and virtual goal-allocation debits at period
+// closes. Fixtures pin: deposits on rolled pay days (AD-25, never series), confirmed `bill`
+// series only rolled by cadence (monthly day 29-31 clamps), budget limits pro-rated daily with
+// the remainder on the period's last day charged to the funding account (default: the scope's
+// deposit account), shared budgets without a household anchor contributing nothing, unknown
+// horizons defaulting to 3, and private accounts visible only to their owner.
 import type { Id } from "@pangolin/shared";
 import { parseDate } from "@pangolin/shared/temporal";
 import { describe, expect, it } from "vitest";
 import type { UseCaseContext } from "../context.ts";
+import type { BudgetRow } from "../ports/unit-of-work.ts";
 import { type MemoryUnitOfWork, memoryUnitOfWork } from "../testing/memory-uow.ts";
 import { personViewer } from "../viewer.ts";
 import { FORECAST_HORIZONS, forecastCashFlow, parseForecastHorizon } from "./forecast.ts";
@@ -148,6 +151,103 @@ function fortnightlyAnchor(uow: MemoryUnitOfWork, personId: string, cents: numbe
   });
 }
 
+/** A live shared-scope category under `groupId`. */
+function category(uow: MemoryUnitOfWork, id: string, groupId: string, name: string): void {
+  uow.state.categories.push({
+    id: id as Id<"Category">,
+    groupId: groupId as Id<"CategoryGroup">,
+    name,
+    isFixedCost: false,
+    createdAt: STAMP,
+    updatedAt: STAMP,
+  });
+}
+
+/** A household-wide payee whose default category is `defaultCategoryId` (null: none). */
+function payee(
+  uow: MemoryUnitOfWork,
+  id: string,
+  name: string,
+  defaultCategoryId: string | null,
+): void {
+  uow.state.payees.push({
+    id: id as Id<"Payee">,
+    scopePersonId: null,
+    name,
+    websiteUrl: null,
+    logoAttachmentId: null,
+    defaultCategoryId: defaultCategoryId as Id<"Category"> | null,
+    createdAt: STAMP,
+    updatedAt: STAMP,
+  });
+}
+
+/** A shared-pool goal with `targetCents` and no balance. */
+function goal(uow: MemoryUnitOfWork, id: string, targetCents: number): void {
+  uow.state.goals.push({
+    id: id as Id<"Goal">,
+    personId: null,
+    name: `Goal ${id}`,
+    targetCents,
+    targetDate: null,
+    priority: 1,
+    kind: "flexible",
+    isEmergencyFund: false,
+    completedAt: null,
+    createdAt: STAMP,
+    updatedAt: STAMP,
+  });
+}
+
+/** The shared pool's only stage: sort 1, no exit goal, splitting savings by `shares`. */
+function stageWithShares(uow: MemoryUnitOfWork, shares: readonly [number, number]): void {
+  uow.state.stages.push({
+    id: "stage-1" as Id<"AllocationStage">,
+    personId: null,
+    name: "Save",
+    sort: 1,
+    exitGoalId: null,
+    fallbackThresholdBp: 8000,
+    completedSharePolicy: "rescale",
+    createdAt: STAMP,
+    updatedAt: STAMP,
+  });
+  for (const [i, shareBp] of shares.entries()) {
+    uow.state.goalRules.push({
+      id: `rule-${i}` as Id<"GoalRule">,
+      goalId: `goal-${i}` as Id<"Goal">,
+      stageId: "stage-1" as Id<"AllocationStage">,
+      shareBp,
+      effectiveFrom: "2026-01-01",
+      effectiveUntil: null,
+      source: "rule",
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+  }
+}
+
+/** A budget row with the fixture defaults; `overrides` win. */
+function budget(
+  uow: MemoryUnitOfWork,
+  id: string,
+  overrides: Partial<Omit<BudgetRow, "id">> = {},
+): void {
+  uow.state.budgets.push({
+    id: id as Id<"Budget">,
+    personId: "person-a" as Id<"Person">,
+    categoryId: null,
+    categoryGroupId: null,
+    fundingAccountId: null,
+    cadence: "fortnight",
+    limitCents: 1_000,
+    rollover: false,
+    createdAt: STAMP,
+    updatedAt: STAMP,
+    ...overrides,
+  });
+}
+
 /** Day-by-day balance deltas of one account's series. */
 function deltas(
   report: ReturnType<typeof forecastCashFlow>,
@@ -213,22 +313,22 @@ describe("forecastCashFlow", () => {
     expect(report.accounts.map((a) => a.accountId).sort()).toEqual(["acc-main", "acc-priv-a"]);
 
     const byDay = deltas(report, "acc-main");
-    // Day 0 (01-15): +100 deposit -400 bill = 700.
-    expect(byDay.get(TODAY)).toBe(-300);
+    // Day 0 is today's exact snapshot: the 01-15 deposit and bill are already inside it.
+    expect(byDay.get(TODAY)).toBe(0);
     expect(report.accounts.find((a) => a.accountId === "acc-main")!.points[0]!.balanceCents).toBe(
-      700,
+      1_000,
     );
     expect(byDay.get("2026-01-16")).toBe(0);
     expect(byDay.get("2026-01-22")).toBe(-400); // second Tuesday
     expect(byDay.get("2026-01-29")).toBe(-300); // deposit + bill
 
-    // The dip: first day strictly below 500 is 01-22 at 300, reported once per account.
+    // The dip: first day strictly below 500 is 01-29 at 300, reported once per account.
     expect(report.warnings).toEqual([
       {
         accountId: "acc-main",
         accountName: "Main",
         cents: 300,
-        date: "2026-01-22",
+        date: "2026-01-29",
       },
     ]);
 
@@ -328,23 +428,15 @@ describe("forecastCashFlow", () => {
   it("pro-rates budget limits daily with the remainder on the period's last day", () => {
     const uow = baseUow();
     fortnightlyAnchor(uow, "person-a", null); // scope anchor only: no deposits, no warning
-    uow.state.budgets.push({
-      id: "bud-coffee" as Id<"Budget">,
-      personId: "person-a" as Id<"Person">,
-      categoryId: null,
-      categoryGroupId: null,
-      cadence: "fortnight",
-      limitCents: 1_000,
-      rollover: false,
-      createdAt: STAMP,
-      updatedAt: STAMP,
-    });
+    budget(uow, "bud-coffee");
 
     const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
     expect(report.missingDepositSource).toBe(true); // anchor exists but has no expected net
     const byDay = deltas(report, "acc-main");
-    // 1,000 / 14 days -> 71 a day, remainder 6 on the last day of each pay-cycle period.
-    expect(byDay.get("2026-01-15")).toBe(-71);
+    // Day 0 is the snapshot itself: no proration slice today. 1,000 / 14 days -> 71 a day,
+    // remainder 6 on the last day of each pay-cycle period.
+    expect(byDay.get(TODAY)).toBe(0);
+    expect(byDay.get("2026-01-16")).toBe(-71); // projections start tomorrow
     expect(byDay.get("2026-01-27")).toBe(-71);
     expect(byDay.get("2026-01-28")).toBe(-77); // 71 + remainder 6 on the period's last day
     expect(byDay.get("2026-01-29")).toBe(-71); // next period starts
@@ -354,17 +446,7 @@ describe("forecastCashFlow", () => {
 
   it("skips a shared budget when the household has no pay anchor", () => {
     const uow = baseUow();
-    uow.state.budgets.push({
-      id: "bud-shared" as Id<"Budget">,
-      personId: null, // shared
-      categoryId: null,
-      categoryGroupId: null,
-      cadence: "fortnight",
-      limitCents: 2_000,
-      rollover: false,
-      createdAt: STAMP,
-      updatedAt: STAMP,
-    });
+    budget(uow, "bud-shared", { personId: null, limitCents: 2_000 });
 
     const report = forecastCashFlow(ctxFor(uow, "person-a"), {});
     const byDay = deltas(report, "acc-main");
@@ -373,17 +455,7 @@ describe("forecastCashFlow", () => {
 
   it("charges a shared budget to the household anchor's deposit account once set", () => {
     const uow = baseUow();
-    uow.state.budgets.push({
-      id: "bud-shared" as Id<"Budget">,
-      personId: null,
-      categoryId: null,
-      categoryGroupId: null,
-      cadence: "fortnight",
-      limitCents: 1_000,
-      rollover: false,
-      createdAt: STAMP,
-      updatedAt: STAMP,
-    });
+    budget(uow, "bud-shared", { personId: null });
     // Person B's fortnightly calendar anchor becomes the household anchor.
     uow.state.payAnchors.push({
       id: "anchor-b" as Id<"PayAnchor">,
@@ -405,8 +477,163 @@ describe("forecastCashFlow", () => {
 
     const report = forecastCashFlow(ctxFor(uow, "person-a"), {});
     const byDay = deltas(report, "acc-main");
-    expect(byDay.get("2026-01-15")).toBe(-71);
+    expect(byDay.get("2026-01-15")).toBe(0); // day 0 carries the snapshot only
     expect(byDay.get("2026-01-16")).toBe(-77); // 71 + 6 remainder on the period's last day
+  });
+
+  it("charges a budget's spend to its funding account instead of the deposit account", () => {
+    const uow = baseUow();
+    fortnightlyAnchor(uow, "person-a", null); // scope anchor only
+    budget(uow, "bud-coffee", { fundingAccountId: "acc-priv-a" as Id<"Account"> });
+
+    const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
+    // The funding account carries the whole proration; the deposit account carries none.
+    expect(deltas(report, "acc-main").get("2026-01-16")).toBe(0);
+    const priv = deltas(report, "acc-priv-a");
+    expect(priv.get("2026-01-16")).toBe(-71);
+    expect(priv.get("2026-01-28")).toBe(-77); // 71 + remainder 6 on the period's last day
+  });
+
+  it("drops a budget's spend when its funding account is not projected", () => {
+    const uow = baseUow();
+    fortnightlyAnchor(uow, "person-a", null);
+    budget(uow, "bud-coffee", { fundingAccountId: "acc-savings" as Id<"Account"> });
+
+    const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
+    // acc-savings is a `savings` account: never in the walk, and nothing charges to it.
+    expect(report.accounts.map((a) => a.accountId)).not.toContain("acc-savings");
+    for (const delta of deltas(report, "acc-main").values()) expect(delta).toBe(0);
+    for (const delta of deltas(report, "acc-priv-a").values()) expect(delta).toBe(0);
+  });
+
+  it("excludes a covered category budget while others keep projecting", () => {
+    const uow = baseUow();
+    fortnightlyAnchor(uow, "person-a", null);
+    category(uow, "cat-mobile", "grp-utilities", "Mobile");
+    category(uow, "cat-coffee", "grp-food", "Coffee");
+    payee(uow, "payee-telstra", "Telstra", "cat-mobile");
+    payee(uow, "payee-cafe", "Corner Cafe", null);
+    payee(uow, "payee-flicks", "Flicks", "cat-coffee");
+    uow.state.recurringSeries.push(
+      // A confirmed bill whose payee defaults to Mobile covers that category.
+      {
+        id: "ser-telstra" as Id<"RecurringSeries">,
+        accountId: "acc-main" as Id<"Account">,
+        payeeId: "payee-telstra" as Id<"Payee">,
+        direction: "bill",
+        cadence: "monthly",
+        expectedCents: 500,
+        toleranceBp: 1000,
+        nextDueOn: "2026-02-10",
+        status: "confirmed",
+        createdAt: STAMP,
+        updatedAt: STAMP,
+      },
+      // A candidate series covers nothing, even with a defaulting payee.
+      {
+        id: "ser-flicks" as Id<"RecurringSeries">,
+        accountId: "acc-main" as Id<"Account">,
+        payeeId: "payee-flicks" as Id<"Payee">,
+        direction: "bill",
+        cadence: "monthly",
+        expectedCents: 900,
+        toleranceBp: 1000,
+        nextDueOn: "2026-02-10",
+        status: "candidate",
+        createdAt: STAMP,
+        updatedAt: STAMP,
+      },
+    );
+    budget(uow, "bud-mobile", { categoryId: "cat-mobile" as Id<"Category">, limitCents: 2_000 });
+    budget(uow, "bud-coffee", { categoryId: "cat-coffee" as Id<"Category"> });
+
+    const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
+    const byDay = deltas(report, "acc-main");
+    // Only Coffee (1,000 / 14 -> 71 a day) projects; Mobile (143 a day) is excluded even
+    // though its payee-cafe has no default category to cover it.
+    expect(byDay.get("2026-01-16")).toBe(-71);
+    // The confirmed Telstra bill still rolls forward alongside Coffee's slice.
+    expect(byDay.get("2026-02-10")).toBe(-71 - 500);
+  });
+
+  it("projects a group budget fully unless every category is covered", () => {
+    const uow = baseUow();
+    fortnightlyAnchor(uow, "person-a", null);
+    category(uow, "cat-stream", "grp-entertainment", "Streaming");
+    category(uow, "cat-snack", "grp-entertainment", "Snacks");
+    payee(uow, "payee-flicks", "Flicks", "cat-stream");
+    uow.state.recurringSeries.push({
+      id: "ser-flicks" as Id<"RecurringSeries">,
+      accountId: "acc-main" as Id<"Account">,
+      payeeId: "payee-flicks" as Id<"Payee">,
+      direction: "bill",
+      cadence: "monthly",
+      expectedCents: 300,
+      toleranceBp: 1000,
+      nextDueOn: "2026-02-20",
+      status: "confirmed",
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+    // One of two categories covered: the group budget keeps projecting in full.
+    budget(uow, "bud-entertainment", {
+      categoryGroupId: "grp-entertainment" as Id<"CategoryGroup">,
+      limitCents: 1_400,
+    });
+    // A group with no categories is covered vacuously: it projects nothing.
+    budget(uow, "bud-empty-group", {
+      categoryGroupId: "grp-nowhere" as Id<"CategoryGroup">,
+      limitCents: 2_800,
+    });
+
+    const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
+    const byDay = deltas(report, "acc-main");
+    expect(byDay.get("2026-01-16")).toBe(-100); // 1,400 / 14 days
+    expect(byDay.get("2026-02-20")).toBe(-100 - 300);
+  });
+
+  it("debits the active stage's shares of each period's savings at the period close", () => {
+    const uow = baseUow();
+    fortnightlyAnchor(uow, "person-a", 10_000); // pays 01-29, 02-12, ... (01-15 is today)
+    goal(uow, "goal-0", 5_000_000);
+    goal(uow, "goal-1", 5_000_000);
+    stageWithShares(uow, [6000, 4000]);
+
+    const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
+    const byDay = deltas(report, "acc-main");
+    // The period containing tomorrow has no projected savings yet: no debit at its close.
+    expect(byDay.get("2026-01-28")).toBe(0);
+    // +10,000 deposit, then the 60/40 split (6,000 + 4,000) leaves at the 02-11 close...
+    expect(byDay.get("2026-01-29")).toBe(10_000);
+    expect(byDay.get("2026-02-11")).toBe(-10_000);
+    // ...and the next period sweeps its own deposit at its 02-25 close.
+    expect(byDay.get("2026-02-12")).toBe(10_000);
+    expect(byDay.get("2026-02-25")).toBe(-10_000);
+  });
+
+  it("does not let one close's allocation debit shrink a later period's savings", () => {
+    // Same fixture: the 02-11 debit must not turn the +10,000 period netting on 02-12 into
+    // zero for the following period. The 02-25 debit proves the 02-12 deposit counted whole.
+    const uow = baseUow();
+    fortnightlyAnchor(uow, "person-a", 10_000);
+    goal(uow, "goal-0", 5_000_000);
+    goal(uow, "goal-1", 5_000_000);
+    stageWithShares(uow, [6000, 4000]);
+
+    const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
+    const byDay = deltas(report, "acc-main");
+    expect(byDay.get("2026-02-25")).toBe(-10_000); // full sweep again, not 0
+  });
+
+  it("projects no allocation debit without an active stage", () => {
+    const uow = baseUow();
+    fortnightlyAnchor(uow, "person-a", 10_000);
+    // Positive savings every period, but no stage or goal rows exist at all.
+    const report = forecastCashFlow(ctxFor(uow, "person-a"), { horizon: 3 });
+    const byDay = deltas(report, "acc-main");
+    expect(byDay.get("2026-01-29")).toBe(10_000);
+    expect(byDay.get("2026-02-11")).toBe(0);
+    expect(byDay.get("2026-02-25")).toBe(0);
   });
 
   it("shows private accounts only to their owner and honours the horizon", () => {

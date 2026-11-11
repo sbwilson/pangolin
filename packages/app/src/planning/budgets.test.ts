@@ -232,6 +232,48 @@ describe("Budgets application use cases", () => {
     expect(listBudgets(ctxA).map((b) => b.id)).toEqual([sharedBudget.id]);
   });
 
+  it("round-trips the funding account and rejects unknown funding accounts", () => {
+    const { ctx: ctxA } = createTestContext("person-a");
+
+    const budget = createBudget(ctxA, {
+      personId: "person-a",
+      categoryId: "cat-groceries",
+      fundingAccountId: "acc-private-a",
+      cadence: "fortnight",
+      limitCents: 20000,
+    });
+    expect(budget.fundingAccountId).toBe("acc-private-a");
+    expect(getBudget(ctxA, { id: budget.id }).fundingAccountId).toBe("acc-private-a");
+    expect(listBudgets(ctxA).find((b) => b.id === budget.id)?.fundingAccountId).toBe(
+      "acc-private-a",
+    );
+
+    // Switch accounts, clear back to the deposit default, and omit-to-keep.
+    expect(
+      updateBudget(ctxA, { id: budget.id, fundingAccountId: "acc-joint" }).fundingAccountId,
+    ).toBe("acc-joint");
+    expect(
+      updateBudget(ctxA, { id: budget.id, fundingAccountId: null }).fundingAccountId,
+    ).toBeNull();
+    updateBudget(ctxA, { id: budget.id, fundingAccountId: "acc-joint" });
+    expect(updateBudget(ctxA, { id: budget.id, limitCents: 21000 }).fundingAccountId).toBe(
+      "acc-joint",
+    );
+
+    // Unknown funding accounts are rejected on both create and update.
+    expect(() =>
+      createBudget(ctxA, {
+        categoryId: "cat-groceries",
+        fundingAccountId: "acc-nope",
+        cadence: "fortnight",
+        limitCents: 1,
+      }),
+    ).toThrow(AppError);
+    expect(() => updateBudget(ctxA, { id: budget.id, fundingAccountId: "acc-nope" })).toThrow(
+      AppError,
+    );
+  });
+
   it("calculates spent, pace, and projected for shared budget matching the I/O edge case matrix", () => {
     const { ctx } = createTestContext("person-a");
 

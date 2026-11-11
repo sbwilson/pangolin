@@ -18,11 +18,12 @@ describe("budgetsAndBills module", () => {
     expect(paEvents.map((e) => e.key)).toEqual([PAY_ANCHOR_KEYS.personA, PAY_ANCHOR_KEYS.personB]);
 
     const budgetEvents = events.filter((e) => e.type === "budget.created");
-    expect(budgetEvents).toHaveLength(3);
+    expect(budgetEvents).toHaveLength(4);
     expect(budgetEvents.map((e) => e.key)).toEqual([
       BUDGET_KEYS.sharedGroceries,
       BUDGET_KEYS.personalCoffeeA,
       BUDGET_KEYS.personalFitnessB,
+      BUDGET_KEYS.personalMobileA,
     ]);
 
     const seriesEvents = events.filter((e) => e.type === "recurring-series.created");
@@ -37,6 +38,30 @@ describe("budgetsAndBills module", () => {
     expect(ex["budgets-and-bills.payAnchors"]).toBeDefined();
     expect(ex["budgets-and-bills.groceriesBudget"]).toBeDefined();
     expect(ex["budgets-and-bills.recurringSeries"]).toBeDefined();
+
+    // The coffee budget carries a funding account; the mobile budget targets the Telstra
+    // payee's default category so the forecast covers (and excludes) it.
+    const byKey = new Map(budgetEvents.map((e) => [e.key, e as any]));
+    expect(byKey.get(BUDGET_KEYS.personalCoffeeA)?.fundingAccount).toBe("person-a-private");
+    expect(byKey.get(BUDGET_KEYS.personalFitnessB)?.category).toEqual({
+      group: "Health",
+      name: "Fitness",
+    });
+    expect(byKey.get(BUDGET_KEYS.personalMobileA)?.category).toEqual({
+      group: "Utilities",
+      name: "Mobile",
+    });
+
+    // The forecast mirror carries day 0 balances, per-day movements and allocation debits.
+    const forecast = ex["budgets-and-bills.forecast"];
+    expect(forecast.horizonMonths).toBe(3);
+    for (const viewer of ["person-a", "person-b"]) {
+      expect(Object.keys(forecast.perViewer[viewer].day0)).toContain("joint-everyday");
+      expect(forecast.perViewer[viewer].byDay["joint-everyday"]).toBeTypeOf("object");
+      expect(Array.isArray(forecast.perViewer[viewer].allocationDebits["joint-everyday"])).toBe(
+        true,
+      );
+    }
 
     const groceries = ex["budgets-and-bills.groceriesBudget"];
     expect(groceries.limitCents).toBe(30_000);

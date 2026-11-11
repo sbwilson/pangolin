@@ -1346,6 +1346,8 @@ export interface BudgetRow {
   readonly personId: Id<"Person"> | null;
   readonly categoryId: Id<"Category"> | null;
   readonly categoryGroupId: Id<"CategoryGroup"> | null;
+  /** The account the forecast charges its pro-rated spend to; null is the scope's pay deposit account (AD-25). */
+  readonly fundingAccountId: Id<"Account"> | null;
   readonly cadence: "fortnight" | "month";
   readonly limitCents: number;
   readonly rollover: boolean;

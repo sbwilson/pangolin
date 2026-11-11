@@ -34,6 +34,7 @@ export const createBudgetInput = z
     personId: z.string().nullable().optional(),
     categoryId: z.string().nullable().optional(),
     categoryGroupId: z.string().nullable().optional(),
+    fundingAccountId: z.string().nullable().optional(),
     cadence: z.enum(["fortnight", "month"]),
     limitCents: z.number().int().positive(),
     rollover: z.boolean().default(false),
@@ -55,6 +56,7 @@ export const updateBudgetInput = z
     id: z.string().min(1),
     categoryId: z.string().nullable().optional(),
     categoryGroupId: z.string().nullable().optional(),
+    fundingAccountId: z.string().nullable().optional(),
     cadence: z.enum(["fortnight", "month"]).optional(),
     limitCents: z.number().int().positive().optional(),
     rollover: z.boolean().optional(),
@@ -191,6 +193,10 @@ export function createBudget(ctx: UseCaseContext, input: CreateBudgetInput): Bud
       const grp = tx.categoryGroups.find(ctx.viewer, parsed.categoryGroupId as Id<"CategoryGroup">);
       if (!grp) throw new AppError("NotFound", "Category group not found");
     }
+    if (parsed.fundingAccountId) {
+      const acc = tx.accounts.findVisible(ctx.viewer, parsed.fundingAccountId);
+      if (!acc) throw new AppError("NotFound", "Account not found");
+    }
 
     const id = ctx.newId<"Budget">();
     const now = formatInstant(ctx.clock.now());
@@ -200,6 +206,7 @@ export function createBudget(ctx: UseCaseContext, input: CreateBudgetInput): Bud
       personId: (targetPersonId as Id<"Person">) ?? null,
       categoryId: (parsed.categoryId as Id<"Category">) ?? null,
       categoryGroupId: (parsed.categoryGroupId as Id<"CategoryGroup">) ?? null,
+      fundingAccountId: (parsed.fundingAccountId as Id<"Account"> | null) ?? null,
       cadence: parsed.cadence,
       limitCents: parsed.limitCents,
       rollover: parsed.rollover,
@@ -261,11 +268,21 @@ export function updateBudget(ctx: UseCaseContext, input: UpdateBudgetInput): Bud
       if (!grp) throw new AppError("NotFound", "Category group not found");
     }
 
+    const nextFundingAccountId =
+      parsed.fundingAccountId !== undefined
+        ? (parsed.fundingAccountId as Id<"Account"> | null)
+        : existing.fundingAccountId;
+    if (nextFundingAccountId && nextFundingAccountId !== existing.fundingAccountId) {
+      const acc = tx.accounts.findVisible(ctx.viewer, nextFundingAccountId);
+      if (!acc) throw new AppError("NotFound", "Account not found");
+    }
+
     const updated: BudgetRow = {
       id: existing.id,
       personId: existing.personId,
       categoryId: nextCategoryId,
       categoryGroupId: nextCategoryGroupId,
+      fundingAccountId: nextFundingAccountId,
       cadence: parsed.cadence ?? existing.cadence,
       limitCents: parsed.limitCents ?? existing.limitCents,
       rollover: parsed.rollover ?? existing.rollover,
@@ -423,6 +440,7 @@ export function getSuggestedLimit(
       personId: (parsed.personId as Id<"Person"> | null) ?? null,
       categoryId: (parsed.categoryId as Id<"Category"> | null) ?? null,
       categoryGroupId: (parsed.categoryGroupId as Id<"CategoryGroup"> | null) ?? null,
+      fundingAccountId: null,
       cadence: parsed.cadence ?? "fortnight",
       limitCents: 0,
       rollover: false,

@@ -8,6 +8,7 @@ import {
   fetchCategories,
   fetchCategoryGroups,
   fetchSuggestedLimit,
+  listAccounts,
   type Me,
   updateBudget,
 } from "../api.ts";
@@ -39,6 +40,8 @@ export function BudgetEditorSheet({
   const [targetId, setTargetId] = useState<string>("");
   // Cadence
   const [cadence, setCadence] = useState<"fortnight" | "month">("fortnight");
+  // Funding account for the forecast; "" means the pay account default (null on the wire).
+  const [fundingAccountId, setFundingAccountId] = useState<string>("");
   // Limit dollars text
   const [limitInput, setLimitInput] = useState<string>("");
   // Rollover switch
@@ -59,6 +62,12 @@ export function BudgetEditorSheet({
     queryFn: fetchCategoryGroups,
   });
 
+  // Transaction accounts the forecast may charge this budget's spend to.
+  const accountsQuery = useQuery({
+    queryKey: ["accounts"],
+    queryFn: () => listAccounts(),
+  });
+
   // Reset form when budget changes or modal opens
   useEffect(() => {
     if (!isOpen) return;
@@ -72,6 +81,7 @@ export function BudgetEditorSheet({
         setTargetId(budget.categoryGroupId);
       }
       setCadence(budget.cadence);
+      setFundingAccountId(budget.fundingAccountId ?? "");
       setLimitInput((budget.limitCents / 100).toFixed(0));
       setRollover(budget.rollover);
       setError(null);
@@ -80,6 +90,7 @@ export function BudgetEditorSheet({
       setTargetType("category");
       setTargetId("");
       setCadence("fortnight");
+      setFundingAccountId("");
       setLimitInput("");
       setRollover(false);
       setError(null);
@@ -156,10 +167,12 @@ export function BudgetEditorSheet({
 
     setSaving(true);
     try {
+      const funding = fundingAccountId === "" ? null : fundingAccountId;
       if (isEditing && budget) {
         await updateBudget(budget.id, {
           categoryId: targetType === "category" ? targetId : null,
           categoryGroupId: targetType === "group" ? targetId : null,
+          fundingAccountId: funding,
           cadence,
           limitCents: cents,
           rollover,
@@ -169,6 +182,7 @@ export function BudgetEditorSheet({
           personId: scope === "shared" ? null : scope,
           categoryId: targetType === "category" ? targetId : null,
           categoryGroupId: targetType === "group" ? targetId : null,
+          fundingAccountId: funding,
           cadence,
           limitCents: cents,
           rollover,
@@ -339,6 +353,35 @@ export function BudgetEditorSheet({
             </button>
           </div>
         </fieldset>
+
+        {/* Funding account for the cash-flow forecast */}
+        <div className="flex flex-col gap-1.5">
+          <label
+            htmlFor="budget-funding-account-select"
+            className="text-xs font-semibold text-foreground"
+          >
+            Forecast charged to
+          </label>
+          <select
+            id="budget-funding-account-select"
+            value={fundingAccountId}
+            onChange={(e) => setFundingAccountId(e.target.value)}
+            className="flex h-9 w-full rounded-md border border-border bg-card px-3 py-1 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="">Pay account (default)</option>
+            {(accountsQuery.data ?? [])
+              .filter((acc) => acc.type === "transaction" && acc.closedOn === null)
+              .map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name}
+                </option>
+              ))}
+          </select>
+          <span className="text-xs text-muted-foreground">
+            The forecast charges this budget&#8217;s daily spend to that account. The default is the
+            account your pay lands in.
+          </span>
+        </div>
 
         {/* Limit Input with Pre-filled Suggestion */}
         <div className="flex flex-col gap-1.5">
