@@ -25,9 +25,12 @@ export interface HttpResponse {
   readonly text: string;
 }
 
-/** Combine a base URL and an endpoint path without doubling a `/v1` segment. */
+/** Combine a base URL and an endpoint path without doubling a `/v1` segment or duplicating route suffixes. */
 export function buildEndpointUrl(baseUrl: string, path: string): string {
-  const trimmed = baseUrl.replace(/\/+$/, "");
+  let trimmed = baseUrl.trim().replace(/\/+$/, "");
+  trimmed = trimmed
+    .replace(/\/(?:v1\/)?(?:chat\/completions|completions|messages)$/i, "")
+    .replace(/\/+$/, "");
   if (trimmed.endsWith("/v1")) {
     return `${trimmed}${path.replace(/^\/v1/, "")}`;
   }
