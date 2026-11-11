@@ -1,4 +1,10 @@
 export {
+  type MortgageSchedule,
+  type MortgageScheduleInput,
+  type MortgageScheduleRow,
+  mortgageSchedule,
+} from "./amortise/mortgage-schedule.ts";
+export {
   type FuzzyMatchOptions,
   matchFuzzyPayee,
   matchPayeeAlias,
