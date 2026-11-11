@@ -49,7 +49,7 @@ export interface WorldAccount {
   readonly institution: string | null;
   /** Counts toward savings. */
   readonly isSavings: boolean;
-  /** The account's low-balance warning threshold in signed cents; omitted means unset (0). */
+  /** The account's low-balance warning threshold in cents; omitted means unset (0). */
   readonly lowBalanceThresholdCents?: number;
 }
 

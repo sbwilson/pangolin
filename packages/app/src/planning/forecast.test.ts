@@ -425,4 +425,36 @@ describe("forecastCashFlow", () => {
       "2026-07-15",
     );
   });
+
+  it("excludes closed accounts, which would otherwise warn on their stale balance", () => {
+    const uow = baseUow();
+    uow.state.accounts.push({
+      id: "acc-closed" as Id<"Account">,
+      name: "Old cheque account",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      institutionId: null,
+      openedOn: "2026-01-01",
+      closedOn: "2026-01-10",
+      isSavings: false,
+      lowBalanceThresholdCents: 5_000,
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+    uow.state.balanceSnapshots.push({
+      id: "s-4" as Id<"BalanceSnapshot">,
+      accountId: "acc-closed" as Id<"Account">,
+      asOf: TODAY,
+      balanceCents: 100, // far below the 5 000 threshold: a false dip if walked
+      source: "manual",
+      importBatchId: null,
+      createdAt: STAMP,
+      updatedAt: STAMP,
+    });
+
+    const report = forecastCashFlow(ctxFor(uow, "person-a"), {});
+    expect(report.accounts.map((a) => a.accountId).sort()).toEqual(["acc-main", "acc-priv-a"]);
+    expect(report.warnings.map((w) => w.accountId)).not.toContain("acc-closed");
+  });
 });

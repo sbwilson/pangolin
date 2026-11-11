@@ -142,4 +142,13 @@ describe("ForecastPage", () => {
     await waitFor(() => expect(screen.getByTestId("forecast-chart")).toBeDefined());
     expect(screen.queryByTestId("forecast-warning")).toBeNull();
   });
+
+  it("says when the forecast is unavailable", async () => {
+    vi.mocked(api.fetchForecast).mockRejectedValue(new Error("offline"));
+    renderPage("/planning/forecast");
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /The forecast is currently unavailable/,
+    );
+    expect(screen.queryByTestId("forecast-chart")).toBeNull();
+  });
 });

@@ -120,8 +120,9 @@ function forecastBudgetScope(
 }
 
 /**
- * `planning.forecastCashFlow`: projects every visible `transaction` account from the clock's
- * today through `today + horizon months`. Deposits land on each visible pay anchor's expected
+ * `planning.forecastCashFlow`: projects every visible `transaction` account that has not been
+ * closed from the clock's today through `today + horizon months`. Deposits land on each visible
+ * pay anchor's expected
  * pay days (never series, AD-25); only `status='confirmed'`, `direction='bill'` series roll
  * forward; budget limits pro-rate daily over each pay-cycle period inside the horizon, charged
  * to the budget scope's deposit account (a shared budget with no household anchor contributes
@@ -141,7 +142,8 @@ export function forecastCashFlow(
   const { projected, anchors, billSeries, budgets } = ctx.uow.read((repos) => ({
     projected: repos.accounts
       .list(ctx.viewer)
-      .filter((a) => a.type === "transaction")
+      // Closed accounts hold stale balances, so they never join the walk.
+      .filter((a) => a.type === "transaction" && a.closedOn === null)
       .map((a) => ({
         accountId: a.id as string,
         name: a.name,

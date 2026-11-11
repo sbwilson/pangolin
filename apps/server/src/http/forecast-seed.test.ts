@@ -3,8 +3,8 @@
 // through `today + horizon months`, and the joint everyday account — whose low-balance threshold
 // sits above the balance it holds today — produces a dip warning that matches the expectation the
 // seed module derives from the same arithmetic. The other partner never sees Person A's private
-// account, an unknown horizon falls back to 3 months, and every warning equals the minimum of its
-// account's projected series.
+// account, an unknown horizon falls back to 3 months, and every warning names the first day
+// below its account's threshold, not the lowest point of the series.
 
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -110,23 +110,6 @@ beforeAll(() => {
     healthz: { expectedSchemaVersion: loadMigrations(packageMigrationsDir).length, runner: "skip" },
   });
 }, 120_000);
-
-function fakeAttachmentStoreShim() {
-  // Same store the goals seed test imports; inlined to keep this file's imports lean.
-  const blobs = new Map<string, Uint8Array>();
-  return {
-    async put(key: string, bytes: Uint8Array) {
-      blobs.set(key, bytes);
-      return key;
-    },
-    async get(key: string) {
-      return blobs.get(key) ?? null;
-    },
-    async remove(key: string) {
-      blobs.delete(key);
-    },
-  };
-}
 
 afterAll(() => {
   db?.close();

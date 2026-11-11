@@ -10,6 +10,7 @@ import {
   fetchBackupStatus,
   fetchCategories,
   fetchDeadJobs,
+  fetchForecast,
   fetchHealth,
   fetchMe,
   fetchRecoveryBundle,
@@ -303,6 +304,28 @@ describe("fetchAccounts", () => {
     );
     expect(url.pathname).toBe("/api/accounts");
     expect(url.searchParams.get("includeClosed")).toBe("true");
+  });
+});
+
+describe("fetchForecast", () => {
+  it("GETs the projection for the requested horizon", async () => {
+    const body = {
+      from: "2026-07-15",
+      through: "2027-01-15",
+      horizonMonths: 6,
+      missingDepositSource: false,
+      accounts: [],
+      warnings: [],
+    };
+    stubFetch(200, body);
+    expect(await fetchForecast(6)).toEqual(body);
+    const request = vi.mocked(fetch).mock.calls[0]?.[0] as Request | string | URL;
+    const url = new URL(
+      typeof request === "string" ? request : String((request as Request).url ?? request),
+      "http://localhost",
+    );
+    expect(url.pathname).toBe("/api/planning/forecast");
+    expect(url.searchParams.get("horizon")).toBe("6");
   });
 });
 
