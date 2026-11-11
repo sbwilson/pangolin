@@ -3,7 +3,7 @@ title: 'Recurring bills UI and one-click confirmation'
 type: 'feature'
 ticket: '6'
 created: '2026-11-02'
-status: 'built'
+status: done
 baseline_revision: 'cbbc6911408f5f5120eb9b38015134491814bc19'
 route: 'full'
 route_source: 'auto'

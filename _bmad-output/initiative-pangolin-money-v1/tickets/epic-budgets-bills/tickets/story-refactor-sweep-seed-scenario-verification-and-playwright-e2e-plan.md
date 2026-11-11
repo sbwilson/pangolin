@@ -3,7 +3,7 @@ title: 'Refactor sweep, seed scenario verification, and Playwright e2e'
 type: 'chore'
 ticket: '8'
 created: '2026-11-03'
-status: 'built'
+status: done
 baseline_revision: '5f66005b43235d555dc518ffcad8901e4c364f16'
 route: 'full'
 route_source: 'auto'

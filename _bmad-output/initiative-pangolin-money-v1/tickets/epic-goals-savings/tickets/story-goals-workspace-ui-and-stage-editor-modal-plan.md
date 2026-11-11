@@ -3,7 +3,7 @@ title: 'Goals workspace UI and stage editor modal'
 type: 'feature'
 ticket: '4'
 created: '2026-11-07'
-status: 'built'
+status: done
 baseline_revision: 'e86e3eb54faeed3c8de301b42211de3ae7b3b3cf'
 route: 'full'
 route_source: 'auto'

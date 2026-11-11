@@ -3,7 +3,7 @@ title: 'Set-aside row interpretation (row_interpret) and proposal confirmation f
 type: 'feature'
 ticket: 6
 created: '2026-10-27'
-status: 'built'
+status: done
 baseline_revision: '56935bbfbc5121c27df7f4e2bcf4120223370d5c'
 route: 'full'
 route_source: 'auto'

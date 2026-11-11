@@ -3,7 +3,7 @@ title: 'Review inbox ≥ 90% confidence bulk-accept card and suggestion resoluti
 type: 'feature'
 ticket: 5
 created: '2026-10-27'
-status: 'built'
+status: done
 baseline_revision: '2f56cb9b757b46414c502c66e308a1872fda228b'
 route: 'full'
 route_source: 'auto'

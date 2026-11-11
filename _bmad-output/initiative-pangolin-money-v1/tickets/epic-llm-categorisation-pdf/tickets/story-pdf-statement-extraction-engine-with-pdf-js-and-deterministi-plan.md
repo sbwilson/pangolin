@@ -3,7 +3,7 @@ title: 'PDF statement extraction engine with pdf.js and deterministic balance ve
 type: 'feature'
 ticket: 7
 created: '2026-10-27'
-status: 'built'
+status: done
 baseline_revision: 'c1847759eb51f4be7abcc4cb4cd1cb9bfdc39698'
 route: 'full'
 route_source: 'auto'

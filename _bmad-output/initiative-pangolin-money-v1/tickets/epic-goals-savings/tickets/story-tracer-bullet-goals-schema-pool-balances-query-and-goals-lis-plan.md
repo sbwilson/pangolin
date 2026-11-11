@@ -3,7 +3,7 @@ title: 'Tracer bullet: goals schema, pool balances query, and goals list UI'
 type: 'feature'
 ticket: '1'
 created: '2026-11-04'
-status: 'built'
+status: done
 baseline_revision: 'e57259fc645120e6bcc46e2e3c6d55977227f886'
 route: 'full'
 route_source: 'auto'

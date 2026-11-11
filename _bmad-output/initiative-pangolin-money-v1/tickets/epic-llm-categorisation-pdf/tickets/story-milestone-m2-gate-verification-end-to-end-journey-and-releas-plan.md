@@ -3,7 +3,7 @@ title: 'Milestone M2 gate verification, end-to-end journey, and release v0.2.6 d
 type: 'feature'
 ticket: '11'
 created: '2026-10-29'
-status: 'built'
+status: done
 baseline_revision: '754d7c541e40ee63368c7c7cafa613b89f07507e'
 route: 'full'
 route_source: 'auto'

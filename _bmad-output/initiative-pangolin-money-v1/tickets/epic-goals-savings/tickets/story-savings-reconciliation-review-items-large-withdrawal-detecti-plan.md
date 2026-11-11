@@ -3,7 +3,7 @@ title: 'Savings reconciliation review items: large withdrawal detection, shortfa
 type: 'feature'
 ticket: 7
 created: '2026-11-08'
-status: 'built'
+status: done
 baseline_revision: '7ccc80b8afe1c122fb2eb7f8fcdddf18562e104d'
 route: 'full'
 route_source: 'auto'

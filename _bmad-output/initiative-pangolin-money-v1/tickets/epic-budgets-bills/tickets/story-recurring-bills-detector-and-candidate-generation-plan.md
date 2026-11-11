@@ -3,7 +3,7 @@ title: 'Recurring bills detector and candidate generation'
 type: 'feature'
 ticket: '5'
 created: '2026-11-02'
-status: 'built'
+status: done
 baseline_revision: '1616b9f9d8179e8d2ded39b0ba93747271c00d52'
 route: 'full'
 route_source: 'auto'

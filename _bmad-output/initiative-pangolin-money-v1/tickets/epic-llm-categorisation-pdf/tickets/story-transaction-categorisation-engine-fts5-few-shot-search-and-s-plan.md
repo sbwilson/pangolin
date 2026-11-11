@@ -3,7 +3,7 @@ title: 'Transaction categorisation engine, FTS5 few-shot search, and suggestion 
 type: 'feature'
 ticket: 3
 created: '2026-10-26'
-status: 'built'
+status: done
 baseline_revision: 'f7f124551faf3de40323971e89dfbfeaf030a638'
 route: 'full'
 route_source: 'auto'

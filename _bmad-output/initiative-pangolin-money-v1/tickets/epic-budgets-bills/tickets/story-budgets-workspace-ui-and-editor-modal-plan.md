@@ -3,7 +3,7 @@ title: 'Budgets workspace UI and editor modal'
 type: 'feature'
 ticket: '3'
 created: '2026-11-01'
-status: 'built'
+status: done
 baseline_revision: '54bf2b88c65a6c26801176ddc16b15756cb7a2b4'
 route: 'full'
 route_source: 'auto'

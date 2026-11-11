@@ -3,7 +3,7 @@ title: 'Cover an expense engine: large purchase vs shortfall drawdown ordering, 
 type: 'feature'
 ticket: '5'
 created: '2026-11-07'
-status: 'built'
+status: done
 baseline_revision: '832607f0531dcd3a8c661b4b6a0118c35b1ca7fa'
 route: 'full'
 route_source: 'auto'

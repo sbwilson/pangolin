@@ -3,7 +3,7 @@ title: 'PDF statement upload, encrypted attachment storage, and visual review UI
 type: 'feature'
 ticket: 8
 created: '2026-10-28'
-status: 'built'
+status: done
 baseline_revision: '240d5fbfa350bff98dcd967b1e90340d87b93354'
 route: 'full'
 route_source: 'auto'

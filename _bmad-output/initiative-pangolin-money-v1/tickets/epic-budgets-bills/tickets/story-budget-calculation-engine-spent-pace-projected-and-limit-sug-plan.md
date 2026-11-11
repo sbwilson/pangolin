@@ -3,7 +3,7 @@ title: 'Budget calculation engine: spent, pace, projected, and limit suggestions
 type: 'feature'
 ticket: '2'
 created: '2026-11-01'
-status: 'built'
+status: done
 baseline_revision: '24a05bf433dd3e8f16c22a0666e2592f9a788904'
 route: 'full'
 route_source: 'auto'

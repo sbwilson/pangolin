@@ -3,7 +3,7 @@ title: 'Provider configuration, encrypted keys, LAN detection, and eval harness'
 type: 'feature'
 ticket: 2
 created: '2026-10-26'
-status: 'built'
+status: done
 baseline_revision: 'e2986f2a64bcb1baddceb0fe3bcaba7c140aa849'
 route: 'full'
 route_source: 'auto'

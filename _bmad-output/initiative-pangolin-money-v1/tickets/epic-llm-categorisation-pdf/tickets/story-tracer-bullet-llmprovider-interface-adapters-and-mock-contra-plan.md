@@ -3,7 +3,7 @@ title: 'Tracer bullet: LlmProvider interface, adapters, and mock contract tests'
 type: 'feature'
 ticket: 1
 created: '2026-10-26'
-status: 'built'
+status: done
 baseline_revision: '9cd8a2552935c63117a6e956dbdc31cac29b5295'
 route: 'full'
 route_source: 'auto'

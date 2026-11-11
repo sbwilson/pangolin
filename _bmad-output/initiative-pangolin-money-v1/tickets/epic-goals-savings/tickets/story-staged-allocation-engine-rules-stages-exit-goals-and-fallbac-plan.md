@@ -3,7 +3,7 @@ title: 'Staged allocation engine: rules, stages, exit goals, and fallback'
 type: 'feature'
 ticket: '2'
 created: '2026-11-05'
-status: 'built'
+status: done
 baseline_revision: '1a4cc4d516f323e757bc4fe73907515ebe25a7ee'
 route: 'full'
 route_source: 'auto'

@@ -3,7 +3,7 @@ title: 'Over-budget review item generator'
 type: 'feature'
 ticket: '4'
 created: '2026-11-01'
-status: 'built'
+status: done
 baseline_revision: '6bd794bc1c81d7fc65a57a891e8a2997dccdc1f3'
 route: 'full'
 route_source: 'auto'

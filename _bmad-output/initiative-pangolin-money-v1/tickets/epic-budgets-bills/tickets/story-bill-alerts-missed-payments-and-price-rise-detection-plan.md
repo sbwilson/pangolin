@@ -3,7 +3,7 @@ title: 'Bill alerts: missed payments and price rise detection'
 type: 'feature'
 ticket: '7'
 created: '2026-11-02'
-status: 'built'
+status: done
 baseline_revision: '37ebd9e78117e440b76ddc981234382498a40884'
 route: 'full'
 route_source: 'auto'

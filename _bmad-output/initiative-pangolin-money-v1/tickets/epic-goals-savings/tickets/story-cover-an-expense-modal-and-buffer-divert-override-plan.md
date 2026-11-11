@@ -3,7 +3,7 @@ title: 'Cover an expense modal and buffer divert override'
 type: 'feature'
 ticket: '6'
 created: '2026-11-08'
-status: 'built'
+status: done
 baseline_revision: 'ecfae2b140fae1e5bb1925d3d40ecf7081268b06'
 route: 'full'
 route_source: 'auto'

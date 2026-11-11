@@ -3,7 +3,7 @@ title: 'Savings reconciliation engine: invariant check, deficit buffer absorptio
 type: 'feature'
 ticket: '3'
 created: '2026-11-05'
-status: 'built'
+status: done
 baseline_revision: 'de17beb6eebc685f20fa318f946d8f80c3346cb1'
 route: 'full'
 route_source: 'auto'

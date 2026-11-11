@@ -3,7 +3,7 @@ title: 'Tracer bullet: PayAnchor, PayCalendar resolution, and Household Settings
 type: 'feature'
 ticket: '1'
 created: '2026-11-01'
-status: 'built'
+status: done
 baseline_revision: '169f48f394b67d6bbb4c1a3e0a452bba1cc471aa'
 route: 'full'
 route_source: 'auto'

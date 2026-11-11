@@ -3,7 +3,7 @@ title: 'Settings › LLM providers card with live request preview and re-auth gu
 type: 'feature'
 ticket: 4
 created: '2026-10-27'
-status: 'built'
+status: done
 baseline_revision: '70cb543a5d88288e18dc383d34f4acdef6f93d1c'
 route: 'full'
 route_source: 'auto'
