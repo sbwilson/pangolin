@@ -333,6 +333,9 @@ export const MANIFEST: readonly ManifestEntry[] = [
   read("/api/reports/merchants"),
   read("/api/reports/leaks"),
   read("/api/reports/net-worth"),
+  // Forecast (story 8.1): the per-viewer cash-flow projection reads only visible transaction
+  // accounts, series, budgets and anchors; a partner's private account never appears in it.
+  read("/api/planning/forecast"),
   read("/api/ledger/transactions"),
   // Search: the list filtered by `q` through the FTS5 index; the hidden-name and scoped-name
   // exclusion is applied on the viewer's projection at query time, never stored in the index.
