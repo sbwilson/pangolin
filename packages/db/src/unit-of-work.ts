@@ -45,6 +45,7 @@ import type { Db } from "./open.ts";
 import { auditHiddenUntil, auditPayeeHidden, visibleAudit } from "./privacy.ts";
 import { createRecoveryBundleRepo } from "./recovery-bundle-repo.ts";
 import { createBudgetRepo } from "./repositories/budget.ts";
+import { createForecastAssumptionRepo } from "./repositories/forecast-assumption.ts";
 import {
   createAllocationStageRepo,
   createGoalAdjustmentRepo,
@@ -285,6 +286,7 @@ function txRepos(orm: Orm, scope: Scope): TxRepos {
     llmProviders: createLlmProviderRepo(orm, () => guard(scope)),
     suggestions: createSuggestionRepo(orm, () => guard(scope)),
     payAnchors: createPayAnchorRepo(orm, () => guard(scope)),
+    forecastAssumptions: createForecastAssumptionRepo(orm, () => guard(scope)),
     budgets: createBudgetRepo(orm, () => guard(scope)),
     recurringSeries: createRecurringSeriesRepo(orm, () => guard(scope)),
     goals: createGoalRepo(orm, () => guard(scope)),
@@ -443,6 +445,10 @@ export function createUnitOfWork(db: Db): UnitOfWork {
               findByPersonId: repos.payAnchors.findByPersonId,
               findHouseholdAnchor: repos.payAnchors.findHouseholdAnchor,
               listVisible: repos.payAnchors.listVisible,
+            },
+            forecastAssumptions: {
+              get: repos.forecastAssumptions.get,
+              listMortgages: repos.forecastAssumptions.listMortgages,
             },
             budgets: {
               findById: repos.budgets.findById,

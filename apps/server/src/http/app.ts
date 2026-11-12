@@ -83,6 +83,7 @@ import {
   getActivity,
   getBudget,
   getBudgetSummary,
+  getForecastAssumptions,
   getGoalsSummary,
   getHouseholdSettings,
   getLlmRequestPreview,
@@ -193,6 +194,7 @@ import {
   updateTag,
   updateTaxCategory,
   updateTransaction,
+  upsertForecastAssumptions,
   upsertPayAnchor,
 } from "@pangolin/app";
 import { extractPdfTextPages } from "@pangolin/importers";
@@ -458,6 +460,16 @@ export function createApi(deps: ApiDeps) {
     .put("/api/planning/pay-anchors", async (c) => {
       writable();
       return c.json(upsertPayAnchor(ctx(c), await objectBody(c)), 200);
+    })
+    .get("/api/planning/forecast-assumptions", (c) => {
+      // Per viewer (AD-22): the editable rates behind the net-worth projection; neutral zeros
+      // and an empty mortgage list when nothing is stored, and the read writes nothing.
+      return c.json(getForecastAssumptions(ctx(c), {}), 200);
+    })
+    .put("/api/planning/forecast-assumptions", async (c) => {
+      // Partial-merges the scalar rates and replaces the mortgage list when present.
+      writable();
+      return c.json(upsertForecastAssumptions(ctx(c), await objectBody(c)), 200);
     })
     .get("/api/planning/budgets", (c) => {
       return c.json({ budgets: listBudgets(ctx(c)) }, 200);

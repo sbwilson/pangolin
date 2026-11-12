@@ -56,6 +56,19 @@ export type SeedReferenceEvent =
       readonly dayOfMonth?: number | null | undefined;
     }
   | {
+      readonly type: "forecast-assumption.set";
+      readonly person: string;
+      readonly savingsRateBps: number;
+      readonly returnLowBps: number;
+      readonly returnMidBps: number;
+      readonly returnHighBps: number;
+      readonly superRateBps: number;
+      readonly mortgages: readonly {
+        readonly account: string;
+        readonly countOffset: boolean;
+      }[];
+    }
+  | {
       readonly type: "budget.created";
       readonly key: string;
       readonly person?: string | null | undefined;
@@ -125,6 +138,8 @@ export interface SeedKnown {
     { account: string; amountCents: number; grouped: boolean; hidden: boolean }
   >;
   readonly payAnchors: Set<string>;
+  /** Person keys whose forecast assumptions an earlier event set. */
+  readonly forecastAssumptions: Set<string>;
   readonly budgets: Set<string>;
   readonly recurringSeries: Set<string>;
   readonly goals: Set<string>;
@@ -141,6 +156,7 @@ export function emptySeedKnown(): SeedKnown {
     payees: new Map(),
     transactions: new Map(),
     payAnchors: new Set(),
+    forecastAssumptions: new Set(),
     budgets: new Set(),
     recurringSeries: new Set(),
     goals: new Set(),
@@ -263,6 +279,17 @@ export function checkSeedReferences(event: SeedReferenceEvent, known: SeedKnown)
       }
       known.payAnchors.add(event.key);
       break;
+    case "forecast-assumption.set": {
+      if (!known.people.has(event.person)) bad(`unknown person "${event.person}"`);
+      if (known.forecastAssumptions.has(event.person)) {
+        bad(`forecast assumptions for "${event.person}" are set twice`);
+      }
+      for (const mortgage of event.mortgages) {
+        if (!known.accounts.has(mortgage.account)) bad(`unknown account "${mortgage.account}"`);
+      }
+      known.forecastAssumptions.add(event.person);
+      break;
+    }
     case "budget.created":
       if (known.budgets.has(event.key)) bad(`budget key "${event.key}" is used twice`);
       if (event.person != null && !known.people.has(event.person)) {

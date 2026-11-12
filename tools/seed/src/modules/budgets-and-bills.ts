@@ -7,6 +7,7 @@ import type { Json, SeedModule } from "../module.ts";
 import type {
   BudgetCreatedEvent,
   CategoryRef,
+  ForecastAssumptionSetEvent,
   PayAnchorCreatedEvent,
   RecurringSeriesCreatedEvent,
   SeedEvent,
@@ -41,6 +42,18 @@ export const RECURRING_SERIES_KEYS = {
   netflix: "series-netflix",
   sydneyWater: "series-sydney-water",
   telstra: "series-telstra",
+} as const;
+
+// The demo forecast assumptions: savings 45%, returns 3% / 5% / 7%, super 12%, and the
+// household home loan paid down with its offset balances netted. The use-case defaults stay
+// neutral zeros; only the seed carries these (ticket 4's decision).
+export const FORECAST_ASSUMPTION_DEMO = {
+  savingsRateBps: 4_500,
+  returnLowBps: 300,
+  returnMidBps: 500,
+  returnHighBps: 700,
+  superRateBps: 1_200,
+  mortgages: [{ account: ACCOUNT_KEYS.homeLoan, countOffset: true }],
 } as const;
 
 export const budgetsAndBills: SeedModule = {
@@ -134,6 +147,22 @@ export const budgetsAndBills: SeedModule = {
       rollover: false,
     };
 
+    // 2b. Forecast assumptions: both people get the demo values, each with the household
+    // home loan selected and its offset counted (the 8.7 chips edit these later).
+    const assumptionsA: ForecastAssumptionSetEvent = {
+      type: "forecast-assumption.set",
+      person: A,
+      ...FORECAST_ASSUMPTION_DEMO,
+      mortgages: [...FORECAST_ASSUMPTION_DEMO.mortgages],
+    };
+
+    const assumptionsB: ForecastAssumptionSetEvent = {
+      type: "forecast-assumption.set",
+      person: B,
+      ...FORECAST_ASSUMPTION_DEMO,
+      mortgages: [...FORECAST_ASSUMPTION_DEMO.mortgages],
+    };
+
     // 3. Recurring Series
     // series 1: Sydney Water - missed payment alert
     // Cadence monthly, expected $180.00 (18000 cents), nextDueOn 2026-07-01.
@@ -192,6 +221,8 @@ export const budgetsAndBills: SeedModule = {
     const events: SeedEvent[] = [
       anchorA,
       anchorB,
+      assumptionsA,
+      assumptionsB,
       sharedGroceriesBudget,
       personalCoffeeBudgetA,
       personalFitnessBudgetB,
@@ -290,6 +321,32 @@ export const budgetsAndBills: SeedModule = {
       events,
       expectations: {
         forecast,
+        forecastAssumptions: {
+          personA: {
+            person: assumptionsA.person,
+            savingsRateBps: assumptionsA.savingsRateBps,
+            returnLowBps: assumptionsA.returnLowBps,
+            returnMidBps: assumptionsA.returnMidBps,
+            returnHighBps: assumptionsA.returnHighBps,
+            superRateBps: assumptionsA.superRateBps,
+            mortgages: assumptionsA.mortgages.map((m) => ({
+              account: m.account,
+              countOffset: m.countOffset,
+            })),
+          },
+          personB: {
+            person: assumptionsB.person,
+            savingsRateBps: assumptionsB.savingsRateBps,
+            returnLowBps: assumptionsB.returnLowBps,
+            returnMidBps: assumptionsB.returnMidBps,
+            returnHighBps: assumptionsB.returnHighBps,
+            superRateBps: assumptionsB.superRateBps,
+            mortgages: assumptionsB.mortgages.map((m) => ({
+              account: m.account,
+              countOffset: m.countOffset,
+            })),
+          },
+        },
         payAnchors: {
           personA: {
             key: anchorA.key,

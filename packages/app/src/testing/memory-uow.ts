@@ -35,6 +35,9 @@ import type {
   CredentialRepo,
   FewShotExample,
   FlowBreakdownRow,
+  ForecastAssumptionMortgageRow,
+  ForecastAssumptionRepo,
+  ForecastAssumptionRow,
   GoalAdjustmentRepo,
   GoalAdjustmentRow,
   GoalAllocationRepo,
@@ -177,6 +180,8 @@ export interface MemoryState {
   llmPurposeAssignments: LlmPurposeAssignmentRow[];
   suggestions: SuggestionRow[];
   payAnchors: PayAnchorRow[];
+  forecastAssumptions: ForecastAssumptionRow[];
+  forecastAssumptionMortgages: ForecastAssumptionMortgageRow[];
   budgets: BudgetRow[];
   recurringSeries: RecurringSeriesRow[];
   goals: GoalRow[];
@@ -3378,6 +3383,37 @@ function payAnchorRepo(working: MemoryState, check: () => void): PayAnchorRepo {
   };
 }
 
+function forecastAssumptionRepo(working: MemoryState, check: () => void): ForecastAssumptionRepo {
+  return {
+    get(viewer: Viewer, personId: Id<"Person">) {
+      check();
+      if (viewer.kind !== "system" && viewer.personId !== personId) return undefined;
+      return working.forecastAssumptions.find((r) => r.personId === personId);
+    },
+    upsert(row: ForecastAssumptionRow) {
+      check();
+      const idx = working.forecastAssumptions.findIndex((r) => r.personId === row.personId);
+      if (idx === -1) {
+        working.forecastAssumptions.push(row);
+      } else {
+        working.forecastAssumptions[idx] = row;
+      }
+    },
+    listMortgages(viewer: Viewer, personId: Id<"Person">) {
+      check();
+      if (viewer.kind !== "system" && viewer.personId !== personId) return [];
+      return working.forecastAssumptionMortgages.filter((r) => r.personId === personId);
+    },
+    replaceMortgages(personId: Id<"Person">, rows: readonly ForecastAssumptionMortgageRow[]) {
+      check();
+      working.forecastAssumptionMortgages = [
+        ...working.forecastAssumptionMortgages.filter((r) => r.personId !== personId),
+        ...rows,
+      ];
+    },
+  };
+}
+
 function isBudgetVisibleMemory(viewer: Viewer, personId: Id<"Person"> | null): boolean {
   if (viewer.kind === "system") return true;
   if (personId === null) return true;
@@ -4107,6 +4143,8 @@ export function memoryUnitOfWork(
       llmPurposeAssignments: [],
       suggestions: [],
       payAnchors: [],
+      forecastAssumptions: [],
+      forecastAssumptionMortgages: [],
       budgets: [],
       recurringSeries: [],
       goals: [],
@@ -4164,6 +4202,8 @@ export function memoryUnitOfWork(
         llmPurposeAssignments: [...uow.state.llmPurposeAssignments],
         suggestions: [...uow.state.suggestions],
         payAnchors: [...uow.state.payAnchors],
+        forecastAssumptions: [...uow.state.forecastAssumptions],
+        forecastAssumptionMortgages: [...uow.state.forecastAssumptionMortgages],
         budgets: [...uow.state.budgets],
         recurringSeries: [...uow.state.recurringSeries],
         goals: [...uow.state.goals],
@@ -4222,6 +4262,7 @@ export function memoryUnitOfWork(
         llmProviders: llmProviderRepo(working, check),
         suggestions: suggestionRepo(working, check),
         payAnchors: payAnchorRepo(working, check),
+        forecastAssumptions: forecastAssumptionRepo(working, check),
         budgets: budgetRepo(working, check),
         recurringSeries: recurringSeriesRepo(working, check),
         goals: goalRepo(working, check),
@@ -4287,6 +4328,8 @@ export function memoryUnitOfWork(
         uow.state.llmPurposeAssignments = working.llmPurposeAssignments;
         uow.state.suggestions = working.suggestions;
         uow.state.payAnchors = working.payAnchors;
+        uow.state.forecastAssumptions = working.forecastAssumptions;
+        uow.state.forecastAssumptionMortgages = working.forecastAssumptionMortgages;
         uow.state.budgets = working.budgets;
         uow.state.recurringSeries = working.recurringSeries;
         uow.state.goals = working.goals;
@@ -4458,6 +4501,11 @@ export function memoryUnitOfWork(
             payAnchorRepo(uow.state, check).findByPersonId(viewer, personId),
           findHouseholdAnchor: () => payAnchorRepo(uow.state, check).findHouseholdAnchor(),
           listVisible: (viewer) => payAnchorRepo(uow.state, check).listVisible(viewer),
+        },
+        forecastAssumptions: {
+          get: (viewer, personId) => forecastAssumptionRepo(uow.state, check).get(viewer, personId),
+          listMortgages: (viewer, personId) =>
+            forecastAssumptionRepo(uow.state, check).listMortgages(viewer, personId),
         },
         budgets: {
           findById: (viewer, id) => budgetRepo(uow.state, check).findById(viewer, id),

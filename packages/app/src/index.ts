@@ -740,6 +740,17 @@ export {
   parseForecastHorizon,
 } from "./planning/forecast.ts";
 export {
+  FORECAST_ASSUMPTION_DEFAULTS,
+  type ForecastAssumptionMortgage,
+  type ForecastAssumptions,
+  type GetForecastAssumptionsInput,
+  getForecastAssumptions,
+  getForecastAssumptionsInput,
+  type UpsertForecastAssumptionsInput,
+  upsertForecastAssumptions,
+  upsertForecastAssumptionsInput,
+} from "./planning/forecast-assumptions.ts";
+export {
   allocatePeriodSavings,
   calculateGoalBalances,
   type ExecuteSavingsAllocationInput,
@@ -1010,6 +1021,9 @@ export {
   type CategoryRepo,
   type CategoryRow,
   type FewShotExample,
+  type ForecastAssumptionMortgageRow,
+  type ForecastAssumptionRepo,
+  type ForecastAssumptionRow,
   type GoalAdjustmentRepo,
   type GoalAdjustmentRow,
   type GoalAllocationRepo,

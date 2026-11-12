@@ -9,6 +9,24 @@ export interface WorldPerson {
   readonly displayName: string;
   /** `#RRGGBB`. */
   readonly colour: string;
+  /** The person's forecast assumptions; set by a later `forecast-assumption.set`, `undefined` before. */
+  readonly forecastAssumptions?: WorldForecastAssumptions;
+}
+
+/** One mortgage selection of a person's forecast: the `home_loan`'s key, and whether to net its offsets. */
+export interface WorldForecastAssumptionMortgage {
+  readonly account: string;
+  readonly countOffset: boolean;
+}
+
+/** The editable per-person forecast rates (integer basis points) as `forecast-assumption.set` sets them. */
+export interface WorldForecastAssumptions {
+  readonly savingsRateBps: number;
+  readonly returnLowBps: number;
+  readonly returnMidBps: number;
+  readonly returnHighBps: number;
+  readonly superRateBps: number;
+  readonly mortgages: readonly WorldForecastAssumptionMortgage[];
 }
 
 /** Household-wide settings, as `system.updateHouseholdSettings` takes them. */
@@ -293,6 +311,16 @@ export interface PayAnchorCreatedEvent extends WorldPayAnchor {
   readonly type: "pay-anchor.created";
 }
 
+/**
+ * Sets one person's forecast assumptions: the editable rates (integer basis points) and the
+ * household loans the projection pays down. Applied through `planning.upsertForecastAssumptions`.
+ */
+export interface ForecastAssumptionSetEvent extends WorldForecastAssumptions {
+  readonly type: "forecast-assumption.set";
+  /** The key of the person. */
+  readonly person: string;
+}
+
 export interface BudgetCreatedEvent extends WorldBudget {
   readonly type: "budget.created";
 }
@@ -326,6 +354,7 @@ export type SeedEvent =
   | NameHiddenEvent
   | TransferGroupedEvent
   | PayAnchorCreatedEvent
+  | ForecastAssumptionSetEvent
   | BudgetCreatedEvent
   | RecurringSeriesCreatedEvent
   | StageCreatedEvent
@@ -390,6 +419,9 @@ function knownOf(world: World): SeedKnown {
     });
   }
   for (const pa of world.payAnchors) known.payAnchors.add(pa.key);
+  for (const person of world.people) {
+    if (person.forecastAssumptions !== undefined) known.forecastAssumptions.add(person.key);
+  }
   for (const b of world.budgets) known.budgets.add(b.key);
   for (const rs of world.recurringSeries) known.recurringSeries.add(rs.key);
   for (const s of world.stages) known.stages.add(s.key);
@@ -407,6 +439,7 @@ function cloneKnown(k: SeedKnown): SeedKnown {
     payees: new Map(k.payees),
     transactions: new Map(k.transactions),
     payAnchors: new Set(k.payAnchors),
+    forecastAssumptions: new Set(k.forecastAssumptions),
     budgets: new Set(k.budgets),
     recurringSeries: new Set(k.recurringSeries),
     stages: new Set(k.stages),
@@ -507,6 +540,27 @@ export function applyEvents(world: World, events: readonly SeedEvent[]): World {
           expectedGrossCents: event.expectedGrossCents ?? null,
         });
         break;
+      case "forecast-assumption.set": {
+        const at = people.findIndex((p) => p.key === event.person);
+        const person = at === -1 ? undefined : people[at];
+        if (person !== undefined) {
+          people[at] = {
+            ...person,
+            forecastAssumptions: {
+              savingsRateBps: event.savingsRateBps,
+              returnLowBps: event.returnLowBps,
+              returnMidBps: event.returnMidBps,
+              returnHighBps: event.returnHighBps,
+              superRateBps: event.superRateBps,
+              mortgages: event.mortgages.map((m) => ({
+                account: m.account,
+                countOffset: m.countOffset,
+              })),
+            },
+          };
+        }
+        break;
+      }
       case "budget.created":
         budgets.push({
           key: event.key,

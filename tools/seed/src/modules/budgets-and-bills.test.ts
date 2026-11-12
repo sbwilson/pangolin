@@ -34,10 +34,26 @@ describe("budgetsAndBills module", () => {
       RECURRING_SERIES_KEYS.netflix,
     ]);
 
+    // Forecast assumptions: one `forecast-assumption.set` per person, each selecting the
+    // household home loan with its offset counted.
+    const assumptionEvents = events.filter((e) => e.type === "forecast-assumption.set");
+    expect(assumptionEvents).toHaveLength(2);
+    expect(assumptionEvents.map((e) => (e as any).person)).toEqual(["person-a", "person-b"]);
+
     const ex = result.expectations as any;
     expect(ex["budgets-and-bills.payAnchors"]).toBeDefined();
     expect(ex["budgets-and-bills.groceriesBudget"]).toBeDefined();
     expect(ex["budgets-and-bills.recurringSeries"]).toBeDefined();
+
+    const assumptions = ex["budgets-and-bills.forecastAssumptions"];
+    expect(assumptions.personA.savingsRateBps).toBe(4_500);
+    expect(assumptions.personA.mortgages).toEqual([
+      { account: "joint-home-loan", countOffset: true },
+    ]);
+    expect(assumptions.personB.returnLowBps).toBe(300);
+    expect(assumptions.personB.returnMidBps).toBe(500);
+    expect(assumptions.personB.returnHighBps).toBe(700);
+    expect(assumptions.personB.superRateBps).toBe(1_200);
 
     // The coffee budget carries a funding account; the mobile budget targets the Telstra
     // payee's default category so the forecast covers (and excludes) it.

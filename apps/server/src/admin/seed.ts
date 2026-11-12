@@ -36,6 +36,7 @@ import {
   type UseCaseContext,
   updateHouseholdSettings,
   updateHouseholdSettingsInput,
+  upsertForecastAssumptions,
   upsertPayAnchor,
 } from "@pangolin/app";
 import { systemViewer } from "@pangolin/app/system-viewer";
@@ -201,6 +202,17 @@ const EVENT_SCHEMAS = {
     alignment: z.enum(["calendar", "deposit"]).default("calendar"),
     expectedNetCents: z.number().int().nonnegative().nullable().optional(),
     expectedGrossCents: z.number().int().nonnegative().nullable().optional(),
+  }),
+  "forecast-assumption.set": z.strictObject({
+    type: z.literal("forecast-assumption.set"),
+    module: moduleName,
+    person: key,
+    savingsRateBps: z.number().int().min(0).max(10000),
+    returnLowBps: z.number().int().min(0).max(10000),
+    returnMidBps: z.number().int().min(0).max(10000),
+    returnHighBps: z.number().int().min(0).max(10000),
+    superRateBps: z.number().int().min(0).max(10000),
+    mortgages: z.array(z.strictObject({ account: key, countOffset: z.boolean() })).default([]),
   }),
   "budget.created": z.strictObject({
     type: z.literal("budget.created"),
@@ -395,6 +407,9 @@ function checkReferences(event: SeedEvent, known: SeedKnown, at: string): string
       break;
     }
     case "pay-anchor.created":
+      break;
+    case "forecast-assumption.set":
+      // The shared rules check the person and every mortgage account.
       break;
     case "budget.created":
       if (event.category !== undefined && event.category !== null) {
@@ -730,6 +745,21 @@ function applyEvents(
           expectedGrossCents: event.expectedGrossCents,
         });
         payAnchors[event.key] = row.id;
+        break;
+      }
+      case "forecast-assumption.set": {
+        upsertForecastAssumptions(ctx, {
+          personId: people[event.person] as string,
+          savingsRateBps: event.savingsRateBps,
+          returnLowBps: event.returnLowBps,
+          returnMidBps: event.returnMidBps,
+          returnHighBps: event.returnHighBps,
+          superRateBps: event.superRateBps,
+          mortgages: event.mortgages.map((m) => ({
+            accountId: accounts[m.account] as string,
+            countOffset: m.countOffset,
+          })),
+        });
         break;
       }
       case "budget.created": {

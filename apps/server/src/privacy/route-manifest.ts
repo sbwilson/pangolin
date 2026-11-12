@@ -209,6 +209,18 @@ export const MANIFEST: readonly ManifestEntry[] = [
       expectedNetCents: 350000,
     }),
   }),
+  read("/api/planning/forecast-assumptions"),
+  write("PUT", "/api/planning/forecast-assumptions", {
+    bodyEntities: ["account"],
+    body: (id) => ({
+      savingsRateBps: 4500,
+      returnLowBps: 300,
+      returnMidBps: 500,
+      returnHighBps: 700,
+      superRateBps: 1200,
+      mortgages: [{ accountId: id("account"), countOffset: true }],
+    }),
+  }),
   identity("POST", "/api/identity/setup-links", "Household setup link; carries no ledger data."),
   identity("POST", "/api/identity/sign-up", "Sign-up with a setup link."),
   identity("POST", "/api/identity/recovery-codes/initial", "The caller's own recovery codes."),

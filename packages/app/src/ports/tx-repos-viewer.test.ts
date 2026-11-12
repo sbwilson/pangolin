@@ -26,6 +26,7 @@ const SCOPED_REPOS = [
   "importHandoffs",
   "suggestions",
   "payAnchors",
+  "forecastAssumptions",
   "budgets",
   "recurringSeries",
   "goals",
@@ -124,6 +125,10 @@ const VIEWERLESS: Readonly<Record<string, string>> = {
     "reads the designated household pay anchor row for shared budget and calendar calculations, visible to all household members",
   "PayAnchorRepo.update": "the use case checked the pay anchor through the viewer",
   "PayAnchorRepo.deleteForPerson": "hard-deletes the leaver's pay anchor (the leave)",
+  "ForecastAssumptionRepo.upsert":
+    "the person's own row; the use case enforces person scope (own person, or system viewer for the seed)",
+  "ForecastAssumptionRepo.replaceMortgages":
+    "the person's own selections; the use case checked every listed account with findVisible first",
   "BudgetRepository.insert": "a new budget; the use case enforces person or shared scope",
   "BudgetRepository.update": "the use case checked the budget through the viewer",
   "BudgetRepository.delete": "the use case checked the budget through the viewer",

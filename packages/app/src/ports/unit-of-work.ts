@@ -1340,6 +1340,50 @@ export interface PayAnchorRepo {
   deleteForPerson(personId: Id<"Person">): void;
 }
 
+/**
+ * `forecast_assumption`: one person's editable forecast rates as integer basis points
+ * (0..10000). Only the person sees their own row (AD-22).
+ */
+export interface ForecastAssumptionRow {
+  readonly personId: Id<"Person">;
+  /** Share of pay saved, in basis points. */
+  readonly savingsRateBps: number;
+  readonly returnLowBps: number;
+  readonly returnMidBps: number;
+  readonly returnHighBps: number;
+  /** Employer superannuation contribution rate, in basis points. */
+  readonly superRateBps: number;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+/**
+ * `forecast_assumption_mortgage`: one per-loan forecast selection. A row present means that
+ * `home_loan` is paid down in the projection; `countOffset` says whether its offset balances
+ * are netted (AD-22: only the person sees these rows).
+ */
+export interface ForecastAssumptionMortgageRow {
+  readonly personId: Id<"Person">;
+  readonly accountId: Id<"Account">;
+  readonly countOffset: boolean;
+}
+
+export interface ForecastAssumptionRepo {
+  /**
+   * The person's stored assumptions row, or undefined when nothing is stored. Throws when
+   * given no viewer; a person viewer only ever sees their own row (AD-22).
+   */
+  get(viewer: Viewer, personId: Id<"Person">): ForecastAssumptionRow | undefined;
+  upsert(row: ForecastAssumptionRow): void;
+  /**
+   * The loans the person's projection pays down. Throws when given no viewer; a person viewer
+   * only ever sees their own selections (AD-22).
+   */
+  listMortgages(viewer: Viewer, personId: Id<"Person">): readonly ForecastAssumptionMortgageRow[];
+  /** Replaces the person's mortgage selections wholesale (delete then insert) in the transaction. */
+  replaceMortgages(personId: Id<"Person">, rows: readonly ForecastAssumptionMortgageRow[]): void;
+}
+
 /** `budget`: category or group spending caps (AD-10, AD-22, CAP-4). */
 export interface BudgetRow {
   readonly id: Id<"Budget">;
@@ -2110,6 +2154,7 @@ export interface TxRepos {
   readonly llmProviders: LlmProviderRepo;
   readonly suggestions: SuggestionRepo;
   readonly payAnchors: PayAnchorRepo;
+  readonly forecastAssumptions: ForecastAssumptionRepo;
   readonly budgets: BudgetRepository;
   readonly recurringSeries: RecurringSeriesRepo;
   readonly goals: GoalRepo;
@@ -2204,6 +2249,7 @@ export interface ReadRepos {
     PayAnchorRepo,
     "findByPersonId" | "findHouseholdAnchor" | "listVisible"
   >;
+  readonly forecastAssumptions: Pick<ForecastAssumptionRepo, "get" | "listMortgages">;
   readonly budgets: Pick<
     BudgetRepository,
     "findById" | "listVisible" | "calculateSpent" | "calculateHistoricalSpent"

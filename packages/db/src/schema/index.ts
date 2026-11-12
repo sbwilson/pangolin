@@ -19,6 +19,7 @@ export { balanceSnapshot } from "./balance-snapshot.ts";
 export { budget } from "./budget.ts";
 export { category } from "./category.ts";
 export { categoryGroup } from "./category-group.ts";
+export { forecastAssumption, forecastAssumptionMortgage } from "./forecast-assumption.ts";
 export {
   allocationStage,
   goal,
