@@ -225,6 +225,13 @@
       "when": 1794511103846,
       "tag": "0031_forecast_assumption",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1794556776211,
+      "tag": "0032_forecast_assumption_mortgage_terms",
+      "breakpoints": true
     }
   ]
 }

@@ -77,8 +77,10 @@ import {
   exportTransactionsCsv,
   extractAndImportPdfStatement,
   type ForecastCashFlowInput,
+  type ForecastNetWorthInput,
   fixSetAsideRowItem,
   forecastCashFlow,
+  forecastNetWorth,
   getAccount,
   getActivity,
   getBudget,
@@ -639,6 +641,13 @@ export function createApi(deps: ApiDeps) {
       const horizon = c.req.query("horizon");
       const input = horizon !== undefined ? ({ horizon } as ForecastCashFlowInput) : {};
       return c.json(forecastCashFlow(ctx(c), input), 200);
+    })
+    .get("/api/planning/forecast-net-worth", (c) => {
+      // Per viewer (AD-22): three monthly net-worth series (low/mid/high return) over
+      // `horizon` years (1, 2, 5 or 10; default 2 — anything else is a 400).
+      const horizon = c.req.query("horizon");
+      const input = horizon !== undefined ? ({ horizon } as ForecastNetWorthInput) : {};
+      return c.json(forecastNetWorth(ctx(c), input), 200);
     })
     .get("/api/identity/preferences", (c) => {
       return c.json(getPreferences(ctx(c), {}), 200);

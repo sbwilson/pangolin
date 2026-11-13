@@ -67,6 +67,15 @@ export {
   projectCashFlow,
 } from "./planning/forecast-cashflow.ts";
 export {
+  NET_WORTH_PROJECTION_HORIZONS,
+  type NetWorthLoanInput,
+  type NetWorthProjection,
+  type NetWorthProjectionHorizon,
+  type NetWorthProjectionInput,
+  type NetWorthProjectionPoint,
+  projectNetWorth,
+} from "./planning/forecast-networth.ts";
+export {
   calculateMedian,
   classifyCadence,
   type DetectedRecurringSeries,

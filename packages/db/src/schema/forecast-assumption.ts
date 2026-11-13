@@ -38,6 +38,11 @@ export const forecastAssumption = sqliteTable(
  * a row present means that `home_loan` is paid down in the projection, and `count_offset`
  * says whether its offset balances are netted. Closed loans survive through the account's
  * `closedOn`, so these rows never dangle (AD-22: only the person sees them).
+ *
+ * The editable loan terms live here too: a loan without complete terms is held flat by the
+ * projection, so both columns are nullable. `annual_rate_percent` is a decimal-string percent
+ * (`"6.175"` is 6.175% p.a., never a float, AD-13) and `monthly_repayment_cents` a positive
+ * integer cent amount — the shape `mortgageSchedule` takes, validated by the PUT.
  */
 export const forecastAssumptionMortgage = sqliteTable(
   "forecast_assumption_mortgage",
@@ -49,6 +54,8 @@ export const forecastAssumptionMortgage = sqliteTable(
       .notNull()
       .references(() => account.id),
     countOffset: integer("count_offset", { mode: "boolean" }).notNull(),
+    annualRatePercent: text("annual_rate_percent"),
+    monthlyRepaymentCents: integer("monthly_repayment_cents"),
   },
   (t) => [
     primaryKey({ columns: [t.personId, t.accountId] }),

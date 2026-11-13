@@ -13,10 +13,15 @@ export interface WorldPerson {
   readonly forecastAssumptions?: WorldForecastAssumptions;
 }
 
-/** One mortgage selection of a person's forecast: the `home_loan`'s key, and whether to net its offsets. */
+/** One mortgage selection of a person's forecast: the `home_loan`'s key, whether to net its
+ * offsets, and the optional editable terms (`mortgageSchedule` shape) it amortises on. */
 export interface WorldForecastAssumptionMortgage {
   readonly account: string;
   readonly countOffset: boolean;
+  /** Annual rate as a decimal-string percent; absent means no rate term. */
+  readonly annualRatePercent?: string | undefined;
+  /** Nominal monthly repayment in positive cents; absent means no repayment term. */
+  readonly monthlyRepaymentCents?: number | undefined;
 }
 
 /** The editable per-person forecast rates (integer basis points) as `forecast-assumption.set` sets them. */
@@ -555,6 +560,8 @@ export function applyEvents(world: World, events: readonly SeedEvent[]): World {
               mortgages: event.mortgages.map((m) => ({
                 account: m.account,
                 countOffset: m.countOffset,
+                annualRatePercent: m.annualRatePercent,
+                monthlyRepaymentCents: m.monthlyRepaymentCents,
               })),
             },
           };

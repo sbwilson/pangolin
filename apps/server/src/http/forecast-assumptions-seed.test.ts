@@ -188,7 +188,14 @@ describe("Forecast assumptions on default seed", () => {
       expect(status).toBe(200);
       expect(body).toEqual({
         ...DEMO,
-        mortgages: [{ accountId: loan, countOffset: true }],
+        mortgages: [
+          {
+            accountId: loan,
+            countOffset: true,
+            annualRatePercent: "6.175",
+            monthlyRepaymentCents: 420_000,
+          },
+        ],
       });
     }
   });
@@ -232,7 +239,14 @@ describe("Forecast assumptions on default seed", () => {
     expect(other.status).toBe(200);
     expect(other.body).toEqual({
       ...DEMO,
-      mortgages: [{ accountId: accountId("user-b", "Joint home loan"), countOffset: true }],
+      mortgages: [
+        {
+          accountId: accountId("user-b", "Joint home loan"),
+          countOffset: true,
+          annualRatePercent: "6.175",
+          monthlyRepaymentCents: 420_000,
+        },
+      ],
     });
   });
 

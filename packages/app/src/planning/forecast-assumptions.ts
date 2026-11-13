@@ -1,17 +1,25 @@
 // Forecast assumption use cases (AD-22): the per-person editable rates behind the net-worth
 // projection (8.5) and the assumption chips (8.7). Rates are integer basis points; nothing
 // stored reads as neutral zeros, so an unedited projection stays flat until the person opts in.
-import type { Id } from "@pangolin/shared";
+import { Decimal, type Id } from "@pangolin/shared";
 import { formatInstant } from "@pangolin/shared/temporal";
 import { z } from "zod";
 import type { UseCaseContext } from "../context.ts";
 import { AppError, parseInput } from "../errors.ts";
 import { write } from "../write.ts";
 
-/** One mortgage selection: a listed `home_loan` is paid down; `countOffset` nets its offsets. */
+/**
+ * One mortgage selection: a listed `home_loan` is paid down; `countOffset` nets its offsets.
+ * The per-loan terms are an editable assumption: a loan without complete terms (either field
+ * null) is held flat by the projection rather than amortised.
+ */
 export interface ForecastAssumptionMortgage {
   readonly accountId: string;
   readonly countOffset: boolean;
+  /** Annual rate as a decimal-string percent (`"6.175"` is 6.175% p.a.); null = no terms. */
+  readonly annualRatePercent: string | null;
+  /** Nominal monthly repayment in positive cents; null = no terms. */
+  readonly monthlyRepaymentCents: number | null;
 }
 
 /** The stored-or-default assumptions of one person, as the API and the chips read them. */
@@ -37,8 +45,44 @@ export const FORECAST_ASSUMPTION_DEFAULTS: ForecastAssumptions = {
 /** A rate in basis points: integer, 0..10000 — the same bounds as the table's CHECKs. */
 const bps = z.number().int().min(0).max(10_000);
 
+/** A plain decimal string, the same shape `mortgageSchedule` accepts (AD-13, never a float). */
+const DECIMAL_STRING_RE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
+
+/** An editable annual rate: a non-negative plain decimal-string percent, e.g. `"6.175"`. */
+const annualRatePercentInput = z
+  .string()
+  .refine((s) => DECIMAL_STRING_RE.test(s) && !new Decimal(s).isNegative(), {
+    message: "annualRatePercent must be a non-negative decimal-string percent",
+  })
+  .nullish();
+
+/** One mortgage in a PUT: the selection plus its optional editable terms. */
+const mortgageInput = z
+  .object({
+    accountId: z.string().min(1),
+    countOffset: z.boolean(),
+    annualRatePercent: annualRatePercentInput,
+    monthlyRepaymentCents: z.number().int().positive().nullish(),
+  })
+  .strict();
+
 export const getForecastAssumptionsInput = z.object({}).strict();
 export type GetForecastAssumptionsInput = z.input<typeof getForecastAssumptionsInput>;
+
+/** One stored or parsed mortgage as the API reads it: terms absent become null. */
+function mortgageView(m: {
+  readonly accountId: string;
+  readonly countOffset: boolean;
+  readonly annualRatePercent?: string | null | undefined;
+  readonly monthlyRepaymentCents?: number | null | undefined;
+}): ForecastAssumptionMortgage {
+  return {
+    accountId: m.accountId,
+    countOffset: m.countOffset,
+    annualRatePercent: m.annualRatePercent ?? null,
+    monthlyRepaymentCents: m.monthlyRepaymentCents ?? null,
+  };
+}
 
 export const upsertForecastAssumptionsInput = z
   .object({
@@ -48,9 +92,7 @@ export const upsertForecastAssumptionsInput = z
     returnMidBps: bps.optional(),
     returnHighBps: bps.optional(),
     superRateBps: bps.optional(),
-    mortgages: z
-      .array(z.object({ accountId: z.string().min(1), countOffset: z.boolean() }).strict())
-      .optional(),
+    mortgages: z.array(mortgageInput).optional(),
   })
   .strict()
   .refine(
@@ -79,7 +121,7 @@ export function getForecastAssumptions(
     if (row === undefined) return { ...FORECAST_ASSUMPTION_DEFAULTS, mortgages: [] };
     const mortgages = repos.forecastAssumptions
       .listMortgages(viewer, viewer.personId)
-      .map((m) => ({ accountId: m.accountId, countOffset: m.countOffset }));
+      .map((m) => mortgageView(m));
     return {
       savingsRateBps: row.savingsRateBps,
       returnLowBps: row.returnLowBps,
@@ -145,7 +187,7 @@ export function upsertForecastAssumptions(
             superRateBps: existing.superRateBps,
             mortgages: tx.forecastAssumptions
               .listMortgages(ctx.viewer, personId)
-              .map((m) => ({ accountId: m.accountId, countOffset: m.countOffset })),
+              .map((m) => mortgageView(m)),
           };
 
     const after: ForecastAssumptions = {
@@ -154,7 +196,9 @@ export function upsertForecastAssumptions(
       returnMidBps: parsed.returnMidBps ?? existing?.returnMidBps ?? 0,
       returnHighBps: parsed.returnHighBps ?? existing?.returnHighBps ?? 0,
       superRateBps: parsed.superRateBps ?? existing?.superRateBps ?? 0,
-      mortgages: parsed.mortgages ?? before?.mortgages ?? [],
+      // Terms omitted from a listed mortgage mean no terms (null), not the old row's terms:
+      // the mortgage list is replaced wholesale when present.
+      mortgages: (parsed.mortgages ?? before?.mortgages ?? []).map((m) => mortgageView(m)),
     };
 
     const now = formatInstant(ctx.clock.now());
@@ -176,6 +220,8 @@ export function upsertForecastAssumptions(
           personId,
           accountId: m.accountId as Id<"Account">,
           countOffset: m.countOffset,
+          annualRatePercent: m.annualRatePercent ?? null,
+          monthlyRepaymentCents: m.monthlyRepaymentCents ?? null,
         })),
       );
     }

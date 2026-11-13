@@ -212,7 +212,16 @@ const EVENT_SCHEMAS = {
     returnMidBps: z.number().int().min(0).max(10000),
     returnHighBps: z.number().int().min(0).max(10000),
     superRateBps: z.number().int().min(0).max(10000),
-    mortgages: z.array(z.strictObject({ account: key, countOffset: z.boolean() })).default([]),
+    mortgages: z
+      .array(
+        z.strictObject({
+          account: key,
+          countOffset: z.boolean(),
+          annualRatePercent: z.string().optional(),
+          monthlyRepaymentCents: z.number().int().positive().optional(),
+        }),
+      )
+      .default([]),
   }),
   "budget.created": z.strictObject({
     type: z.literal("budget.created"),
@@ -758,6 +767,8 @@ function applyEvents(
           mortgages: event.mortgages.map((m) => ({
             accountId: accounts[m.account] as string,
             countOffset: m.countOffset,
+            annualRatePercent: m.annualRatePercent,
+            monthlyRepaymentCents: m.monthlyRepaymentCents,
           })),
         });
         break;

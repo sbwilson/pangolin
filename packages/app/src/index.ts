@@ -751,6 +751,17 @@ export {
   upsertForecastAssumptionsInput,
 } from "./planning/forecast-assumptions.ts";
 export {
+  FORECAST_NET_WORTH_HORIZONS,
+  type ForecastNetWorthHorizon,
+  type ForecastNetWorthInput,
+  type ForecastNetWorthLine,
+  type ForecastNetWorthPoint,
+  type ForecastNetWorthReport,
+  forecastNetWorth,
+  forecastNetWorthInput,
+  parseForecastNetWorthHorizon,
+} from "./planning/forecast-networth.ts";
+export {
   allocatePeriodSavings,
   calculateGoalBalances,
   type ExecuteSavingsAllocationInput,

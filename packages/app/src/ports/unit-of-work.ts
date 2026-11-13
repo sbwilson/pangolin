@@ -1360,12 +1360,17 @@ export interface ForecastAssumptionRow {
 /**
  * `forecast_assumption_mortgage`: one per-loan forecast selection. A row present means that
  * `home_loan` is paid down in the projection; `countOffset` says whether its offset balances
- * are netted (AD-22: only the person sees these rows).
+ * are netted (AD-22: only the person sees these rows). The editable terms are the
+ * `mortgageSchedule` shape: a loan without complete terms (either side null) is held flat.
  */
 export interface ForecastAssumptionMortgageRow {
   readonly personId: Id<"Person">;
   readonly accountId: Id<"Account">;
   readonly countOffset: boolean;
+  /** Annual rate as a decimal-string percent (`"6.175"` is 6.175% p.a.); null = no terms. */
+  readonly annualRatePercent: string | null;
+  /** Nominal monthly repayment in positive cents; null = no terms. */
+  readonly monthlyRepaymentCents: number | null;
 }
 
 export interface ForecastAssumptionRepo {

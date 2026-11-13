@@ -96,6 +96,20 @@ const ZEROS = {
   mortgages: [],
 };
 
+/** A mortgage in an expectation: the selection, plus its terms — null unless given. */
+function mortgage(
+  accountId: string,
+  countOffset: boolean,
+  terms?: { annualRatePercent?: string; monthlyRepaymentCents?: number },
+) {
+  return {
+    accountId,
+    countOffset,
+    annualRatePercent: terms?.annualRatePercent ?? null,
+    monthlyRepaymentCents: terms?.monthlyRepaymentCents ?? null,
+  };
+}
+
 function expectError(fn: () => unknown, code: "NotFound" | "Validation" | "Unauthenticated"): void {
   try {
     fn();
@@ -144,7 +158,7 @@ describe("planning.forecastAssumptions", () => {
       expect(after).toEqual({
         ...ZEROS,
         savingsRateBps: 4500,
-        mortgages: [{ accountId: "loan-1", countOffset: true }],
+        mortgages: [mortgage("loan-1", true)],
       });
       expect(getForecastAssumptions(viewerA, {})).toEqual(after);
 
@@ -173,7 +187,7 @@ describe("planning.forecastAssumptions", () => {
         returnMidBps: 600,
         returnHighBps: 700,
         superRateBps: 0,
-        mortgages: [{ accountId: "loan-1", countOffset: true }],
+        mortgages: [mortgage("loan-1", true)],
       });
       expect(getForecastAssumptions(viewerA, {})).toEqual(after);
       expect(uow.state.forecastAssumptionMortgages).toHaveLength(1);
@@ -187,10 +201,8 @@ describe("planning.forecastAssumptions", () => {
       const after = upsertForecastAssumptions(viewerA, {
         mortgages: [{ accountId: "loan-2", countOffset: false }],
       });
-      expect(after.mortgages).toEqual([{ accountId: "loan-2", countOffset: false }]);
-      expect(getForecastAssumptions(viewerA, {}).mortgages).toEqual([
-        { accountId: "loan-2", countOffset: false },
-      ]);
+      expect(after.mortgages).toEqual([mortgage("loan-2", false)]);
+      expect(getForecastAssumptions(viewerA, {}).mortgages).toEqual([mortgage("loan-2", false)]);
       expect(uow.state.forecastAssumptionMortgages).toHaveLength(1);
     });
 
@@ -231,7 +243,7 @@ describe("planning.forecastAssumptions", () => {
       expect(JSON.parse(audit[1]?.before ?? "null")).toEqual({
         ...ZEROS,
         savingsRateBps: 4500,
-        mortgages: [{ accountId: "loan-1", countOffset: true }],
+        mortgages: [mortgage("loan-1", true)],
       });
       expect(JSON.parse(audit[1]?.after ?? "null")).toEqual(after);
     });
@@ -294,7 +306,7 @@ describe("planning.forecastAssumptions", () => {
       const after = upsertForecastAssumptions(viewerA, {
         mortgages: [{ accountId: "loan-old", countOffset: false }],
       });
-      expect(after.mortgages).toEqual([{ accountId: "loan-old", countOffset: false }]);
+      expect(after.mortgages).toEqual([mortgage("loan-old", false)]);
     });
 
     it("rejects bad bodies with Validation and writes nothing", () => {
@@ -339,7 +351,7 @@ describe("planning.forecastAssumptions", () => {
         returnMidBps: 500,
         returnHighBps: 700,
         superRateBps: 1200,
-        mortgages: [{ accountId: "loan-1", countOffset: true }],
+        mortgages: [mortgage("loan-1", true)],
       });
       expect(getForecastAssumptions(viewerA, {})).toEqual(ZEROS); // A is untouched
       expect(getForecastAssumptions(viewerB, {})).toEqual(seeded);
@@ -357,6 +369,74 @@ describe("planning.forecastAssumptions", () => {
         () => upsertForecastAssumptions(ctx, { personId: "ghost", savingsRateBps: 100 }),
         "Validation",
       );
+    });
+
+    it("round-trips mortgage terms; omitting terms on a listed loan means no terms", () => {
+      const { uow, viewerA } = setup();
+      const after = upsertForecastAssumptions(viewerA, {
+        mortgages: [
+          {
+            accountId: "loan-1",
+            countOffset: true,
+            annualRatePercent: "6.175",
+            monthlyRepaymentCents: 420_000,
+          },
+        ],
+      });
+      expect(after.mortgages).toEqual([
+        mortgage("loan-1", true, { annualRatePercent: "6.175", monthlyRepaymentCents: 420_000 }),
+      ]);
+      expect(getForecastAssumptions(viewerA, {}).mortgages).toEqual(after.mortgages);
+      expect(uow.state.forecastAssumptionMortgages[0]).toMatchObject({
+        annualRatePercent: "6.175",
+        monthlyRepaymentCents: 420_000,
+      });
+
+      // The list is replaced wholesale, so omitted terms become null — not the old values.
+      const cleared = upsertForecastAssumptions(viewerA, {
+        mortgages: [{ accountId: "loan-1", countOffset: false }],
+      });
+      expect(cleared.mortgages).toEqual([mortgage("loan-1", false)]);
+      expect(getForecastAssumptions(viewerA, {}).mortgages).toEqual([mortgage("loan-1", false)]);
+    });
+
+    it("keeps stored terms across a write that omits the mortgage list", () => {
+      const { viewerA } = setup();
+      upsertForecastAssumptions(viewerA, {
+        mortgages: [
+          {
+            accountId: "loan-1",
+            countOffset: true,
+            annualRatePercent: "6.175",
+            monthlyRepaymentCents: 420_000,
+          },
+        ],
+      });
+      const after = upsertForecastAssumptions(viewerA, { savingsRateBps: 100 });
+      expect(after.mortgages).toEqual([
+        mortgage("loan-1", true, { annualRatePercent: "6.175", monthlyRepaymentCents: 420_000 }),
+      ]);
+    });
+
+    it("rejects malformed terms with Validation and writes nothing", () => {
+      const { uow, viewerA } = setup();
+      const badBodies: Record<string, unknown>[] = [
+        { mortgages: [{ accountId: "loan-1", countOffset: true, annualRatePercent: "abc" }] },
+        { mortgages: [{ accountId: "loan-1", countOffset: true, annualRatePercent: "" }] },
+        { mortgages: [{ accountId: "loan-1", countOffset: true, annualRatePercent: "-6.175" }] },
+        { mortgages: [{ accountId: "loan-1", countOffset: true, annualRatePercent: "6e2" }] },
+        { mortgages: [{ accountId: "loan-1", countOffset: true, annualRatePercent: 6.175 }] },
+        { mortgages: [{ accountId: "loan-1", countOffset: true, monthlyRepaymentCents: 0 }] },
+        { mortgages: [{ accountId: "loan-1", countOffset: true, monthlyRepaymentCents: -1 }] },
+        { mortgages: [{ accountId: "loan-1", countOffset: true, monthlyRepaymentCents: 1.5 }] },
+        { mortgages: [{ accountId: "loan-1", countOffset: true, monthlyRepaymentCents: "4200" }] },
+      ];
+      for (const body of badBodies) {
+        expectError(() => upsertForecastAssumptions(viewerA, body as never), "Validation");
+      }
+      expect(uow.state.forecastAssumptions).toEqual([]);
+      expect(uow.state.forecastAssumptionMortgages).toEqual([]);
+      expect(uow.state.audit).toEqual([]);
     });
   });
 });

@@ -48,7 +48,12 @@ describe("budgetsAndBills module", () => {
     const assumptions = ex["budgets-and-bills.forecastAssumptions"];
     expect(assumptions.personA.savingsRateBps).toBe(4_500);
     expect(assumptions.personA.mortgages).toEqual([
-      { account: "joint-home-loan", countOffset: true },
+      {
+        account: "joint-home-loan",
+        countOffset: true,
+        annualRatePercent: "6.175",
+        monthlyRepaymentCents: 420_000,
+      },
     ]);
     expect(assumptions.personB.returnLowBps).toBe(300);
     expect(assumptions.personB.returnMidBps).toBe(500);

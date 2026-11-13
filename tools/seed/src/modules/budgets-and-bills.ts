@@ -45,15 +45,23 @@ export const RECURRING_SERIES_KEYS = {
 } as const;
 
 // The demo forecast assumptions: savings 45%, returns 3% / 5% / 7%, super 12%, and the
-// household home loan paid down with its offset balances netted. The use-case defaults stay
-// neutral zeros; only the seed carries these (ticket 4's decision).
+// household home loan paid down with its offset balances netted — with demo terms so the
+// net-worth projection (8.5) actually amortises it. The use-case defaults stay neutral zeros;
+// only the seed carries these (ticket 4's decision).
 export const FORECAST_ASSUMPTION_DEMO = {
   savingsRateBps: 4_500,
   returnLowBps: 300,
   returnMidBps: 500,
   returnHighBps: 700,
   superRateBps: 1_200,
-  mortgages: [{ account: ACCOUNT_KEYS.homeLoan, countOffset: true }],
+  mortgages: [
+    {
+      account: ACCOUNT_KEYS.homeLoan,
+      countOffset: true,
+      annualRatePercent: "6.175",
+      monthlyRepaymentCents: 420_000,
+    },
+  ],
 } as const;
 
 export const budgetsAndBills: SeedModule = {
@@ -332,6 +340,12 @@ export const budgetsAndBills: SeedModule = {
             mortgages: assumptionsA.mortgages.map((m) => ({
               account: m.account,
               countOffset: m.countOffset,
+              ...(m.annualRatePercent !== undefined
+                ? { annualRatePercent: m.annualRatePercent }
+                : {}),
+              ...(m.monthlyRepaymentCents !== undefined
+                ? { monthlyRepaymentCents: m.monthlyRepaymentCents }
+                : {}),
             })),
           },
           personB: {
@@ -344,6 +358,12 @@ export const budgetsAndBills: SeedModule = {
             mortgages: assumptionsB.mortgages.map((m) => ({
               account: m.account,
               countOffset: m.countOffset,
+              ...(m.annualRatePercent !== undefined
+                ? { annualRatePercent: m.annualRatePercent }
+                : {}),
+              ...(m.monthlyRepaymentCents !== undefined
+                ? { monthlyRepaymentCents: m.monthlyRepaymentCents }
+                : {}),
             })),
           },
         },
