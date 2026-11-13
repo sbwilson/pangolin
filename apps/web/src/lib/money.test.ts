@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centsToText, formatCents, parseCents } from "./money.ts";
+import { centsToText, formatCents, formatWholeDollars, parseCents } from "./money.ts";
 
 describe("parseCents", () => {
   it("reads dollars and cents without floating point", () => {
@@ -37,5 +37,19 @@ describe("formatCents", () => {
   it("formats amounts in custom currency", () => {
     expect(formatCents(1200, "USD")).toMatch(/USD\s12\.00/);
     expect(formatCents(1200, "usd")).toMatch(/USD\s12\.00/);
+  });
+});
+
+describe("formatWholeDollars", () => {
+  it("rounds the server's cents to whole dollars", () => {
+    expect(formatWholeDollars(42_700_034)).toBe("$427,000");
+    expect(formatWholeDollars(42_700_050)).toBe("$427,001");
+    expect(formatWholeDollars(-401_234_567)).toBe("-$4,012,346");
+    expect(formatWholeDollars(49)).toBe("$0");
+  });
+
+  it("keeps zero plain, sign included", () => {
+    expect(formatWholeDollars(0)).toBe("$0");
+    expect(formatWholeDollars(-0)).toBe("$0");
   });
 });

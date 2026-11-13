@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { fetchNetWorth } from "../api.ts";
 import { useOptionalImport } from "../components/import/index.ts";
@@ -336,12 +337,13 @@ export function NetWorthPage() {
                 advice.
               </p>
             </div>
-            <span
-              aria-disabled="true"
-              className="text-sm font-semibold text-muted-foreground opacity-60 cursor-not-allowed select-none shrink-0"
+            <Link
+              to="/planning/forecast"
+              search={{ mode: "networth" }}
+              className="text-sm font-semibold text-primary hover:underline shrink-0"
             >
               Where will we be in 2 years? →
-            </span>
+            </Link>
           </div>
         </>
       ) : null}

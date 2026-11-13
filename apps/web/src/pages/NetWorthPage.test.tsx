@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
   createRootRoute,
+  createRoute,
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
@@ -255,14 +256,19 @@ const sampleReport: NetWorthReport = {
 
 function renderPage() {
   const root = createRootRoute({ component: NetWorthPage });
+  const forecast = createRoute({
+    getParentRoute: () => root,
+    path: "/planning/forecast",
+    component: () => <p>Forecast</p>,
+  });
   const router = createRouter({
-    routeTree: root,
+    routeTree: root.addChildren([forecast]),
     history: createMemoryHistory({ initialEntries: ["/net-worth"] }),
     isServer: false,
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-  return render(
+  render(
     <SessionContext.Provider value={session}>
       <QueryClientProvider client={client}>
         <ImportProvider>
@@ -271,6 +277,7 @@ function renderPage() {
       </QueryClientProvider>
     </SessionContext.Provider>,
   );
+  return router;
 }
 
 describe("NetWorthPage component", () => {
@@ -383,16 +390,22 @@ describe("NetWorthPage component", () => {
     expect(link).toBeTruthy();
   });
 
-  it("renders disabled forecast link card", async () => {
+  it("links the forecast card to the forecast in net worth mode", async () => {
     vi.mocked(api.fetchNetWorth).mockResolvedValue(sampleReport);
-    renderPage();
+    const router = renderPage();
 
     await waitFor(() => {
       expect(screen.getByTestId("forecast-card")).toBeTruthy();
     });
 
-    const forecastLink = screen.getByText("Where will we be in 2 years? →");
-    expect(forecastLink.getAttribute("aria-disabled")).toBe("true");
+    const forecastLink = screen.getByRole("link", { name: "Where will we be in 2 years? →" });
+    expect(forecastLink.getAttribute("aria-disabled")).toBeNull();
+    expect(forecastLink.getAttribute("href")).toContain("/planning/forecast");
+    expect(forecastLink.getAttribute("href")).toContain("mode=networth");
+
+    await userEvent.click(forecastLink);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/planning/forecast"));
+    expect(router.state.location.searchStr).toContain("mode=networth");
   });
 
   it("renders empty state when viewer has zero accounts", async () => {

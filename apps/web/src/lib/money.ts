@@ -4,6 +4,7 @@
  */
 
 const FORMATTERS = new Map<string, Intl.NumberFormat>();
+const WHOLE_DOLLAR_FORMATTERS = new Map<string, Intl.NumberFormat>();
 
 function getFormatter(currency: string): Intl.NumberFormat {
   let formatter = FORMATTERS.get(currency);
@@ -19,6 +20,22 @@ export function formatCents(cents: number, currency = "AUD"): string {
   const code = currency.toUpperCase();
   const value = cents === 0 ? 0 : cents / 100;
   return getFormatter(code).format(value);
+}
+
+/** Headline money to the whole dollar — `$427,000`. Rounds for display only; never re-adds. */
+export function formatWholeDollars(cents: number, currency = "AUD"): string {
+  const code = currency.toUpperCase();
+  let formatter = WHOLE_DOLLAR_FORMATTERS.get(code);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en-AU", {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: 0,
+    });
+    WHOLE_DOLLAR_FORMATTERS.set(code, formatter);
+  }
+  const value = cents === 0 ? 0 : cents / 100;
+  return formatter.format(value);
 }
 
 /** `-4.5` becomes -450. Returns undefined for anything that is not an amount to the cent. */

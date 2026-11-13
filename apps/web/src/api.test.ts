@@ -11,6 +11,7 @@ import {
   fetchCategories,
   fetchDeadJobs,
   fetchForecast,
+  fetchForecastNetWorth,
   fetchHealth,
   fetchMe,
   fetchRecoveryBundle,
@@ -326,6 +327,30 @@ describe("fetchForecast", () => {
     );
     expect(url.pathname).toBe("/api/planning/forecast");
     expect(url.searchParams.get("horizon")).toBe("6");
+  });
+});
+
+describe("fetchForecastNetWorth", () => {
+  it("GETs the three-line projection for the requested years", async () => {
+    const line = (bps: number) => ({
+      returnBps: bps,
+      annualReturnPercent: String(bps / 100),
+      points: [{ month: 0, date: "2026-11-14", netWorthCents: 33_320_534 }],
+    });
+    const body = {
+      asOf: "2026-11-14",
+      horizonYears: 10,
+      lines: { low: line(300), mid: line(500), high: line(700) },
+    };
+    stubFetch(200, body);
+    expect(await fetchForecastNetWorth(10)).toEqual(body);
+    const request = vi.mocked(fetch).mock.calls[0]?.[0] as Request | string | URL;
+    const url = new URL(
+      typeof request === "string" ? request : String((request as Request).url ?? request),
+      "http://localhost",
+    );
+    expect(url.pathname).toBe("/api/planning/forecast-net-worth");
+    expect(url.searchParams.get("horizon")).toBe("10");
   });
 });
 

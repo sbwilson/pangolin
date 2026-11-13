@@ -168,12 +168,22 @@ export function validateCashFlowSearch(search: object): CashFlowSearch {
   return { from, to, ...scope };
 }
 
-/** `/planning/forecast`'s horizon in months; anything else means the server default (3). */
+/**
+ * `/planning/forecast`'s view and horizons: `horizon` in months for cash flow (anything else
+ * means 3), `mode` for the segmented control (anything else means cash flow), and `years` for
+ * the net-worth projection (anything else means 2).
+ */
 export interface ForecastSearch {
   readonly horizon?: "3" | "6" | "12";
+  readonly mode?: "cashflow" | "networth";
+  readonly years?: "1" | "2" | "5" | "10";
 }
 
 export function validateForecastSearch(search: object): ForecastSearch {
-  const { horizon } = search as Record<string, unknown>;
-  return horizon === "3" || horizon === "6" || horizon === "12" ? { horizon } : {};
+  const { horizon, mode, years } = search as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  if (horizon === "3" || horizon === "6" || horizon === "12") out.horizon = horizon;
+  if (mode === "cashflow" || mode === "networth") out.mode = mode;
+  if (years === "1" || years === "2" || years === "5" || years === "10") out.years = years;
+  return out as ForecastSearch;
 }

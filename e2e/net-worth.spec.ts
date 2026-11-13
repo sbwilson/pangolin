@@ -54,11 +54,12 @@ test.describe("Net Worth Page", () => {
     await toggle.click();
     await expect(page.getByTestId("net-worth-chart")).toBeVisible();
 
-    // Verify Forecast link card is rendered with disabled link
+    // Verify Forecast link card links to the forecast in net worth mode
     const forecastCard = page.getByTestId("forecast-card");
     await expect(forecastCard).toBeVisible();
     const forecastLink = forecastCard.getByText("Where will we be in 2 years? →");
-    await expect(forecastLink).toHaveAttribute("aria-disabled", "true");
+    await expect(forecastLink).toHaveAttribute("href", /\/planning\/forecast/);
+    await expect(forecastLink).toHaveAttribute("href", /mode=networth/);
   });
 
   test("partner cannot see private accounts of the other partner", async ({ browser }) => {

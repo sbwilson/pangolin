@@ -1783,3 +1783,43 @@ export async function fetchForecast(horizon: 3 | 6 | 12): Promise<ForecastData> 
   if (!res.ok) throw await apiError(res);
   return (await res.json()) as ForecastData;
 }
+
+// ---------------------------------------------------------------------------
+// Planning: net-worth forecast (low/mid/high return lines, monthly points)
+
+export interface ForecastNetWorthPoint {
+  /** 0-based month index from `asOf`. */
+  readonly month: number;
+  /** `YYYY-MM-DD`. */
+  readonly date: string;
+  readonly netWorthCents: number;
+}
+
+export interface ForecastNetWorthLine {
+  /** The stored return assumption driving this line, in basis points. */
+  readonly returnBps: number;
+  /** The same return as a decimal-string percent (`500` bps is `"5"`). */
+  readonly annualReturnPercent: string;
+  /** `horizonYears × 12 + 1` monthly points; point 0 is today. */
+  readonly points: ReadonlyArray<ForecastNetWorthPoint>;
+}
+
+export interface ForecastNetWorthReport {
+  /** `YYYY-MM-DD`: today by the clock — the date of every line's point 0. */
+  readonly asOf: string;
+  readonly horizonYears: number;
+  readonly lines: {
+    readonly low: ForecastNetWorthLine;
+    readonly mid: ForecastNetWorthLine;
+    readonly high: ForecastNetWorthLine;
+  };
+}
+
+/** The three monthly net-worth lines over `years` (1, 2, 5 or 10) from today. */
+export async function fetchForecastNetWorth(
+  years: 1 | 2 | 5 | 10,
+): Promise<ForecastNetWorthReport> {
+  const res = await fetch(`/api/planning/forecast-net-worth?horizon=${years}`);
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()) as ForecastNetWorthReport;
+}
