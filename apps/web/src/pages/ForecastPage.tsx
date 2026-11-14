@@ -20,6 +20,7 @@ import {
 } from "../components/ForecastContextChips.tsx";
 import { ForecastNetWorthChart } from "../components/ForecastNetWorthChart.tsx";
 import { ForecastNetWorthTable } from "../components/ForecastNetWorthTable.tsx";
+import { ForecastNotEnoughCard } from "../components/ForecastNotEnoughCard.tsx";
 import { formatCents, formatWholeDollars } from "../lib/money.ts";
 import { type ForecastSearch, validateForecastSearch } from "../routes/search.ts";
 import { ME_KEY } from "../session.tsx";
@@ -46,7 +47,9 @@ const SEGMENT = "inline-flex rounded-lg border border-border bg-muted p-0.5 m-0 
  * `/planning/forecast`: a read-only projection of each visible transaction account, day by day
  * to the chosen horizon (cash flow mode), or the three low/mid/high net-worth lines over a
  * number of years (net worth mode). The mode and both horizons live in the URL. Cash flow mode
- * reads; under the card, read-only chips name what drives the projection. Net worth mode's chips
+ * reads; under the card, read-only chips name what drives the projection. While an input is
+ * missing a card names each gap instead of projecting blind, and a fully-fed run with no dips
+ * earns an all-clear caption where the warnings would sit. Net worth mode's chips
  * hold the one thing the page can edit — the stored assumptions behind the lines.
  */
 export function ForecastPage() {
@@ -87,6 +90,13 @@ export function ForecastPage() {
   const confirmedBills = useQuery({
     queryKey: ["planning", "recurring-bills", "confirmed"],
     queryFn: () => fetchRecurringSeries({ status: "confirmed" }),
+    enabled: cashflowOnly,
+    retry: false,
+  });
+  // Candidate bills never gate the new states; they only annotate the card's bills gap.
+  const candidateBills = useQuery({
+    queryKey: ["planning", "recurring-bills", "candidate"],
+    queryFn: () => fetchRecurringSeries({ status: "candidate" }),
     enabled: cashflowOnly,
     retry: false,
   });
@@ -143,6 +153,29 @@ export function ForecastPage() {
     : budgets.isError
       ? { state: "failed" }
       : { state: "ready", value: budgets.data?.length ?? 0 };
+
+  // The two new cash-flow states read the report plus both count sources once settled. While a
+  // source loads or after it fails neither state applies and the page renders exactly as before.
+  const billsCount = billsSource.state === "ready" ? billsSource.value : null;
+  const budgetsCount = budgetsSource.state === "ready" ? budgetsSource.value : null;
+  const payMissing = report?.missingDepositSource ?? false;
+  // One row per still-missing input; the card claims the slot of warnings, chart and chips.
+  const notEnough =
+    report !== undefined &&
+    billsCount !== null &&
+    budgetsCount !== null &&
+    (payMissing || billsCount === 0 || budgetsCount === 0);
+  // A fully-fed projection with accounts and no dips earns a quiet reassurance instead.
+  const allClear =
+    report !== undefined &&
+    billsCount !== null &&
+    budgetsCount !== null &&
+    !payMissing &&
+    billsCount > 0 &&
+    budgetsCount > 0 &&
+    report.accounts.length > 0 &&
+    report.warnings.length === 0;
+  const waitingBills = (candidateBills.data ?? []).filter((s) => s.direction === "bill").length;
 
   return (
     <div className="space-y-6">
@@ -219,7 +252,19 @@ export function ForecastPage() {
             </p>
           ) : null}
 
-          {report !== undefined && report.warnings.length > 0 ? (
+          {notEnough ? (
+            <ForecastNotEnoughCard
+              pay={payMissing}
+              bills={{
+                missing: billsCount === 0,
+                count: billsCount ?? 0,
+                waiting: waitingBills,
+              }}
+              budgets={{ missing: budgetsCount === 0, count: budgetsCount ?? 0 }}
+            />
+          ) : null}
+
+          {report !== undefined && !notEnough && report.warnings.length > 0 ? (
             <ul className="space-y-2" aria-label="Low-balance warnings">
               {report.warnings.map((w) => (
                 <li
@@ -235,7 +280,17 @@ export function ForecastPage() {
             </ul>
           ) : null}
 
-          {report !== undefined ? (
+          {allClear ? (
+            <p
+              role="status"
+              data-testid="forecast-all-clear"
+              className="text-sm text-muted-foreground"
+            >
+              {`No dips below your thresholds in the next ${horizon} months.`}
+            </p>
+          ) : null}
+
+          {report !== undefined && !notEnough ? (
             <div className="rounded-xl border border-border bg-card p-4">
               {cashflowView === "chart" ? (
                 <ForecastCashFlowChart
@@ -259,7 +314,7 @@ export function ForecastPage() {
             </div>
           ) : null}
 
-          {report !== undefined ? (
+          {report !== undefined && !notEnough ? (
             <ForecastContextChips
               pay={paySource}
               bills={billsSource}

@@ -108,6 +108,44 @@ function netWorthReport(years: number): ForecastNetWorthReport {
   };
 }
 
+/** A confirmed bill-direction series — one makes the forecast's bills input present. */
+const confirmedBill = (over: Partial<RecurringSeriesData> = {}): RecurringSeriesData => ({
+  id: "bill-1",
+  accountId: "acc-1",
+  payeeId: "payee-1",
+  direction: "bill",
+  cadence: "monthly",
+  expectedCents: 10_000,
+  toleranceBp: 500,
+  nextDueOn: "2026-12-01",
+  status: "confirmed",
+  createdAt: "2026-11-01T00:00:00Z",
+  updatedAt: "2026-11-01T00:00:00Z",
+  ...over,
+});
+
+/** One budget — enough to settle the forecast's budgets input. */
+const aBudget = (): BudgetData => ({
+  id: "budget-1",
+  personId: null,
+  categoryId: null,
+  categoryGroupId: "g-1",
+  fundingAccountId: null,
+  cadence: "month",
+  limitCents: 40_000,
+  rollover: false,
+  createdAt: "2026-11-01T00:00:00Z",
+  updatedAt: "2026-11-01T00:00:00Z",
+});
+
+/** The world where every forecast input exists: one confirmed bill, one budget, no candidates. */
+function withAllInputs() {
+  vi.mocked(api.fetchRecurringSeries).mockImplementation((params) =>
+    Promise.resolve(params?.status === "candidate" ? [] : [confirmedBill()]),
+  );
+  vi.mocked(api.fetchBudgets).mockResolvedValue([aBudget()]);
+}
+
 function renderPage(url: string) {
   const root = createRootRoute();
   const page = createRoute({
@@ -136,6 +174,7 @@ function renderPage(url: string) {
 describe("ForecastPage", () => {
   it("calls out each warned account with its name, projected cents and date", async () => {
     vi.mocked(api.fetchForecast).mockResolvedValue(report(3));
+    withAllInputs();
     renderPage("/planning/forecast");
 
     await waitFor(() => expect(api.fetchForecast).toHaveBeenCalledWith(3));
@@ -147,6 +186,9 @@ describe("ForecastPage", () => {
     expect(warning.textContent).toContain("15 Jul");
 
     expect(screen.getByTestId("forecast-chart")).toBeDefined();
+    // Dips ahead: neither new state crowds out today's warning list.
+    expect(screen.queryByTestId("forecast-not-enough-card")).toBeNull();
+    expect(screen.queryByTestId("forecast-all-clear")).toBeNull();
   });
 
   it("defaults the horizon to 3 months and reflects ?horizon on arrival", async () => {
@@ -184,6 +226,7 @@ describe("ForecastPage", () => {
 
   it("renders no callout when the projection has no dips", async () => {
     vi.mocked(api.fetchForecast).mockResolvedValue({ ...report(3), warnings: [] });
+    withAllInputs();
     renderPage("/planning/forecast");
     await waitFor(() => expect(screen.getByTestId("forecast-chart")).toBeDefined());
     expect(screen.queryByTestId("forecast-warning")).toBeNull();
@@ -200,6 +243,7 @@ describe("ForecastPage", () => {
 
   it("shows cash flow mode on default arrival, with its own View as table toggle", async () => {
     vi.mocked(api.fetchForecast).mockResolvedValue(report(3));
+    withAllInputs();
     renderPage("/planning/forecast");
     await waitFor(() => expect(screen.getByTestId("forecast-chart")).toBeDefined());
 
@@ -331,6 +375,7 @@ describe("ForecastPage net worth mode", () => {
   it("keeps the cash flow months horizon when returning from net worth", async () => {
     vi.mocked(api.fetchForecast).mockResolvedValue(report(12));
     vi.mocked(api.fetchForecastNetWorth).mockResolvedValue(netWorthReport(2));
+    withAllInputs();
     const router = renderPage("/planning/forecast");
     await waitFor(() => expect(api.fetchForecast).toHaveBeenCalledWith(3));
 
@@ -433,17 +478,22 @@ describe("ForecastPage context chips (cash flow)", () => {
     expect(api.fetchForecastAssumptions).not.toHaveBeenCalled();
   });
 
-  it("gives the honest zero copy when nothing is set", async () => {
+  it("keeps the honest unset chip copy the page can still reach", async () => {
+    // With inputs missing the card replaces the chips, so this is the world where every input
+    // exists yet pay identity, thresholds — nothing they name — do not.
     vi.mocked(api.fetchForecast).mockResolvedValue({
       ...report(3),
       accounts: report(3).accounts.map((a) => ({ ...a, lowBalanceThresholdCents: 0 })),
     });
+    vi.mocked(api.fetchPayAnchors).mockResolvedValue([payAnchor({ personId: "p9" })]);
+    withAllInputs();
     renderPage("/planning/forecast");
 
     expect(await screen.findByText("Pay cycle — not set")).toBeDefined();
-    expect(screen.getByText("No confirmed bills")).toBeDefined();
-    expect(screen.getByText("No budgets yet")).toBeDefined();
+    expect(screen.getByText("1 confirmed bill")).toBeDefined();
+    expect(screen.getByText("1 budget, spent at its limit")).toBeDefined();
     expect(screen.getByText("Low-balance lines — none set")).toBeDefined();
+    expect(screen.queryByTestId("forecast-not-enough-card")).toBeNull();
   });
 
   it("omits the chip whose source failed, keeping the others", async () => {
@@ -476,6 +526,7 @@ describe("ForecastPage assumption chips (net worth)", () => {
     expect(api.fetchMe).not.toHaveBeenCalled();
     expect(api.fetchPayAnchors).not.toHaveBeenCalled();
     expect(api.fetchBudgets).not.toHaveBeenCalled();
+    expect(api.fetchRecurringSeries).not.toHaveBeenCalled();
   });
 
   it("saves an edited savings rate and redraws the net-worth lines", async () => {
@@ -510,5 +561,189 @@ describe("ForecastPage assumption chips (net worth)", () => {
       /The forecast assumptions are currently unavailable/,
     );
     expect(screen.queryByTestId("assumption-chips")).toBeNull();
+  });
+});
+
+describe("ForecastPage not-enough card and all-clear caption (cash flow)", () => {
+  /** Serve `candidates` to the candidate query only; confirmed stays empty. */
+  function withCandidates(candidates: RecurringSeriesData[]) {
+    vi.mocked(api.fetchRecurringSeries).mockImplementation((params) =>
+      Promise.resolve(params?.status === "candidate" ? candidates : []),
+    );
+  }
+
+  const candidateBill = (id: string): RecurringSeriesData =>
+    confirmedBill({ id, status: "candidate" });
+
+  it("replaces chart, chips and warnings with a card naming every gap", async () => {
+    vi.mocked(api.fetchForecast).mockResolvedValue({ ...report(3), missingDepositSource: true });
+    renderPage("/planning/forecast");
+
+    const card = await screen.findByTestId("forecast-not-enough-card");
+    expect(card.textContent).toContain("Not enough to forecast yet");
+    expect(card.textContent).toContain(
+      "Pangolin needs three things before it can project your balances.",
+    );
+
+    const pay = within(card).getByTestId("forecast-gap-pay");
+    expect(pay.textContent).toContain("Not set");
+    expect(
+      within(pay)
+        .getByRole("link", { name: /Set it in Settings/ })
+        .getAttribute("href"),
+    ).toContain("/settings");
+
+    const bills = within(card).getByTestId("forecast-gap-bills");
+    expect(bills.textContent).toContain("None yet");
+    expect(bills.textContent).not.toContain("waiting");
+    expect(
+      within(bills)
+        .getByRole("link", { name: /Confirm bills/ })
+        .getAttribute("href"),
+    ).toContain("/planning/budgets");
+
+    const budgets = within(card).getByTestId("forecast-gap-budgets");
+    expect(budgets.textContent).toContain("None yet");
+    expect(
+      within(budgets)
+        .getByRole("link", { name: /Set budgets/ })
+        .getAttribute("href"),
+    ).toContain("/planning/budgets");
+
+    // The card renders alone: no chart, no chips, no warnings, no caption.
+    expect(screen.queryByTestId("forecast-chart")).toBeNull();
+    expect(screen.queryByTestId("forecast-context-chips")).toBeNull();
+    expect(screen.queryByTestId("forecast-warning")).toBeNull();
+    expect(screen.queryByTestId("forecast-all-clear")).toBeNull();
+  });
+
+  it("counts waiting candidates on the bills row", async () => {
+    vi.mocked(api.fetchForecast).mockResolvedValue(report(3));
+    withCandidates([
+      candidateBill("c-1"),
+      candidateBill("c-2"),
+      candidateBill("c-3"),
+      confirmedBill({ id: "c-4", status: "candidate", direction: "income" }),
+    ]);
+    renderPage("/planning/forecast");
+
+    const card = await screen.findByTestId("forecast-not-enough-card");
+    const bills = within(card).getByTestId("forecast-gap-bills");
+    expect(bills.textContent).toContain("None yet · 3 waiting to confirm");
+    expect(
+      within(bills)
+        .getByRole("link", { name: /Confirm bills/ })
+        .getAttribute("href"),
+    ).toContain("/planning/budgets");
+  });
+
+  it("ticks the present rows and names only the budgets gap", async () => {
+    vi.mocked(api.fetchForecast).mockResolvedValue(report(3));
+    vi.mocked(api.fetchRecurringSeries).mockImplementation((params) =>
+      Promise.resolve(params?.status === "candidate" ? [] : [confirmedBill()]),
+    );
+    renderPage("/planning/forecast");
+
+    const card = await screen.findByTestId("forecast-not-enough-card");
+    const pay = within(card).getByTestId("forecast-gap-pay");
+    expect(pay.textContent).toContain("Set");
+    expect(within(pay).queryAllByRole("link")).toHaveLength(0);
+    const bills = within(card).getByTestId("forecast-gap-bills");
+    expect(bills.textContent).toContain("1 confirmed");
+    expect(within(bills).queryAllByRole("link")).toHaveLength(0);
+    const budgets = within(card).getByTestId("forecast-gap-budgets");
+    expect(budgets.textContent).toContain("None yet");
+    expect(within(budgets).getByRole("link", { name: /Set budgets/ })).toBeDefined();
+
+    // Chart still replaced with a single gap.
+    expect(screen.queryByTestId("forecast-chart")).toBeNull();
+  });
+
+  it("renders as today while a context source is loading, then settles into the card", async () => {
+    let resolveBudgets: (budgets: BudgetData[]) => void = () => {};
+    vi.mocked(api.fetchForecast).mockResolvedValue({ ...report(3), warnings: [] });
+    vi.mocked(api.fetchRecurringSeries).mockImplementation((params) =>
+      Promise.resolve(params?.status === "candidate" ? [] : [confirmedBill()]),
+    );
+    vi.mocked(api.fetchBudgets).mockReturnValue(
+      new Promise<BudgetData[]>((resolve) => {
+        resolveBudgets = resolve;
+      }),
+    );
+    renderPage("/planning/forecast");
+
+    // Budgets unknown: no card, no caption — today's chart and chips.
+    await waitFor(() => expect(screen.getByTestId("forecast-chart")).toBeDefined());
+    expect(screen.queryByTestId("forecast-not-enough-card")).toBeNull();
+    expect(screen.queryByTestId("forecast-all-clear")).toBeNull();
+
+    // Once zero budgets settle, the card takes over naming that one gap.
+    resolveBudgets([]);
+    const card = await screen.findByTestId("forecast-not-enough-card");
+    expect(within(card).getByTestId("forecast-gap-budgets").textContent).toContain("None yet");
+    expect(within(card).getByTestId("forecast-gap-pay").textContent).toContain("Set");
+    expect(screen.queryByTestId("forecast-chart")).toBeNull();
+  });
+
+  it("renders as today when the budgets query fails — no card, no caption", async () => {
+    vi.mocked(api.fetchForecast).mockResolvedValue({ ...report(3), warnings: [] });
+    withAllInputs();
+    vi.mocked(api.fetchBudgets).mockRejectedValue(new Error("offline"));
+    renderPage("/planning/forecast");
+
+    await waitFor(() => expect(screen.getByTestId("forecast-chart")).toBeDefined());
+    expect(screen.queryByTestId("forecast-not-enough-card")).toBeNull();
+    expect(screen.queryByTestId("forecast-all-clear")).toBeNull();
+    // Today's chip omission stands: the failed source contributes nothing.
+    expect(screen.queryByText(/^Budgets/i)).toBeNull();
+  });
+
+  it("keeps the plain gap copy when only the candidates query fails", async () => {
+    vi.mocked(api.fetchForecast).mockResolvedValue(report(3));
+    vi.mocked(api.fetchRecurringSeries).mockImplementation((params) =>
+      params?.status === "candidate" ? Promise.reject(new Error("offline")) : Promise.resolve([]),
+    );
+    renderPage("/planning/forecast");
+
+    // Budgets are zero (gap), so the card shows; the failed candidate count is simply absent.
+    const card = await screen.findByTestId("forecast-not-enough-card");
+    const bills = within(card).getByTestId("forecast-gap-bills");
+    expect(bills.textContent).toContain("None yet");
+    expect(bills.textContent).not.toContain("waiting");
+  });
+
+  it("promises no dips below your thresholds in a safe world", async () => {
+    vi.mocked(api.fetchForecast).mockResolvedValue({ ...report(3), warnings: [] });
+    withAllInputs();
+    renderPage("/planning/forecast");
+
+    const caption = await screen.findByTestId("forecast-all-clear");
+    expect(caption.getAttribute("role")).toBe("status");
+    expect(caption.textContent).toBe("No dips below your thresholds in the next 3 months.");
+    expect(screen.getByTestId("forecast-chart")).toBeDefined();
+  });
+
+  it("follows the horizon control in the caption", async () => {
+    vi.mocked(api.fetchForecast).mockResolvedValue({ ...report(6), warnings: [] });
+    withAllInputs();
+    renderPage("/planning/forecast?horizon=6");
+
+    await waitFor(() => expect(api.fetchForecast).toHaveBeenCalledWith(6));
+    const caption = await screen.findByTestId("forecast-all-clear");
+    expect(caption.textContent).toBe("No dips below your thresholds in the next 6 months.");
+  });
+
+  it("says nothing when no account was projected", async () => {
+    vi.mocked(api.fetchForecast).mockResolvedValue({
+      ...report(3),
+      warnings: [],
+      accounts: [],
+    });
+    withAllInputs();
+    renderPage("/planning/forecast");
+
+    await waitFor(() => expect(screen.getByTestId("forecast-chart")).toBeDefined());
+    expect(screen.queryByTestId("forecast-all-clear")).toBeNull();
+    expect(screen.queryByTestId("forecast-not-enough-card")).toBeNull();
   });
 });
