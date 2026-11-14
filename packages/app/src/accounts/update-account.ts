@@ -35,6 +35,8 @@ export const updateAccountInput = z
     /** A date closes the account; null clears it and reopens the account. */
     closedOn: dayInput.nullish(),
     isSavings: z.boolean().optional(),
+    /** The forecast's low-balance warning line in cents. Omitted keeps the stored value. */
+    lowBalanceThresholdCents: z.int().nonnegative().optional(),
     /** Replaces every owner and share, with the same validation as create. */
     owners: ownersInput.optional(),
   })
@@ -88,6 +90,7 @@ export function updateAccount(ctx: UseCaseContext, input: UpdateAccountInput): A
       openedOn,
       closedOn,
       isSavings: parsed.isSavings ?? before.isSavings,
+      lowBalanceThresholdCents: parsed.lowBalanceThresholdCents ?? before.lowBalanceThresholdCents,
       updatedAt: at,
     };
     tx.accounts.update(after);

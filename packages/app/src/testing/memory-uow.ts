@@ -1151,6 +1151,7 @@ function accountRepo(working: MemoryState, check: () => void): AccountRepo {
         openedOn: row.openedOn,
         closedOn: row.closedOn,
         isSavings: row.isSavings,
+        lowBalanceThresholdCents: row.lowBalanceThresholdCents,
         updatedAt: row.updatedAt,
       };
     },

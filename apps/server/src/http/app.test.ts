@@ -1073,6 +1073,17 @@ describe("/api/accounts", () => {
     expect((await send(db, "PATCH", path, { currency: "USD" })).status).toBe(400);
     expect((await send(db, "POST", `${path}/privacy`, { isPrivate: true })).status).toBe(400);
 
+    // The low-balance line: PATCH writes it, the record echoes it and a later GET follows;
+    // a negative is a 400 and the stored value stays.
+    const raised = await send(db, "PATCH", path, { lowBalanceThresholdCents: 20_000 });
+    expect(raised.status).toBe(200);
+    const thresholdOf = (body: unknown) =>
+      (body as { account: { lowBalanceThresholdCents: number } }).account.lowBalanceThresholdCents;
+    expect(thresholdOf(await raised.json())).toBe(20_000);
+    expect(thresholdOf(await (await send(db, "GET", path)).json())).toBe(20_000);
+    expect((await send(db, "PATCH", path, { lowBalanceThresholdCents: -1 })).status).toBe(400);
+    expect(thresholdOf(await (await send(db, "GET", path)).json())).toBe(20_000);
+
     const snap = await send(db, "POST", `${path}/snapshots`, {
       asOf: "2026-09-01",
       balanceCents: 1000,

@@ -1088,3 +1088,85 @@ describe("the Needs review counts (ticket 8)", () => {
     }
   });
 });
+
+/** The editable low-balance threshold (epic-forecasting ticket 8) on one adapter. */
+function lowBalanceThreshold(ctxs: Ctxs) {
+  const { sys } = ctxs;
+  const pa = createPerson(sys, { displayName: "A", colour: "#000000" });
+  const A = ctxs.as(pa);
+  const everyday = createAccount(sys, {
+    name: "Everyday",
+    type: "transaction",
+    currency: "AUD",
+    isPrivate: false,
+    owners: own(pa),
+    lowBalanceThresholdCents: 20_000,
+  });
+  const out: Record<string, unknown> = {};
+  out.created = getAccount(A, { id: everyday }).lowBalanceThresholdCents;
+  out.defaulted = getAccount(A, {
+    id: createAccount(sys, {
+      name: "Zero",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: own(pa),
+    }),
+  }).lowBalanceThresholdCents;
+  // Update changes it, and the response and the stored row agree (the write path persists).
+  out.changed = updateAccount(A, {
+    id: everyday,
+    lowBalanceThresholdCents: 30_000,
+  }).lowBalanceThresholdCents;
+  out.changedStored = getAccount(A, { id: everyday }).lowBalanceThresholdCents;
+  // An omitted field keeps the stored value.
+  out.omitted = updateAccount(A, { id: everyday, name: "Everyday 2" }).lowBalanceThresholdCents;
+  out.omittedStored = getAccount(A, { id: everyday }).lowBalanceThresholdCents;
+  // A negative threshold is refused on both use cases; the stored value is untouched.
+  out.negativeUpdate = outcome(() =>
+    updateAccount(A, { id: everyday, lowBalanceThresholdCents: -1 }),
+  );
+  out.negativeCreate = outcome(() =>
+    createAccount(A, {
+      name: "Bad",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: own(pa),
+      lowBalanceThresholdCents: -1,
+    }),
+  );
+  out.afterRefusals = getAccount(A, { id: everyday }).lowBalanceThresholdCents;
+  // Clearing to zero works and stores zero.
+  out.cleared = updateAccount(A, {
+    id: everyday,
+    lowBalanceThresholdCents: 0,
+  }).lowBalanceThresholdCents;
+  out.clearedStored = getAccount(A, { id: everyday }).lowBalanceThresholdCents;
+  return out;
+}
+
+describe("the editable low-balance threshold (ticket 8)", () => {
+  it("changes, keeps and refuses the threshold the same on SQLite and the memory mirror", () => {
+    migrate(db, loadMigrations(packageMigrationsDir));
+    const sqlite = lowBalanceThreshold(sqliteCtxs(db));
+    const memory = lowBalanceThreshold(memoryCtxs());
+    expect(memory).toEqual(sqlite);
+    for (const [who, out] of [
+      ["sqlite", sqlite],
+      ["memory", memory],
+    ] as const) {
+      expect(out.created, who).toBe(20_000);
+      expect(out.defaulted, who).toBe(0);
+      expect(out.changed, who).toBe(30_000);
+      expect(out.changedStored, who).toBe(30_000);
+      expect(out.omitted, who).toBe(30_000);
+      expect(out.omittedStored, who).toBe(30_000);
+      expect(out.negativeUpdate, who).toBe("Validation");
+      expect(out.negativeCreate, who).toBe("Validation");
+      expect(out.afterRefusals, who).toBe(30_000);
+      expect(out.cleared, who).toBe(0);
+      expect(out.clearedStored, who).toBe(0);
+    }
+  });
+});

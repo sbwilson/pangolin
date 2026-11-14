@@ -44,6 +44,7 @@ function account(overrides: Partial<api.AccountView>): api.AccountView {
     openedOn: "2026-01-01",
     closedOn: null,
     isSavings: false,
+    lowBalanceThresholdCents: 0,
     pool: "shared",
     owners: [{ personId: "person-simon", shareBp: 10_000 }],
     lastImport: null,

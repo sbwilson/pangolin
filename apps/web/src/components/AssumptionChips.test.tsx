@@ -393,6 +393,7 @@ describe("AssumptionChips — the mortgage popover", () => {
       openedOn: null,
       closedOn: null,
       isSavings: false,
+      lowBalanceThresholdCents: 0,
       owners: [],
       pool: "shared",
       lastImport: null,

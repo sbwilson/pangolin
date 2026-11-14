@@ -217,6 +217,7 @@ export function createAccountRepo(orm: Orm, check: () => void): AccountRepo {
           openedOn: row.openedOn,
           closedOn: row.closedOn,
           isSavings: row.isSavings,
+          lowBalanceThresholdCents: row.lowBalanceThresholdCents,
           updatedAt: row.updatedAt,
         })
         .where(and(eq(account.id, row.id), isNull(account.deletedAt)))

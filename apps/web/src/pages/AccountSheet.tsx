@@ -14,7 +14,7 @@ import { INPUT_CLASS_RING } from "../components/ui/input-class.ts";
 import { NativeSelect } from "../components/ui/select.tsx";
 import { Sheet } from "../components/ui/sheet.tsx";
 import { CREATABLE_TYPES, TYPE_LABEL } from "../lib/accounts.ts";
-import { parseCents } from "../lib/money.ts";
+import { centsToText, parseCents } from "../lib/money.ts";
 
 /** The household's base currency; the server refuses any other and says so. */
 const BASE_CURRENCY = "AUD";
@@ -116,7 +116,12 @@ export function AccountSheet({
   onSaved: () => void;
   onClose: () => void;
 }) {
-  const ids = { name: useId(), type: useId(), institution: useId() };
+  const ids = {
+    name: useId(),
+    type: useId(),
+    institution: useId(),
+    threshold: useId(),
+  };
   const [current, setCurrent] = useState(account);
   const editing = current !== null;
   const candidates: Candidate[] = [
@@ -129,6 +134,9 @@ export function AccountSheet({
   const [type, setType] = useState<AccountType>(account?.type ?? "transaction");
   const [institutionId, setInstitutionId] = useState(account?.institutionId ?? "");
   const [isSavings, setIsSavings] = useState(account?.isSavings ?? false);
+  const [thresholdText, setThresholdText] = useState(() =>
+    centsToText(account?.lowBalanceThresholdCents ?? 0),
+  );
   const [isPrivate, setIsPrivate] = useState(false);
   const [drafts, setDrafts] = useState<Drafts>(() =>
     Object.fromEntries(
@@ -198,6 +206,17 @@ export function AccountSheet({
       setError(new Error(picked));
       return;
     }
+    // The low-balance line edits like the other fields: empty text means 0, and anything
+    // that is not an amount to the cent (or is negative) blocks the save with no request.
+    let thresholdCents = 0;
+    if (type === "transaction") {
+      const parsed = thresholdText.trim() === "" ? 0 : parseCents(thresholdText);
+      if (parsed === undefined || parsed < 0) {
+        setError(new Error("Enter the low-balance line as an amount to the cent, like 200"));
+        return;
+      }
+      thresholdCents = parsed;
+    }
     setBusy(true);
     try {
       if (current === null) {
@@ -209,6 +228,7 @@ export function AccountSheet({
           owners: picked,
           ...(institutionId === "" ? {} : { institutionId }),
           isSavings: type === "savings" && isSavings,
+          ...(thresholdCents > 0 ? { lowBalanceThresholdCents: thresholdCents } : {}),
         });
       } else {
         const key = (list: readonly { personId: string; shareBp: number }[]) =>
@@ -223,6 +243,9 @@ export function AccountSheet({
             ? {}
             : { institutionId: institutionId || null }),
           ...(isSavings === current.isSavings ? {} : { isSavings }),
+          ...(type === "transaction" && thresholdCents !== current.lowBalanceThresholdCents
+            ? { lowBalanceThresholdCents: thresholdCents }
+            : {}),
           ...(ownersChanged && !ownersLocked ? { owners: picked } : {}),
         };
         if (Object.keys(changes).length > 0) await updateAccount(current.id, changes);
@@ -308,6 +331,23 @@ export function AccountSheet({
             ))}
           </NativeSelect>
         </label>
+        {type === "transaction" ? (
+          <div className="flex flex-col gap-1">
+            <label className="m-0 text-sm" htmlFor={ids.threshold}>
+              Low-balance line
+              <input
+                id={ids.threshold}
+                inputMode="decimal"
+                className="h-8 w-28 rounded-md border border-input bg-background px-2 text-right text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={thresholdText}
+                onChange={(e) => setThresholdText(e.target.value)}
+              />
+            </label>
+            <p className="m-0 text-xs text-muted-foreground">
+              Warn when the projection dips below this · $0 = none
+            </p>
+          </div>
+        ) : null}
         {type === "savings" ? (
           <label className="m-0 flex items-center gap-2 text-sm">
             <input

@@ -792,6 +792,8 @@ export interface AccountView {
   readonly openedOn: string | null;
   readonly closedOn: string | null;
   readonly isSavings: boolean;
+  /** The forecast's low-balance warning line in cents; 0 means unset. */
+  readonly lowBalanceThresholdCents: number;
   /** Owners and their shares in basis points (5000 is 50%). */
   readonly owners: readonly { readonly personId: string; readonly shareBp: number }[];
   /** `shared`, or the sole owner's person ID. */
@@ -870,6 +872,7 @@ interface NewAccount {
   readonly owners: readonly { readonly personId: string; readonly shareBp: number }[];
   readonly institutionId?: string | null;
   readonly isSavings?: boolean;
+  readonly lowBalanceThresholdCents?: number;
 }
 
 export async function createAccount(input: NewAccount): Promise<AccountView> {
@@ -884,6 +887,7 @@ export async function updateAccount(
     readonly name?: string;
     readonly institutionId?: string | null;
     readonly isSavings?: boolean;
+    readonly lowBalanceThresholdCents?: number;
     readonly owners?: readonly { readonly personId: string; readonly shareBp: number }[];
   },
 ): Promise<AccountView> {

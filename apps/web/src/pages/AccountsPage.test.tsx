@@ -68,6 +68,7 @@ const account = (over: Partial<AccountView> = {}): AccountView => ({
   openedOn: null,
   closedOn: null,
   isSavings: false,
+  lowBalanceThresholdCents: 0,
   owners: both,
   pool: "shared",
   lastImport: { through: daysAgo(2), source: "ofx", importedAt: "2026-10-05T04:05:00.000Z" },
@@ -347,5 +348,96 @@ describe("AccountsPage", () => {
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(api.updateAccount).toHaveBeenCalledTimes(1));
     expect(api.updateAccount).toHaveBeenCalledWith("a1", { name: "Renamed" });
+  });
+
+  it("sends the typed low-balance line as cents when it changes", async () => {
+    vi.mocked(api.listAccounts).mockResolvedValue([account()]);
+    vi.mocked(api.updateAccount).mockResolvedValue(account({ lowBalanceThresholdCents: 20_000 }));
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "Edit Joint everyday" }));
+    expect((screen.getByLabelText("Low-balance line") as HTMLInputElement).value).toBe("0.00");
+    await user.clear(screen.getByLabelText("Low-balance line"));
+    await user.type(screen.getByLabelText("Low-balance line"), "200");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.updateAccount).toHaveBeenCalledTimes(1));
+    expect(api.updateAccount).toHaveBeenCalledWith("a1", { lowBalanceThresholdCents: 20_000 });
+  });
+
+  it("seeds the low-balance line from the stored value and sends nothing when unchanged", async () => {
+    vi.mocked(api.listAccounts).mockResolvedValue([account({ lowBalanceThresholdCents: 20_000 })]);
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "Edit Joint everyday" }));
+    expect((screen.getByLabelText("Low-balance line") as HTMLInputElement).value).toBe("200.00");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.updateAccount).not.toHaveBeenCalled();
+  });
+
+  it("sends zero when the low-balance line is cleared", async () => {
+    vi.mocked(api.listAccounts).mockResolvedValue([account({ lowBalanceThresholdCents: 20_000 })]);
+    vi.mocked(api.updateAccount).mockResolvedValue(account());
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "Edit Joint everyday" }));
+    await user.clear(screen.getByLabelText("Low-balance line"));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.updateAccount).toHaveBeenCalledTimes(1));
+    expect(api.updateAccount).toHaveBeenCalledWith("a1", { lowBalanceThresholdCents: 0 });
+  });
+
+  it("blocks the save on an invalid low-balance line and sends no request", async () => {
+    vi.mocked(api.listAccounts).mockResolvedValue([account()]);
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "Edit Joint everyday" }));
+    for (const text of ["abc", "-5", "1.234"]) {
+      await user.clear(screen.getByLabelText("Low-balance line"));
+      await user.type(screen.getByLabelText("Low-balance line"), text);
+      await user.click(screen.getByRole("button", { name: "Save changes" }));
+      expect((await screen.findByRole("alert")).textContent).toContain("low-balance line");
+      expect(api.updateAccount).not.toHaveBeenCalled();
+    }
+  });
+
+  it("shows no low-balance line for a savings account, editing or adding", async () => {
+    vi.mocked(api.listAccounts).mockResolvedValue([
+      account({ id: "a2", name: "Rainy day", type: "savings" }),
+    ]);
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "Edit Rainy day" }));
+    expect(screen.queryByLabelText("Low-balance line")).toBeNull();
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Done" }));
+    await user.click(screen.getByRole("button", { name: "Add account" }));
+    // The add form starts as a transaction account, so it has the field; savings loses it.
+    expect(screen.getByLabelText("Low-balance line")).toBeTruthy();
+    await user.selectOptions(screen.getByLabelText("Type"), "savings");
+    expect(screen.queryByLabelText("Low-balance line")).toBeNull();
+  });
+
+  it("sends a low-balance line above zero when adding an account", async () => {
+    vi.mocked(api.listAccounts).mockResolvedValue([]);
+    vi.mocked(api.createAccount).mockResolvedValue(account({ name: "Holiday" }));
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "Add account" }));
+    await user.type(screen.getByLabelText("Name"), "Holiday");
+    await user.clear(screen.getByLabelText("Low-balance line"));
+    await user.type(screen.getByLabelText("Low-balance line"), "200");
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Add account" }),
+    );
+    await waitFor(() => expect(api.createAccount).toHaveBeenCalledTimes(1));
+    expect(api.createAccount).toHaveBeenCalledWith({
+      name: "Holiday",
+      type: "transaction",
+      currency: "AUD",
+      isPrivate: false,
+      owners: [{ personId: "p-alex", shareBp: 10000 }],
+      isSavings: false,
+      lowBalanceThresholdCents: 20_000,
+    });
   });
 });

@@ -288,4 +288,60 @@ describe("Cash-flow forecast on default seed (planning-forecast tracer)", () => 
     expect(twelve.horizonMonths).toBe(12);
     expect(twelve.accounts[0]!.points.length).toBeGreaterThan(six.accounts[0]!.points.length);
   });
+
+  it("follows an edited low-balance threshold on the seeded joint everyday account", async () => {
+    const patch = async (accountId: string, lowBalanceThresholdCents: number) => {
+      const res = await app.request(`/api/accounts/${accountId}`, {
+        method: "PATCH",
+        headers: { Cookie: "session=user-a", Origin: ORIGIN, "Content-Type": "application/json" },
+        body: JSON.stringify({ lowBalanceThresholdCents }),
+      });
+      expect(res.status).toBe(200);
+      const { account } = (await res.json()) as {
+        account: { lowBalanceThresholdCents: number };
+      };
+      expect(account.lowBalanceThresholdCents).toBe(lowBalanceThresholdCents);
+    };
+
+    // Every warning names the first point below its account's threshold, and its cents.
+    const expectFirstBelow = (body: ForecastBody) => {
+      for (const warning of body.warnings) {
+        const account = body.accounts.find((a) => a.accountId === warning.accountId)!;
+        const below = account.points.filter(
+          (p) => p.balanceCents < account.lowBalanceThresholdCents,
+        );
+        expect(below[0]?.date).toBe(warning.date);
+        expect(warning.cents).toBe(below[0]?.balanceCents);
+      }
+    };
+
+    const everyday = (await forecast("3")).accounts.find((a) => a.name === "Joint everyday")!;
+    const seedThreshold = everyday.lowBalanceThresholdCents;
+
+    // Raised above every projected point: the account warns, from the first projected date.
+    const maxPoint = Math.max(...everyday.points.map((p) => p.balanceCents));
+    try {
+      await patch(everyday.accountId, maxPoint + 1);
+      const raised = await forecast("3");
+      const raisedAccount = raised.accounts.find((a) => a.accountId === everyday.accountId)!;
+      expect(raisedAccount.lowBalanceThresholdCents).toBe(maxPoint + 1);
+      const warning = raised.warnings.find((w) => w.accountId === everyday.accountId);
+      expect(warning).toBeDefined();
+      expect(warning?.date).toBe(raisedAccount.points[0]!.date);
+      expect(warning?.cents).toBe(raisedAccount.points[0]!.balanceCents);
+      expectFirstBelow(raised);
+
+      // Cleared to zero: this account's warning is gone; the invariant holds for the rest.
+      await patch(everyday.accountId, 0);
+      const cleared = await forecast("3");
+      const clearedAccount = cleared.accounts.find((a) => a.accountId === everyday.accountId)!;
+      expect(clearedAccount.lowBalanceThresholdCents).toBe(0);
+      expect(cleared.warnings.some((w) => w.accountId === everyday.accountId)).toBe(false);
+      expectFirstBelow(cleared);
+    } finally {
+      // Restore the seed's threshold even when an assertion failed midway, so nothing
+      // else reads an edited world.
+      await patch(everyday.accountId, seedThreshold);
+    }
+  });
 });
