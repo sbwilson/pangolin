@@ -3,14 +3,14 @@ title: 'Refactor sweep: deferred epic-forecasting hygiene'
 type: 'refactor'
 ticket: '10'
 created: '2026-11-15'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: '338db853ddf230ad719c5381484b1db01c533ece'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -49,6 +49,8 @@ context: []
 | Extreme compounding | return bps at CHECK cap × long horizon drives pot past MAX_SAFE_INTEGER | `RangeError` thrown before cents leave the safe range | RangeError |
 | Page tests in jsdom | existing ForecastPage/CashFlowPage/NetWorthPage tests, no echarts mock | lazy resolves; all existing assertions green | — |
 
+</frozen-after-approval>
+
 ## Code Map
 
 - `apps/web/src/lib/forecast-labels.ts` — **new**: `shortDayLabel` moved from `ForecastCashFlowChart.tsx:11–26`; its 3 tests move from `ForecastCashFlowChart.test.tsx:35–40` to `lib/forecast-labels.test.ts` (house `lib/*.test.ts` pattern).
@@ -66,13 +68,13 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `apps/web/src/lib/forecast-labels.ts` + `forecast-labels.test.ts` + repoint `ForecastCashFlowChart.tsx` / `ForecastCashFlowTable.tsx` / `ForecastPage.tsx` — move `shortDayLabel` out of the echarts module.
-- [ ] `ForecastPage.tsx`, `CashFlowPage.tsx`, `NetWorthPage.tsx` — `React.lazy` + `Suspense` mounts of the four charts.
-- [ ] `ForecastCashFlowChart.tsx` — dispose on `accounts → empty`; regression test.
-- [ ] `packages/domain/src/planning/forecast-networth.ts` + `.test.ts` — safe-integer guard on compounded pot + regression test.
-- [ ] `apps/server/src/http/forecast-seed.test.ts` — typed seed expectations replacing `Record<string, any>`.
-- [ ] `deferred-work.md` + merchant plan frontmatter — ledger reconciliation with full commit ids.
-- [ ] Page tests — adjust only if lazy mounting requires (async resolve handling); keep zero echarts mocks.
+- [x] `apps/web/src/lib/forecast-labels.ts` + `forecast-labels.test.ts` + repoint `ForecastCashFlowChart.tsx` / `ForecastCashFlowTable.tsx` / `ForecastPage.tsx` — move `shortDayLabel` out of the echarts module.
+- [x] `ForecastPage.tsx`, `CashFlowPage.tsx`, `NetWorthPage.tsx` — `React.lazy` + `Suspense` mounts of the four charts.
+- [x] `ForecastCashFlowChart.tsx` — dispose on `accounts → empty`; regression test.
+- [x] `packages/domain/src/planning/forecast-networth.ts` + `.test.ts` — safe-integer guard on compounded pot + regression test.
+- [x] `apps/server/src/http/forecast-seed.test.ts` — typed seed expectations replacing `Record<string, any>`.
+- [x] `deferred-work.md` + merchant plan frontmatter — ledger reconciliation with full commit ids.
+- [x] Page tests — adjust only if lazy mounting requires (async resolve handling); keep zero echarts mocks.
 
 **Acceptance Criteria:**
 - Given `pnpm --filter @pangolin/web build`, then the static import graph from the entry contains no echarts (echarts is an async chunk only), every precached file stays under 2 MiB, and the build succeeds.
@@ -83,9 +85,27 @@ context: []
 
 ## Implementation Notes
 
+- **echarts off the entry graph**: all four charts now lazy-mount at their page mount points (`React.lazy` + `Suspense`, `PdfStatementCard` adapter idiom); `shortDayLabel` → `apps/web/src/lib/forecast-labels.ts` (+ moved tests), importers repointed, no shim. `vite.config.ts` untouched — the `advancedChunks` echarts group now shapes the async chunk (1.09 MiB). Build check: entry `index-*.js`'s only static import is the rolldown runtime; the echarts filename appears solely in the lazy-chunk URL map; every precached file < 2 MiB (largest: pdf.worker 1.26 MB).
+- **Dispose on empty accounts** (`ForecastCashFlowChart.tsx`): the effect's empty branch now disposes the instance (SankeyCard's house pattern). Regression test jsdom-stubs `HTMLCanvasElement.prototype.getContext` with a permissive 2D-context Proxy so the *real* echarts module initialises and `echarts.getInstanceByDom` + canvas absence prove disposal. Decision: this is a DOM-API stub, not an echarts module mock — inside the frozen "keep the real module" constraint.
+- **Compounding guard** (`forecast-networth.ts`): `Number.isSafeInteger` check after each month's compounding, `RangeError` in the input-guard style; regression test pins the 10 000-bps CHECK ceiling crossing ~month 106 (10 yrs throws, 1 yr exact).
+- **Seed-test typing** (`forecast-seed.test.ts`): `SeedExpectations`/`SeedForecastMirror`/`SeedForecastDip` interfaces mirror `budgets-and-bills.ts` output; the two accessors throw on a missing viewer instead of asserting.
+- **Page-test adjustments**: exactly two synchronous `getByTestId` chart assertions became `waitFor` (lazy resolve); no echarts mocks added anywhere.
+- **Ledger**: five `resolution:` lines added to deferred-work.md epic-forecasting entries (full ids quoted from git); merchant plan `epic: 11` → `epic: 5`. epic-llm entries untouched.
+- Commits: `f2e1895c873feecec309cb2e4151ebc7c5d7cdec` (refactor), `a25f080` (board). Plan file's missing `</frozen-after-approval>` closing tag (planning-stage omission) restored pre-review; frozen content unchanged.
+- Matrix row 1 ("first load without charts") is verified by the production build's chunk graph + grep rather than a unit test — a vitest run cannot observe rollup chunking; the build command is in Verification and its output is the row's evidence.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Pass 1 (quick; Quick lens; diff vs `338db85`): verdicts — 0 high, 0 medium, 3 low (patch), 1 false.
+
+| # | Lens — finding | Verdict | Route | Evidence |
+|---|---|---|---|---|
+| 1 | Q — comments and the ledger resolution claim echarts is kept out of the "precache budget" / "fetched only when a chart mounts"; workbox still precaches the async chunk | low | patch | Verified `apps/web/vite.config.ts:32` `globPatterns: ["**/*.{js,css}"]` (plan's Do-not-touch) and `dist/sw.js` precache manifest contains `echarts-BRgvyMZl.js`; the entry-graph/critical-path half of the claim is true, the precache-budget half false — reword four statements, no behavior change |
+| 2 | Q — safe-integer guard covers the compounded pot only; composed `netWorthCents = potCents − loanCents − creditCardCents` can leave the safe range without a throw | low | patch | Verified `forecast-networth.ts:163,:168` accept signed cents and the composition at :211 sits after the guard; contrived but the guard's stated contract ("before unsafe cents leave the function") is unmet — extend the check to each emitted point + regression test |
+| 3 | Q — plan's closing tag/status/checkbox edits are uncommitted; reviewed diff matches no commit | false | — | By-design mid-workflow state: step-03 stages the working-tree diff for review, and the plan file is committed at workflow close (repo convention, cf. `a25f080`); nothing merges "as committed mid-review" |
+| 4 | Q — day-0 ledger `resolution:` quotes a git subject ("forecast ends day-0 double counting") that `e63edca` does not carry | low | patch | Verified `git show -s e63edca` subject is `feat(forecast): funding accounts, series-covered exclusions, allocation debits, day-0 exact`; the id is verbatim but the quoted title fabricated — replaced with the real subject |
 
 ## Design Notes
 
