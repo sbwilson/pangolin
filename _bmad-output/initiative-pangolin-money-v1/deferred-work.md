@@ -16,3 +16,6 @@
 - source_plan: `_bmad-output/initiative-pangolin-money-v1/tickets/epic-forecasting/tickets/story-tracer-bullet-planning-forecast-cash-flow-projection-with-lo-plan.md`
   summary: `_bmad-output/initiative-pangolin-money-v1/tickets/epic-llm-categorisation-pdf/tickets/story-merchant-domain-extraction-local-logo-proxy-and-privacy-guar-plan.md` carries frontmatter `ticket: 9` alongside `signature: '5.9::…'` — the id and the signature's entry disagree; the board owner should reconcile them.
   evidence: Loop-1 review triage #6 (plan Review Triage Log, low). Pre-existing board bookkeeping unrelated to the forecast change; not produced by this build.
+- source_plan: `_bmad-output/initiative-pangolin-money-v1/tickets/epic-forecasting/tickets/story-assumption-chips-with-inline-edit-changed-state-and-reset-plan.md`
+  summary: `packages/db/src/migrate.test.ts` hardcodes the migration list ending at `0031_forecast_assumption` while `0032_forecast_assumption_mortgage_terms.sql` (added in commit 7f2091e, ticket 8.5) exists, so the full-suite test fails on any tree from `7f2091e` onward — a one-line list addition fixes it.
+  evidence: Reproduced at baseline ac7805f during ticket 8.7's step-03 audit (`pnpm vitest run packages/db/src/migrate.test.ts` → 1 failed | 34 passed); pre-existing, and 8.7's plan forbids touching `packages/db`.

@@ -1823,3 +1823,67 @@ export async function fetchForecastNetWorth(
   if (!res.ok) throw await apiError(res);
   return (await res.json()) as ForecastNetWorthReport;
 }
+
+// ---------------------------------------------------------------------------
+// Planning: forecast assumptions (the editable rates behind the net-worth lines)
+
+/**
+ * One mortgage selection: the loan is paid down and its offsets optionally net. The terms are
+ * the server's stored copy — the chips select loans and toggle offsets, never edit terms.
+ */
+export interface ForecastAssumptionMortgage {
+  readonly accountId: string;
+  readonly countOffset: boolean;
+  /** Annual rate as a decimal-string percent (`"6.175"` is 6.175% p.a.); null = no terms. */
+  readonly annualRatePercent: string | null;
+  /** Nominal monthly repayment in positive cents; null = no terms. */
+  readonly monthlyRepaymentCents: number | null;
+}
+
+/** One person's stored-or-default assumptions; nothing stored reads as neutral zeros. */
+export interface ForecastAssumptions {
+  readonly savingsRateBps: number;
+  readonly returnLowBps: number;
+  readonly returnMidBps: number;
+  readonly returnHighBps: number;
+  readonly superRateBps: number;
+  readonly mortgages: readonly ForecastAssumptionMortgage[];
+}
+
+/**
+ * One mortgage in a PUT: the selection plus, for a retained loan, its stored terms echoed back.
+ * A newly listed loan sends the selection only; omitted terms become null server-side.
+ */
+export interface ForecastAssumptionMortgageInput {
+  readonly accountId: string;
+  readonly countOffset: boolean;
+  readonly annualRatePercent?: string | null;
+  readonly monthlyRepaymentCents?: number | null;
+}
+
+/**
+ * A partial write: omitted scalars keep their stored value; `mortgages` replaces the list
+ * wholesale and terms omitted from a listed loan become null.
+ */
+export interface ForecastAssumptionsPatch {
+  readonly savingsRateBps?: number;
+  readonly returnLowBps?: number;
+  readonly returnMidBps?: number;
+  readonly returnHighBps?: number;
+  readonly superRateBps?: number;
+  readonly mortgages?: readonly ForecastAssumptionMortgageInput[];
+}
+
+/** The signed-in person's assumptions; zeros and an empty mortgage list when nothing is stored. */
+export async function fetchForecastAssumptions(): Promise<ForecastAssumptions> {
+  const res = await fetch("/api/planning/forecast-assumptions");
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()) as ForecastAssumptions;
+}
+
+/** Merges `patch` into the stored assumptions; the answer is the whole object afterwards. */
+export async function upsertForecastAssumptions(
+  patch: ForecastAssumptionsPatch,
+): Promise<ForecastAssumptions> {
+  return await sendJson<ForecastAssumptions>("PUT", "/api/planning/forecast-assumptions", patch);
+}

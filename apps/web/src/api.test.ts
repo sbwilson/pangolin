@@ -11,6 +11,7 @@ import {
   fetchCategories,
   fetchDeadJobs,
   fetchForecast,
+  fetchForecastAssumptions,
   fetchForecastNetWorth,
   fetchHealth,
   fetchMe,
@@ -32,6 +33,7 @@ import {
   setSplitTags,
   unhideName,
   updateNotes,
+  upsertForecastAssumptions,
 } from "./api.ts";
 
 function stubFetch(status: number, body: unknown): void {
@@ -351,6 +353,97 @@ describe("fetchForecastNetWorth", () => {
     );
     expect(url.pathname).toBe("/api/planning/forecast-net-worth");
     expect(url.searchParams.get("horizon")).toBe("10");
+  });
+});
+
+describe("fetchForecastAssumptions", () => {
+  it("GETs the stored assumptions", async () => {
+    const body = {
+      savingsRateBps: 4500,
+      returnLowBps: 300,
+      returnMidBps: 500,
+      returnHighBps: 700,
+      superRateBps: 1200,
+      mortgages: [
+        {
+          accountId: "loan-1",
+          countOffset: true,
+          annualRatePercent: "6.175",
+          monthlyRepaymentCents: 342_100,
+        },
+      ],
+    };
+    stubFetch(200, body);
+    expect(await fetchForecastAssumptions()).toEqual(body);
+    const request = vi.mocked(fetch).mock.calls[0]?.[0] as Request | string | URL;
+    const url = new URL(
+      typeof request === "string" ? request : String((request as Request).url ?? request),
+      "http://localhost",
+    );
+    expect(url.pathname).toBe("/api/planning/forecast-assumptions");
+  });
+
+  it("throws on an error response", async () => {
+    stubFetch(500, { error: { code: "Internal", message: "Internal error" } });
+    await expect(fetchForecastAssumptions()).rejects.toThrow(/Internal error/);
+  });
+});
+
+describe("upsertForecastAssumptions", () => {
+  const after = {
+    savingsRateBps: 4500,
+    returnLowBps: 0,
+    returnMidBps: 0,
+    returnHighBps: 0,
+    superRateBps: 0,
+    mortgages: [],
+  };
+
+  it("PUTs the patch and answers with the whole assumptions object", async () => {
+    stubFetch(200, after);
+    expect(await upsertForecastAssumptions({ savingsRateBps: 4500 })).toEqual(after);
+    const call = vi.mocked(fetch).mock.calls[0] as [string | Request, RequestInit?];
+    expect(String(call[0])).toBe("/api/planning/forecast-assumptions");
+    expect(call[1]?.method).toBe("PUT");
+    expect(JSON.parse(call[1]?.body as string)).toEqual({ savingsRateBps: 4500 });
+  });
+
+  it("PUTs a mortgage list wholesale, new loans with the selection only", async () => {
+    stubFetch(200, after);
+    await upsertForecastAssumptions({
+      mortgages: [
+        {
+          accountId: "loan-1",
+          countOffset: false,
+          annualRatePercent: "6.175",
+          monthlyRepaymentCents: 342_100,
+        },
+        { accountId: "loan-2", countOffset: false },
+      ],
+    });
+    const call = vi.mocked(fetch).mock.calls[0] as [string | Request, RequestInit?];
+    expect(JSON.parse(call[1]?.body as string)).toEqual({
+      mortgages: [
+        {
+          accountId: "loan-1",
+          countOffset: false,
+          annualRatePercent: "6.175",
+          monthlyRepaymentCents: 342_100,
+        },
+        { accountId: "loan-2", countOffset: false },
+      ],
+    });
+  });
+
+  it("throws on the demo refusal (409) and every other failure", async () => {
+    stubFetch(409, { error: { code: "Conflict", message: "The demo plan is read-only" } });
+    await expect(upsertForecastAssumptions({ savingsRateBps: 4500 })).rejects.toThrow(
+      /demo plan is read-only/,
+    );
+    stubFetch(500, { error: { code: "Internal", message: "Internal error" } });
+    await expect(upsertForecastAssumptions({ savingsRateBps: 4500 })).rejects.toThrow(
+      /Internal error/,
+    );
   });
 });
 

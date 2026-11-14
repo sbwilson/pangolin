@@ -7,11 +7,19 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ForecastData, ForecastNetWorthLine, ForecastNetWorthReport } from "../api.ts";
+import type {
+  BudgetData,
+  ForecastData,
+  ForecastNetWorthLine,
+  ForecastNetWorthReport,
+  PayAnchorData,
+  RecurringSeriesData,
+} from "../api.ts";
 import * as api from "../api.ts";
+import { FORECAST_ASSUMPTION_DEFAULTS } from "../components/AssumptionChips.tsx";
 import { parseSearch, stringifySearch, validateForecastSearch } from "../routes/search.ts";
 import { ForecastPage } from "./ForecastPage.tsx";
 
@@ -19,11 +27,25 @@ vi.mock("../api.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api.ts")>()),
   fetchForecast: vi.fn(),
   fetchForecastNetWorth: vi.fn(),
+  fetchForecastAssumptions: vi.fn(),
+  upsertForecastAssumptions: vi.fn(),
+  listAccounts: vi.fn(),
+  fetchMe: vi.fn(),
+  fetchPayAnchors: vi.fn(),
+  fetchRecurringSeries: vi.fn(),
+  fetchBudgets: vi.fn(),
 }));
 
 afterEach(() => cleanup());
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(api.fetchForecastAssumptions).mockResolvedValue(FORECAST_ASSUMPTION_DEFAULTS);
+  vi.mocked(api.upsertForecastAssumptions).mockResolvedValue(FORECAST_ASSUMPTION_DEFAULTS);
+  vi.mocked(api.listAccounts).mockResolvedValue([]);
+  vi.mocked(api.fetchMe).mockResolvedValue(null);
+  vi.mocked(api.fetchPayAnchors).mockResolvedValue([]);
+  vi.mocked(api.fetchRecurringSeries).mockResolvedValue([]);
+  vi.mocked(api.fetchBudgets).mockResolvedValue([]);
 });
 
 function points(from: string, days: number, start: number, step: number) {
@@ -326,5 +348,167 @@ describe("ForecastPage net worth mode", () => {
     );
     expect(router.state.location.searchStr).toContain("horizon=12");
     expect(await screen.findByTestId("forecast-chart")).toBeDefined();
+  });
+});
+
+describe("ForecastPage context chips (cash flow)", () => {
+  const meWithPartner = {
+    personId: "p1",
+    displayName: "Simon",
+    colour: "#2C6681",
+    authAt: "2026-10-18T00:00:00Z",
+    canInvite: false,
+    demo: false,
+    enrolment: "complete" as const,
+    needs: [],
+    recoveryCodes: { issued: true, remaining: 10 },
+    partner: { personId: "p2", displayName: "Carissa" },
+  };
+
+  const payAnchor = (over: Partial<PayAnchorData> = {}): PayAnchorData => ({
+    id: "pa-1",
+    personId: "p1",
+    accountId: "acc-1",
+    cadence: "fortnightly",
+    dayOfMonth: null,
+    anchorDate: "2026-10-03",
+    alignment: "deposit",
+    expectedNetCents: 318_000,
+    expectedGrossCents: null,
+    ...over,
+  });
+
+  const series = (over: Partial<RecurringSeriesData> = {}): RecurringSeriesData => ({
+    id: "s-1",
+    accountId: "acc-1",
+    payeeId: "payee-1",
+    direction: "bill",
+    cadence: "monthly",
+    expectedCents: 10_000,
+    toleranceBp: 500,
+    nextDueOn: "2026-12-01",
+    status: "confirmed",
+    createdAt: "2026-11-01T00:00:00Z",
+    updatedAt: "2026-11-01T00:00:00Z",
+    ...over,
+  });
+
+  const budget = (id: string): BudgetData => ({
+    id,
+    personId: null,
+    categoryId: null,
+    categoryGroupId: "g-1",
+    fundingAccountId: null,
+    cadence: "month",
+    limitCents: 40_000,
+    rollover: false,
+    createdAt: "2026-11-01T00:00:00Z",
+    updatedAt: "2026-11-01T00:00:00Z",
+  });
+
+  it("shows the four read-only context chips with the mockup copy", async () => {
+    vi.mocked(api.fetchForecast).mockResolvedValue(report(3));
+    vi.mocked(api.fetchMe).mockResolvedValue(meWithPartner);
+    vi.mocked(api.fetchPayAnchors).mockResolvedValue([
+      payAnchor(),
+      payAnchor({ id: "pa-2", personId: "p2", expectedNetCents: 295_615 }),
+    ]);
+    vi.mocked(api.fetchRecurringSeries).mockResolvedValue([
+      ...Array.from({ length: 11 }, (_, i) => series({ id: `s-${i}` })),
+      series({ id: "income-1", direction: "income" }),
+    ]);
+    vi.mocked(api.fetchBudgets).mockResolvedValue([1, 2, 3, 4].map((n) => budget(`b-${n}`)));
+    renderPage("/planning/forecast");
+
+    expect(await screen.findByText("Fortnightly pay: Simon $3,180 · Carissa $2,956")).toBeDefined();
+    expect(await screen.findByText("11 confirmed bills")).toBeDefined();
+    expect(screen.getByText("4 budgets, spent at their limits")).toBeDefined();
+    // The thresholds come from the cash-flow report's own accounts.
+    expect(screen.getByText("Low-balance lines: Joint everyday $60,000")).toBeDefined();
+    expect(api.fetchRecurringSeries).toHaveBeenCalledWith({ status: "confirmed" });
+
+    // Read-only: no chip here opens an editor, and net-worth's assumptions stay unasked.
+    const row = screen.getByTestId("forecast-context-chips");
+    expect(within(row).queryAllByRole("button")).toHaveLength(0);
+    expect(api.fetchForecastAssumptions).not.toHaveBeenCalled();
+  });
+
+  it("gives the honest zero copy when nothing is set", async () => {
+    vi.mocked(api.fetchForecast).mockResolvedValue({
+      ...report(3),
+      accounts: report(3).accounts.map((a) => ({ ...a, lowBalanceThresholdCents: 0 })),
+    });
+    renderPage("/planning/forecast");
+
+    expect(await screen.findByText("Pay cycle — not set")).toBeDefined();
+    expect(screen.getByText("No confirmed bills")).toBeDefined();
+    expect(screen.getByText("No budgets yet")).toBeDefined();
+    expect(screen.getByText("Low-balance lines — none set")).toBeDefined();
+  });
+
+  it("omits the chip whose source failed, keeping the others", async () => {
+    vi.mocked(api.fetchForecast).mockResolvedValue(report(3));
+    vi.mocked(api.fetchBudgets).mockRejectedValue(new Error("offline"));
+    renderPage("/planning/forecast");
+
+    expect(await screen.findByText("No confirmed bills")).toBeDefined();
+    // The failed budgets source contributes nothing — not even a placeholder chip.
+    expect(screen.queryByText(/^Budgets/i)).toBeNull();
+  });
+});
+
+describe("ForecastPage assumption chips (net worth)", () => {
+  const stored = (over = {}) => ({ ...FORECAST_ASSUMPTION_DEFAULTS, ...over });
+
+  it("asks for the assumptions and shows the stored values with a dot and a reset", async () => {
+    vi.mocked(api.fetchForecastNetWorth).mockResolvedValue(netWorthReport(2));
+    vi.mocked(api.fetchForecastAssumptions).mockResolvedValue(stored({ savingsRateBps: 4500 }));
+    renderPage("/planning/forecast?mode=networth");
+
+    await waitFor(() => expect(api.fetchForecastAssumptions).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("assumption-chips")).toBeDefined());
+    const chip = screen.getByTestId("assumption-chip-savings");
+    expect(chip.textContent).toContain("Savings rate 45%");
+    expect(within(chip).getByRole("img", { name: "changed" })).toBeDefined();
+    expect(within(chip).getByRole("button", { name: /reset savings/i })).toBeDefined();
+
+    // Cash flow's context fetchers stay asleep in this mode.
+    expect(api.fetchMe).not.toHaveBeenCalled();
+    expect(api.fetchPayAnchors).not.toHaveBeenCalled();
+    expect(api.fetchBudgets).not.toHaveBeenCalled();
+  });
+
+  it("saves an edited savings rate and redraws the net-worth lines", async () => {
+    vi.mocked(api.fetchForecastNetWorth).mockResolvedValue(netWorthReport(2));
+    vi.mocked(api.upsertForecastAssumptions).mockResolvedValue(stored({ savingsRateBps: 4500 }));
+    renderPage("/planning/forecast?mode=networth");
+    await screen.findByTestId("assumption-chips");
+    await waitFor(() => expect(api.fetchForecastNetWorth).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(screen.getByRole("button", { name: "Savings rate: 0%. Edit" }));
+    const input = screen.getByLabelText("Savings rate");
+    await userEvent.clear(input);
+    await userEvent.type(input, "45{Enter}");
+
+    await waitFor(() =>
+      expect(api.upsertForecastAssumptions).toHaveBeenCalledWith({ savingsRateBps: 4500 }),
+    );
+    await waitFor(() => expect(api.fetchForecastNetWorth).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByTestId("assumption-chip-savings").textContent).toContain(
+        "Savings rate 45%",
+      ),
+    );
+  });
+
+  it("alerts when the assumptions cannot be read and shows no chips", async () => {
+    vi.mocked(api.fetchForecastNetWorth).mockResolvedValue(netWorthReport(2));
+    vi.mocked(api.fetchForecastAssumptions).mockRejectedValue(new Error("offline"));
+    renderPage("/planning/forecast?mode=networth");
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /The forecast assumptions are currently unavailable/,
+    );
+    expect(screen.queryByTestId("assumption-chips")).toBeNull();
   });
 });

@@ -1,13 +1,28 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { fetchForecast, fetchForecastNetWorth } from "../api.ts";
+import {
+  fetchBudgets,
+  fetchForecast,
+  fetchForecastAssumptions,
+  fetchForecastNetWorth,
+  fetchMe,
+  fetchPayAnchors,
+  fetchRecurringSeries,
+} from "../api.ts";
+import { ASSUMPTIONS_QUERY_KEY, AssumptionChips } from "../components/AssumptionChips.tsx";
 import { ForecastCashFlowChart, shortDayLabel } from "../components/ForecastCashFlowChart.tsx";
 import { ForecastCashFlowTable } from "../components/ForecastCashFlowTable.tsx";
+import {
+  type ChipSource,
+  ForecastContextChips,
+  type PayContext,
+} from "../components/ForecastContextChips.tsx";
 import { ForecastNetWorthChart } from "../components/ForecastNetWorthChart.tsx";
 import { ForecastNetWorthTable } from "../components/ForecastNetWorthTable.tsx";
 import { formatCents, formatWholeDollars } from "../lib/money.ts";
 import { type ForecastSearch, validateForecastSearch } from "../routes/search.ts";
+import { ME_KEY } from "../session.tsx";
 
 const MONTHS = [3, 6, 12] as const;
 type ForecastHorizon = (typeof MONTHS)[number];
@@ -30,8 +45,9 @@ const SEGMENT = "inline-flex rounded-lg border border-border bg-muted p-0.5 m-0 
 /**
  * `/planning/forecast`: a read-only projection of each visible transaction account, day by day
  * to the chosen horizon (cash flow mode), or the three low/mid/high net-worth lines over a
- * number of years (net worth mode). The mode and both horizons live in the URL. Nothing here
- * writes to the plan — the whole picture is derived on read.
+ * number of years (net worth mode). The mode and both horizons live in the URL. Cash flow mode
+ * reads; under the card, read-only chips name what drives the projection. Net worth mode's chips
+ * hold the one thing the page can edit — the stored assumptions behind the lines.
  */
 export function ForecastPage() {
   // The route's search is merged over the raw URL's, so read it through the validator again.
@@ -59,6 +75,36 @@ export function ForecastPage() {
     retry: false,
   });
 
+  // The read-only context chips of cash-flow mode, assembled client-side from what already exists.
+  const cashflowOnly = mode === "cashflow";
+  const me = useQuery({ queryKey: ME_KEY, queryFn: fetchMe, enabled: cashflowOnly, retry: false });
+  const payAnchors = useQuery({
+    queryKey: ["planning", "pay-anchors"],
+    queryFn: fetchPayAnchors,
+    enabled: cashflowOnly,
+    retry: false,
+  });
+  const confirmedBills = useQuery({
+    queryKey: ["planning", "recurring-bills", "confirmed"],
+    queryFn: () => fetchRecurringSeries({ status: "confirmed" }),
+    enabled: cashflowOnly,
+    retry: false,
+  });
+  const budgets = useQuery({
+    queryKey: ["planning", "budgets"],
+    queryFn: fetchBudgets,
+    enabled: cashflowOnly,
+    retry: false,
+  });
+
+  // The editable assumption chips of net-worth mode; the PUTs land back in this cache.
+  const assumptions = useQuery({
+    queryKey: ASSUMPTIONS_QUERY_KEY,
+    queryFn: fetchForecastAssumptions,
+    enabled: mode === "networth",
+    retry: false,
+  });
+
   const [cashflowView, setCashflowView] = useState<"chart" | "table">("chart");
   const [networthView, setNetworthView] = useState<"chart" | "table">("chart");
 
@@ -76,6 +122,27 @@ export function ForecastPage() {
           low: formatWholeDollars(finalCents(projection.lines.low)),
           high: formatWholeDollars(finalCents(projection.lines.high)),
         };
+
+  // Each context chip reads its source once settled; a failed source keeps its chip out.
+  const paySource: ChipSource<PayContext> =
+    me.isPending || payAnchors.isPending
+      ? { state: "loading" }
+      : me.isError || payAnchors.isError
+        ? { state: "failed" }
+        : { state: "ready", value: { me: me.data ?? null, anchors: payAnchors.data ?? [] } };
+  const billsSource: ChipSource<number> = confirmedBills.isPending
+    ? { state: "loading" }
+    : confirmedBills.isError
+      ? { state: "failed" }
+      : {
+          state: "ready",
+          value: (confirmedBills.data ?? []).filter((s) => s.direction === "bill").length,
+        };
+  const budgetsSource: ChipSource<number> = budgets.isPending
+    ? { state: "loading" }
+    : budgets.isError
+      ? { state: "failed" }
+      : { state: "ready", value: budgets.data?.length ?? 0 };
 
   return (
     <div className="space-y-6">
@@ -191,6 +258,21 @@ export function ForecastPage() {
               </div>
             </div>
           ) : null}
+
+          {report !== undefined ? (
+            <ForecastContextChips
+              pay={paySource}
+              bills={billsSource}
+              budgets={budgetsSource}
+              thresholds={{
+                state: "ready",
+                value: report.accounts.map((account) => ({
+                  name: account.name,
+                  thresholdCents: account.lowBalanceThresholdCents,
+                })),
+              }}
+            />
+          ) : null}
         </>
       ) : null}
 
@@ -244,6 +326,16 @@ export function ForecastPage() {
                 </button>
               </div>
             </div>
+          ) : null}
+
+          {assumptions.isError ? (
+            <p role="alert" className="text-destructive">
+              The forecast assumptions are currently unavailable. Please reload to try again.
+            </p>
+          ) : null}
+
+          {assumptions.data !== undefined ? (
+            <AssumptionChips assumptions={assumptions.data} />
           ) : null}
         </>
       ) : null}
