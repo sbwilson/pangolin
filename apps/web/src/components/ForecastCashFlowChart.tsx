@@ -1,30 +1,12 @@
 import * as echarts from "echarts";
 import { useEffect, useRef } from "react";
 import type { ForecastAccountData, ForecastDipData } from "../api.ts";
+import { shortDayLabel } from "../lib/forecast-labels.ts";
 import { formatCents } from "../lib/money.ts";
 
 /** One palette entry per projected account; thresholds reuse their account's colour. */
 const ACCOUNT_COLORS = ["#A3441D", "#2563eb", "#0E7C7B", "#7C3AED", "#B45309", "#BE185D"];
 const DIP_COLOR = "#D14343";
-
-/** `2026-07-15` -> `15 Jul`, for sparse daily axis labels. */
-export function shortDayLabel(isoDay: string): string {
-  const month = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ][Number(isoDay.slice(5, 7)) - 1];
-  return `${Number(isoDay.slice(8, 10))} ${month ?? ""}`.trim();
-}
 
 export interface ForecastChartOptionInput {
   readonly accounts: readonly ForecastAccountData[];
@@ -135,7 +117,15 @@ export function ForecastCashFlowChart({
   const chartInstanceRef = useRef<echarts.ECharts | null>(null);
 
   useEffect(() => {
-    if (!containerRef.current || accounts.length === 0) return;
+    if (!containerRef.current) return;
+    if (accounts.length === 0) {
+      // The last projected account left: tear the canvas down rather than keep showing it.
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.dispose();
+        chartInstanceRef.current = null;
+      }
+      return;
+    }
 
     const testCanvas = document.createElement("canvas");
     let hasCanvas = false;

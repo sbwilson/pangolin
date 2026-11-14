@@ -1,17 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { fetchNetWorth } from "../api.ts";
 import { useOptionalImport } from "../components/import/index.ts";
 import { MascotIcon } from "../components/MascotLogo.tsx";
 import { NetWorthAccountRow } from "../components/NetWorthAccountRow.tsx";
-import { NetWorthTrendChart } from "../components/NetWorthTrendChart.tsx";
 import { monthNameFromDate, NetWorthTrendTable } from "../components/NetWorthTrendTable.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { localDay } from "../lib/date-range.ts";
 import { freshnessLabel } from "../lib/freshness.ts";
 import { formatCents } from "../lib/money.ts";
 import { useSignedIn } from "../session.tsx";
+
+// echarts only loads when the trend chart actually renders: it stays out of the entry chunk
+// (and the service worker's precache budget) until the trend card is on screen.
+const NetWorthTrendChart = lazy(() =>
+  import("../components/NetWorthTrendChart.tsx").then((m) => ({ default: m.NetWorthTrendChart })),
+);
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -195,7 +200,9 @@ export function NetWorthPage() {
             </div>
 
             {viewMode === "chart" ? (
-              <NetWorthTrendChart trend={report.trend} today={today} />
+              <Suspense fallback={<div className="h-60 w-full" aria-hidden="true" />}>
+                <NetWorthTrendChart trend={report.trend} today={today} />
+              </Suspense>
             ) : (
               <NetWorthTrendTable trend={report.trend} />
             )}

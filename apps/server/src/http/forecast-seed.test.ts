@@ -31,7 +31,27 @@ import type { AuthGateway } from "./session.ts";
 
 let dir: string;
 let db: ReturnType<typeof openDatabase>;
-let seed: { today: string; expectations: Record<string, any> };
+
+/** Shapes as `tools/seed/src/modules/budgets-and-bills.ts` emits them into `seed.json`. */
+interface SeedForecastDip {
+  account: string;
+  cents: number;
+  dateOn: string;
+}
+interface SeedForecastMirror {
+  day0: Record<string, number>;
+  byDay: Record<string, Record<string, number>>;
+  allocationDebits: Record<string, { date: string; parts: number[] }[]>;
+}
+interface SeedExpectations {
+  "budgets-and-bills.forecast": {
+    horizonMonths: number;
+    warnings: Record<string, SeedForecastDip[]>;
+    perViewer: Record<string, SeedForecastMirror>;
+  };
+  "balance-snapshots.closingCents": Record<string, number>;
+}
+let seed: { today: string; expectations: SeedExpectations };
 let app: ReturnType<typeof createApp>;
 
 const ORIGIN = "http://localhost:3000";
@@ -141,16 +161,16 @@ async function forecast(horizon?: string): Promise<ForecastBody> {
   return (await res.json()) as ForecastBody;
 }
 
-function expectedWarnings(person: string): { account: string; cents: number; dateOn: string }[] {
-  return seed.expectations["budgets-and-bills.forecast"].warnings[person];
+function expectedWarnings(person: string): SeedForecastDip[] {
+  const warnings = seed.expectations["budgets-and-bills.forecast"].warnings[person];
+  if (warnings === undefined) throw new Error(`seed carries no forecast warnings for ${person}`);
+  return warnings;
 }
 
-function forecastMirror(person: string): {
-  day0: Record<string, number>;
-  byDay: Record<string, Record<string, number>>;
-  allocationDebits: Record<string, { date: string; parts: number[] }[]>;
-} {
-  return seed.expectations["budgets-and-bills.forecast"].perViewer[person];
+function forecastMirror(person: string): SeedForecastMirror {
+  const mirror = seed.expectations["budgets-and-bills.forecast"].perViewer[person];
+  if (mirror === undefined) throw new Error(`seed carries no forecast mirror for ${person}`);
+  return mirror;
 }
 
 const ACCOUNT_NAMES: Record<string, string> = {

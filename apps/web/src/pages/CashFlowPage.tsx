@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { fetchTransactions, type SharedShare } from "../api.ts";
 import { BarListsCard } from "../components/BarListsCard.tsx";
 import { BiggestLittleLeaksCard } from "../components/BiggestLittleLeaksCard.tsx";
@@ -8,11 +8,16 @@ import { DateRangeControl } from "../components/DateRangeControl.tsx";
 import { useOptionalImport } from "../components/import/index.ts";
 import { LatestTransactionsCard } from "../components/LatestTransactionsCard.tsx";
 import { MascotIcon } from "../components/MascotLogo.tsx";
-import { SankeyCard } from "../components/SankeyCard.tsx";
 import { cashFlowKey, sharedShareKey, useReportQueries } from "../hooks/useReportQueries.ts";
 import { type DateRange, localDay, quarterRange } from "../lib/date-range.ts";
 import { formatCents } from "../lib/money.ts";
 import { validateCashFlowSearch } from "../routes/search.ts";
+
+// The sankey card holds this page's only echarts import: it loads when the flow-of-funds card
+// actually renders, keeping echarts out of the entry chunk (and the precache budget) until then.
+const SankeyCard = lazy(() =>
+  import("../components/SankeyCard.tsx").then((m) => ({ default: m.SankeyCard })),
+);
 
 export { cashFlowKey, sharedShareKey };
 
@@ -222,12 +227,23 @@ export function CashFlowPage() {
         /* Regular content with Sankey, Bar Lists, and Latest Transactions */
         <>
           {pnlGroup.data && pnlCategory.data && data ? (
-            <SankeyCard
-              pnlGroup={pnlGroup.data}
-              pnlCategory={pnlCategory.data}
-              range={range}
-              keptCents={data.keptCents}
-            />
+            <Suspense
+              fallback={
+                <div
+                  className="mt-6 rounded-lg border border-border bg-card p-4"
+                  aria-hidden="true"
+                >
+                  <div className="h-96 min-h-[384px] w-full" />
+                </div>
+              }
+            >
+              <SankeyCard
+                pnlGroup={pnlGroup.data}
+                pnlCategory={pnlCategory.data}
+                range={range}
+                keptCents={data.keptCents}
+              />
+            </Suspense>
           ) : null}
 
           {pnlGroup.data && pnlCategory.data && incomeMerchants.data && expenseMerchants.data ? (

@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { cleanup, render } from "@testing-library/react";
+import * as echarts from "echarts";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ForecastAccountData, ForecastDipData } from "../api.ts";
-import { buildForecastChartOption, shortDayLabel } from "./ForecastCashFlowChart.tsx";
+import { buildForecastChartOption, ForecastCashFlowChart } from "./ForecastCashFlowChart.tsx";
 
 const account = (id: string, name: string, thresholdCents: number): ForecastAccountData => ({
   accountId: id,
@@ -32,12 +35,9 @@ function seriesOf(option: ReturnType<typeof buildForecastChartOption>): SeriesLi
   return option.series as SeriesLike[];
 }
 
-describe("shortDayLabel", () => {
-  it("renders a day-of-month and short month", () => {
-    expect(shortDayLabel("2026-07-15")).toBe("15 Jul");
-    expect(shortDayLabel("2027-01-01")).toBe("1 Jan");
-    expect(shortDayLabel("2026-12-31")).toBe("31 Dec");
-  });
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
 });
 
 describe("buildForecastChartOption", () => {
@@ -83,5 +83,63 @@ describe("buildForecastChartOption", () => {
     const option = buildForecastChartOption({ accounts: [], warnings: [] });
     expect(seriesOf(option)).toEqual([]);
     expect((option.xAxis as { data?: string[] }).data).toEqual([]);
+  });
+});
+
+describe("ForecastCashFlowChart canvas", () => {
+  // jsdom ships no 2D canvas, so init is normally skipped; this stub gives every canvas a
+  // no-op context so the real echarts module initialises, and disposing becomes observable.
+  function stubCanvas(): void {
+    const makeCtx = (canvas: HTMLCanvasElement): CanvasRenderingContext2D => {
+      const gradient = { addColorStop: () => {} };
+      const ctx: Record<string | symbol, unknown> = {
+        canvas,
+        measureText: (text: string) => ({ width: String(text).length * 6 }),
+        getLineDash: () => [],
+        createLinearGradient: () => gradient,
+        createRadialGradient: () => gradient,
+        createConicGradient: () => gradient,
+        createPattern: () => null,
+        getImageData: (_x: number, _y: number, w: number, h: number) => ({
+          data: new Uint8ClampedArray(Math.max(1, w * h * 4)),
+          width: w,
+          height: h,
+        }),
+        isPointInPath: () => false,
+      };
+      return new Proxy(ctx, {
+        get: (target, prop) => {
+          if (prop in target) return target[prop];
+          if (typeof prop === "string" && /^(webkit|backing)/.test(prop)) return 1;
+          return () => undefined;
+        },
+        set: (target, prop, value) => {
+          target[prop] = value;
+          return true;
+        },
+        has: () => true,
+      }) as unknown as CanvasRenderingContext2D;
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function (
+      this: HTMLCanvasElement,
+      contextId: string,
+    ): CanvasRenderingContext2D | null {
+      return contextId === "2d" ? makeCtx(this) : null;
+    });
+  }
+
+  it("disposes the chart when the last projected account leaves", () => {
+    stubCanvas();
+    const accounts = [account("acc-1", "Joint everyday", 600_000)];
+    const { getByTestId, rerender } = render(
+      <ForecastCashFlowChart accounts={accounts} warnings={[]} horizonMonths={3} />,
+    );
+    const container = getByTestId("forecast-chart");
+    expect(echarts.getInstanceByDom(container)).toBeDefined();
+    expect(container.querySelector("canvas")).not.toBeNull();
+
+    rerender(<ForecastCashFlowChart accounts={[]} warnings={[]} horizonMonths={3} />);
+    expect(echarts.getInstanceByDom(container)).toBeUndefined();
+    expect(container.querySelector("canvas")).toBeNull();
   });
 });

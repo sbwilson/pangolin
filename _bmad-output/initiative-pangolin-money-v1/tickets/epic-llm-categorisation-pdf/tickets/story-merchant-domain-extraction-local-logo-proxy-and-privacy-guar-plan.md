@@ -9,7 +9,7 @@ scope: 'story'
 name: 'Merchant domain extraction, local logo proxy, and privacy-guarded fetch job'
 ticket: 9
 initiative: 'pangolin-money-v1'
-epic: 11
+epic: 5
 status: done
 signature: '5.9::story-merchant-domain-extraction-local-logo-proxy-and-privacy-guar-plan.md::1'
 ---

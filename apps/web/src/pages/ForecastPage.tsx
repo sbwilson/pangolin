@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import {
   fetchBudgets,
   fetchForecast,
@@ -11,19 +11,31 @@ import {
   fetchRecurringSeries,
 } from "../api.ts";
 import { ASSUMPTIONS_QUERY_KEY, AssumptionChips } from "../components/AssumptionChips.tsx";
-import { ForecastCashFlowChart, shortDayLabel } from "../components/ForecastCashFlowChart.tsx";
 import { ForecastCashFlowTable } from "../components/ForecastCashFlowTable.tsx";
 import {
   type ChipSource,
   ForecastContextChips,
   type PayContext,
 } from "../components/ForecastContextChips.tsx";
-import { ForecastNetWorthChart } from "../components/ForecastNetWorthChart.tsx";
 import { ForecastNetWorthTable } from "../components/ForecastNetWorthTable.tsx";
 import { ForecastNotEnoughCard } from "../components/ForecastNotEnoughCard.tsx";
+import { shortDayLabel } from "../lib/forecast-labels.ts";
 import { formatCents, formatWholeDollars } from "../lib/money.ts";
 import { type ForecastSearch, validateForecastSearch } from "../routes/search.ts";
 import { ME_KEY } from "../session.tsx";
+
+// echarts only loads when a chart actually renders: both charts stay out of the entry chunk
+// (and the service worker's precache budget) until a projection is on screen.
+const ForecastCashFlowChart = lazy(() =>
+  import("../components/ForecastCashFlowChart.tsx").then((m) => ({
+    default: m.ForecastCashFlowChart,
+  })),
+);
+const ForecastNetWorthChart = lazy(() =>
+  import("../components/ForecastNetWorthChart.tsx").then((m) => ({
+    default: m.ForecastNetWorthChart,
+  })),
+);
 
 const MONTHS = [3, 6, 12] as const;
 type ForecastHorizon = (typeof MONTHS)[number];
@@ -293,11 +305,13 @@ export function ForecastPage() {
           {report !== undefined && !notEnough ? (
             <div className="rounded-xl border border-border bg-card p-4">
               {cashflowView === "chart" ? (
-                <ForecastCashFlowChart
-                  accounts={report.accounts}
-                  warnings={report.warnings}
-                  horizonMonths={report.horizonMonths}
-                />
+                <Suspense fallback={<div className="h-72 w-full" aria-hidden="true" />}>
+                  <ForecastCashFlowChart
+                    accounts={report.accounts}
+                    warnings={report.warnings}
+                    horizonMonths={report.horizonMonths}
+                  />
+                </Suspense>
               ) : (
                 <ForecastCashFlowTable accounts={report.accounts} />
               )}
@@ -366,7 +380,9 @@ export function ForecastPage() {
               </div>
 
               {networthView === "chart" ? (
-                <ForecastNetWorthChart report={projection} years={years} />
+                <Suspense fallback={<div className="h-72 w-full" aria-hidden="true" />}>
+                  <ForecastNetWorthChart report={projection} years={years} />
+                </Suspense>
               ) : (
                 <ForecastNetWorthTable report={projection} />
               )}

@@ -1,6 +1,6 @@
 import type { ForecastAccountData } from "../api.ts";
+import { shortDayLabel } from "../lib/forecast-labels.ts";
 import { formatCents } from "../lib/money.ts";
-import { shortDayLabel } from "./ForecastCashFlowChart.tsx";
 
 export interface ForecastCashFlowTableProps {
   readonly accounts: readonly ForecastAccountData[];

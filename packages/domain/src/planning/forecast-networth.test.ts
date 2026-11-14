@@ -272,6 +272,22 @@ describe("projectNetWorth", () => {
       expect(() => projectNetWorth(input({ annualReturnPercent: "+6.25" }))).not.toThrow();
     });
 
+    it("a compounded pot past Number.MAX_SAFE_INTEGER, and one that stays inside it", () => {
+      // 10_000 bps is a stored return's CHECK ceiling: ×(1 + 100/1200) monthly, a 2e12-cent
+      // pot crosses the safe-integer range around month 106 of a 10-year walk. The same input
+      // over one year stays safe to the cent.
+      const extreme = {
+        loans: [],
+        assetsCents: 2_000_000_000_000,
+        monthlySavingsCents: 0,
+        monthlySuperCents: 0,
+        annualReturnPercent: "100",
+      } as const;
+      const oneYear = projectNetWorth(input({ ...extreme, horizonYears: 1 }));
+      expect(oneYear.points.every((p) => Number.isSafeInteger(p.netWorthCents))).toBe(true);
+      expect(() => projectNetWorth(input({ ...extreme, horizonYears: 10 }))).toThrow(RangeError);
+    });
+
     it("loans with bad cents, bad rates or zero repayments", () => {
       const bad: NetWorthLoanInput[] = [
         {

@@ -150,7 +150,8 @@ function loanBalances(
  * Walks `horizonYears × 12` months: the pot starts at `assetsCents`; each month adds
  * `monthlySavingsCents + monthlySuperCents`, then compounds at `annualReturnPercent ÷ 1200`
  * rounded half-even. Each point is `pot − Σ loan balances − creditCardCents`, so point 0 is
- * today's net worth of exactly the figures supplied. Throws `RangeError` for invalid input.
+ * today's net worth of exactly the figures supplied. Throws `RangeError` for invalid input,
+ * and for a compounded pot that leaves the safe-integer cent range.
  */
 export function projectNetWorth(input: NetWorthProjectionInput): NetWorthProjection {
   if (!NET_WORTH_PROJECTION_HORIZONS.includes(input.horizonYears)) {
@@ -193,6 +194,14 @@ export function projectNetWorth(input: NetWorthProjectionInput): NetWorthProject
         .times(factor)
         .toDecimalPlaces(0, ProjectionDecimal.ROUND_HALF_EVEN)
         .toNumber();
+      // The guard the input validation gives every figure, given to every month of the walk:
+      // a pot compounded past the safe-integer range (a capped return over a long horizon)
+      // throws here, before unsafe cents leave the function. Never a silent clamp.
+      if (!Number.isSafeInteger(potCents)) {
+        throw new RangeError(
+          `projectNetWorth: compounded pot must stay a safe-integer cent value, got ${potCents} at month ${month}`,
+        );
+      }
     }
     let loanCents = 0;
     for (const balances of series) loanCents += balances[month]!;

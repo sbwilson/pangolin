@@ -185,7 +185,8 @@ describe("ForecastPage", () => {
     expect(warning.textContent).toContain("$58,833.32");
     expect(warning.textContent).toContain("15 Jul");
 
-    expect(screen.getByTestId("forecast-chart")).toBeDefined();
+    // The lazy chart chunk resolves on its own tick, like the page viewer before it.
+    await waitFor(() => expect(screen.getByTestId("forecast-chart")).toBeDefined());
     // Dips ahead: neither new state crowds out today's warning list.
     expect(screen.queryByTestId("forecast-not-enough-card")).toBeNull();
     expect(screen.queryByTestId("forecast-all-clear")).toBeNull();
@@ -285,7 +286,7 @@ describe("ForecastPage net worth mode", () => {
     await waitFor(() => expect(router.state.location.searchStr).toContain("mode=networth"));
 
     expect(screen.getByRole("button", { name: "2 yrs" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByTestId("forecast-networth-chart")).toBeDefined();
+    await waitFor(() => expect(screen.getByTestId("forecast-networth-chart")).toBeDefined());
     expect(screen.queryByTestId("forecast-chart")).toBeNull();
     expect(screen.queryByTestId("forecast-warning")).toBeNull();
     // The cash flow query is asked once, before the switch — and never again.
