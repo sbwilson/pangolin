@@ -24,8 +24,8 @@ import { formatCents, formatWholeDollars } from "../lib/money.ts";
 import { type ForecastSearch, validateForecastSearch } from "../routes/search.ts";
 import { ME_KEY } from "../session.tsx";
 
-// echarts only loads when a chart actually renders: both charts stay out of the entry chunk
-// (and the service worker's precache budget) until a projection is on screen.
+// echarts only loads when a chart actually renders: both charts stay out of the entry graph
+// and off the first-load critical path until a projection is on screen.
 const ForecastCashFlowChart = lazy(() =>
   import("../components/ForecastCashFlowChart.tsx").then((m) => ({
     default: m.ForecastCashFlowChart,

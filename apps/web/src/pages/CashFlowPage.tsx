@@ -14,7 +14,7 @@ import { formatCents } from "../lib/money.ts";
 import { validateCashFlowSearch } from "../routes/search.ts";
 
 // The sankey card holds this page's only echarts import: it loads when the flow-of-funds card
-// actually renders, keeping echarts out of the entry chunk (and the precache budget) until then.
+// actually renders, keeping echarts out of the entry graph and off the first-load critical path.
 const SankeyCard = lazy(() =>
   import("../components/SankeyCard.tsx").then((m) => ({ default: m.SankeyCard })),
 );

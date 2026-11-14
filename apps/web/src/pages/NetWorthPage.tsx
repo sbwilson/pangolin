@@ -12,8 +12,8 @@ import { freshnessLabel } from "../lib/freshness.ts";
 import { formatCents } from "../lib/money.ts";
 import { useSignedIn } from "../session.tsx";
 
-// echarts only loads when the trend chart actually renders: it stays out of the entry chunk
-// (and the service worker's precache budget) until the trend card is on screen.
+// echarts only loads when the trend chart actually renders: it stays out of the entry graph
+// and off the first-load critical path until the trend card is on screen.
 const NetWorthTrendChart = lazy(() =>
   import("../components/NetWorthTrendChart.tsx").then((m) => ({ default: m.NetWorthTrendChart })),
 );

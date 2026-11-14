@@ -288,6 +288,17 @@ describe("projectNetWorth", () => {
       expect(() => projectNetWorth(input({ ...extreme, horizonYears: 10 }))).toThrow(RangeError);
     });
 
+    it("a signed liability pushing point 0 past Number.MAX_SAFE_INTEGER", () => {
+      // Every input is a safe integer on its own, but an overpaid card (creditCardCents = −100)
+      // against a maxed-out pot makes point 0 = MAX_SAFE_INTEGER + 100: unsafe before any
+      // compounding, so the composed guard must throw at month 0.
+      expect(() =>
+        projectNetWorth(
+          input({ loans: [], assetsCents: Number.MAX_SAFE_INTEGER, creditCardCents: -100 }),
+        ),
+      ).toThrow(RangeError);
+    });
+
     it("loans with bad cents, bad rates or zero repayments", () => {
       const bad: NetWorthLoanInput[] = [
         {
