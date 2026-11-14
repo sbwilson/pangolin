@@ -36,6 +36,17 @@ export default defineConfig({
     }),
   ],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+  build: {
+    rollupOptions: {
+      output: {
+        // Keep echarts out of the entry chunk: workbox refuses to precache files over the
+        // default 2 MiB, and the whole app otherwise bundles into one entry file.
+        advancedChunks: {
+          groups: [{ name: "echarts", test: /[\\/]node_modules[\\/].*[\\/]echarts[\\/]/ }],
+        },
+      },
+    },
+  },
   server: {
     proxy: { "/api": "http://localhost:3000" },
   },
