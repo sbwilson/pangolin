@@ -378,6 +378,104 @@ test.describe("WCAG 2.2 AA accessibility audit", () => {
       }
     });
 
+    test(`/planning/forecast in ${mode} mode passes WCAG 2.2 AA audit`, async ({
+      browser,
+      cspViolations,
+    }) => {
+      const storageState = await alexSession(browser);
+      const context = await browser.newContext({
+        colorScheme: mode,
+        ...(storageState ? { storageState } : {}),
+      });
+      try {
+        await watchCsp(context, cspViolations);
+        await context.addInitScript(
+          ({ m }: { m: string }) => {
+            try {
+              localStorage.setItem("pangolin_mode", m);
+            } catch {}
+          },
+          { m: mode },
+        );
+        const page = await context.newPage();
+        await page.goto("/planning/forecast");
+        await page.waitForLoadState("domcontentloaded");
+        await expect(page.getByRole("heading", { name: "Forecast", exact: true })).toBeVisible();
+        // Seeded state: at least one low-balance warning row (the forecast journey restores the
+        // world before this spec runs) and the projection chart.
+        await expect(page.getByTestId("forecast-warning").first()).toBeVisible();
+        await expect(page.getByTestId("forecast-chart")).toBeVisible();
+
+        await setMode(page, mode);
+
+        const chartViolations = await auditPage(page);
+        expect(
+          chartViolations,
+          `Violations on /planning/forecast chart view (${mode}): ${JSON.stringify(chartViolations, null, 2)}`,
+        ).toEqual([]);
+
+        // Audit table view via the "View as table" toggle
+        await page.getByRole("button", { name: "View as table" }).click();
+        await expect(page.getByTestId("forecast-cashflow-table")).toBeVisible();
+
+        const tableViolations = await auditPage(page);
+        expect(
+          tableViolations,
+          `Violations on /planning/forecast table view (${mode}): ${JSON.stringify(tableViolations, null, 2)}`,
+        ).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
+    test(`/planning/forecast?mode=networth in ${mode} mode passes WCAG 2.2 AA audit`, async ({
+      browser,
+      cspViolations,
+    }) => {
+      const storageState = await alexSession(browser);
+      const context = await browser.newContext({
+        colorScheme: mode,
+        ...(storageState ? { storageState } : {}),
+      });
+      try {
+        await watchCsp(context, cspViolations);
+        await context.addInitScript(
+          ({ m }: { m: string }) => {
+            try {
+              localStorage.setItem("pangolin_mode", m);
+            } catch {}
+          },
+          { m: mode },
+        );
+        const page = await context.newPage();
+        await page.goto("/planning/forecast?mode=networth");
+        await page.waitForLoadState("domcontentloaded");
+        await expect(page.getByRole("heading", { name: "Forecast", exact: true })).toBeVisible();
+        await expect(page.getByTestId("forecast-networth-headline")).toBeVisible();
+        await expect(page.getByTestId("assumption-chips")).toBeVisible();
+
+        await setMode(page, mode);
+
+        const chartViolations = await auditPage(page);
+        expect(
+          chartViolations,
+          `Violations on /planning/forecast?mode=networth chart view (${mode}): ${JSON.stringify(chartViolations, null, 2)}`,
+        ).toEqual([]);
+
+        // Audit table view via the "View as table" toggle
+        await page.getByRole("button", { name: "View as table" }).click();
+        await expect(page.getByTestId("forecast-networth-table")).toBeVisible();
+
+        const tableViolations = await auditPage(page);
+        expect(
+          tableViolations,
+          `Violations on /planning/forecast?mode=networth table view (${mode}): ${JSON.stringify(tableViolations, null, 2)}`,
+        ).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
+
     test(`/review in ${mode} mode passes WCAG 2.2 AA audit`, async ({ browser, cspViolations }) => {
       const storageState = await alexSession(browser);
       const context = await browser.newContext({
@@ -805,6 +903,8 @@ test.describe("WCAG 1.4.10 320 px reflow audit", () => {
     { path: "/net-worth", name: "Net worth", testId: "net-worth-kpis" },
     { path: "/planning/budgets", name: "Budgets", testId: "budget-summary-line" },
     { path: "/planning/goals", name: "Goals & Savings", testId: "goals-scope-filters" },
+    { path: "/planning/forecast", name: "Forecast", testId: "forecast-warning" },
+    { path: "/planning/forecast?mode=networth", name: "Forecast", testId: "assumption-chips" },
   ] as const;
 
   for (const { path, name, testId } of routes) {
@@ -823,7 +923,10 @@ test.describe("WCAG 1.4.10 320 px reflow audit", () => {
         await page.goto(path);
         await page.waitForLoadState("domcontentloaded");
         await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
-        await expect(page.getByTestId(testId)).toBeVisible();
+        // first() only for forecast-warning: /planning/forecast renders several warning rows;
+        // the other routes keep the strict one-match check.
+        const row = page.getByTestId(testId);
+        await expect(testId === "forecast-warning" ? row.first() : row).toBeVisible();
 
         const overflow = await page.evaluate(() => ({
           scrollWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
