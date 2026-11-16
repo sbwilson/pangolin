@@ -127,12 +127,49 @@ hitl = false
 risk = "medium"
 
 [[entry]]
+id = 13
+type = "story"
+title = "Reverse proxy host list in install and firewall"
+description = "Lets the reverse proxy be more than one address: --proxy-host / PANGOLIN_PROXY_HOSTS take a comma-separated list of IPv4 addresses, with --npm-host / PANGOLIN_NPM_HOST kept working as an alias, and every consumer takes the list — the prompt and its validators, both .env keys, the TRUSTED_PROXIES consistency check compared as sets, one firewalld rich rule per address, the vm_address route lookup, nftables proxy sets used by both the input rule and the ct status dnat forward rule, and the Proxmox .fw output. Decided 2026-11-16: an IPv6 twin set alongside the IPv4 one, so a hand-edited IPv6 proxy host in .env keeps rendering as it does today, while install.sh still refuses to create one because compose publishes the app port on IPv4 only. The forward rule keeps the container port 3000 it hardcodes today. The server needs no change: PANGOLIN_TRUSTED_PROXIES already parses a comma-separated list and clientAddress already skips any trusted hop, so an active/standby proxy pair is the case it handles."
+verify = "install.sh --root with two proxy addresses writes both .env keys with one normalized list, the rendered ruleset carries one proxy set holding both addresses and uses it in the input and forward rules, an IPv6 proxy host in .env renders through the twin set, the Proxmox output has one line per address, an old .env holding only PANGOLIN_NPM_HOST installs unchanged, and a reordered or space-padded list raises no TRUSTED_PROXIES warning; the deploy tests, pnpm lint, pnpm typecheck and CI are green."
+covers = ["CAP-16"]
+after = []
+hitl = false
+risk = "medium"
+references = ["install — deploy/install.sh:527-541, 636, 1091-1092, 1129-1132, 1555-1562, 1639", "firewall — deploy/firewall/render.sh:157-171, 352-357, 399, 430-433, 452-489", "server — apps/server/src/config.ts:57-67, apps/server/src/http/app.ts:1339-1361", "callers — docs/install.md:121 and 133, .github/workflows/ci.yml:48, deploy/install.test.ts:46"]
+
+[[entry]]
+id = 14
+type = "bug"
+title = "Stored DNS resolvers outrank a changed resolv.conf with no warning"
+description = "install.sh reads PANGOLIN_DNS_SERVERS from .env before it looks at /etc/resolv.conf, so on any re-run the stored resolvers win silently: when a DHCP client emptied resolv.conf on these hosts, the stale .env values went on blocking every resolver and nothing said so. Checks the host's current resolvers on every run, warns when it finds none, and warns when .env's differ, naming both. render.sh's own per-render warnings and its refuse-when-nothing-resolves behavior stay as they are."
+verify = "A staged re-run whose .env resolvers differ from the host's prints a drift warning naming both sets; an empty resolv.conf prints a no-resolvers warning instead of passing silently; an unchanged host prints neither; install tests cover all three."
+covers = ["CAP-16"]
+after = []
+hitl = false
+risk = "low"
+unknown = "Unconfirmed whether the pang-dev outage already surfaced render.sh's resolution warnings (render.sh:221, 228, 333-342): check journalctl -u pangolin-allowlist before writing the message."
+
+[[entry]]
+id = 15
+type = "story"
+title = "Re-address an installed host without editing .env by hand"
+description = "Adds a supported way to change the proxy hosts, the admin network and the DNS resolvers on an installed host: those keys take replace semantics through the existing settle path, PANGOLIN_TRUSTED_PROXIES stays in step with the proxy list, the firewall is re-applied, and the app container is recreated so it re-reads TRUSTED_PROXIES. An admin-network change that would exclude the client of the running SSH session is refused unless forced, which promotes check_ssh_session from a warning to a gate. Decided 2026-11-16: it ships both ways — install.sh --reconfigure, and a pangolin reconfigure subcommand that extracts the deploy support files from the pinned image and delegates to the same code path. render.sh's apply-time resolver widening already lets a changed resolver answer, so one apply is enough. One order is load-bearing: the new render.sh must reach the host before .env carries a proxy list, because the installed one dies on a comma-separated value (render.sh:169-171) and leaves the running ruleset stale."
+verify = "On a staged install either entrypoint changes the proxy hosts, admin network and resolvers in .env where settle keeps the old values today, PANGOLIN_TRUSTED_PROXIES ends equal to the proxy list, the firewall re-apply and the forced container recreate are issued, and an admin network excluding the recorded SSH_CONNECTION client stops before the firewall changes unless forced; install tests cover each path through both entrypoints."
+covers = ["CAP-16"]
+after = [13, 14]
+hitl = true
+risk = "high"
+plan_checkpoint = true
+references = ["install — deploy/install.sh:617-646 (settle and its replace list), 780-798 (check_ssh_session), 1375-1394 (locate_support), 1486-1521 (write_files), 1600-1610 (force-recreate)", "upgrade — deploy/pangolin:96, 213-216", "recovery — docs/install.md:576-577"]
+
+[[entry]]
 id = 12
 type = "story"
 title = "Release and deploy"
 description = "Deploys the epic to the home server with pangolin upgrade and cuts the release tag."
 verify = "CI (lint, types, unit, migration, Playwright, axe on its routes) is green on the release tag and /planning/forecast works on the home server."
 covers = ["CAP-8"]
-after = [10, 11]
+after = [10, 11, 13, 14, 15]
 hitl = true
 risk = "medium"
