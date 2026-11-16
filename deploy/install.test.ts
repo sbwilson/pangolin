@@ -43,7 +43,7 @@ const ANSWERS = [
   "money.example.com",
   "--backup-server",
   "rest:https://nas.lan:8000/pangolin",
-  "--npm-host",
+  "--proxy-host",
   "192.168.1.10",
   "--admin-network",
   "192.168.1.0/24",
@@ -153,14 +153,18 @@ sys.exit(os.waitstatus_to_exitcode(status))
 /**
  * Runs install.sh interactively under `script`, which gives it a terminal and types `input`
  * (one answer per line) into it. Every answer is given as a flag except `--non-interactive`, so
- * only the questions under test (and the few with no flag) are asked.
+ * only the questions under test (and the few with no flag) are asked; `omit` drops ANSWERS flags
+ * (with their values) so their questions are asked too.
  */
 function installInteractively(
   input: string,
   extra: readonly string[],
   env: Record<string, string> = {},
+  omit: readonly string[] = [],
 ): Run {
-  const args = ANSWERS.filter((arg) => arg !== "--no-docker" && arg !== "--non-interactive");
+  const args = ANSWERS.filter(
+    (arg) => arg !== "--no-docker" && arg !== "--non-interactive" && !omit.includes(arg),
+  );
   const command = ["sh", INSTALL, "--root", root, ...args, ...extra]
     .map((arg) => `'${arg}'`)
     .join(" ");
@@ -263,7 +267,10 @@ describe("install.sh, fresh install", () => {
 
     const env = read("opt/pangolin/.env");
     expect(env).toContain("PANGOLIN_PUBLIC_URL=https://money.example.com\n");
+    expect(env).toContain("PANGOLIN_PROXY_HOSTS=192.168.1.10\n");
     expect(env).toContain("PANGOLIN_TRUSTED_PROXIES=192.168.1.10\n");
+    // A fresh install writes the new key, not the alias it reads as a fallback.
+    expect(env).not.toContain("PANGOLIN_NPM_HOST");
     expect(env).toContain("PANGOLIN_IMAGE=ghcr.io/sbwilson/pangolin:latest\n");
     expect(env).toContain("PANGOLIN_DATA_ROOT=/srv/pangolin\n");
     expect(env).toContain("PANGOLIN_BACKUP_REPOSITORY=rest:https://nas.lan:8000/pangolin\n");
@@ -290,9 +297,10 @@ describe("install.sh, fresh install", () => {
     // NTP goes to any server from the host instead: pool names rotate addresses.
     expect(allowlist).not.toMatch(/^[^#]*pool\.ntp\.org/m);
 
-    // The firewall preview admits only the NPM host to the app and the admin network to SSH.
+    // The firewall preview admits only the proxy hosts to the app and the admin network to SSH.
     const ruleset = read("opt/pangolin/firewall/pangolin.nft");
-    expect(ruleset).toContain("ip saddr 192.168.1.10 tcp dport 3000 accept");
+    expect(ruleset).toMatch(/set proxy4 \{[^}]*elements = \{ 192\.168\.1\.10 \}/);
+    expect(ruleset).toContain("ip saddr @proxy4 tcp dport 3000 accept");
     expect(ruleset).toContain("ip saddr 192.168.1.0/24 tcp dport 22 accept");
     expect(ruleset).toContain("udp dport 123 accept");
     expect(read("opt/pangolin/proxmox-firewall.txt")).toContain(
@@ -327,6 +335,7 @@ describe("install.sh, fresh install", () => {
     expect(result.stdout).toMatch(/Domain Names\s+money\.example\.com/);
     expect(result.stdout).toMatch(/Scheme\s+http\n/);
     expect(result.stdout).toMatch(/Forward Port\s+3000/);
+    expect(result.stdout).toContain("Pangolin believes it only from 192.168.1.10");
     expect(result.stdout).toContain(link);
   });
 
@@ -344,6 +353,132 @@ describe("install.sh, fresh install", () => {
     const result = install();
     expect(result.status).toBe(0);
     expect(result.stderr).toMatch(/NOT on a dm-crypt \(LUKS\) device/);
+  });
+});
+
+describe("the proxy host list", () => {
+  it("takes two addresses: both .env keys, one proxy4 set, and a Proxmox line each", () => {
+    const result = install("--proxy-host", "10.20.5.80,10.20.8.80");
+    expect(result.status, result.stderr).toBe(0);
+    const env = read("opt/pangolin/.env");
+    expect(env).toContain("PANGOLIN_PROXY_HOSTS=10.20.5.80,10.20.8.80\n");
+    expect(env).toContain("PANGOLIN_TRUSTED_PROXIES=10.20.5.80,10.20.8.80\n");
+    const ruleset = read("opt/pangolin/firewall/pangolin.nft");
+    expect(ruleset).toMatch(/set proxy4 \{[^}]*elements = \{ 10\.20\.5\.80, 10\.20\.8\.80 \}/);
+    expect(ruleset).toContain("ip saddr @proxy4 tcp dport 3000 accept");
+    expect(ruleset).toContain("ct status dnat ip saddr @proxy4 tcp dport 3000 accept");
+    const proxmox = read("opt/pangolin/proxmox-firewall.txt").split("\n");
+    expect(proxmox).toContain("IN ACCEPT -source 10.20.5.80 -p tcp -dport 3000 # NPM to the app");
+    expect(proxmox).toContain("IN ACCEPT -source 10.20.8.80 -p tcp -dport 3000 # NPM to the app");
+    expect(result.stdout).toContain("believes it only from 10.20.5.80,10.20.8.80");
+  });
+
+  it("still accepts --npm-host as an alias, and normalizes a padded, repeated list", () => {
+    const result = install("--npm-host", "10.20.5.80 , 10.20.8.80, 10.20.5.80,");
+    expect(result.status, result.stderr).toBe(0);
+    const env = read("opt/pangolin/.env");
+    expect(env).toContain("PANGOLIN_PROXY_HOSTS=10.20.5.80,10.20.8.80\n");
+    expect(env).toContain("PANGOLIN_TRUSTED_PROXIES=10.20.5.80,10.20.8.80\n");
+    expect(env).not.toContain("PANGOLIN_NPM_HOST");
+  });
+
+  it("compares PANGOLIN_TRUSTED_PROXIES as a set: reorder or padding never warns, a gap does", () => {
+    expect(install("--proxy-host", "10.20.5.80,10.20.8.80").status).toBe(0);
+    writeFileSync(
+      at("opt/pangolin/.env"),
+      read("opt/pangolin/.env").replace(
+        "PANGOLIN_TRUSTED_PROXIES=10.20.5.80,10.20.8.80",
+        "PANGOLIN_TRUSTED_PROXIES= 10.20.8.80 ,10.20.5.80",
+      ),
+    );
+    const reordered = install();
+    expect(reordered.status, reordered.stderr).toBe(0);
+    expect(reordered.stderr).not.toMatch(/differs from/);
+
+    writeFileSync(
+      at("opt/pangolin/.env"),
+      read("opt/pangolin/.env").replace(
+        /^PANGOLIN_TRUSTED_PROXIES=.*$/m,
+        "PANGOLIN_TRUSTED_PROXIES=10.20.5.80",
+      ),
+    );
+    const gap = install();
+    expect(gap.status, gap.stderr).toBe(0);
+    expect(gap.stderr).toMatch(/PANGOLIN_TRUSTED_PROXIES=10\.20\.5\.80 differs from/);
+  });
+
+  it("installs over a legacy .env that only names PANGOLIN_NPM_HOST", () => {
+    expect(install().status).toBe(0);
+    writeFileSync(
+      at("opt/pangolin/.env"),
+      read("opt/pangolin/.env").replace(
+        /^PANGOLIN_PROXY_HOSTS=.*$/m,
+        "PANGOLIN_NPM_HOST=192.168.1.10",
+      ),
+    );
+    const result = run("sh", [INSTALL, "--root", root, "--non-interactive", "--no-docker"]);
+    expect(result.status, result.stderr).toBe(0);
+    const env = read("opt/pangolin/.env");
+    // The kept value gains the new key; the old one stays as the operator wrote it.
+    expect(env).toContain("PANGOLIN_PROXY_HOSTS=192.168.1.10\n");
+    expect(env.match(/^PANGOLIN_PROXY_HOSTS=/gm)).toHaveLength(1);
+    expect(env).toContain("PANGOLIN_NPM_HOST=192.168.1.10\n");
+    // render.sh reads the same value through its fallback.
+    expect(read("opt/pangolin/firewall/pangolin.nft")).toContain(
+      "ip saddr @proxy4 tcp dport 3000 accept",
+    );
+  });
+
+  it("keeps a hand-edited padded PANGOLIN_PROXY_HOSTS without warning on re-run", () => {
+    expect(install("--proxy-host", "10.20.5.80,10.20.8.80").status).toBe(0);
+    writeFileSync(
+      at("opt/pangolin/.env"),
+      read("opt/pangolin/.env").replace(
+        /^PANGOLIN_PROXY_HOSTS=.*$/m,
+        "PANGOLIN_PROXY_HOSTS=10.20.5.80 ,10.20.8.80",
+      ),
+    );
+    const result = run("sh", [INSTALL, "--root", root, "--non-interactive", "--no-docker"]);
+    expect(result.status, result.stderr).toBe(0);
+    // Accepting the stored list is not a change: no "kept ... (you asked for ...)", and the
+    // padding stays where the operator left it.
+    expect(result.stderr).not.toMatch(/you asked for/);
+    expect(read("opt/pangolin/.env")).toContain("PANGOLIN_PROXY_HOSTS=10.20.5.80 ,10.20.8.80\n");
+  });
+
+  it("prefers PANGOLIN_PROXY_HOSTS over a disagreeing PANGOLIN_NPM_HOST, everywhere", () => {
+    expect(install("--proxy-host", "10.20.5.80").status).toBe(0);
+    writeFileSync(
+      at("opt/pangolin/.env"),
+      read("opt/pangolin/.env").replace(
+        /^PANGOLIN_PROXY_HOSTS=.*$/m,
+        "PANGOLIN_PROXY_HOSTS=10.20.5.80\nPANGOLIN_NPM_HOST=192.168.1.99",
+      ),
+    );
+    const result = run("sh", [INSTALL, "--root", root, "--non-interactive", "--no-docker"]);
+    expect(result.status, result.stderr).toBe(0);
+    // The kept value is the new key's, in .env and in the rendered ruleset; the decoy old key
+    // is read by neither.
+    expect(read("opt/pangolin/.env")).toContain("PANGOLIN_PROXY_HOSTS=10.20.5.80\n");
+    const ruleset = read("opt/pangolin/firewall/pangolin.nft");
+    expect(ruleset).toMatch(/set proxy4 \{[^}]*elements = \{ 10\.20\.5\.80 \}/);
+    expect(ruleset).not.toContain("192.168.1.99");
+  });
+
+  it("asks again when an address in the typed list is not IPv4", () => {
+    // No --proxy-host flag, so the question is asked. Proxy mode, Tang server, LLM hosts and
+    // the GHCR token take their defaults; the bad list is re-asked, the good one accepted.
+    const result = installInteractively(
+      "\n\n\nbanana,2001:db8::10\n10.20.5.80 , 10.20.8.80\n\n",
+      [],
+      {},
+      ["--proxy-host", "192.168.1.10"],
+    );
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toMatch(/Enter one or more IPv4 addresses/);
+    const env = read("opt/pangolin/.env");
+    expect(env).toContain("PANGOLIN_PROXY_HOSTS=10.20.5.80,10.20.8.80\n");
+    expect(env).toContain("PANGOLIN_TRUSTED_PROXIES=10.20.5.80,10.20.8.80\n");
   });
 });
 
@@ -544,7 +679,7 @@ describe("install.sh, re-run", () => {
     expect(env).not.toContain("other.example.com");
     expect(env).toContain("PANGOLIN_AUTH_RATE_LIMIT=20\n");
     expect(env).toContain("PANGOLIN_HTTP_PORT=3000\n");
-    expect(env.match(/^PANGOLIN_NPM_HOST=/gm)).toHaveLength(1);
+    expect(env.match(/^PANGOLIN_PROXY_HOSTS=/gm)).toHaveLength(1);
     expect(mode("opt/pangolin/.env")).toBe(0o600);
     expect(result.stderr).toMatch(/kept PANGOLIN_PUBLIC_URL=https:\/\/cash\.example\.com/);
     // The bundle is written again only on request.
@@ -1645,10 +1780,31 @@ describe("install.sh, failures", () => {
     }
   });
 
-  it("rejects an IPv6 NPM host: the app port is published on IPv4 only", () => {
-    const result = install("--npm-host", "2001:db8::10");
+  it("rejects an IPv6 proxy host: the app port is published on IPv4 only", () => {
+    for (const hosts of ["2001:db8::10", "10.20.5.80,2001:db8::10"]) {
+      const result = install("--proxy-host", hosts);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toMatch(/published on IPv4 only/);
+      expect(result.stderr).toContain("2001:db8::10");
+    }
+  });
+
+  it("rejects a bad address in a proxy host list, naming it", () => {
+    const result = install("--proxy-host", "10.20.5.80,banana");
     expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(/published on IPv4 only/);
+    expect(result.stderr).toMatch(/not an IPv4 address: banana/);
+  });
+
+  it("rejects a proxy host flag that holds no address, naming the value", () => {
+    for (const [flag, value] of [
+      ["--proxy-host", " "],
+      ["--proxy-host", ",,"],
+      ["--npm-host", " , , "],
+    ] as const) {
+      const result = install(flag, value);
+      expect(result.status, `${flag} "${value}"`).toBe(1);
+      expect(result.stderr, `${flag} "${value}"`).toContain(`not an IPv4 address: ${value}`);
+    }
   });
 
   it("exits 1 on an unsupported distribution, naming the supported ones", () => {
@@ -1805,7 +1961,7 @@ describe("firewall/render.sh", () => {
     writeFileSync(
       at("env"),
       [
-        "PANGOLIN_NPM_HOST=192.168.1.10",
+        "PANGOLIN_PROXY_HOSTS=192.168.1.10",
         "PANGOLIN_ADMIN_NETWORK=192.168.1.0/24",
         "PANGOLIN_DNS_SERVERS=192.168.1.1,2001:db8::53",
         "PANGOLIN_HTTP_PORT=3000",
@@ -1838,14 +1994,15 @@ describe("firewall/render.sh", () => {
     expect(ruleset).toMatch(/set hosts6 \{[^}]*elements = \{ 2001:db8:1::\/48 \}/);
     expect(ruleset).toMatch(/set ports4 \{[^}]*10\.1\.2\.3 \. 8000, 192\.0\.2\.7 \. 443 \}/);
     expect(ruleset).toMatch(/set ports6 \{[^}]*2001:db8::1 \. 443 \}/);
-    // Inbound: the app from NPM only, SSH from the admin network only; everything else drops.
+    // Inbound: the app from the proxy hosts only, SSH from the admin network only; all drops.
     expect(ruleset).toContain("type filter hook input priority filter; policy drop;");
-    expect(ruleset).toContain("ip saddr 192.168.1.10 tcp dport 3000 accept");
+    expect(ruleset).toMatch(/set proxy4 \{[^}]*elements = \{ 192\.168\.1\.10 \}/);
+    expect(ruleset).toContain("ip saddr @proxy4 tcp dport 3000 accept");
     expect(ruleset).toContain("ip saddr 192.168.1.0/24 tcp dport 22 accept");
     // Outbound, for the host and the containers: the allowlist only.
     expect(ruleset).toContain("type filter hook output priority filter; policy drop;");
     expect(ruleset).toContain("type filter hook forward priority filter - 10;");
-    expect(ruleset).toContain("ct status dnat ip saddr 192.168.1.10 tcp dport 3000 accept");
+    expect(ruleset).toContain("ct status dnat ip saddr @proxy4 tcp dport 3000 accept");
     expect(ruleset).toContain('iifname "br-*" jump containers');
     expect(ruleset.match(/jump allowed/g)).toHaveLength(2);
     // Ping from the host only: the rule sits in the output chain, not the containers' chain.
@@ -1871,6 +2028,38 @@ describe("firewall/render.sh", () => {
     expect(lines).toContain("OUT ACCEPT -dest 10.1.2.3 -p tcp -dport 8000 # 10.1.2.3:8000");
     expect(lines).toContain("OUT ACCEPT -dest 2001:db8::1 -p tcp -dport 443 # [2001:db8::1]:443");
     expect(lines).toContain("OUT ACCEPT -p icmp -icmp-type echo-request # ping from the VM");
+  });
+
+  it("refuses a proxy host list with no address in it, naming the value", () => {
+    for (const value of [",,", " ", ", ,"]) {
+      fixture(ALLOWLIST);
+      writeFileSync(
+        at("env"),
+        read("env").replace(/^PANGOLIN_PROXY_HOSTS=.*$/m, `PANGOLIN_PROXY_HOSTS=${value}`),
+      );
+      const result = render(["--env", at("env"), "--allowlist", at("allowlist.conf"), "ruleset"]);
+      expect(result.status, `PANGOLIN_PROXY_HOSTS=${value}`).toBe(1);
+      expect(result.stderr).toContain(`not an IP address or network: ${value}`);
+    }
+  });
+
+  it("prints each Proxmox IN ACCEPT line once, though the list repeats an address", () => {
+    fixture(ALLOWLIST);
+    writeFileSync(
+      at("env"),
+      read("env").replace(
+        /^PANGOLIN_PROXY_HOSTS=.*$/m,
+        "PANGOLIN_PROXY_HOSTS=192.168.1.10, 192.168.1.10,10.20.5.80",
+      ),
+    );
+    const result = render(["--env", at("env"), "--allowlist", at("allowlist.conf"), "proxmox"]);
+    expect(result.status, result.stderr).toBe(0);
+    const npmLines = result.stdout.split("\n").filter((line) => line.endsWith("# NPM to the app"));
+    expect(npmLines).toHaveLength(2);
+    expect(npmLines).toContain(
+      "IN ACCEPT -source 192.168.1.10 -p tcp -dport 3000 # NPM to the app",
+    );
+    expect(npmLines).toContain("IN ACCEPT -source 10.20.5.80 -p tcp -dport 3000 # NPM to the app");
   });
 
   it("skips an empty port, an octet over 255 and a malformed IPv6 address, with a warning", () => {
@@ -1903,7 +2092,7 @@ describe("firewall/render.sh", () => {
     expect(ruleset).toContain("type filter hook input priority filter; policy drop;");
     expect(ruleset).toContain("type filter hook output priority filter; policy drop;");
     expect(ruleset).toContain("ip saddr 192.168.1.0/24 tcp dport 22 accept");
-    expect(ruleset).toContain("ip saddr 192.168.1.10 tcp dport 3000 accept");
+    expect(ruleset).toContain("ip saddr @proxy4 tcp dport 3000 accept");
     expect(ruleset).toMatch(/set dns4 \{[^}]*elements = \{ 192\.168\.1\.1 \}/);
     // No allowlisted host or port: containers and the host reach only DNS (and the host NTP).
     expect(ruleset).not.toMatch(/set (hosts|ports)[46] \{[^}]*elements/);
@@ -2177,12 +2366,70 @@ describe("firewall/render.sh", () => {
     });
   });
 
-  it("refuses an .env without the NPM host", () => {
+  it("refuses an .env without the proxy hosts", () => {
     const args = fixture("10.0.0.1\n");
     writeFileSync(at("env"), "PANGOLIN_ADMIN_NETWORK=192.168.1.0/24\n");
     const result = render([...args, "ruleset"]);
     expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(/PANGOLIN_NPM_HOST is not set/);
+    expect(result.stderr).toMatch(/PANGOLIN_PROXY_HOSTS .*is not set/);
+  });
+
+  it("reads the legacy PANGOLIN_NPM_HOST, and PANGOLIN_PROXY_HOSTS wins when both are set", () => {
+    const args = fixture("10.0.0.1\n");
+    writeFileSync(
+      at("env"),
+      read("env").replace(/^PANGOLIN_PROXY_HOSTS=.*$/m, "PANGOLIN_NPM_HOST=192.168.1.10"),
+    );
+    const legacy = render([...args, "ruleset"]);
+    expect(legacy.status, legacy.stderr).toBe(0);
+    expect(legacy.stdout).toMatch(/set proxy4 \{[^}]*elements = \{ 192\.168\.1\.10 \}/);
+
+    writeFileSync(
+      at("env"),
+      read("env").replace(
+        /^PANGOLIN_NPM_HOST=.*$/m,
+        "PANGOLIN_PROXY_HOSTS=10.9.9.8\nPANGOLIN_NPM_HOST=192.168.1.10",
+      ),
+    );
+    const both = render([...args, "ruleset"]);
+    expect(both.status, both.stderr).toBe(0);
+    expect(both.stdout).toMatch(/set proxy4 \{[^}]*elements = \{ 10\.9\.9\.8 \}/);
+    expect(both.stdout).not.toMatch(/set proxy4 \{[^}]*192\.168\.1\.10/);
+  });
+
+  it("renders twin proxy sets for a hand-edited list, one rule per family in input and forward", () => {
+    const args = fixture("10.9.9.9:443\n");
+    writeFileSync(
+      at("env"),
+      read("env").replace(
+        /^PANGOLIN_PROXY_HOSTS=.*$/m,
+        "PANGOLIN_PROXY_HOSTS=10.20.5.80,2001:db8::10",
+      ),
+    );
+    const ruleset = render([...args, "ruleset"]);
+    expect(ruleset.status, ruleset.stderr).toBe(0);
+    expect(ruleset.stdout).toMatch(/set proxy4 \{[^}]*elements = \{ 10\.20\.5\.80 \}/);
+    expect(ruleset.stdout).toMatch(/set proxy6 \{[^}]*elements = \{ 2001:db8::10 \}/);
+    expect(ruleset.stdout).toContain("ip saddr @proxy4 tcp dport 3000 accept");
+    expect(ruleset.stdout).toContain("ip6 saddr @proxy6 tcp dport 3000 accept");
+    expect(ruleset.stdout).toContain("ct status dnat ip saddr @proxy4 tcp dport 3000 accept");
+    expect(ruleset.stdout).toContain("ct status dnat ip6 saddr @proxy6 tcp dport 3000 accept");
+    const proxmox = render([...args, "proxmox"]).stdout.split("\n");
+    expect(proxmox).toContain("IN ACCEPT -source 10.20.5.80 -p tcp -dport 3000 # NPM to the app");
+    expect(proxmox).toContain("IN ACCEPT -source 2001:db8::10 -p tcp -dport 3000 # NPM to the app");
+  });
+
+  it("renders only ip6 proxy rules when the list holds a single IPv6 address", () => {
+    const args = fixture("10.9.9.9:443\n");
+    writeFileSync(
+      at("env"),
+      read("env").replace(/^PANGOLIN_PROXY_HOSTS=.*$/m, "PANGOLIN_PROXY_HOSTS=2001:db8::10"),
+    );
+    const result = render([...args, "ruleset"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("ip6 saddr @proxy6 tcp dport 3000 accept");
+    expect(result.stdout).toContain("ct status dnat ip6 saddr @proxy6 tcp dport 3000 accept");
+    expect(result.stdout).not.toContain("saddr @proxy4");
   });
 });
 

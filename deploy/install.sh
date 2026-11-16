@@ -11,7 +11,8 @@
 #   --backup-server URL           restic REST URL, e.g. rest:https://nas.lan:8000/pangolin, of an
 #                                 append-only rest-server: nightly backups go there (allowlisted);
 #                                 an empty value ("") turns backups off
-#   --npm-host IP                 the NPM host: the only address that may reach the app port
+#   --proxy-host IP[,IP...]       the NPM hosts: the only addresses that may reach the app port
+#                                 (IPv4, comma-separated); --npm-host is accepted as an alias
 #   --admin-network CIDR          the network SSH is allowed from, e.g. 192.168.1.0/24
 #   --tang-url URL                the Tang server that unlocks the data disk, e.g. http://tang.lan
 #                                 (allowlisted, so the disk still unlocks behind the firewall)
@@ -59,7 +60,7 @@ ARG_PROXY=
 ARG_HOST=
 ARG_BACKUP=
 ARG_BACKUP_SET=0
-ARG_NPM=
+ARG_PROXY_HOST=
 ARG_ADMIN=
 ARG_TOKEN=
 ARG_TOKEN_FILE=
@@ -149,9 +150,9 @@ parse_args() {
       --*=*) value=${opt#*=}; opt=${opt%%=*}; has_value=1 ;;
     esac
     case "$opt" in
-      --proxy | --hostname | --backup-server | --npm-host | --admin-network | --ghcr-token | \
-        --ghcr-token-file | --ghcr-user | --dns | --data-root | --http-port | --ssh-port | \
-        --image | --ref | --repo | --root | --tang-url | --llm-hosts)
+      --proxy | --hostname | --backup-server | --proxy-host | --npm-host | --admin-network | \
+        --ghcr-token | --ghcr-token-file | --ghcr-user | --dns | --data-root | --http-port | \
+        --ssh-port | --image | --ref | --repo | --root | --tang-url | --llm-hosts)
         if [ "$has_value" -eq 0 ]; then
           [ $# -ge 2 ] || die "$opt needs a value"
           value=$2
@@ -163,7 +164,7 @@ parse_args() {
       --proxy) ARG_PROXY=$value ;;
       --hostname) ARG_HOST=$value ;;
       --backup-server) ARG_BACKUP=$value; ARG_BACKUP_SET=1 ;;
-      --npm-host) ARG_NPM=$value ;;
+      --proxy-host | --npm-host) ARG_PROXY_HOST=$value ;;
       --admin-network) ARG_ADMIN=$value ;;
       --ghcr-token) ARG_TOKEN=$value ;;
       --ghcr-token-file) ARG_TOKEN_FILE=$value ;;
@@ -242,6 +243,23 @@ is_ipv6() {
 
 is_ip() {
   is_ipv4 "$1" || is_ipv6 "$1"
+}
+
+# Normalizes a comma-separated proxy host list: trims each address, drops the empty ones, keeps
+# every address once (first occurrence), and joins with commas without spaces.
+normalize_proxy_hosts() {
+  printf '%s\n' "$1" | tr ',' '\n' |
+    sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' |
+    awk '$0 != "" && !seen[$0]++' |
+    paste -sd, -
+}
+
+# proxy_list_ok LIST: a normalized comma-separated list that is not empty and holds only IPv4.
+proxy_list_ok() {
+  [ -n "$1" ] || return 1
+  for proxy_host in $(printf '%s\n' "$1" | tr ',' ' '); do
+    is_ipv4 "$proxy_host" || return 1
+  done
 }
 
 is_cidr() {
@@ -524,21 +542,36 @@ settings() {
     fi
   fi
 
-  NPM_HOST=$ARG_NPM
-  if [ -z "$NPM_HOST" ]; then
-    default=$(existing PANGOLIN_NPM_HOST)
+  PROXY_HOSTS=$(normalize_proxy_hosts "$ARG_PROXY_HOST")
+  # A flag given with nothing addressable in it (" ", ",,") is a typo, not a flag left out.
+  if [ -n "$ARG_PROXY_HOST" ] && [ -z "$PROXY_HOSTS" ]; then
+    die "not an IPv4 address: $ARG_PROXY_HOST"
+  fi
+  if [ -z "$PROXY_HOSTS" ]; then
+    default=$(existing PANGOLIN_PROXY_HOSTS)
+    # An .env from before this key names its proxy hosts under the older one.
+    [ -n "$default" ] || default=$(existing PANGOLIN_NPM_HOST)
     while :; do
-      NPM_HOST=$(ask "IPv4 address of the Nginx Proxy Manager host" "$default")
-      is_ipv4 "$NPM_HOST" && break
+      answer=$(ask "IPv4 address of the Nginx Proxy Manager host (comma-separated for more than one)" "$default")
+      if [ "$answer" = "$default" ] && [ -n "$default" ]; then
+        # Accepting the stored list keeps it exactly as written: normalizing it here would make
+        # settle see a change and warn "kept ... (you asked for ...)" on every re-run.
+        PROXY_HOSTS=$answer
+        break
+      fi
+      PROXY_HOSTS=$(normalize_proxy_hosts "$answer")
+      proxy_list_ok "$PROXY_HOSTS" && break
       [ "$NON_INTERACTIVE" -eq 0 ] || break
-      say "Enter an IPv4 address such as 192.168.1.10." >/dev/tty
+      say "Enter one or more IPv4 addresses such as 192.168.1.10, separated by commas." >/dev/tty
     done
   fi
-  if [ -z "$NPM_HOST" ]; then die "--npm-host is required with --non-interactive on a first install"; fi
-  if is_ipv6 "$NPM_HOST"; then
-    die "the app port is published on IPv4 only: give the NPM host's IPv4 address, not $NPM_HOST"
-  fi
-  is_ipv4 "$NPM_HOST" || die "not an IPv4 address: $NPM_HOST"
+  if [ -z "$PROXY_HOSTS" ]; then die "--proxy-host is required with --non-interactive on a first install"; fi
+  for proxy_host in $(printf '%s\n' "$PROXY_HOSTS" | tr ',' ' '); do
+    if is_ipv6 "$proxy_host"; then
+      die "the app port is published on IPv4 only: give the NPM host's IPv4 address, not $proxy_host"
+    fi
+    is_ipv4 "$proxy_host" || die "not an IPv4 address: $proxy_host"
+  done
 
   ADMIN_NETWORK=$ARG_ADMIN
   if [ -z "$ADMIN_NETWORK" ]; then
@@ -633,7 +666,7 @@ settle_all() {
   PUBLIC_URL=https://$PUBLIC_HOST
   settle PROXY_MODE PANGOLIN_PROXY_MODE
   settle PUBLIC_URL PANGOLIN_PUBLIC_URL
-  settle NPM_HOST PANGOLIN_NPM_HOST
+  settle PROXY_HOSTS PANGOLIN_PROXY_HOSTS
   settle ADMIN_NETWORK PANGOLIN_ADMIN_NETWORK
   settle SSH_PORT PANGOLIN_SSH_PORT
   settle HTTP_PORT PANGOLIN_HTTP_PORT
@@ -1058,6 +1091,13 @@ env_replace() {
   mv "$env.new" "$env"
 }
 
+# A comma-separated list as a comparable set: every trimmed address on its own line, sorted,
+# unique. The way write_env checks two .env values against each other.
+set_list() {
+  printf '%s\n' "$1" | tr ',' '\n' |
+    sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | awk '$0 != ""' | sort -u
+}
+
 write_env() {
   step "Writing $INSTALL_DIR/.env"
   env=$(env_file)
@@ -1088,8 +1128,8 @@ write_env() {
   env_add PANGOLIN_PROXY_MODE "$PROXY_MODE"
   env_add PANGOLIN_IMAGE "$IMAGE"
   env_add PANGOLIN_PUBLIC_URL "$PUBLIC_URL"
-  env_add PANGOLIN_TRUSTED_PROXIES "$NPM_HOST"
-  env_add PANGOLIN_NPM_HOST "$NPM_HOST"
+  env_add PANGOLIN_PROXY_HOSTS "$PROXY_HOSTS"
+  env_add PANGOLIN_TRUSTED_PROXIES "$PROXY_HOSTS"
   env_add PANGOLIN_ADMIN_NETWORK "$ADMIN_NETWORK"
   env_add PANGOLIN_SSH_PORT "$SSH_PORT"
   env_add PANGOLIN_HTTP_PORT "$HTTP_PORT"
@@ -1127,8 +1167,10 @@ write_env() {
     fi
   fi
   trusted=$(existing PANGOLIN_TRUSTED_PROXIES)
-  if [ "$trusted" != "$NPM_HOST" ]; then
-    warn "PANGOLIN_TRUSTED_PROXIES=$trusted differs from PANGOLIN_NPM_HOST=$NPM_HOST in .env: client addresses from NPM are not believed unless it lists the NPM host"
+  # Compared as sets: a reordered or space-padded list is not a difference; a missing or extra
+  # address is.
+  if [ "$(set_list "$trusted")" != "$(set_list "$PROXY_HOSTS")" ]; then
+    warn "PANGOLIN_TRUSTED_PROXIES=$trusted differs from PANGOLIN_PROXY_HOSTS=$PROXY_HOSTS in .env: client addresses from NPM are not believed unless it lists the proxy hosts"
   fi
 }
 
@@ -1554,8 +1596,13 @@ install_firewall() {
   step "Turning on the firewall"
   if [ "$PKG" = dnf ] && systemctl is-active --quiet firewalld 2>/dev/null; then
     # Unproven: firewalld keeps its own table, which must also accept this traffic.
+    # One rich rule per proxy address, in the family that address belongs to.
+    for proxy_host in $(printf '%s\n' "$PROXY_HOSTS" | tr ',' ' '); do
+      rule_family=ipv4
+      if is_ipv6 "$proxy_host"; then rule_family=ipv6; fi
+      firewall-cmd --quiet --permanent --add-rich-rule="rule family=$rule_family source address=$proxy_host port port=$HTTP_PORT protocol=tcp accept"
+    done
     family=ipv4
-    firewall-cmd --quiet --permanent --add-rich-rule="rule family=$family source address=$NPM_HOST port port=$HTTP_PORT protocol=tcp accept"
     if is_ipv6 "${ADMIN_NETWORK%/*}"; then family=ipv6; fi
     firewall-cmd --quiet --permanent --add-rich-rule="rule family=$family source address=$ADMIN_NETWORK port port=$SSH_PORT protocol=tcp accept"
     firewall-cmd --quiet --reload
@@ -1636,7 +1683,10 @@ vm_address() {
     echo "<the VM IP address>"
     return 0
   fi
-  address=$(ip -4 route get "$NPM_HOST" 2>/dev/null |
+  # The route to the first proxy address names the address NPM reaches this VM on. The stored
+  # list may be padded (a hand-edited .env), so the first address comes out of normalize first.
+  first=$(normalize_proxy_hosts "$PROXY_HOSTS")
+  address=$(ip -4 route get "${first%%,*}" 2>/dev/null |
     awk '{ for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit } }' || true)
   echo "${address:-<the VM IP address>}"
 }
@@ -1657,7 +1707,7 @@ summary() {
     "  SSL" \
     "    SSL Certificate         request a new one (or choose yours)" \
     "    Force SSL, HTTP/2 Support, HSTS Enabled: on" \
-    "  NPM sends X-Forwarded-For; Pangolin believes it only from $NPM_HOST." \
+    "  NPM sends X-Forwarded-For; Pangolin believes it only from $PROXY_HOSTS." \
     "  Check it afterwards: curl https://$host/healthz  ->  {\"ok\":true,...}" \
     "  (with \"warnings\":[\"recovery-bundle-unconfirmed\"] until you run: sudo pangolin confirm-bundle)"
 

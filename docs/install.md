@@ -110,7 +110,7 @@ sudo sh deploy/install.sh
 ```
 
 It asks for the proxy mode, the public host name, the backup server, the Tang server, the NPM
-host, the admin network and, for a private image, the GHCR token (typed without echo). Every question has a
+hosts, the admin network and, for a private image, the GHCR token (typed without echo). Every question has a
 flag, so it can also run unattended:
 
 ```sh
@@ -118,7 +118,7 @@ sudo sh deploy/install.sh --non-interactive \
   --hostname money.example.com \
   --backup-server rest:https://nas.lan:8000/pangolin \
   --tang-url http://tang.lan \
-  --npm-host 192.168.1.10 \
+  --proxy-host 192.168.1.10,192.168.1.11 \
   --admin-network 192.168.1.0/24 \
   --ghcr-token-file /root/ghcr-token.txt
 ```
@@ -130,7 +130,7 @@ sudo sh deploy/install.sh --non-interactive \
 | `--backup-server URL` | A restic REST URL (stored in `.env` and allowlisted). Set or changed on a re-run, it writes a new recovery bundle (new id) that includes it as `RESTIC_REPOSITORY`. An explicit empty value (`--backup-server ""`) turns backups off: on a re-run it empties `PANGOLIN_BACKUP_REPOSITORY` in `.env` and removes the old server's entry that the installer added to `allowlist.conf` (no new bundle is written) |
 | `--tang-url URL` | The Tang server that unlocks the data disk (stored in `.env` and allowlisted) |
 | `--llm-hosts HOSTS` | Local LLM server host/s or URLs (e.g. `http://192.168.1.50:11434`, `ollama.lan:11434`; comma-separated). Stored in `.env` as `PANGOLIN_LLM_HOSTS` and allowlisted in `allowlist.conf` for outbound firewall egress |
-| `--npm-host IP` | The NPM host's IPv4 address; also becomes `PANGOLIN_TRUSTED_PROXIES` |
+| `--proxy-host IP[,IP…]` | The NPM hosts' IPv4 addresses: the only addresses that may reach the app port. Written to `.env` as `PANGOLIN_PROXY_HOSTS` and `PANGOLIN_TRUSTED_PROXIES` (the firewall and the app take the same list). `--npm-host` is accepted as an alias, and an older `.env`'s `PANGOLIN_NPM_HOST` is still read when it has no `PANGOLIN_PROXY_HOSTS` |
 | `--admin-network CIDR` | Where SSH is allowed from |
 | `--ghcr-token-file FILE` / `--ghcr-token TOKEN` | A GHCR read-only token for `docker login ghcr.io` (a file keeps it out of the process list). It is kept in `secrets/ghcr-token`, and `docker login` also stores it in `/root/.docker/config.json` |
 | `--dns IP[,IP]` | The resolvers DNS is allowed to (default: from `/etc/resolv.conf`); on a re-run it replaces `PANGOLIN_DNS_SERVERS` in `.env`. The firewall also allows the VM's current resolvers (see [§8](#8-the-firewall)) |
@@ -160,7 +160,7 @@ What it does, in order:
 | Path | Mode | Holds |
 | --- | --- | --- |
 | `/opt/pangolin/compose.yaml` | 0644 | The production stack (replaced on every run; put settings in `.env`) |
-| `/opt/pangolin/.env` | 0600 | Every setting: image, public URL, NPM host, admin network, ports, data root, backup repository, and the recovery bundle's id (`PANGOLIN_RECOVERY_BUNDLE_ID`, see [The recovery bundle](#7-the-recovery-bundle)) |
+| `/opt/pangolin/.env` | 0600 | Every setting: image, public URL, proxy hosts, admin network, ports, data root, backup repository, and the recovery bundle's id (`PANGOLIN_RECOVERY_BUNDLE_ID`, see [The recovery bundle](#7-the-recovery-bundle)) |
 | `/opt/pangolin/allowlist.conf` | 0644 | The outbound allowlist, one `host[:port]` per line |
 | `/opt/pangolin/secrets/` | 0700 | `auth-secret` (0600) and `restic-password` (0400), owned by the container's user (uid 1000) and each mounted read-only into the container as a single file; `app-key` (0600, 32 random bytes, base64), root's, held for the attachments story; `ghcr-token` (0600, root's) if you gave one |
 | `/opt/pangolin/firewall/` | | `render.sh` and the last applied `pangolin.nft`, which loads at boot |
@@ -212,8 +212,8 @@ The installer prints the exact values; in NPM choose **Hosts → Proxy Hosts →
 | SSL | SSL Certificate | request a new one (or choose yours) |
 | | Force SSL, HTTP/2 Support, HSTS Enabled | on |
 
-NPM adds `X-Forwarded-For`, which Pangolin believes only from the NPM host
-(`PANGOLIN_TRUSTED_PROXIES`). Check it end to end:
+NPM adds `X-Forwarded-For`, which Pangolin believes only from the proxy hosts
+(`PANGOLIN_TRUSTED_PROXIES`, one comma-separated list with the addresses of `PANGOLIN_PROXY_HOSTS`). Check it end to end:
 
 ```sh
 curl https://money.example.com/healthz        # {"ok":true,"warnings":["recovery-bundle-unconfirmed"]}
