@@ -3,14 +3,14 @@ title: 'Release v0.2.8 and deploy'
 type: 'chore'
 ticket: '12'
 created: '2026-11-16'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: '477d955d4e42af771f1548e7c84817417df493bf'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context:
   - '{project-root}/docs/install.md'
@@ -91,7 +91,7 @@ context:
 - [x] `docs/release-v0.2.8.md` release notes — networking section for 8.13–8.15 added: the proxy host list (`--proxy-host` / `PANGOLIN_PROXY_HOSTS`, `--npm-host` still accepted), the IPv4 and IPv6 proxy sets (`proxy4`/`proxy6`), the DNS-resolver drift warning, and `pangolin reconfigure`, naming `10.20.5.80` and `10.20.8.80`.
 - [x] `docs/release-v0.2.8.md` checklist — post-upgrade `sudo pangolin reconfigure --proxy-host 10.20.5.80,10.20.8.80` added as step 8a with its expected output (v0.2.7's 1–13 keep their numbers); step 9 verifies the three forecast routes and the browser views through each Caddy node, and both `.env` keys and the `proxy4` set holding both addresses. `.env` keeps the single old address until step 8a runs.
 - [x] `pnpm check:upgrade ./pang-dev-copy.sqlite` — real-data 29 → 33 dry run on the existing copy done 2026-11-18, exact output recorded in the page's pre-flight row. The human's fresh step-2 copy is checked the same way, and both copies plus `*.sqlite-*` sidecars are deleted once recorded (page step 2); neither is deleted yet.
-- [ ] `git` — the page is committed locally on `develop` as `docs(release): prepare v0.2.8 release checklist` (the tip; this ticket's bookkeeping commits land before it). Push `develop`, and confirm CI green on that exact tip; it is `TAG_COMMIT` — deferred to human go-ahead per Implementation Notes.
+- [ ] `git` — the page is committed locally on `develop` as `docs(release): prepare v0.2.8 release checklist`, the tip commit, with this ticket's bookkeeping commits re-stacked below it. Push `develop`, and confirm CI green on that exact tip; it is `TAG_COMMIT` — deferred to human go-ahead per Implementation Notes.
 - [ ] Checklist steps 2–11 — supply commands, read pasted output, fill the evidence record, record acceptance or rejection.
 
 **Acceptance Criteria:**
@@ -103,7 +103,8 @@ context:
 
 ## Implementation Notes
 
-- No remote ops during step-03: the builder commits locally and never pushes. The push of `develop` and the CI-green check on `TAG_COMMIT` (task 6) happen after review, on human go-ahead — `hitl: true` and the workflow's no-push rule both bind here.
+- No remote ops during step-03: the builder commits locally and never pushes. The push of `develop` and the CI-green check on `TAG_COMMIT` (task 7) happen after review, on human go-ahead — `hitl: true` and the workflow's no-push rule both bind here.
+- `TAG_COMMIT` is the release page commit, so the page commit must be the tip of `develop` when the human pushes. This ticket's `docs(bmad)` commits land below it: a bookkeeping edit made after the page commit is committed and then re-stacked under it (`git rebase -i` with the page commit last), never left on top — the quick-lens review found exactly that mistake and step 1 now stops on it.
 - The lint gate is green from commit 7cde9c9e56ed51a2f7cb9fc94737cbea1b08ff9b. Together with the anonymous-401 guard in 94103259b4ef2c06f22e39c1f236f8a4c00bef03, those are the only two non-page changes this ticket lands; neither is part of the release page commit, and `pnpm lint`, `pnpm typecheck`, `pnpm check:strict` and `apps/server/src/http/forecast-seed.test.ts` were all re-run green on 9410325.
 
 ## Matrix Test Audit
@@ -116,7 +117,7 @@ Each frozen matrix row against the test that verifies its expected behavior, and
 | Green release | `deploy/release-workflow.test.ts` (tag trigger, the five jobs) with `deploy/release-scripts.test.ts` | yes, 35 passed |
 | Upgrade | `deploy/pangolin.test.ts` `pangolin upgrade`: signature verified (:184) and refused when bad (:473), pre-upgrade copy 0700 (:226), unhealthy before (:481), rollback when the new image is unhealthy (:488), `PANGOLIN_UPGRADE_TIMEOUT` (:441) | yes, 202 passed with `install.test.ts` |
 | Starting build | procedural: step 3 is the human's `pangolin status` read, and no test can prove a human stops. Closest automation: `pangolin.test.ts:511` refuses an upgrade whose digest already runs | n/a, gate |
-| Forecast routes | `apps/server/src/http/forecast-seed.test.ts` "refuses all three forecast routes to an anonymous caller" — 401 from cash flow, net worth and assumptions without a session | yes, added in 9410325, passed |
+| Forecast routes | `apps/server/src/http/forecast-seed.test.ts` "refuses all three forecast routes to an anonymous caller" — 401 from cash flow, net worth and assumptions without a session; `/healthz` `{"ok":true…}` is `apps/server/src/http/app.test.ts:189-200` with `apps/server/src/server.test.ts:301`, and the routes being wired rather than only guarded is the authenticated seed reads beside it (`forecast-seed.test.ts`, `forecast-networth-seed.test.ts:161`, `forecast-assumptions-seed.test.ts`) | yes, 401 guard added in 9410325 and passed; the rest passed in the suites above |
 | Forecast UI | `e2e/forecast.spec.ts` (journey) and `e2e/axe.spec.ts:381,431` (both modes, chart and table views) | CI run 43745808831 on `b59ebae`: 135 passed. Needs the built image, so not re-run locally; no commit since it touches `apps/web` |
 | Proxy pair applied | `deploy/install.test.ts:360-369` (both `.env` keys, one `proxy4` set holding both, the input rule and the `ct status dnat` forward rule, one Proxmox line each), the reconfigure renders at `:1104`, `:1183`, `:1284`, and `deploy/pangolin.test.ts:665+` (extract `install.sh` from the pinned image, delegate with `--reconfigure` and the flags) | yes, within the 202 |
 | Failover | `apps/server/src/auth/hooks.test.ts:195`: `clientAddress("10.0.0.2", "1.2.3.4, 10.0.0.3", ["10.0.0.2", "10.0.0.3"])` returns the browser's address with both nodes trusted; `server.test.ts:690` parses the padded comma list, `:694` refuses a hostname | yes, passed |
@@ -126,11 +127,22 @@ Two rows are inherently live-host (the human's status read, the renderer already
 
 ## Plan Change Log
 
+- 2026-11-18, step-04 review (agent): quick lens run and triaged, 2 of 6 findings kept. Amended outside the frozen block: step 1's `TAG_COMMIT` is now the `docs(release): prepare v0.2.8 release checklist` commit, with this ticket's `docs(bmad)` commits re-stacked below it, so the tag cannot land on a bookkeeping commit; Implementation Notes carries that rule so a later bookkeeping edit gets re-stacked instead of left on top; the "Forecast routes" audit row names `/healthz` (`apps/server/src/http/app.test.ts:189-200`, `apps/server/src/server.test.ts:301`) and the authenticated seed reads beside the new 401 guard; and the Implementation Notes task reference is 7, the `git` task, not 6. Known-bad state avoided: a tag on `docs(bmad)` with the page commit below it, which the page's own step 5 evidence row would then have to describe as the release commit. KEEP instructions for any re-derivation: the page is the sibling of `docs/release-v0.2.7.md` in structure and step numbering with 8a new; its Markdown carries no em dashes and no mid-sentence bold beyond the `**Gate.**` and `**failed**` that page writes; step 8a's ordering proof, the pre-flight rows, and the `9410325` 401 guard all stay; the release commit touches `docs/release-v0.2.8.md` and nothing else.
 - 2026-11-18, step-01/step-03 (human decisions): `baseline_revision` restamped from `b59ebae19937247da5dc3bc1ca704626fb13e1fb` (planning-time HEAD) to `477d955d4e42af771f1548e7c84817417df493bf`, so the review diff covers 8.12's own work rather than 8.13–8.15 again. Added the lint-gate task: `pnpm lint` was red at the baseline with 2 biome format errors in `deploy/install.test.ts` and `deploy/pangolin.test.ts` (the deferred-work entry blamed `noNonNullAssertion`, which are warnings), and the human asked for those warnings in `forecast-seed.test.ts` and `forecast-assumptions-seed.test.ts` cleared as well. Both done in 7cde9c9.
 - 2026-11-18, step-03 style pass (agent): the page follows the human's Markdown rules, so its 29 em dashes are gone (rephrased with commas, colons or parentheses, none with meaning lost), one more mid-sentence bold emphasis is removed, and the only bold left inside a sentence is the `**failed**` the v0.2.7 page writes verbatim. Headings were already sentence-case and match v0.2.7's shape. Then the stack was reordered so the page commit is the tip of `develop`, as in v0.2.7 whose tag sat on the page commit: `9410325` (the 401 guard) is now below it. The page's pre-flight and step 1 name `9410325` as the code tip the checks ran on, and say plainly that ticket bookkeeping commits may land above it, with `TAG_COMMIT` whatever `git rev-parse develop` prints after the push. Re-verified on `9410325`: `pnpm lint` green, `pnpm typecheck` clean, `pnpm check:strict` "All tables are STRICT", `forecast-seed.test.ts` 6 passed.
 - 2026-11-18, step-03 audit (agent): five page edits before review, all checked against the shipped code rather than the draft. `0029_account_low_balance_threshold` now says what it does, rebuild `account` in place copying every row, instead of "only adds tables and columns". Step 8a carries the reproduced ordering proof (v0.2.7 `render.sh` exits 1 on the comma list, this release's renders it). Four mid-sentence bold emphases the draft introduced are gone; the two carried verbatim from `release-v0.2.7.md`, `Gate.` and `failed.`, stay as that page writes them so the sibling pages still match. And `apps/server/src/http/forecast-seed.test.ts` gained the anonymous-401 test matrix row 5 had no owner for (9410325). Nothing in the frozen block changed.
 
 ## Review Triage Log
+
+Quick lens, 2026-11-18, diff from `477d955`. One entry patched, one rejected as plan prose with its facts corrected in place, three rejected on their refutation.
+
+| # | Finding | Verdict | Evidence |
+| --- | --- | --- | --- |
+| 1 + 2 | Page step 1 says `TAG_COMMIT` is "whatever `git rev-parse develop` prints", and the plan claims the page commit is the tip while this ticket's own `docs(bmad)` commit sits above it, so the tag lands on a bookkeeping commit instead of the page commit. | `medium`, patched | Real when filed: the tip was a `docs(bmad)` commit (changes only `_bmad-output/`) with the page commit below it. v0.2.7's tag sits on its page commit (`v0.2.7` = `5dee014`, `docs(release): prepare v0.2.7 release checklist`), and the page's own step 5 evidence row expects "Tag and commit (step 5)" to name that commit, so the human following step 1 verbatim tags the wrong commit and the page contradicts the plan's task 7. Fix: step 1 pins the tag to the page commit, `git log -1 --format='%H %s'` is annotated "must print the page commit, else stop", and the Expected paragraph stops the run if the subject differs; the stack was re-stacked so the `docs(release): prepare v0.2.8 release checklist` commit is the tip with both `docs(bmad)` commits below it. |
+| 3 | ACs 1 to 3 are unmet at review time: no tag, no CI on `TAG_COMMIT`, empty human evidence rows, unchecked tasks. | `false` | The state described is what the plan intends, and nothing in the diff claims otherwise: tasks 7 and 8 of `## Tasks & Acceptance` are unchecked, the page's human rows are empty, and Implementation Notes records the deferral to human go-ahead under `hitl: true`. No overclaim to refute at any cited location. |
+| 4 | Matrix Test Audit's "Forecast routes" row names only the anonymous-401 test, which covers the `401` half but not `/healthz`, and a 401 from `sessionMiddleware` over `/api/*` (`app.ts:1471`) does not prove the route is wired. | `low`, rejected | Correct that the audit cell names one test for a two-part row, and both halves are covered: `/healthz` in `apps/server/src/http/app.test.ts:189-200` and `apps/server/src/server.test.ts:301`, wiring by the authenticated seed reads in the same `forecast-seed.test.ts` file. Rejected because the fix is to edit this build's plan (the audit is plan text); the cell was still made accurate in the same pass so it no longer overstates. |
+| 5 | Evidence row "showing tag and schema 33 of 33" does not match the string `cli.ts:157` prints, so the human has nothing matchable to paste. | `false` | "schema 33 of 33" is the row's label, copied in v0.2.7's own words ("showing tag and schema 29 of 29"), and v0.2.7 filled it with the real line. The expectation the human matches against is step 10's, which prints `Schema: 33 (this build expects 33)`, matching `apps/server/src/cli.ts:157` modulo its column padding (`Schema:    33 (…)`) exactly as v0.2.7's page does. |
+| 6 | Implementation Notes cites "task 6" for the push and CI check; the push task is 7. | `low`, rejected | True: task 6 is the `check:upgrade` dry run, task 7 is the `git` task. Rejected because the fix edits this build's plan; the number is corrected with the patch above. |
 
 ## Verification
 
