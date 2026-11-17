@@ -104,11 +104,31 @@ context:
 ## Implementation Notes
 
 - No remote ops during step-03: the builder commits locally and never pushes. The push of `develop` and the CI-green check on `TAG_COMMIT` (task 6) happen after review, on human go-ahead — `hitl: true` and the workflow's no-push rule both bind here.
-- The lint gate is green from commit 7cde9c9e56ed51a2f7cb9fc94737cbea1b08ff9b, which is the only non-release-page change the agent lands for this ticket, and it is not part of the release commit.
+- The lint gate is green from commit 7cde9c9e56ed51a2f7cb9fc94737cbea1b08ff9b. Together with the anonymous-401 guard in 94103259b4ef2c06f22e39c1f236f8a4c00bef03, those are the only two non-page changes this ticket lands; neither is part of the release page commit, and `pnpm lint`, `pnpm typecheck`, `pnpm check:strict` and `apps/server/src/http/forecast-seed.test.ts` were all re-run green on 9410325.
+
+## Matrix Test Audit
+
+Each frozen matrix row against the test that verifies its expected behavior, and whether that test ran in this build. 2026-11-18.
+
+| Row | Covering test | Ran |
+| --- | --- | --- |
+| Real-data check | `pnpm check:upgrade ./pang-dev-copy.sqlite` on the schema-29 copy, the plan's own verification command: `migrated 29 -> 33; integrity, manifest, schema ok` | yes, passed |
+| Green release | `deploy/release-workflow.test.ts` (tag trigger, the five jobs) with `deploy/release-scripts.test.ts` | yes, 35 passed |
+| Upgrade | `deploy/pangolin.test.ts` `pangolin upgrade`: signature verified (:184) and refused when bad (:473), pre-upgrade copy 0700 (:226), unhealthy before (:481), rollback when the new image is unhealthy (:488), `PANGOLIN_UPGRADE_TIMEOUT` (:441) | yes, 202 passed with `install.test.ts` |
+| Starting build | procedural: step 3 is the human's `pangolin status` read, and no test can prove a human stops. Closest automation: `pangolin.test.ts:511` refuses an upgrade whose digest already runs | n/a, gate |
+| Forecast routes | `apps/server/src/http/forecast-seed.test.ts` "refuses all three forecast routes to an anonymous caller" — 401 from cash flow, net worth and assumptions without a session | yes, added in 9410325, passed |
+| Forecast UI | `e2e/forecast.spec.ts` (journey) and `e2e/axe.spec.ts:381,431` (both modes, chart and table views) | CI run 43745808831 on `b59ebae`: 135 passed. Needs the built image, so not re-run locally; no commit since it touches `apps/web` |
+| Proxy pair applied | `deploy/install.test.ts:360-369` (both `.env` keys, one `proxy4` set holding both, the input rule and the `ct status dnat` forward rule, one Proxmox line each), the reconfigure renders at `:1104`, `:1183`, `:1284`, and `deploy/pangolin.test.ts:665+` (extract `install.sh` from the pinned image, delegate with `--reconfigure` and the flags) | yes, within the 202 |
+| Failover | `apps/server/src/auth/hooks.test.ts:195`: `clientAddress("10.0.0.2", "1.2.3.4, 10.0.0.3", ["10.0.0.2", "10.0.0.3"])` returns the browser's address with both nodes trusted; `server.test.ts:690` parses the padded comma list, `:694` refuses a hostname | yes, passed |
+| List before renderer | no in-repo test reaches the renderer installed on the host, so it was reproduced by hand 2026-11-18: `v0.2.7` `render.sh` on a staged `.env` carrying `PANGOLIN_NPM_HOST=10.20.5.80,10.20.8.80` exits 1 with `not an IP address or network: 10.20.5.80,10.20.8.80`; this release's `render.sh` on the same file renders `set proxy4 { … 10.20.5.80, 10.20.8.80 }` with an empty `proxy6` and exits 0. Both transcripts are in the page's step 8a | yes, manual |
+
+Two rows are inherently live-host (the human's status read, the renderer already installed on the host); each is named above with the closest automation and the manual check that stands in for it. No row is uncovered, and nothing was skipped or filtered.
 
 ## Plan Change Log
 
 - 2026-11-18, step-01/step-03 (human decisions): `baseline_revision` restamped from `b59ebae19937247da5dc3bc1ca704626fb13e1fb` (planning-time HEAD) to `477d955d4e42af771f1548e7c84817417df493bf`, so the review diff covers 8.12's own work rather than 8.13–8.15 again. Added the lint-gate task: `pnpm lint` was red at the baseline with 2 biome format errors in `deploy/install.test.ts` and `deploy/pangolin.test.ts` (the deferred-work entry blamed `noNonNullAssertion`, which are warnings), and the human asked for those warnings in `forecast-seed.test.ts` and `forecast-assumptions-seed.test.ts` cleared as well. Both done in 7cde9c9.
+- 2026-11-18, step-03 style pass (agent): the page follows the human's Markdown rules, so its 29 em dashes are gone (rephrased with commas, colons or parentheses, none with meaning lost), one more mid-sentence bold emphasis is removed, and the only bold left inside a sentence is the `**failed**` the v0.2.7 page writes verbatim. Headings were already sentence-case and match v0.2.7's shape. Then the stack was reordered so the page commit is the tip of `develop`, as in v0.2.7 whose tag sat on the page commit: `9410325` (the 401 guard) is now below it. The page's pre-flight and step 1 name `9410325` as the code tip the checks ran on, and say plainly that ticket bookkeeping commits may land above it, with `TAG_COMMIT` whatever `git rev-parse develop` prints after the push. Re-verified on `9410325`: `pnpm lint` green, `pnpm typecheck` clean, `pnpm check:strict` "All tables are STRICT", `forecast-seed.test.ts` 6 passed.
+- 2026-11-18, step-03 audit (agent): five page edits before review, all checked against the shipped code rather than the draft. `0029_account_low_balance_threshold` now says what it does, rebuild `account` in place copying every row, instead of "only adds tables and columns". Step 8a carries the reproduced ordering proof (v0.2.7 `render.sh` exits 1 on the comma list, this release's renders it). Four mid-sentence bold emphases the draft introduced are gone; the two carried verbatim from `release-v0.2.7.md`, `Gate.` and `failed.`, stay as that page writes them so the sibling pages still match. And `apps/server/src/http/forecast-seed.test.ts` gained the anonymous-401 test matrix row 5 had no owner for (9410325). Nothing in the frozen block changed.
 
 ## Review Triage Log
 
