@@ -7,7 +7,8 @@
 // low-balance threshold sits above the balance it holds today — produces a dip warning that
 // matches the expectation the seed module derives. The other partner never sees Person A's
 // private account, an unknown horizon falls back to 3 months, and every warning names the first
-// day below its account's threshold, not the lowest point of the series.
+// day below its account's threshold, not the lowest point of the series. All three forecast
+// routes — cash flow, net worth and assumptions — answer 401 before any of that is reachable.
 
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -215,6 +216,18 @@ function expectMatchesMirror(body: ForecastBody, person: string): void {
 }
 
 describe("Cash-flow forecast on default seed (planning-forecast tracer)", () => {
+  it("refuses all three forecast routes to an anonymous caller", async () => {
+    // The release page's step 9 expects 401 from each of these, unauthenticated.
+    for (const path of [
+      "/api/planning/forecast",
+      "/api/planning/forecast-net-worth",
+      "/api/planning/forecast-assumptions",
+    ]) {
+      const res = await app.request(path);
+      expect([path, res.status]).toEqual([path, 401]);
+    }
+  });
+
   it("warns for Person A's joint everyday dip, matching the seed's derived expectation", async () => {
     const body = await forecast("3");
     expect(body.from).toBe(seed.today);
