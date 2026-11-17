@@ -1,8 +1,8 @@
 #!/bin/sh
 # Pangolin Money installer: one command from a fresh VM to the first-login link, behind an
 # existing Nginx Proxy Manager. Safe to re-run: it never regenerates a secret, keeps every value
-# in .env (it adds missing keys; only --image, --build and --data-root replace theirs), and
-# restarts the stack.
+# in .env (it adds missing keys; only --image, --build and --data-root replace theirs, and with
+# --reconfigure so do --proxy-host, --admin-network and --dns), and restarts the stack.
 #
 # Usage: sh install.sh [options]        (as root; every prompt also has a flag)
 #
@@ -37,6 +37,16 @@
 #                                 repository's default branch)
 #   --repo URL                    the repository --build clones
 #   --bundle                      write the recovery bundle again (it is written on first install)
+#   --reconfigure                 on an installed host: --proxy-host, --admin-network and --dns
+#                                 (or the answers typed at their prompts) replace their .env
+#                                 values instead of being kept; a replaced proxy list also
+#                                 replaces PANGOLIN_TRUSTED_PROXIES with the identical list, and
+#                                 the firewall's render.sh is installed before .env is written.
+#                                 Refused when nothing is installed yet; over SSH, a new admin
+#                                 network that excludes this session's client is refused unless
+#                                 --force.
+#   --force                       with --reconfigure: apply a new admin network even when this
+#                                 SSH session's client lies outside it (you may lock yourself out)
 #   --non-interactive             never prompt; take answers from flags and the existing .env
 #   --no-docker                   do not install or run Docker (files and firewall only)
 #   --root DIR                    write every file under DIR instead of /, and change nothing
@@ -57,6 +67,10 @@ NON_INTERACTIVE=0
 NO_DOCKER=0
 BUNDLE=0
 BUILD=0
+# --reconfigure: the proxy hosts, admin network and resolvers replace their .env values (settle
+# with replace) instead of being kept. --force: override the reconfigure SSH lockout gate.
+RECONFIGURE=0
+FORCE=0
 REF=
 REPO=$DEFAULT_REPO
 ARG_PROXY=
@@ -184,6 +198,8 @@ parse_args() {
       --llm-hosts) ARG_LLM_HOSTS=$value; ARG_LLM_HOSTS_SET=1 ;;
       --build) BUILD=1 ;;
       --bundle) BUNDLE=1 ;;
+      --reconfigure) RECONFIGURE=1 ;;
+      --force) FORCE=1 ;;
       --non-interactive) NON_INTERACTIVE=1 ;;
       --no-docker) NO_DOCKER=1 ;;
       -h | --help) usage; exit 0 ;;
@@ -598,7 +614,20 @@ settings() {
   DNS_SERVERS=$ARG_DNS
   if [ -z "$DNS_SERVERS" ]; then DNS_SERVERS=$(existing PANGOLIN_DNS_SERVERS); fi
   if [ -z "$DNS_SERVERS" ]; then DNS_SERVERS=$(detect_dns); fi
-  if [ -z "$DNS_SERVERS" ]; then
+  if [ "$RECONFIGURE" -eq 1 ]; then
+    # --reconfigure lets this run retype the resolvers; the default still follows the chain
+    # flag > .env > detect, and an answer that differs from .env's replaces it (settle_all).
+    while :; do
+      answer=$(ask "DNS resolvers to allow (comma-separated IPs)" "$DNS_SERVERS")
+      dns_bad=
+      for resolver in $(printf '%s' "$answer" | tr ',' ' '); do
+        is_ip "$resolver" || { dns_bad=$resolver; break; }
+      done
+      [ -n "$dns_bad" ] || { DNS_SERVERS=$answer; break; }
+      [ "$NON_INTERACTIVE" -eq 0 ] || break
+      say "not a DNS resolver IP: $dns_bad" >/dev/tty
+    done
+  elif [ -z "$DNS_SERVERS" ]; then
     DNS_SERVERS=$(ask "DNS resolvers to allow (comma-separated IPs)" "")
   fi
   [ -n "$DNS_SERVERS" ] || die "no DNS resolver found in /etc/resolv.conf: pass --dns IP[,IP...]"
@@ -680,17 +709,48 @@ settle() {
   eval "$1=\$settle_current"
 }
 
+# replace_of KEY: whether this run recorded KEY to be replaced in .env (a settle with replace,
+# or --reconfigure's proxy/admin/resolver pass through settle_all).
+replace_of() {
+  for replace_key in $REPLACE; do
+    [ "$replace_key" = "$1" ] && return 0
+  done
+  return 1
+}
+
 settle_all() {
   PUBLIC_URL=https://$PUBLIC_HOST
   settle PROXY_MODE PANGOLIN_PROXY_MODE
   settle PUBLIC_URL PANGOLIN_PUBLIC_URL
-  settle PROXY_HOSTS PANGOLIN_PROXY_HOSTS
-  settle ADMIN_NETWORK PANGOLIN_ADMIN_NETWORK
+  if [ "$RECONFIGURE" -eq 1 ]; then
+    # Re-addressing an installed host: what this run asks for replaces .env, and the trusted
+    # proxy list moves with the proxy hosts (both keys then hold the identical normalized list).
+    settle PROXY_HOSTS PANGOLIN_PROXY_HOSTS replace
+    # The trusted list moves with the proxy hosts. .env may predate PANGOLIN_PROXY_HOSTS (a
+    # pre-8.13 host): the settle above then recorded nothing, because there is no key to
+    # replace, so compare this run's list with the PANGOLIN_NPM_HOST the answer defaulted from
+    # instead — anything else than that is a new list TRUSTED has to follow. The comparison is
+    # by set, so the same hosts written differently (spacing, order, a trailing comma) are no
+    # change, and keeping the stored host verbatim leaves TRUSTED untouched. With no trusted key
+    # of its own the env_add below writes it; recording it there would claim a "Replaced" that
+    # env_replace never performed.
+    if env_has PANGOLIN_TRUSTED_PROXIES; then
+      if replace_of PANGOLIN_PROXY_HOSTS ||
+        { ! env_has PANGOLIN_PROXY_HOSTS &&
+          [ "$(set_list "$PROXY_HOSTS")" != "$(set_list "$(existing PANGOLIN_NPM_HOST)")" ]; }; then
+        REPLACE="$REPLACE PANGOLIN_TRUSTED_PROXIES"
+      fi
+    fi
+    settle ADMIN_NETWORK PANGOLIN_ADMIN_NETWORK replace
+  else
+    settle PROXY_HOSTS PANGOLIN_PROXY_HOSTS
+    settle ADMIN_NETWORK PANGOLIN_ADMIN_NETWORK
+  fi
   settle SSH_PORT PANGOLIN_SSH_PORT
   settle HTTP_PORT PANGOLIN_HTTP_PORT
-  # Resolvers asked for with --dns replace the ones in .env: the way to repair a firewall whose
-  # stored resolvers went stale.
-  if [ -n "$ARG_DNS" ]; then
+  # Resolvers asked for with --dns (or retyped at the prompt under --reconfigure) replace the
+  # ones in .env: the way to repair a firewall whose stored resolvers went stale.
+  if [ -n "$ARG_DNS" ] || [ "$RECONFIGURE" -eq 1 ]; then
     settle DNS_SERVERS PANGOLIN_DNS_SERVERS replace
   else
     settle DNS_SERVERS PANGOLIN_DNS_SERVERS
@@ -843,7 +903,18 @@ check_ssh_session() {
   client=${SSH_CONNECTION%% *}
   if is_ipv4 "$client" && is_ipv4 "${ADMIN_NETWORK%/*}"; then
     if ! ipv4_in_network "$client" "$ADMIN_NETWORK"; then
-      warn "this SSH session comes from $client, outside the admin network $ADMIN_NETWORK: once the firewall is on, new SSH connections from $client are refused (this one stays open)"
+      # A reconfigure that replaces the admin network is a deliberate change, and the session it
+      # would lock out is this one: gate on it (main runs this before the render copy, write_env,
+      # the firewall and the stack), unless --force says the operator has another way in.
+      if [ "$RECONFIGURE" -eq 1 ] && replace_of PANGOLIN_ADMIN_NETWORK; then
+        if [ "$FORCE" -eq 1 ]; then
+          warn "--force given: this SSH session comes from $client, outside the new admin network $ADMIN_NETWORK; new SSH connections from $client are refused once this run re-applies the firewall (this one stays open)"
+        else
+          die "this reconfigure sets the admin network to $ADMIN_NETWORK, which excludes $client: the client of this SSH session. New SSH connections from $client would be refused once the firewall is re-applied, so nothing was changed. Connect from a client inside $ADMIN_NETWORK, or re-run with --force to apply the new network anyway"
+        fi
+      else
+        warn "this SSH session comes from $client, outside the admin network $ADMIN_NETWORK: once the firewall is on, new SSH connections from $client are refused (this one stays open)"
+      fi
     fi
   fi
 }
@@ -1124,7 +1195,8 @@ write_env() {
       umask 077
       printf '%s\n' "# Pangolin Money settings, read by compose.yaml and the container." \
         "# install.sh only adds missing keys (and replaces a key when --image, --build, --data-root," \
-        "# --backup-server or --dns asks it to): your edits are kept. Secrets live in secrets/." >"$env"
+        "# --backup-server or --dns asks it to; with --reconfigure so do the proxy hosts, trusted" \
+        "# proxies, admin network and DNS resolvers): your edits are kept. Secrets live in secrets/." >"$env"
     )
   fi
   chmod 0600 "$env"
@@ -1138,6 +1210,11 @@ write_env() {
       PANGOLIN_BACKUP_REPOSITORY) env_replace "$key" "$BACKUP" ;;
       PANGOLIN_DNS_SERVERS) env_replace "$key" "$DNS_SERVERS" ;;
       PANGOLIN_LLM_HOSTS) env_replace "$key" "$LLM_HOSTS" ;;
+      # --reconfigure: the proxy pair and the admin network take this run's values; the trusted
+      # list is written from the same normalized $PROXY_HOSTS, so the two can never drift.
+      PANGOLIN_PROXY_HOSTS) env_replace "$key" "$PROXY_HOSTS" ;;
+      PANGOLIN_TRUSTED_PROXIES) env_replace "$key" "$PROXY_HOSTS" ;;
+      PANGOLIN_ADMIN_NETWORK) env_replace "$key" "$ADMIN_NETWORK" ;;
     esac
     say "Replaced $key in .env"
   done
@@ -1543,6 +1620,18 @@ write_data_dropin() {
   fi
 }
 
+# The firewall's render.sh, installed atomically to $INSTALL_DIR/firewall/. write_files calls it
+# before write_allowlist (whose reload runs the render.sh this run installs, not the previous
+# release's); --reconfigure calls it before write_env, so a comma-separated PANGOLIN_PROXY_HOSTS
+# never sits in .env against an on-host render.sh (pre-8.13) that dies parsing one.
+install_render_script() {
+  install_dir=$(path "$INSTALL_DIR")
+  mkdir -p "$install_dir/firewall"
+  cp "$SUPPORT/firewall/render.sh" "$install_dir/firewall/render.sh.new"
+  chmod 0755 "$install_dir/firewall/render.sh.new"
+  mv "$install_dir/firewall/render.sh.new" "$install_dir/firewall/render.sh"
+}
+
 write_files() {
   step "Writing compose.yaml, the allowlist and the firewall"
   install_dir=$(path "$INSTALL_DIR")
@@ -1554,9 +1643,7 @@ write_files() {
   # render.sh before write_allowlist: on a re-run its reload (apply_allowlist_now) runs the
   # render.sh this run installs, not the previous release's. The units stay below: that reload
   # does not daemon-reload, so systemd keeps the loaded ones until install_firewall does.
-  cp "$SUPPORT/firewall/render.sh" "$install_dir/firewall/render.sh.new"
-  chmod 0755 "$install_dir/firewall/render.sh.new"
-  mv "$install_dir/firewall/render.sh.new" "$install_dir/firewall/render.sh"
+  install_render_script
 
   write_allowlist
 
@@ -1792,6 +1879,9 @@ main() {
   trap 'exit 130' INT TERM
   parse_args "$@"
   require_root
+  if [ "$RECONFIGURE" -eq 1 ] && [ ! -f "$(env_file)" ]; then
+    die "nothing to reconfigure: $INSTALL_DIR/.env does not exist yet; install first (install.sh without --reconfigure)"
+  fi
   if [ "$NON_INTERACTIVE" -eq 0 ] && ! has_tty; then
     die "no terminal to ask on: pass --non-interactive with the answers as flags (see --help)"
   fi
@@ -1803,6 +1893,17 @@ main() {
   check_host
   check_secrets_for_database
   check_ssh_session
+  if [ "$RECONFIGURE" -eq 1 ]; then
+    # Load-bearing order: the new render.sh must reach the host before .env carries the proxy
+    # list, because an installed pre-8.13 render.sh dies on comma-separated values and would
+    # leave the running ruleset stale. The support files sit beside this script in both
+    # entrypoints (a checkout, or pangolin reconfigure's staging from the pinned image), so no
+    # image pull is needed. take_pinned_files stays out of here: only $SUPPORT is needed now,
+    # and running it twice would nest a copy inside $WORK/pinned. (The later locate_support and
+    # write_files' install_render_script repeat this idempotently.)
+    locate_support
+    install_render_script
+  fi
   allow_package_mirrors
   install_packages
   prepare_dirs

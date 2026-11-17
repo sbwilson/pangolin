@@ -658,3 +658,124 @@ describe("pangolin upgrade rollback and the new server's writes (seam S11d)", ()
     expect(log.at(-1)).toMatch(/compose .* up -d pangolin$/);
   });
 });
+
+// `pangolin reconfigure`: extract the deploy files from the image .env pins into its own staging
+// directory, then run install.sh from there with --reconfigure and the operator's flags. The
+// extraction has to leave real files where the mount was, so this suite stubs docker itself.
+describe("pangolin reconfigure", () => {
+  function reconfigureEnv(extra: Record<string, string> = {}): Record<string, string> {
+    const bin = at("bin");
+    mkdirSync(bin, { recursive: true });
+    stub(bin, "docker", [
+      `echo "docker $*" >> "${at("cmd.log")}"`,
+      'case "$*" in',
+      // `run --rm --user 0 -v SRC:/staging IMAGE sh -c 'cp -r /app/deploy/. /staging/'`: play
+      // the image copy-out by leaving an install.sh in SRC that echoes what it is called with.
+      // With STUB_EXTRACT_FAIL the pull (or copy) fails, as on an unpullable image.
+      '  *"cp -r /app/deploy/. /staging/"*)',
+      '    if [ -n "$STUB_EXTRACT_FAIL" ]; then echo "Unable to find image" >&2; exit 1; fi',
+      "    src=",
+      '    for a in "$@"; do case "$a" in *:/staging) src=$(echo "$a" | cut -d: -f1) ;; esac; done',
+      // STUB_OLD_INSTALL plays an extracted installer that predates --reconfigure (no marker).
+      '    if [ -n "$STUB_OLD_INSTALL" ]; then',
+      `      printf '#!/bin/sh\\necho "predating install.sh: $*"\\n' > "$src/install.sh"`,
+      "    else",
+      `      printf '#!/bin/sh\\n# flags: --reconfigure\\necho "staged install.sh: $*"\\n' > "$src/install.sh"`,
+      "    fi",
+      "    chmod +x \"$src/install.sh\"",
+      "    exit 0 ;;",
+      "esac",
+      "exit 0",
+    ]);
+    return {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      PANGOLIN_HOME: homeDir,
+      ...extra,
+    };
+  }
+
+  function reconfigure(...args: string[]) {
+    return spawnSync(PANGOLIN, ["reconfigure", ...args], {
+      encoding: "utf8",
+      env: reconfigureEnv(),
+    });
+  }
+
+  const cmdLog = (): string => (existsSync(at("cmd.log")) ? readFileSync(at("cmd.log"), "utf8") : "");
+
+  it("says the same usage line as --help for it", () => {
+    expect(readFileSync(PANGOLIN, "utf8")).toContain(
+      "sudo pangolin reconfigure [--proxy-host IP[,...]] [--admin-network CIDR] [--dns IP[,...]] [--force]"
+    );
+  });
+
+  it("extracts install.sh from the pinned image and re-runs it with --reconfigure and the flags", () => {
+    const res = reconfigure("--proxy-host", "proxy.example.com", "--force");
+    expect(res.status, res.stderr).toBe(0);
+    expect(cmdLog()).toContain(
+      `docker run --rm --user 0 -v ${homeDir}/reconfigure-staging:/staging ${ORIGINAL_IMAGE} sh -c cp -r /app/deploy/. /staging/`
+    );
+    // The staged installer gets --reconfigure plus the operator's flags, in order.
+    expect(res.stdout).toContain("staged install.sh: --reconfigure --proxy-host proxy.example.com --force");
+  });
+
+  it("takes the image from .env, not a hardcoded tag", () => {
+    writeFileSync(join(homeDir, ".env"), "PANGOLIN_IMAGE=registry.example.com/pangolin:my-tag\n");
+    const res = reconfigure();
+    expect(res.status, res.stderr).toBe(0);
+    expect(cmdLog()).toContain("-v ");
+    expect(cmdLog()).toContain("registry.example.com/pangolin:my-tag sh -c cp -r /app/deploy/. /staging/");
+  });
+
+  it("says what to do when .env carries no image", () => {
+    writeFileSync(join(homeDir, ".env"), "PANGOLIN_ADMIN_NETWORK=10.55.0.0/16\n");
+    const res = reconfigure();
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain("no PANGOLIN_IMAGE");
+    expect(cmdLog()).toBe("");
+  });
+
+  it("stages in its own directory, never the one upgrade uses", () => {
+    // A staging dir left by an upgrade stays untouched, and is never mounted for this.
+    mkdirSync(join(homeDir, "staging"), { recursive: true });
+    writeFileSync(join(homeDir, "staging", "marker"), "upgrade");
+    const res = reconfigure();
+    expect(res.status, res.stderr).toBe(0);
+    expect(readFileSync(join(homeDir, "staging", "marker"), "utf8")).toBe("upgrade");
+    expect(cmdLog()).not.toContain(`-v ${homeDir}/staging:`);
+    expect(existsSync(join(homeDir, "reconfigure-staging", "install.sh"))).toBe(true);
+  });
+
+  it("stops before extracting when the url is not an install", () => {
+    const res = spawnSync(PANGOLIN, ["reconfigure"], {
+      encoding: "utf8",
+      env: { ...reconfigureEnv(), PANGOLIN_HOME: join(root, "nowhere") },
+    });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain("is Pangolin Money installed");
+    expect(cmdLog()).toBe("");
+  });
+
+  it("points at pangolin upgrade when the image cannot be extracted", () => {
+    const res = spawnSync(PANGOLIN, ["reconfigure"], {
+      encoding: "utf8",
+      env: reconfigureEnv({ STUB_EXTRACT_FAIL: "1" }),
+    });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain("could not extract the deploy files");
+    expect(res.stderr).toContain("pangolin upgrade");
+  });
+
+  it("points at pangolin upgrade when the extracted installer predates --reconfigure", () => {
+    const res = spawnSync(PANGOLIN, ["reconfigure"], {
+      encoding: "utf8",
+      env: reconfigureEnv({ STUB_OLD_INSTALL: "1" }),
+    });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain("predates --reconfigure");
+    expect(res.stderr).toContain("pangolin upgrade");
+    // The predating script was never run.
+    expect(res.stdout).not.toContain("predating install.sh:");
+  });
+});

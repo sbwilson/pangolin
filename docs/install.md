@@ -130,10 +130,12 @@ sudo sh deploy/install.sh --non-interactive \
 | `--backup-server URL` | A restic REST URL (stored in `.env` and allowlisted). Set or changed on a re-run, it writes a new recovery bundle (new id) that includes it as `RESTIC_REPOSITORY`. An explicit empty value (`--backup-server ""`) turns backups off: on a re-run it empties `PANGOLIN_BACKUP_REPOSITORY` in `.env` and removes the old server's entry that the installer added to `allowlist.conf` (no new bundle is written) |
 | `--tang-url URL` | The Tang server that unlocks the data disk (stored in `.env` and allowlisted) |
 | `--llm-hosts HOSTS` | Local LLM server host/s or URLs (e.g. `http://192.168.1.50:11434`, `ollama.lan:11434`; comma-separated). Stored in `.env` as `PANGOLIN_LLM_HOSTS` and allowlisted in `allowlist.conf` for outbound firewall egress |
-| `--proxy-host IP[,IP…]` | The NPM hosts' IPv4 addresses: the only addresses that may reach the app port. Written to `.env` as `PANGOLIN_PROXY_HOSTS` and `PANGOLIN_TRUSTED_PROXIES` (the firewall and the app take the same list). `--npm-host` is accepted as an alias, and an older `.env`'s `PANGOLIN_NPM_HOST` is still read when it has no `PANGOLIN_PROXY_HOSTS` |
-| `--admin-network CIDR` | Where SSH is allowed from |
+| `--proxy-host IP[,IP…]` | The NPM hosts' IPv4 addresses: the only addresses that may reach the app port. Written to `.env` as `PANGOLIN_PROXY_HOSTS` and `PANGOLIN_TRUSTED_PROXIES` (the firewall and the app take the same list). `--npm-host` is accepted as an alias, and an older `.env`'s `PANGOLIN_NPM_HOST` is still read when it has no `PANGOLIN_PROXY_HOSTS`. On a plain re-run `.env` wins; with `--reconfigure` the list **replaces** both keys |
+| `--admin-network CIDR` | Where SSH is allowed from. On a plain re-run `.env` wins; with `--reconfigure` it **replaces** `PANGOLIN_ADMIN_NETWORK` |
+| `--reconfigure` | Re-address this installed host: `--proxy-host`, `--admin-network` and the DNS resolvers replace their `.env` values (both proxy keys get the identical list), instead of the usual keep-and-warn, and the firewall and stack re-apply. `sudo pangolin reconfigure` runs it from the installed image. Refuses to move the admin network out from under your SSH session — see [Re-running](#re-running) |
+| `--force` | With `--reconfigure` only: go ahead when the new admin network would lock out the SSH session this run comes from (without it the run stops before writing anything) |
 | `--ghcr-token-file FILE` / `--ghcr-token TOKEN` | A GHCR read-only token for `docker login ghcr.io` (a file keeps it out of the process list). It is kept in `secrets/ghcr-token`, and `docker login` also stores it in `/root/.docker/config.json` |
-| `--dns IP[,IP]` | The resolvers DNS is allowed to (default: from `/etc/resolv.conf`); on a re-run it replaces `PANGOLIN_DNS_SERVERS` in `.env`. A re-run **without** `--dns` compares the VM's current resolvers with `.env`'s and warns when they differ or none are found, naming both sets and ending with the repair `install.sh --dns IP[,IP...]` (a warning only: `.env` keeps its resolvers and the run does not fail). The firewall also allows the VM's current resolvers and warns about the same drift on every render (see [§8](#8-the-firewall) and `journalctl -u pangolin-allowlist.service`) |
+| `--dns IP[,IP]` | The resolvers DNS is allowed to (default: from `/etc/resolv.conf`); on a re-run it replaces `PANGOLIN_DNS_SERVERS` in `.env`. `--reconfigure` asks for the resolvers again with the stored list as the default (a `--dns` flag only seeds that default). A re-run **without** `--dns` compares the VM's current resolvers with `.env`'s and warns when they differ or none are found, naming both sets and ending with the repair `install.sh --dns IP[,IP...]` (a warning only: `.env` keeps its resolvers and the run does not fail). The firewall also allows the VM's current resolvers and warns about the same drift on every render (see [§8](#8-the-firewall) and `journalctl -u pangolin-allowlist.service`) |
 | `--data-root DIR` | The data directory on the encrypted disk (default `/srv/pangolin`); on a re-run it replaces `PANGOLIN_DATA_ROOT` in `.env`. It does not move the data: when the old directory holds the database and the new one does not, the installer warns that the app will start on an empty database there. The Docker drop-in that waits for the data disk follows the new directory, and the old one is removed when the new directory is not a mount point |
 | `--http-port PORT` | The VM port NPM forwards to (default 3000) |
 | `--image REF` | The image (default `ghcr.io/sbwilson/pangolin:latest`); on a re-run it replaces `PANGOLIN_IMAGE` in `.env`. A local image (no `/`, like `pangolin:local`) is never pulled: it must exist |
@@ -189,6 +191,25 @@ Tang server back if it is missing), and then restarts the stack. The exceptions 
 `.env` value and say so. `--backup-server ""` turns backups off (it empties the value and removes
 the old backup host's entry from `allowlist.conf`, keeping any line you wrote); a re-run without
 `--backup-server` keeps the stored one.
+
+To move the host's address settings — the proxy pair, the admin network, the DNS resolvers —
+without editing `.env` by hand, add `--reconfigure`: what the run asks for then **replaces**
+those keys instead of the keep-and-warn above (and `PANGOLIN_TRUSTED_PROXIES` always gets the
+identical list as `PANGOLIN_PROXY_HOSTS`, from the same flags). From an installed host the same
+thing is one command, which extracts the installer from the image `.env` pins:
+
+```bash
+sudo pangolin reconfigure --proxy-host 192.168.1.10,192.168.1.11
+sudo pangolin reconfigure --admin-network 10.20.0.0/24
+sudo pangolin reconfigure --dns 10.0.0.2,10.0.0.3
+```
+
+A `--reconfigure` that moves `PANGOLIN_ADMIN_NETWORK` stops before writing anything when this
+run comes over SSH from an address the new network would exclude — that firewall reload would
+lock you out mid-install. Re-run it from a machine inside the new network, or add `--force` to
+go ahead anyway (it warns instead of stopping). Everything else about re-running is unchanged:
+secrets, your `.env` edits and your `allowlist.conf` lines are kept.
+
 To change any other setting, edit `/opt/pangolin/.env` and re-run.
 After a `pangolin upgrade`, `.env` pins the new image by digest; a re-run that does not replace the
 image (no `--image` or `--build`) then takes `compose.yaml` and the `pangolin` command from that
@@ -393,6 +414,7 @@ sudo pangolin backup                       # back up now
 sudo pangolin restore latest               # restore the newest backup (see section 10)
 sudo pangolin reset-user alex@example.com  # both of you locked out: reset one person
 sudo pangolin confirm-bundle               # the recovery bundle is stored safely (section 7)
+sudo pangolin reconfigure --proxy-host 192.168.1.10  # move the proxy pair / admin network / DNS
 sudo pangolin --help
 ```
 
@@ -412,6 +434,14 @@ sudo pangolin --help
   nothing. With no bundle id set it exits 1 ("no recovery bundle id is set"); re-run
   `install.sh` to add one.
 - **`backup`** and **`restore`**: see [Backups and restore](#10-backups-and-restore).
+- **`reconfigure [--proxy-host IP[,...]] [--admin-network CIDR] [--dns IP[,...]] [--force]`**
+  re-addresses this host without editing `.env` by hand: it extracts the installer from the image
+  `.env` pins and runs it with `--reconfigure` and your flags, so the proxy pair, the admin
+  network and the DNS resolvers **replace** their `.env` values and the firewall and stack
+  re-apply ([Re-running](#re-running)). Like `upgrade` it needs the image pullable; if extraction
+  fails, run `pangolin upgrade <tag>` first. A new admin network that would exclude the SSH
+  session you are on stops the run before anything is written; use `--force` only when you are
+  sure you can still reach the VM.
 - **`reset-user <email or person ID>`** is for when both of you are locked out (otherwise your
   partner's link in the app does it). It clears the person's passkeys, authenticator, sessions,
   recovery codes and password at once and prints a one-time link, valid 24 hours, to set them
@@ -569,7 +599,9 @@ alongside the nftables table.
 - **"not healthy after 90 s":** the printed log lines say why; `docker compose -f
   /opt/pangolin/compose.yaml logs pangolin` shows more, and `curl -s localhost:3000/healthz` on
   the VM names the failing check (`migrations`, `database` or `jobs`).
-- **A setting is ignored on re-run:** `.env` wins over flags; edit it and re-run.
+- **A setting is ignored on re-run:** `.env` wins over flags; edit it and re-run, or use
+  `sudo pangolin reconfigure` (or `install.sh --reconfigure`) to replace the proxy hosts, admin
+  network and DNS resolvers from the flags ([Re-running](#re-running)).
 - **"another process holds /data" in the log:** another server, or a `pangolin reset-user` on
   the stopped stack, has the data directory; the server exits and Docker restarts it once the
   other process is done. Two stacks must never share a data root.

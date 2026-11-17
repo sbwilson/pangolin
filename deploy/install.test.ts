@@ -626,6 +626,10 @@ describe("install.sh, re-run", () => {
     const script = readFileSync(INSTALL, "utf8");
     const writeFiles = script.match(/^write_files\(\) \{\n[\s\S]*?^\}\n/m)?.[0];
     expect(writeFiles).toBeDefined();
+    // write_files installs render.sh through install_render_script (--reconfigure calls it
+    // early too): the harness needs that function as well.
+    const installRenderScript = script.match(/^install_render_script\(\) \{\n[\s\S]*?^\}\n/m)?.[0];
+    expect(installRenderScript).toBeDefined();
     mkdirSync(at("opt/pangolin/firewall"), { recursive: true });
     writeFileSync(at("opt/pangolin/firewall/render.sh"), "# the previous release's render.sh\n");
     const harness = [
@@ -646,6 +650,7 @@ describe("install.sh, re-run", () => {
       "    echo reload-runs-the-old-render.sh",
       "  fi",
       "}",
+      installRenderScript ?? "",
       writeFiles ?? "",
       "write_files",
     ].join("\n");
@@ -1060,6 +1065,240 @@ describe("install.sh, re-run", () => {
     expect(read("opt/pangolin/allowlist.conf")).not.toMatch(/^nas\.lan:8000$/m);
     expect(`${result.stdout}${result.stderr}`.match(/backups are off/gi)).toHaveLength(1);
     expect(result.stderr).not.toContain("no backup server set");
+  });
+});
+
+// Re-addressing an installed host: the proxy pair, the admin network and the resolvers settle as
+// replace under --reconfigure (typed or flagged values win over .env), TRUSTED_PROXIES moves with
+// the proxy list, and the SSH lockout check is a gate rather than a warning.
+describe("install.sh, --reconfigure", () => {
+  // The usual answers plus the flags under test: keys stay at their stored values unless an
+  // extra overrides one. `env` overrides the run environment (SSH_CONNECTION for the gate).
+  const reconfigure = (extra: readonly string[], env: Record<string, string> = {}) =>
+    run("sh", [INSTALL, "--root", root, ...ANSWERS, "--reconfigure", ...extra], env);
+
+  it("refuses a reconfigure on a host with no .env, before anything is written", () => {
+    const result = reconfigure([]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/nothing to reconfigure/);
+    expect(existsSync(at("opt"))).toBe(false);
+    expect(existsSync(at("srv"))).toBe(false);
+  });
+
+  it("replaces PANGOLIN_PROXY_HOSTS and PANGOLIN_TRUSTED_PROXIES with the identical normalized list", () => {
+    expect(install("--proxy-host", "10.20.5.80").status).toBe(0);
+    const result = reconfigure(["--proxy-host", " 10.20.8.80 ,10.20.8.80,10.20.9.90,"]);
+    expect(result.status, result.stderr).toBe(0);
+    const env = read("opt/pangolin/.env");
+    expect(env).toContain("PANGOLIN_PROXY_HOSTS=10.20.8.80,10.20.9.90\n");
+    expect(env).toContain("PANGOLIN_TRUSTED_PROXIES=10.20.8.80,10.20.9.90\n");
+    expect(env.match(/^PANGOLIN_PROXY_HOSTS=/gm)).toHaveLength(1);
+    expect(env.match(/^PANGOLIN_TRUSTED_PROXIES=/gm)).toHaveLength(1);
+    expect(result.stdout).toMatch(
+      /Replacing PANGOLIN_PROXY_HOSTS in \.env: 10\.20\.5\.80 -> 10\.20\.8\.80,10\.20\.9\.90/,
+    );
+    expect(result.stdout).toContain("Replaced PANGOLIN_TRUSTED_PROXIES in .env");
+    // Both keys moved together to the same list: no drift to warn about.
+    expect(result.stderr).not.toMatch(/differs from/);
+    expect(read("opt/pangolin/firewall/pangolin.nft")).toMatch(
+      /set proxy4 \{[^}]*elements = \{ 10\.20\.8\.80, 10\.20\.9\.90 \}/,
+    );
+  });
+
+  // Rewrite a freshly installed .env into a pre-8.13 one: no PANGOLIN_PROXY_HOSTS, the hosts
+  // under the old PANGOLIN_NPM_HOST key, and a trusted list that may have drifted from them.
+  const makeLegacyEnv = (npmHost: string, trusted: string) => {
+    writeFileSync(
+      at("opt/pangolin/.env"),
+      read("opt/pangolin/.env")
+        .split("\n")
+        .filter((line) => !line.startsWith("PANGOLIN_PROXY_HOSTS="))
+        .map((line) =>
+          line.startsWith("PANGOLIN_TRUSTED_PROXIES=")
+            ? `PANGOLIN_TRUSTED_PROXIES=${trusted}`
+            : line,
+        )
+        .concat([`PANGOLIN_NPM_HOST=${npmHost}`, ""])
+        .join("\n"),
+    );
+  };
+
+  it("syncs a legacy .env's stale PANGOLIN_TRUSTED_PROXIES when a new proxy list is asked for", () => {
+    expect(install("--proxy-host", "10.20.5.80").status).toBe(0);
+    makeLegacyEnv("10.20.5.80", "10.11.12.13");
+    const result = reconfigure(["--proxy-host", "10.20.8.80,10.20.9.90"]);
+    expect(result.status, result.stderr).toBe(0);
+    const env = read("opt/pangolin/.env");
+    // settle could not record the (absent) proxy-hosts key, so the NPM_HOST comparison must
+    // have moved the trusted list: both keys end as this run's identical list.
+    expect(env).toContain("PANGOLIN_PROXY_HOSTS=10.20.8.80,10.20.9.90\n");
+    expect(env).toContain("PANGOLIN_TRUSTED_PROXIES=10.20.8.80,10.20.9.90\n");
+    expect(env.match(/^PANGOLIN_PROXY_HOSTS=/gm)).toHaveLength(1);
+    expect(env.match(/^PANGOLIN_TRUSTED_PROXIES=/gm)).toHaveLength(1);
+    expect(result.stdout).toContain("Replaced PANGOLIN_TRUSTED_PROXIES in .env");
+  });
+
+  it("leaves a legacy .env's trusted list alone when the stored proxy host default is kept", () => {
+    expect(install("--proxy-host", "10.20.5.80").status).toBe(0);
+    makeLegacyEnv("10.20.5.80", "10.11.12.13");
+    // No --proxy-host: the answer defaults to the stored PANGOLIN_NPM_HOST, kept verbatim, so
+    // nothing was retyped and the drifted trusted list stays exactly as the operator left it.
+    const noHostFlag = ANSWERS.filter((a) => a !== "--proxy-host" && a !== "192.168.1.10");
+    const result = run("sh", [INSTALL, "--root", root, ...noHostFlag, "--reconfigure"]);
+    expect(result.status, result.stderr).toBe(0);
+    const env = read("opt/pangolin/.env");
+    expect(env).toContain("PANGOLIN_PROXY_HOSTS=10.20.5.80\n");
+    expect(env).toContain("PANGOLIN_TRUSTED_PROXIES=10.11.12.13\n");
+    expect(env.match(/^PANGOLIN_TRUSTED_PROXIES=/gm)).toHaveLength(1);
+    expect(result.stdout).not.toMatch(/Replacing PANGOLIN_TRUSTED_PROXIES/);
+  });
+
+  it("installs the new render.sh before .env carries the comma list (a pre-8.13 host render.sh would die on one)", () => {
+    expect(install().status).toBe(0);
+    // What a pre-8.13 render.sh does with PANGOLIN_PROXY_HOSTS: it splits on commas and dies if
+    // no address survives, and the on-host one predates comma-separated lists entirely. Stage
+    // one: if it were still in place when the firewall renders a comma-list .env, the run dies.
+    writeFileSync(
+      at("opt/pangolin/firewall/render.sh"),
+      [
+        "#!/bin/sh",
+        "home=",
+        'while [ $# -gt 0 ]; do',
+        '  case "$1" in --home) home=$2; shift ;; *) shift ;;',
+        "  esac",
+        "done",
+        `grep -q '^PANGOLIN_PROXY_HOSTS=[^,]*,' "$home/.env" && { echo "render.sh: not an IP address or network: $(sed -n 's/^PANGOLIN_PROXY_HOSTS=//p' "$home/.env")" >&2; exit 1; }`,
+        "echo '# rendered by the previous release'",
+        "",
+      ].join("\n"),
+    );
+    chmodSync(at("opt/pangolin/firewall/render.sh"), 0o755);
+    const result = reconfigure(["--proxy-host", "10.20.8.80,10.20.9.90"]);
+    expect(result.status, result.stderr).toBe(0);
+    // The staged host render.sh ends up the new one, and the comma list rendered fine: the new
+    // render.sh was in place before write_env and before install_firewall ran it.
+    expect(read("opt/pangolin/firewall/render.sh")).toBe(readFileSync(RENDER, "utf8"));
+    expect(mode("opt/pangolin/firewall/render.sh")).toBe(0o755);
+    expect(read("opt/pangolin/firewall/pangolin.nft")).toMatch(
+      /set proxy4 \{[^}]*elements = \{ 10\.20\.8\.80, 10\.20\.9\.90 \}/,
+    );
+  });
+
+  it("replaces PANGOLIN_DNS_SERVERS with resolvers typed at the prompt (--reconfigure, no --dns), re-asking bad ones", () => {
+    expect(install().status).toBe(0);
+    // Asked: proxy mode, Tang, LLM hosts, the resolvers (--dns omitted, so the stored list is
+    // the default), the GHCR token. The bad element is re-asked with today's text.
+    const result = installInteractively("\n\n\nbanana\n10.9.9.9\n\n", ["--reconfigure"], {}, [
+      "--dns",
+      "192.168.1.1",
+    ]);
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toMatch(/not a DNS resolver IP: banana/);
+    expect(result.stdout).toMatch(
+      /Replacing PANGOLIN_DNS_SERVERS in \.env: 192\.168\.1\.1 -> 10\.9\.9\.9/,
+    );
+    const env = read("opt/pangolin/.env");
+    expect(env).toContain("PANGOLIN_DNS_SERVERS=10.9.9.9\n");
+    expect(env.match(/^PANGOLIN_DNS_SERVERS=/gm)).toHaveLength(1);
+  });
+
+  it("refuses at the SSH gate a reconfigure whose new admin network excludes the client, before any write", () => {
+    expect(install().status).toBe(0);
+    // A pre-8.13-style host render.sh: a refused gate must not have replaced it either.
+    writeFileSync(at("opt/pangolin/firewall/render.sh"), "# the previous release's render.sh\n");
+    const env = read("opt/pangolin/.env");
+    const ruleset = read("opt/pangolin/firewall/pangolin.nft");
+    const allowlist = read("opt/pangolin/allowlist.conf");
+    const result = reconfigure(["--admin-network", "10.99.0.0/24"], {
+      SSH_CONNECTION: "10.50.0.7 40000 192.168.1.5 22",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/10\.50\.0\.7/);
+    expect(result.stderr).toMatch(/10\.99\.0\.0\/24/);
+    expect(result.stderr).toMatch(/--force/);
+    // Nothing written: .env, the firewall's saved state and the render.sh all stay as they were
+    // (and with --no-docker the containers were never touched).
+    expect(read("opt/pangolin/.env")).toBe(env);
+    expect(read("opt/pangolin/firewall/pangolin.nft")).toBe(ruleset);
+    expect(read("opt/pangolin/allowlist.conf")).toBe(allowlist);
+    expect(read("opt/pangolin/firewall/render.sh")).toBe("# the previous release's render.sh\n");
+    // settle names the replacement it will make (as it does for --data-root and friends), but
+    // the gate stops the run before write_env: no "Replaced ... in .env" line was printed.
+    expect(result.stdout).not.toMatch(/Replaced PANGOLIN_/);
+  });
+
+  it("--force overrides the SSH gate with a warning, and the new admin network lands", () => {
+    expect(install().status).toBe(0);
+    const result = reconfigure(["--admin-network", "10.99.0.0/24", "--force"], {
+      SSH_CONNECTION: "10.50.0.7 40000 192.168.1.5 22",
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toMatch(
+      /WARNING: --force given: this SSH session comes from 10\.50\.0\.7, outside the new admin network 10\.99\.0\.0\/24/,
+    );
+    expect(result.stdout).toMatch(
+      /Replacing PANGOLIN_ADMIN_NETWORK in \.env: 192\.168\.1\.0\/24 -> 10\.99\.0\.0\/24/,
+    );
+    const env = read("opt/pangolin/.env");
+    expect(env).toContain("PANGOLIN_ADMIN_NETWORK=10.99.0.0/24\n");
+    expect(env.match(/^PANGOLIN_ADMIN_NETWORK=/gm)).toHaveLength(1);
+    expect(read("opt/pangolin/firewall/pangolin.nft")).toContain(
+      "ip saddr 10.99.0.0/24 tcp dport 22 accept",
+    );
+  });
+
+  it("stays silent when the SSH client is inside the new admin network", () => {
+    expect(install().status).toBe(0);
+    const result = reconfigure(["--admin-network", "192.168.0.0/16"], {
+      SSH_CONNECTION: "192.168.1.50 40000 192.168.1.5 22",
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).not.toMatch(/SSH session/);
+    expect(read("opt/pangolin/.env")).toContain("PANGOLIN_ADMIN_NETWORK=192.168.0.0/16\n");
+  });
+
+  it("stays silent with no SSH session, even for a network the operator could not reach", () => {
+    expect(install().status).toBe(0);
+    // run() clears SSH_CONNECTION: nothing to gate on, so this replaces as asked.
+    const result = reconfigure(["--admin-network", "10.98.0.0/24"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).not.toMatch(/SSH session/);
+    expect(read("opt/pangolin/.env")).toContain("PANGOLIN_ADMIN_NETWORK=10.98.0.0/24\n");
+  });
+
+  it("changes nothing when --reconfigure accepts every default: no replace lines, TRUSTED_PROXIES untouched", () => {
+    expect(install().status).toBe(0);
+    const env = read("opt/pangolin/.env");
+    const result = reconfigure([]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).not.toMatch(/Replacing /);
+    expect(result.stdout).toContain("Nothing to add; every key was already set");
+    expect(read("opt/pangolin/.env")).toBe(env);
+  });
+
+  it("re-applies the firewall and force-recreates the stack on a proxy reconfigure", () => {
+    expect(install().status).toBe(0);
+    const result = installWithDocker(["--reconfigure", "--proxy-host", "10.20.8.80,10.20.9.90"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(read("opt/pangolin/firewall/pangolin.nft")).toMatch(
+      /set proxy4 \{[^}]*elements = \{ 10\.20\.8\.80, 10\.20\.9\.90 \}/,
+    );
+    expect(dockerLog()).toContain("up -d --force-recreate --remove-orphans");
+  });
+
+  it("keeps today's keep-and-warn semantics without --reconfigure", () => {
+    expect(install().status).toBe(0);
+    const env = read("opt/pangolin/.env");
+    const result = install("--proxy-host", "10.20.9.95", "--admin-network", "10.99.0.0/24");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toMatch(
+      /kept PANGOLIN_PROXY_HOSTS=192\.168\.1\.10 in \.env \(you asked for 10\.20\.9\.95\)/,
+    );
+    expect(result.stderr).toMatch(
+      /kept PANGOLIN_ADMIN_NETWORK=192\.168\.1\.0\/24 in \.env \(you asked for 10\.99\.0\.0\/24\)/,
+    );
+    expect(result.stdout).not.toMatch(/Replacing /);
+    expect(read("opt/pangolin/.env")).toBe(env);
   });
 });
 

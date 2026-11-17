@@ -9,6 +9,7 @@
 #        sudo pangolin upgrade <tag>   (PANGOLIN_UPGRADE_TIMEOUT=<seconds> waits longer than 60s for healthy; polled every 3s, so the wait rounds up to a multiple of 3)
 #        sudo pangolin backup
 #        sudo pangolin restore [--restore-credentials|--keep-credentials] [snapshot|latest]
+#        sudo pangolin reconfigure [--proxy-host IP[,...]] [--admin-network CIDR] [--dns IP[,...]] [--force]
 #        sudo pangolin reset-user <email|person-id>
 #        sudo pangolin confirm-bundle
 #        sudo pangolin --help
@@ -272,6 +273,27 @@ if [ "${1:-}" = upgrade ]; then
     STOPPED=0
     die "upgrade failed during health check. rolled back. The database the upgraded server used (with anything written during the health check) is kept in $ROLLED_DIR"
   fi
+fi
+
+# reconfigure: re-address this installed host (the proxy pair, the admin network, the DNS
+# resolvers) without editing .env by hand: install.sh, extracted from the image .env pins, runs
+# with --reconfigure and these flags, so the values replace their .env entries through the whole
+# settle path and the firewall and stack re-apply. Its own staging directory: never the one
+# `upgrade` extracts compose.yaml and this command into.
+if [ "${1:-}" = reconfigure ]; then
+  shift
+  RECONF_IMAGE=$(sed -n 's/^[[:space:]]*PANGOLIN_IMAGE=//p' "$HOME_DIR/.env" | tail -n 1 |
+    sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/")
+  [ -n "$RECONF_IMAGE" ] || die "no PANGOLIN_IMAGE in $HOME_DIR/.env: run 'pangolin upgrade <tag>' first"
+  STAGING="$HOME_DIR/reconfigure-staging"
+  mkdir -p "$STAGING" || die "could not create $STAGING"
+  docker run --rm --user 0 -v "$STAGING:/staging" "$RECONF_IMAGE" sh -c 'cp -r /app/deploy/. /staging/' ||
+    die "could not extract the deploy files from $RECONF_IMAGE: run 'pangolin upgrade <tag>' first"
+  [ -f "$STAGING/install.sh" ] ||
+    die "$RECONF_IMAGE has no /app/deploy/install.sh: run 'pangolin upgrade' to a release that carries it"
+  grep -q -- '--reconfigure' "$STAGING/install.sh" ||
+    die "the install.sh in $RECONF_IMAGE predates --reconfigure: run 'pangolin upgrade' to a release that supports it"
+  exec sh "$STAGING/install.sh" --reconfigure "$@"
 fi
 
 # restore: stop → one-off run (which verifies, asks about credentials, swaps and cancels jobs under
