@@ -22,7 +22,10 @@
 #   --ghcr-token TOKEN            the same, inline (visible in the process list; prefer a file)
 #   --ghcr-user NAME              the GHCR user name (default: the image's owner)
 #   --dns IP[,IP...]              the DNS resolvers to allow (default: from /etc/resolv.conf);
-#                                 replaces PANGOLIN_DNS_SERVERS in an existing .env
+#                                 replaces PANGOLIN_DNS_SERVERS in an existing .env. A re-run
+#                                 without --dns compares the host's current resolvers with
+#                                 .env's and warns, naming both sets, when they differ or none
+#                                 are found (warning only; --dns stays the only writer)
 #   --data-root DIR               the data directory, on the encrypted disk (default /srv/pangolin);
 #                                 replaces PANGOLIN_DATA_ROOT in an existing .env
 #   --http-port PORT              the host port NPM forwards to (default 3000)
@@ -414,12 +417,13 @@ existing() {
 }
 
 # The resolvers in resolv.conf (plus, when it lists systemd-resolved's 127.0.0.53 stub, those in
-# its upstream file), comma-separated, lower case, each once. firewall/render.sh's host_resolvers
-# reads them the same way on every re-render; keep the two in step.
+# its upstream file), comma-separated, lower case, each once. Under --root, the files staged under
+# it; ROOT is empty on a real host. firewall/render.sh's host_resolvers reads them the same way on
+# every re-render; keep the two in step.
 detect_dns() {
-  set -- /etc/resolv.conf
-  if grep -Eq '^[[:space:]]*nameserver[[:space:]]+127\.0\.0\.53([[:space:]]|$)' /etc/resolv.conf 2>/dev/null; then
-    set -- /etc/resolv.conf /run/systemd/resolve/resolv.conf
+  set -- "$(path /etc/resolv.conf)"
+  if grep -Eq '^[[:space:]]*nameserver[[:space:]]+127\.0\.0\.53([[:space:]]|$)' "$(path /etc/resolv.conf)" 2>/dev/null; then
+    set -- "$(path /etc/resolv.conf)" "$(path /run/systemd/resolve/resolv.conf)"
   fi
   # Skips loopback, unspecified, IPv4-mapped, link-local (fe80::/10) and zone-scoped (`%`)
   # resolvers; nftables cannot match the last two.
@@ -601,6 +605,20 @@ settings() {
   for resolver in $(printf '%s' "$DNS_SERVERS" | tr ',' ' '); do
     is_ip "$resolver" || die "not a DNS resolver IP: $resolver"
   done
+  # A re-run that keeps the resolvers in .env never asks the host what it uses now: when DHCP
+  # emptied resolv.conf, stale .env values went on blocking every resolver and nothing said so.
+  # The firewall has been naming this drift on every render (its warnings reach the journal, not
+  # the terminal); say it here too, where the operator is looking. Warnings only: .env keeps its
+  # resolvers, DNS stays allowed to both sets, and --dns given this run is already the repair.
+  if [ -z "$ARG_DNS" ] && env_has PANGOLIN_DNS_SERVERS; then
+    stored_dns=$(existing PANGOLIN_DNS_SERVERS)
+    host_dns=$(detect_dns)
+    if [ -z "$host_dns" ]; then
+      warn "no host resolver found in $(path /etc/resolv.conf) (only loopback ones, or none): DNS is allowed only to PANGOLIN_DNS_SERVERS=$stored_dns in .env, which may no longer answer; re-run install.sh --dns IP[,IP...] to store the host's current resolvers; the firewall has been warning about this on every render: see 'journalctl -u pangolin-allowlist.service'"
+    elif [ "$(set_list "$(printf '%s\n' "$host_dns" | tr 'A-Z' 'a-z')")" != "$(set_list "$(printf '%s\n' "$stored_dns" | tr 'A-Z' 'a-z')")" ]; then
+      warn "the host's resolvers ($host_dns) differ from PANGOLIN_DNS_SERVERS=$stored_dns in .env: DNS is allowed to both, but .env keeps the stored ones; re-run install.sh --dns IP[,IP...] to store the host's current resolvers; the firewall has been warning about this on every render: see 'journalctl -u pangolin-allowlist.service'"
+    fi
+  fi
 
   DATA_ROOT=$ARG_DATA_ROOT
   if [ -z "$DATA_ROOT" ]; then DATA_ROOT=$(existing PANGOLIN_DATA_ROOT); fi

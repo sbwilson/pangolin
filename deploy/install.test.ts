@@ -760,6 +760,106 @@ describe("install.sh, re-run", () => {
     expect(result.stdout).not.toMatch(/Replacing PANGOLIN_DNS_SERVERS/);
   });
 
+  // The pang-dev failure: DHCP emptied resolv.conf, the stale .env resolvers kept winning, and
+  // nothing said so. A re-run that keeps .env's resolvers now checks the host's and warns.
+  it("warns when a re-run's host resolvers drift from the stored ones, naming both sets", () => {
+    expect(install().status).toBe(0);
+    writeFileSync(at("etc/resolv.conf"), "nameserver 10.20.1.53\nnameserver 10.20.8.53\n");
+    const result = run("sh", [INSTALL, "--root", root, "--non-interactive", "--no-docker"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toMatch(
+      /WARNING: the host's resolvers \(10\.20\.1\.53,10\.20\.8\.53\) differ from PANGOLIN_DNS_SERVERS=192\.168\.1\.1 in \.env: DNS is allowed to both, but \.env keeps the stored ones/,
+    );
+    expect(result.stderr).toMatch(
+      /re-run install\.sh --dns IP\[,IP\.\.\.\] to store the host's current resolvers/,
+    );
+    expect(result.stderr).toMatch(
+      /the firewall has been warning about this on every render: see 'journalctl -u pangolin-allowlist\.service'/,
+    );
+    // Warn only: exit 0, and .env keeps the resolvers it had.
+    expect(result.stdout).not.toMatch(/Replacing PANGOLIN_DNS_SERVERS/);
+    expect(read("opt/pangolin/.env")).toContain("PANGOLIN_DNS_SERVERS=192.168.1.1\n");
+  });
+
+  it("warns when a re-run finds the host with no resolvers left, instead of passing silently", () => {
+    expect(install().status).toBe(0);
+    writeFileSync(at("etc/resolv.conf"), "# emptied by a DHCP renewal\n");
+    const emptied = run("sh", [INSTALL, "--root", root, "--non-interactive", "--no-docker"]);
+    expect(emptied.status, emptied.stderr).toBe(0);
+    // render.sh's own lowercase "warning:" also fires here; this is install.sh's WARNING line.
+    expect(emptied.stderr).toMatch(/WARNING: no host resolver found in .*etc\/resolv\.conf/);
+    expect(emptied.stderr).toMatch(/PANGOLIN_DNS_SERVERS=192\.168\.1\.1 in \.env/);
+    expect(emptied.stderr).toMatch(
+      /re-run install\.sh --dns IP\[,IP\.\.\.\] to store the host's current resolvers/,
+    );
+    expect(emptied.stderr).toMatch(
+      /the firewall has been warning about this on every render: see 'journalctl -u pangolin-allowlist\.service'/,
+    );
+    expect(emptied.stdout).not.toMatch(/Replacing PANGOLIN_DNS_SERVERS/);
+    expect(read("opt/pangolin/.env")).toContain("PANGOLIN_DNS_SERVERS=192.168.1.1\n");
+
+    // Only the systemd-resolved stub, with no readable upstream file, is the same failure.
+    writeFileSync(at("etc/resolv.conf"), "nameserver 127.0.0.53\n");
+    const loopback = run("sh", [INSTALL, "--root", root, "--non-interactive", "--no-docker"]);
+    expect(loopback.status, loopback.stderr).toBe(0);
+    expect(loopback.stderr).toMatch(/WARNING: no host resolver found/);
+    expect(read("opt/pangolin/.env")).toContain("PANGOLIN_DNS_SERVERS=192.168.1.1\n");
+  });
+
+  it("prints neither DNS warning when the host matches .env as a set", () => {
+    expect(install().status).toBe(0);
+    // The host's set, reordered, padded, and capitalized (IPv6): as a set, nothing changed.
+    writeFileSync(
+      at("opt/pangolin/.env"),
+      read("opt/pangolin/.env").replace(
+        /^PANGOLIN_DNS_SERVERS=.*$/m,
+        "PANGOLIN_DNS_SERVERS= 192.168.1.1 ,2001:DB8::5",
+      ),
+    );
+    writeFileSync(at("etc/resolv.conf"), "nameserver 2001:db8::5\nnameserver 192.168.1.1\n");
+    const result = run("sh", [INSTALL, "--root", root, "--non-interactive", "--no-docker"]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).not.toMatch(/differ from PANGOLIN_DNS_SERVERS/);
+    expect(result.stderr).not.toMatch(/WARNING: no host resolver found/);
+    expect(read("opt/pangolin/.env")).toContain("PANGOLIN_DNS_SERVERS= 192.168.1.1 ,2001:DB8::5\n");
+  });
+
+  it("prints neither DNS warning for a re-run that gives --dns", () => {
+    expect(install().status).toBe(0);
+    // Any host state: settle's "Replacing ..." is already the signal, and no comparison runs.
+    writeFileSync(at("etc/resolv.conf"), "nameserver 10.20.1.53\n");
+    const result = install("--dns", "10.9.9.9");
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toMatch(/Replacing PANGOLIN_DNS_SERVERS in \.env/);
+    expect(result.stderr).not.toMatch(/differ from PANGOLIN_DNS_SERVERS/);
+    expect(result.stderr).not.toMatch(/WARNING: no host resolver found/);
+    expect(read("opt/pangolin/.env")).toContain("PANGOLIN_DNS_SERVERS=10.9.9.9\n");
+  });
+
+  it("takes the host's resolvers on a first install without --dns, warning about nothing", () => {
+    // No .env key yet: there is nothing stored to drift from, so the check stays off.
+    writeFileSync(at("etc/resolv.conf"), "nameserver 10.20.1.53\n");
+    const result = run("sh", [
+      INSTALL,
+      "--root",
+      root,
+      "--non-interactive",
+      "--no-docker",
+      "--hostname",
+      "money.example.com",
+      "--backup-server",
+      "rest:https://nas.lan:8000/pangolin",
+      "--proxy-host",
+      "192.168.1.10",
+      "--admin-network",
+      "192.168.1.0/24",
+    ]);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).not.toMatch(/differ from PANGOLIN_DNS_SERVERS/);
+    expect(result.stderr).not.toMatch(/WARNING: no host resolver found/);
+    expect(read("opt/pangolin/.env")).toContain("PANGOLIN_DNS_SERVERS=10.20.1.53\n");
+  });
+
   it("replaces PANGOLIN_IMAGE when --image is given, and says so", () => {
     expect(install().status).toBe(0);
     const result = install("--image", "ghcr.io/sbwilson/pangolin:1.2.3");

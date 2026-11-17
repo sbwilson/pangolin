@@ -133,7 +133,7 @@ sudo sh deploy/install.sh --non-interactive \
 | `--proxy-host IP[,IP…]` | The NPM hosts' IPv4 addresses: the only addresses that may reach the app port. Written to `.env` as `PANGOLIN_PROXY_HOSTS` and `PANGOLIN_TRUSTED_PROXIES` (the firewall and the app take the same list). `--npm-host` is accepted as an alias, and an older `.env`'s `PANGOLIN_NPM_HOST` is still read when it has no `PANGOLIN_PROXY_HOSTS` |
 | `--admin-network CIDR` | Where SSH is allowed from |
 | `--ghcr-token-file FILE` / `--ghcr-token TOKEN` | A GHCR read-only token for `docker login ghcr.io` (a file keeps it out of the process list). It is kept in `secrets/ghcr-token`, and `docker login` also stores it in `/root/.docker/config.json` |
-| `--dns IP[,IP]` | The resolvers DNS is allowed to (default: from `/etc/resolv.conf`); on a re-run it replaces `PANGOLIN_DNS_SERVERS` in `.env`. The firewall also allows the VM's current resolvers (see [§8](#8-the-firewall)) |
+| `--dns IP[,IP]` | The resolvers DNS is allowed to (default: from `/etc/resolv.conf`); on a re-run it replaces `PANGOLIN_DNS_SERVERS` in `.env`. A re-run **without** `--dns` compares the VM's current resolvers with `.env`'s and warns when they differ or none are found, naming both sets and ending with the repair `install.sh --dns IP[,IP...]` (a warning only: `.env` keeps its resolvers and the run does not fail). The firewall also allows the VM's current resolvers and warns about the same drift on every render (see [§8](#8-the-firewall) and `journalctl -u pangolin-allowlist.service`) |
 | `--data-root DIR` | The data directory on the encrypted disk (default `/srv/pangolin`); on a re-run it replaces `PANGOLIN_DATA_ROOT` in `.env`. It does not move the data: when the old directory holds the database and the new one does not, the installer warns that the app will start on an empty database there. The Docker drop-in that waits for the data disk follows the new directory, and the old one is removed when the new directory is not a mount point |
 | `--http-port PORT` | The VM port NPM forwards to (default 3000) |
 | `--image REF` | The image (default `ghcr.io/sbwilson/pangolin:latest`); on a re-run it replaces `PANGOLIN_IMAGE` in `.env`. A local image (no `/`, like `pangolin:local`) is never pulled: it must exist |
@@ -293,7 +293,10 @@ tables are never touched):
   Everything else is dropped.
 - **Outbound, for the VM and its containers alike:** only the hosts in `allowlist.conf`, plus
   DNS (port 53) to the resolvers in `.env` (`PANGOLIN_DNS_SERVERS`) and to the VM's current
-  resolvers (below). Containers' traffic is filtered on
+  resolvers (below). On a re-run without `--dns`, the installer compares the VM's current
+  resolvers with `.env`'s and warns, naming both sets, when they differ or the host has none
+  left (the firewall has been warning about the same drift on every render: see
+  `journalctl -u pangolin-allowlist.service`; only `--dns` changes `.env`). Containers' traffic is filtered on
   the forward path, the same packets Docker's `DOCKER-USER` chain sees.
 - **Time:** the VM itself (not its containers) may send NTP (UDP 123) to any server. NTP pool
   names rotate their addresses faster than the allowlist is re-resolved, so allowlisting them
