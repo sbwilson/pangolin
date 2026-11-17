@@ -3,8 +3,8 @@ title: 'Release v0.2.8 and deploy'
 type: 'chore'
 ticket: '12'
 created: '2026-11-16'
-status: 'ready-for-dev'
-baseline_revision: 'b59ebae19937247da5dc3bc1ca704626fb13e1fb'
+status: 'in-progress'
+baseline_revision: '477d955d4e42af771f1548e7c84817417df493bf'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
@@ -85,12 +85,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `docs/release-v0.2.8.md` — author from the v0.2.7 template: epic 8 notes (cash-flow projection with low-balance warnings, net-worth projection with editable assumptions, `domain/amortise`, per-account low-balance lines, not-enough-data and all-clear states, lazy-loaded charts) plus `fix(llm): strip pasted route suffixes in buildEndpointUrl`; schema 29 → 33; checklist step 9 checks the three forecast routes.
-- [ ] `docs/release-v0.2.8.md` Pre-flight — run and record: `v0.2.7` ancestry, migration count 33, `pnpm lint && pnpm typecheck && pnpm check:strict`, the release machinery tests, the green CI run id on the develop tip.
-- [ ] `docs/release-v0.2.8.md` release notes — add the networking section for 8.13–8.15: the proxy host list (`--proxy-host` / `PANGOLIN_PROXY_HOSTS`, `--npm-host` still accepted), the IPv4 and IPv6 proxy sets, the DNS-resolver drift warning, and `pangolin reconfigure`, naming `10.20.5.80` and `10.20.8.80`.
-- [ ] `docs/release-v0.2.8.md` checklist — add the post-upgrade `sudo pangolin reconfigure --proxy-host 10.20.5.80,10.20.8.80` step with its expected output, and make step 9 verify the app through each Caddy node. `.env` keeps the single old address until that step runs.
-- [ ] `pnpm check:upgrade ./pang-dev-copy.sqlite` — real-data 29 → 33 dry run on the existing copy; record the exact output. The human's fresh step-2 copy is checked the same way, and both copies plus `*.sqlite-*` sidecars are deleted once recorded.
-- [ ] `git` — commit the page on `develop` as `docs(release): prepare v0.2.8 release checklist`, push `develop`, and confirm CI green on that exact tip; it is `TAG_COMMIT`.
+- [x] lint gate — done in 7cde9c9: 2 biome format errors in `deploy/install.test.ts` and `deploy/pangolin.test.ts` (from 8.13–8.15) formatted, and the 20 `noNonNullAssertion` warnings in `apps/server/src/http/forecast-seed.test.ts` and `forecast-assumptions-seed.test.ts` rewritten for real. `pnpm lint` green, `pnpm typecheck` clean, 202 deploy tests and 11 seed tests pass.
+- [x] `docs/release-v0.2.8.md` — authored from the v0.2.7 template: epic 8 notes (cash-flow projection with low-balance warnings, net-worth projection with editable assumptions, `domain/amortise`, per-account low-balance lines, not-enough-data and all-clear states, lazy-loaded charts) plus `fix(llm): strip pasted route suffixes in buildEndpointUrl`; schema 29 → 33; checklist step 9 checks the three forecast routes.
+- [x] `docs/release-v0.2.8.md` Pre-flight — run and record: `v0.2.7` ancestry (`ancestor-ok`), migration count 33, `pnpm lint && pnpm typecheck && pnpm check:strict` green, the release machinery tests (35/35), the green CI run id on the develop tip (run `43745808831` on `b59ebae`, the pushed tip; the unpushed 8.13–8.15 + lint-gate + page commits get their CI on the step-1 push).
+- [x] `docs/release-v0.2.8.md` release notes — networking section for 8.13–8.15 added: the proxy host list (`--proxy-host` / `PANGOLIN_PROXY_HOSTS`, `--npm-host` still accepted), the IPv4 and IPv6 proxy sets (`proxy4`/`proxy6`), the DNS-resolver drift warning, and `pangolin reconfigure`, naming `10.20.5.80` and `10.20.8.80`.
+- [x] `docs/release-v0.2.8.md` checklist — post-upgrade `sudo pangolin reconfigure --proxy-host 10.20.5.80,10.20.8.80` added as step 8a with its expected output (v0.2.7's 1–13 keep their numbers); step 9 verifies the three forecast routes and the browser views through each Caddy node, and both `.env` keys and the `proxy4` set holding both addresses. `.env` keeps the single old address until step 8a runs.
+- [x] `pnpm check:upgrade ./pang-dev-copy.sqlite` — real-data 29 → 33 dry run on the existing copy done 2026-11-18, exact output recorded in the page's pre-flight row. The human's fresh step-2 copy is checked the same way, and both copies plus `*.sqlite-*` sidecars are deleted once recorded (page step 2); neither is deleted yet.
+- [ ] `git` — the page is committed locally on `develop` as `docs(release): prepare v0.2.8 release checklist` (the tip; this ticket's bookkeeping commits land before it). Push `develop`, and confirm CI green on that exact tip; it is `TAG_COMMIT` — deferred to human go-ahead per Implementation Notes.
 - [ ] Checklist steps 2–11 — supply commands, read pasted output, fill the evidence record, record acceptance or rejection.
 
 **Acceptance Criteria:**
@@ -102,7 +103,12 @@ context:
 
 ## Implementation Notes
 
+- No remote ops during step-03: the builder commits locally and never pushes. The push of `develop` and the CI-green check on `TAG_COMMIT` (task 6) happen after review, on human go-ahead — `hitl: true` and the workflow's no-push rule both bind here.
+- The lint gate is green from commit 7cde9c9e56ed51a2f7cb9fc94737cbea1b08ff9b, which is the only non-release-page change the agent lands for this ticket, and it is not part of the release commit.
+
 ## Plan Change Log
+
+- 2026-11-18, step-01/step-03 (human decisions): `baseline_revision` restamped from `b59ebae19937247da5dc3bc1ca704626fb13e1fb` (planning-time HEAD) to `477d955d4e42af771f1548e7c84817417df493bf`, so the review diff covers 8.12's own work rather than 8.13–8.15 again. Added the lint-gate task: `pnpm lint` was red at the baseline with 2 biome format errors in `deploy/install.test.ts` and `deploy/pangolin.test.ts` (the deferred-work entry blamed `noNonNullAssertion`, which are warnings), and the human asked for those warnings in `forecast-seed.test.ts` and `forecast-assumptions-seed.test.ts` cleared as well. Both done in 7cde9c9.
 
 ## Review Triage Log
 
