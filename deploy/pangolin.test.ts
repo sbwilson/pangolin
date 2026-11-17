@@ -682,7 +682,7 @@ describe("pangolin reconfigure", () => {
       "    else",
       `      printf '#!/bin/sh\\n# flags: --reconfigure\\necho "staged install.sh: $*"\\n' > "$src/install.sh"`,
       "    fi",
-      "    chmod +x \"$src/install.sh\"",
+      '    chmod +x "$src/install.sh"',
       "    exit 0 ;;",
       "esac",
       "exit 0",
@@ -702,11 +702,12 @@ describe("pangolin reconfigure", () => {
     });
   }
 
-  const cmdLog = (): string => (existsSync(at("cmd.log")) ? readFileSync(at("cmd.log"), "utf8") : "");
+  const cmdLog = (): string =>
+    existsSync(at("cmd.log")) ? readFileSync(at("cmd.log"), "utf8") : "";
 
   it("says the same usage line as --help for it", () => {
     expect(readFileSync(PANGOLIN, "utf8")).toContain(
-      "sudo pangolin reconfigure [--proxy-host IP[,...]] [--admin-network CIDR] [--dns IP[,...]] [--force]"
+      "sudo pangolin reconfigure [--proxy-host IP[,...]] [--admin-network CIDR] [--dns IP[,...]] [--force]",
     );
   });
 
@@ -714,10 +715,12 @@ describe("pangolin reconfigure", () => {
     const res = reconfigure("--proxy-host", "proxy.example.com", "--force");
     expect(res.status, res.stderr).toBe(0);
     expect(cmdLog()).toContain(
-      `docker run --rm --user 0 -v ${homeDir}/reconfigure-staging:/staging ${ORIGINAL_IMAGE} sh -c cp -r /app/deploy/. /staging/`
+      `docker run --rm --user 0 -v ${homeDir}/reconfigure-staging:/staging ${ORIGINAL_IMAGE} sh -c cp -r /app/deploy/. /staging/`,
     );
     // The staged installer gets --reconfigure plus the operator's flags, in order.
-    expect(res.stdout).toContain("staged install.sh: --reconfigure --proxy-host proxy.example.com --force");
+    expect(res.stdout).toContain(
+      "staged install.sh: --reconfigure --proxy-host proxy.example.com --force",
+    );
   });
 
   it("takes the image from .env, not a hardcoded tag", () => {
@@ -725,7 +728,9 @@ describe("pangolin reconfigure", () => {
     const res = reconfigure();
     expect(res.status, res.stderr).toBe(0);
     expect(cmdLog()).toContain("-v ");
-    expect(cmdLog()).toContain("registry.example.com/pangolin:my-tag sh -c cp -r /app/deploy/. /staging/");
+    expect(cmdLog()).toContain(
+      "registry.example.com/pangolin:my-tag sh -c cp -r /app/deploy/. /staging/",
+    );
   });
 
   it("says what to do when .env carries no image", () => {

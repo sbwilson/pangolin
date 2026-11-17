@@ -173,6 +173,17 @@ function forecastMirror(person: string): SeedForecastMirror {
   return mirror;
 }
 
+/** Fails the test by naming what is missing, rather than reading through an undefined value. */
+function one<T>(value: T | undefined, what: string): T {
+  if (value === undefined) throw new Error(`no ${what}`);
+  return value;
+}
+
+/** The days the first visible account projects. */
+function pointCount(body: ForecastBody): number {
+  return one(body.accounts[0], "account in the forecast").points.length;
+}
+
 const ACCOUNT_NAMES: Record<string, string> = {
   "joint-everyday": "Joint everyday",
   "person-a-private": "Person A private",
@@ -191,11 +202,11 @@ const NAME_KEYS: Record<string, string> = {
 function expectMatchesMirror(body: ForecastBody, person: string): void {
   const mirror = forecastMirror(person);
   for (const account of body.accounts) {
-    const key = NAME_KEYS[account.name]!;
-    const day0 = mirror.day0[key];
-    expect(day0).toBeDefined();
-    expect(account.points[0]!.balanceCents).toBe(day0!);
-    let balance = day0!;
+    const key = one(NAME_KEYS[account.name], `seed mirror key for ${account.name}`);
+    const day0 = one(mirror.day0[key], `day-0 balance for ${key}`);
+    const opening = one(account.points[0], `day 0 of ${account.name}`);
+    expect(opening.balanceCents).toBe(day0);
+    let balance = day0;
     for (const point of account.points) {
       balance += mirror.byDay[key]?.[point.date] ?? 0;
       expect([point.date, point.balanceCents]).toEqual([point.date, balance]);
@@ -214,7 +225,10 @@ describe("Cash-flow forecast on default seed (planning-forecast tracer)", () => 
     const names = body.accounts.map((a) => a.name).sort();
     expect(names).toEqual(["Joint everyday", "Person A private"]);
 
-    const everyday = body.accounts.find((a) => a.name === "Joint everyday")!;
+    const everyday = one(
+      body.accounts.find((a) => a.name === "Joint everyday"),
+      "Joint everyday in Person A's forecast",
+    );
     expect(everyday.lowBalanceThresholdCents).toBe(6_000_000);
     expect(everyday.points.length).toBe(
       Math.round((new Date(body.through).getTime() - new Date(body.from).getTime()) / 86_400_000) +
@@ -238,7 +252,10 @@ describe("Cash-flow forecast on default seed (planning-forecast tracer)", () => 
 
     // The warning names the first day below the threshold and its projected cents.
     for (const warning of body.warnings) {
-      const account = body.accounts.find((a) => a.accountId === warning.accountId)!;
+      const account = one(
+        body.accounts.find((a) => a.accountId === warning.accountId),
+        `forecast account ${warning.accountId} behind the warning`,
+      );
       const below = account.points.filter((p) => p.balanceCents < account.lowBalanceThresholdCents);
       expect(below[0]?.date).toBe(warning.date);
       expect(warning.cents).toBe(below[0]?.balanceCents);
@@ -264,7 +281,7 @@ describe("Cash-flow forecast on default seed (planning-forecast tracer)", () => 
     }
     // Day 0 is today's actual snapshot: Telstra paid today is already inside it, and B's
     // mobile budget is covered by the confirmed series, so nothing is re-projected on day 0.
-    const everyday = body.accounts[0]!;
+    const everyday = one(body.accounts[0], "account in Person B's forecast");
     const opening = seed.expectations["balance-snapshots.closingCents"]["joint-everyday"];
     expect(everyday.points[0]?.balanceCents).toBe(opening);
   });
@@ -282,10 +299,12 @@ describe("Cash-flow forecast on default seed (planning-forecast tracer)", () => 
     // each period's projected savings — and the current period, with no projected savings yet,
     // carries none.
     for (const person of ["person-a", "person-b"]) {
-      const debits = forecastMirror(person).allocationDebits["joint-everyday"];
-      expect(debits).toBeDefined();
-      expect(debits!.length).toBeGreaterThan(0);
-      for (const debit of debits!) {
+      const debits = one(
+        forecastMirror(person).allocationDebits["joint-everyday"],
+        `joint-everyday allocation debits for ${person}`,
+      );
+      expect(debits.length).toBeGreaterThan(0);
+      for (const debit of debits) {
         expect(debit.parts).toHaveLength(3);
         expect(debit.parts.reduce((sum, part) => sum + part, 0)).toBeGreaterThan(0);
       }
@@ -303,10 +322,10 @@ describe("Cash-flow forecast on default seed (planning-forecast tracer)", () => 
 
     const six = await forecast("6");
     expect(six.horizonMonths).toBe(6);
-    expect(six.accounts[0]!.points.length).toBeGreaterThan(three.accounts[0]!.points.length);
+    expect(pointCount(six)).toBeGreaterThan(pointCount(three));
     const twelve = await forecast("12");
     expect(twelve.horizonMonths).toBe(12);
-    expect(twelve.accounts[0]!.points.length).toBeGreaterThan(six.accounts[0]!.points.length);
+    expect(pointCount(twelve)).toBeGreaterThan(pointCount(six));
   });
 
   it("follows an edited low-balance threshold on the seeded joint everyday account", async () => {
@@ -326,7 +345,10 @@ describe("Cash-flow forecast on default seed (planning-forecast tracer)", () => 
     // Every warning names the first point below its account's threshold, and its cents.
     const expectFirstBelow = (body: ForecastBody) => {
       for (const warning of body.warnings) {
-        const account = body.accounts.find((a) => a.accountId === warning.accountId)!;
+        const account = one(
+          body.accounts.find((a) => a.accountId === warning.accountId),
+          `forecast account ${warning.accountId} behind the warning`,
+        );
         const below = account.points.filter(
           (p) => p.balanceCents < account.lowBalanceThresholdCents,
         );
@@ -335,7 +357,11 @@ describe("Cash-flow forecast on default seed (planning-forecast tracer)", () => 
       }
     };
 
-    const everyday = (await forecast("3")).accounts.find((a) => a.name === "Joint everyday")!;
+    const projected = await forecast("3");
+    const everyday = one(
+      projected.accounts.find((a) => a.name === "Joint everyday"),
+      "Joint everyday in Person A's forecast",
+    );
     const seedThreshold = everyday.lowBalanceThresholdCents;
 
     // Raised above every projected point: the account warns, from the first projected date.
@@ -343,18 +369,25 @@ describe("Cash-flow forecast on default seed (planning-forecast tracer)", () => 
     try {
       await patch(everyday.accountId, maxPoint + 1);
       const raised = await forecast("3");
-      const raisedAccount = raised.accounts.find((a) => a.accountId === everyday.accountId)!;
+      const raisedAccount = one(
+        raised.accounts.find((a) => a.accountId === everyday.accountId),
+        "the raised joint everyday account",
+      );
       expect(raisedAccount.lowBalanceThresholdCents).toBe(maxPoint + 1);
       const warning = raised.warnings.find((w) => w.accountId === everyday.accountId);
       expect(warning).toBeDefined();
-      expect(warning?.date).toBe(raisedAccount.points[0]!.date);
-      expect(warning?.cents).toBe(raisedAccount.points[0]!.balanceCents);
+      const raisedOpening = one(raisedAccount.points[0], "day 0 of the raised account");
+      expect(warning?.date).toBe(raisedOpening.date);
+      expect(warning?.cents).toBe(raisedOpening.balanceCents);
       expectFirstBelow(raised);
 
       // Cleared to zero: this account's warning is gone; the invariant holds for the rest.
       await patch(everyday.accountId, 0);
       const cleared = await forecast("3");
-      const clearedAccount = cleared.accounts.find((a) => a.accountId === everyday.accountId)!;
+      const clearedAccount = one(
+        cleared.accounts.find((a) => a.accountId === everyday.accountId),
+        "the cleared joint everyday account",
+      );
       expect(clearedAccount.lowBalanceThresholdCents).toBe(0);
       expect(cleared.warnings.some((w) => w.accountId === everyday.accountId)).toBe(false);
       expectFirstBelow(cleared);

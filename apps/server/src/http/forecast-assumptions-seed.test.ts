@@ -290,7 +290,8 @@ describe("Forecast assumptions on default seed", () => {
     expect(outOfRange.status).toBe(400);
     expect(outOfRange.body.error.code).toBe("Validation");
 
-    const loan = accountId("user-a", "Joint home loan")!;
+    const loan = accountId("user-a", "Joint home loan");
+    if (loan === undefined) throw new Error("no Joint home loan owned by user-a");
     const duplicate = await request("user-a", {
       method: "PUT",
       body: {

@@ -1163,7 +1163,7 @@ describe("install.sh, --reconfigure", () => {
       [
         "#!/bin/sh",
         "home=",
-        'while [ $# -gt 0 ]; do',
+        "while [ $# -gt 0 ]; do",
         '  case "$1" in --home) home=$2; shift ;; *) shift ;;',
         "  esac",
         "done",
