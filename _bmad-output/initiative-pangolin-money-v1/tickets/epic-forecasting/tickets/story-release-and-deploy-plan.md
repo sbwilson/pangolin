@@ -3,7 +3,7 @@ title: 'Release v0.2.8 and deploy'
 type: 'chore'
 ticket: '12'
 created: '2026-11-16'
-status: 'built'
+status: done
 baseline_revision: '477d955d4e42af771f1548e7c84817417df493bf'
 route: 'full'
 route_source: 'auto'
@@ -157,4 +157,5 @@ Quick lens, 2026-11-18, diff from `477d955`. One entry patched, one rejected as 
 **Evidence:**
 - 2026-11-18: pushed `develop` `b59ebae..81bb219`; `TAG_COMMIT=81bb219a02640cd1d604f7985a7362c9c215720b` (`docs(release): prepare v0.2.8 release checklist`), `ancestor-ok` against `v0.2.7`.
 - 2026-11-18: CI run <https://github.com/sbwilson/pangolin/actions/runs/44280423896> on `headSha` `81bb219a02640cd1d604f7985a7362c9c215720b` -- `success` (`Lint, types, tests, STRICT`, `Secret scan`, `Container and end-to-end` all green). No reruns.
+- 2026-11-19: release closed out. Tag `v0.2.8` (annotated, object `20e3cc9`) lands on `d0ee26a`, one `_bmad-output` file past the pinned page commit `81bb219`, accepted as a deviation with green CI (`44282450394`) and a green release run (`44294069370`, all five jobs) on the exact tagged commit. `pang-dev` upgraded to schema 33, proxy pair live through `10.20.5.80` and `10.20.8.80`, digest `sha256:c761805f`. Step 4's manual backup was skipped before the upgrade (recorded, mitigated by scheduled snapshot `544837b5` and the automatic `pre-upgrade-20261119061014` copy). Step 8a ended `Finished with 1 warning(s)`, the pre-existing data-root mount warning. Full evidence in `docs/release-v0.2.8.md`; accepted by sim, 2026-11-19.
 

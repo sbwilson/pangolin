@@ -473,37 +473,37 @@ Every field is empty until the human pastes the output. Pre-flight rows are fill
 | Release machinery tests | `deploy/release-workflow.test.ts` + `deploy/release-scripts.test.ts`: 2 files, 35 tests passed, 2026-11-18 |
 | `check:upgrade` dry run (real data, pre-flight) | 2026-11-18: against `pang-dev-copy.sqlite` (2026-11-09 copy, schema 29): `migrated 29 -> 33; integrity, manifest, schema ok (/Users/sim/dev/pangolin/pang-dev-copy.sqlite)` |
 | **Human, before the tag** | |
-| Tag commit (step 1): `TAG_COMMIT` hash, subject | |
-| CI on the tag commit (step 1): run URL, conclusion | |
-| Real-data check (step 2): `pnpm check:upgrade` output | |
-| Starting build (step 3): `pangolin status` output | |
-| Manual backup snapshot ID (step 4) | |
+| Tag commit (step 1): `TAG_COMMIT` hash, subject | `d0ee26a07141ea0841f231aae8da90495e9960d5` `docs(bmad): record v0.2.8 CI evidence on TAG_COMMIT`. Deviation, accepted: step 1 pinned the page commit `81bb219a02640cd1d604f7985a7362c9c215720b`, but a `docs(bmad)` evidence commit stacked on top during the run and the tag followed the tip. The two commits differ by one `_bmad-output/` file; CI and the release run are both green on the exact tagged commit |
+| CI on the tag commit (step 1): run URL, conclusion | [`44282450394`](https://github.com/sbwilson/pangolin/actions/runs/44282450394) on `d0ee26a`: `success` (Lint, types, tests, STRICT; Secret scan; Container and end-to-end). The pinned `81bb219` was also green: [`44280423896`](https://github.com/sbwilson/pangolin/actions/runs/44280423896) `success`. No reruns |
+| Real-data check (step 2): `pnpm check:upgrade` output | 2026-11-19, fresh read-only copy taken from the live database before the upgrade: `migrated 29 -> 33; integrity, manifest, schema ok (/Users/sim/dev/pangolin/pang-dev-copy.sqlite)` |
+| Starting build (step 3): `pangolin status` output | `Pangolin Money v0.2.7`, `Schema:    29 (this build expects 29)`, `Readiness: ok` (2026-11-18, immediately before the upgrade) |
+| Manual backup snapshot ID (step 4) | Gate skipped, recorded honestly: no manual backup ran before the upgrade. The pre-upgrade status showed the scheduled snapshot `544837b5ccd891b65e2a20d650b0b492294a8e15f0589d742b476c1f43296162` (2026-11-18T15:30:03.985Z) as the last backup, about four hours old. Recovery points at upgrade time: that scheduled snapshot plus the automatic pre-upgrade copy below |
 | **Release** | |
-| Tag and commit (step 5) | |
-| Release run URL (step 6) | |
-| `ci` job | |
-| `image` job | |
-| `upgrade-test` job | |
-| `migrate-previous` job (29 → 33) | |
-| `publish` job; GitHub release and `latest` moved | |
-| Signed image digest (step 7) | |
-| Re-runs, deleted tags or retags (run URLs, tag names) | |
+| Tag and commit (step 5) | Annotated tag `v0.2.8` ("Release v0.2.8", tag object `20e3cc94ddde850102cc6ba40f90b6e5b7e3bd18`), pushed 2026-11-18, resolves to commit `d0ee26a07141ea0841f231aae8da90495e9960d5` |
+| Release run URL (step 6) | [`44294069370`](https://github.com/sbwilson/pangolin/actions/runs/44294069370), conclusion `success`, `headSha` `d0ee26a07141ea0841f231aae8da90495e9960d5` |
+| `ci` job | `success` (Lint, types, tests, STRICT; Secret scan; Container and end-to-end) |
+| `image` job | `success` |
+| `upgrade-test` job | `success` |
+| `migrate-previous` job (29 → 33) | `success` |
+| `publish` job; GitHub release and `latest` moved | `success`. [Release v0.2.8](https://github.com/sbwilson/pangolin/releases/tag/v0.2.8) published 2026-11-18T11:38:53Z, not draft, not prerelease; `gh api repos/sbwilson/pangolin/releases/latest` returns `v0.2.8` |
+| Signed image digest (step 7) | `sha256:c761805ff5fb06a238cff4733099405c05c0d7e84747a40045a623890717bb6f` |
+| Re-runs, deleted tags or retags (run URLs, tag names) | None. The tag deviation above was accepted, not retagged |
 | **Upgrade on pang-dev** | |
-| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | |
-| `pangolin upgrade` output (step 8) | |
-| Pre-upgrade copy path (from step 8 output) | |
-| Image digest `pangolin upgrade` verified (step 8) | |
-| `pangolin reconfigure` output (step 8a) | |
-| `.env` proxy keys after reconfigure (step 9) | |
-| `nft` `proxy4` set with both addresses (step 9) | |
-| `/healthz` ok, three forecast routes `401` through each node (step 9) | |
-| Browser: `/planning/forecast` and `?mode=networth`, through each node (step 9) | |
-| `pangolin status` showing tag and schema 33 of 33 (step 10) | |
+| Date and `PANGOLIN_UPGRADE_TIMEOUT` used | 2026-11-18, 17:10 UTC (local 2026-11-19 06:10, from the pre-upgrade copy timestamp), `sudo PANGOLIN_UPGRADE_TIMEOUT=180 pangolin upgrade v0.2.8` |
+| `pangolin upgrade` output (step 8) | Key lines: `Pulling ghcr.io/sbwilson/pangolin:v0.2.8...`, `Verifying ghcr.io/sbwilson/pangolin@sha256:c761805f...`, container stopped and restarted, `Upgrade to v0.2.8 successful. Old image was ghcr.io/sbwilson/pangolin@sha256:581b4a7470d0ce3d04c9cb89e5c6ffcd070d395a8c04ca29fe2c82fe084b0565.` |
+| Pre-upgrade copy path (from step 8 output) | `/srv/pangolin/upgrade-copies/pre-upgrade-20261119061014` (the terse upgrade output did not print it; confirmed by `ls -la /srv/pangolin/upgrade-copies/`, where `pre-upgrade-20261109210706` and `rolled-back-20261021203558` predate this release) |
+| Image digest `pangolin upgrade` verified (step 8) | `Verifying` line shows `sha256:c761805ff5fb06a238cff4733099405c05c0d7e84747a40045a623890717bb6f`, identical to step 7 |
+| `pangolin reconfigure` output (step 8a) | Installer banner `Pangolin Money installer`; `Replaced PANGOLIN_TRUSTED_PROXIES in .env`, `Added: PANGOLIN_PROXY_HOSTS PANGOLIN_LLM_HOSTS`; `compose.yaml` and the `pangolin` command taken from the pinned image `sha256:c761805f...`; `nftables ruleset loaded and saved`; `Healthy after 6 s`; NPM summary `Pangolin believes it only from 10.20.5.80,10.20.8.80.`; ended `Finished with 1 warning(s)`. The single warning is `the data root /srv/pangolin is not a mount point`, a pre-existing host condition, not the proxy list |
+| `.env` proxy keys after reconfigure (step 9) | `PANGOLIN_TRUSTED_PROXIES=10.20.5.80,10.20.8.80` and `PANGOLIN_PROXY_HOSTS=10.20.5.80,10.20.8.80`, identical lists, written by `reconfigure`, never hand-edited |
+| `nft` `proxy4` set with both addresses (step 9) | `set proxy4 { type ipv4_addr; flags interval; auto-merge; elements = { 10.20.5.80, 10.20.8.80 } }` in table `inet pangolin`, live |
+| `/healthz` ok, three forecast routes `401` through each node (step 9) | `/healthz` `{"ok":true,"warnings":["recovery-bundle-unconfirmed"]}`, later a clean `{"ok":true}` after `confirm-bundle`; `forecast`, `forecast-net-worth` and `forecast-assumptions` all `401` anonymously, and `401` through `--resolve` pins to each node, `10.20.5.80` and `10.20.8.80` |
+| Browser: `/planning/forecast` and `?mode=networth`, through each node (step 9) | Signed in: the cash-flow projection renders, same through both nodes; `?mode=networth` shows the headline `about -$300,419` and the band `mid estimate · low -$300,419 · high -$300,419` (band collapsed on current assumptions, human confirmed everything works as expected, including editing and resetting an assumption chip); a fresh sign-in through the standby `10.20.8.80` lists `10.10.68.230 · active now` under Settings signed-in devices, so the client address survives |
+| `pangolin status` showing tag and schema 33 of 33 (step 10) | `Pangolin Money v0.2.8`, `Schema:    33 (this build expects 33)`, `Readiness: ok`. Recorded alongside: 4 dead `backup-push` jobs (2026-10-02, 2026-11-09, 2026-11-10 twice), all pre-upgrade and stale; the first post-upgrade push succeeded in 2 s. The `recovery bundle not confirmed` warning was cleared by `sudo pangolin confirm-bundle` (bundle `20261003T203729Z-678e`) |
 | **After the upgrade** | |
-| First backup: snapshot ID (step 11) | |
-| First backup: manifest `format` and `schemaVersion` | |
-| First backup: `balanceDate` and accounts count | |
-| `check:upgrade` copies and sidecars deleted (step 2) | |
+| First backup: snapshot ID (step 11) | Backup `01M7R1FM9NC8Q2XY4ZJJHXB16X`, snapshot `6959d7c2b5854a9022b689ddaa4f25a5aa5973243af85211ea9975cbda4b4238`, done 2026-11-18T19:17:40.175Z, pushed with restic in 2 s |
+| First backup: manifest `format` and `schemaVersion` | `"format": 2`, `"schemaVersion": 33` |
+| First backup: `balanceDate` and accounts count | `"balanceDate": "2026-11-19"`; `jq '.accounts \| length'` = 4 |
+| `check:upgrade` copies and sidecars deleted (step 2) | Done. `/tmp/pang-dev-copy.sqlite*` deleted on pang-dev 2026-11-19; the development-machine copy was deleted after its check and verified absent in the repo, the temp directory and Spotlight, with no `*.sqlite-*` sidecars |
 | **Decision** | |
-| Outcome (accepted / failed) and reason | |
-| Accepted by the human (name, date) | |
+| Outcome (accepted / failed) and reason | Accepted. CI green on the tagged commit; all five release jobs green; the 29 to 33 migration proven on real data before the upgrade and live after; the proxy pair loaded, reachable, and guarding through both nodes; forecast routes 401 anonymously and rendering signed in; first post-upgrade backup pushed with a schema 33 manifest. Three deviations recorded, none release-breaking: the tag sits on `d0ee26a` (one `_bmad-output/` file from the pinned page commit, green runs on the exact commit); step 4's manual backup was skipped before the upgrade (scheduled snapshot `544837b5` and the automatic pre-upgrade copy were the recovery points); step 8a ended `Finished with 1 warning(s)`, a pre-existing data-root mount warning rather than a proxy-list one |
+| Accepted by the human (name, date) | sim, 2026-11-19 |
