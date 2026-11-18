@@ -154,3 +154,7 @@ Quick lens, 2026-11-18, diff from `477d955`. One entry patched, one rejected as 
 - `pnpm check:upgrade ./pang-dev-copy.sqlite` -- expected: `migrated 29 -> 33; integrity, manifest, schema ok`.
 - `PAGER=cat gh run list --branch develop --event push --commit "$TAG_COMMIT" --limit 1 --json databaseId,headSha,conclusion` -- expected: `headSha` equals `$TAG_COMMIT`, `conclusion` `success`.
 
+**Evidence:**
+- 2026-11-18: pushed `develop` `b59ebae..81bb219`; `TAG_COMMIT=81bb219a02640cd1d604f7985a7362c9c215720b` (`docs(release): prepare v0.2.8 release checklist`), `ancestor-ok` against `v0.2.7`.
+- 2026-11-18: CI run <https://github.com/sbwilson/pangolin/actions/runs/44280423896> on `headSha` `81bb219a02640cd1d604f7985a7362c9c215720b` -- `success` (`Lint, types, tests, STRICT`, `Secret scan`, `Container and end-to-end` all green). No reruns.
+
