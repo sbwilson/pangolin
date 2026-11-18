@@ -1,0 +1,18 @@
+# scripts/release.conf - copy to scripts/release.conf and edit. Values here override what
+# release.sh reads from /opt/pangolin/.env; anything left unset falls back to the live install.
+# Do not commit your real release.conf; it lives beside the checkout on the app server.
+
+# Public host name people open (the app's hostname).
+APP_HOST=money-dev.net5.co
+
+# The Nginx Proxy Manager pair, comma-separated. release.sh compares this with
+# PANGOLIN_PROXY_HOSTS in .env and runs `pangolin reconfigure --proxy-host ...` (interactively,
+# with every answer prefilled) only when they differ. It is the only path this script uses to
+# change proxy settings; it never edits .env itself.
+PROXY_HOSTS=10.20.5.80,10.20.8.80
+
+# Optional overrides (defaults shown):
+# BRANCH=develop
+# IMAGE_REPO=ghcr.io/sbwilson/pangolin
+# UPGRADE_TIMEOUT=180
+# CI_TIMEOUT=2700
