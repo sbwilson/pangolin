@@ -142,17 +142,27 @@ cleanup() {
 SUDO_KEEPALIVE_PID=""
 trap cleanup EXIT
 
+ERROR_SHOWN=0
 on_error() {
   local rc=$?
+  # With set -E the ERR trap re-fires at every stack frame the failure unwinds through. Without
+  # this guard the operator was once asked the tag-deletion question twice: answered no at the
+  # first prompt, then answered yes at the surprise second one, and a healthy release lost its
+  # tag. Ask once, ever.
+  if [ "$ERROR_SHOWN" = 1 ]; then return 0; fi
+  ERROR_SHOWN=1
   printf '\n\033[1;31mrelease failed (exit %s).\033[0m\n' "$rc" >&2
   if [ "$TAG_PUSHED" = 1 ] && [ "$DRY" = 0 ]; then
     echo "The tag $VERSION was already pushed. A failed tag must never be reused." >&2
+    echo "If the release itself succeeded (image published, host upgraded), answer no and" >&2
+    echo "finish the remaining steps by hand; deleting the tag orphans the GitHub release." >&2
     if confirm "Delete tag $VERSION from origin and locally so the next attempt starts clean?"; then
       net 120 git push --delete origin "$VERSION" || true
       git tag -d "$VERSION" || true
       echo "Tag deleted. Fix the cause, then re-run; never retag the same name." >&2
     else
-      echo "Tag LEFT IN PLACE. Resolve it manually before anything else (step 13)." >&2
+      echo "Tag LEFT IN PLACE. If the release succeeded, finish the remaining steps by hand;" >&2
+      echo "only delete the tag (origin and local) if the release itself must be retried." >&2
     fi
   fi
 }
