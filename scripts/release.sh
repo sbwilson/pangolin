@@ -26,7 +26,10 @@
 #     sidecars are deleted the moment the evidence is recorded (they hold household data);
 #   - a manual backup must succeed before the upgrade;
 #   - the proxy host list reaches .env only via pangolin reconfigure, after the upgrade, because
-#     the previous release's render.sh dies on a comma list.
+#     the previous release's render.sh dies on a comma list;
+#   - every network call runs under `timeout`, never to hang: on this host a timeout is usually a
+#     CDN address rotating out of the egress allowlist between re-resolves, so one timeout pokes
+#     pangolin-allowlist.service and retries once before failing.
 set -euo pipefail
 
 VERSION=""
@@ -57,6 +60,29 @@ confirm() {
   printf '\n\033[1;32m%s [y/N] \033[0m' "$1"
   read -r reply
   case "$reply" in y | Y | yes | YES) return 0 ;; *) return 1 ;; esac
+}
+
+# net TIMEOUT CMD... runs CMD under a hard timeout instead of trusting it to die. On this host a
+# timeout usually means a CDN address rotated out of the egress allowlist between re-resolves
+# (github and the docker registries move addresses; render.sh loads what DNS says every 15 min).
+# When the allowlist unit exists, one timeout therefore pokes the re-resolver and retries once.
+net() {
+  local t="$1"
+  shift
+  local rc
+  if timeout "$t" "$@"; then
+    return 0
+  else
+    rc=$?
+  fi
+  if [ "$rc" = 124 ] && systemctl list-unit-files --no-legend --no-pager 'pangolin-allowlist.service' 2>/dev/null | grep -q .; then
+    warn "timed out after ${t}s: $* (stale allowlist?)"
+    warn "re-resolving the egress allowlist and retrying once"
+    sudo systemctl restart pangolin-allowlist.service
+    timeout "$t" "$@"
+  else
+    return "$rc"
+  fi
 }
 
 # section NAME adds a captured block to the evidence file; stdin or args are the content.
@@ -106,7 +132,7 @@ on_error() {
   if [ "$TAG_PUSHED" = 1 ] && [ "$DRY" = 0 ]; then
     echo "The tag $VERSION was already pushed. A failed tag must never be reused." >&2
     if confirm "Delete tag $VERSION from origin and locally so the next attempt starts clean?"; then
-      git push --delete origin "$VERSION" || true
+      net 120 git push --delete origin "$VERSION" || true
       git tag -d "$VERSION" || true
       echo "Tag deleted. Fix the cause, then re-run; never retag the same name." >&2
     else
@@ -175,10 +201,10 @@ preflight() {
   [ -f "$ENV_FILE" ] || die "$ENV_FILE not found: run this on the app server, not a laptop"
   [ -f "$DB_FILE" ] || die "$DB_FILE not found: is the data disk mounted?"
   local c
-  for c in git gh docker sudo sqlite3 curl pnpm node jq grep awk sed; do
+  for c in git gh docker sudo sqlite3 curl pnpm node jq grep awk sed timeout; do
     command -v "$c" >/dev/null || die "missing required command: $c"
   done
-  gh auth status >/dev/null 2>&1 || die "gh is not authenticated"
+  net 30 gh auth status >/dev/null 2>&1 || die "gh is not authenticated"
   sudo -v
   (
     while true; do
@@ -189,10 +215,10 @@ preflight() {
   SUDO_KEEPALIVE_PID=$!
 
   if [ -d "$VERSION" ] || git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null ||
-    git ls-remote --exit-code --tags origin "$VERSION" >/dev/null 2>&1; then
+    net 30 git ls-remote --exit-code --tags origin "$VERSION" >/dev/null 2>&1; then
     die "tag $VERSION already exists locally or on origin: never reuse a tag; bump the version"
   fi
-  git fetch origin --quiet --tags
+  net 300 git fetch origin --quiet --tags
   [ -z "$(git status --porcelain)" ] || die "working tree is dirty; commit or stash first"
   local here
   here=$(git rev-parse --abbrev-ref HEAD)
@@ -290,7 +316,7 @@ wait_for_run() {
   local deadline=$((SECONDS + CI_TIMEOUT))
   while :; do
     local json line
-    json=$(gh run list --limit 1 --json databaseId,status,conclusion,url "$@" || true)
+    json=$(net 60 gh run list --limit 1 --json databaseId,status,conclusion,url "$@" || true)
     line=$(printf '%s' "$json" | jq -r '.[0] | "\(.databaseId) \(.status) \(.conclusion) \(.url)"' 2>/dev/null || true)
     if [ -n "$line" ] && [ "$line" != "null null null null" ]; then
       local id status conclusion
@@ -307,7 +333,7 @@ wait_for_run() {
 
 push_tag_and_ci() {
   log "pushing $BRANCH and waiting for CI on $PAGE_SHA"
-  git push origin "$BRANCH"
+  net 600 git push origin "$BRANCH"
   wait_for_run --branch "$BRANCH" --event push --commit "$PAGE_SHA"
   section "CI on the page commit" "$RUN_URL -> $RUN_CONCLUSION"
   [ "$RUN_CONCLUSION" = "success" ] ||
@@ -315,7 +341,7 @@ push_tag_and_ci() {
   confirm "CI is green on $PAGE_SHA. Create and push the annotated tag $VERSION?" ||
     die "tagging declined at the gate; the page commit stays on $BRANCH"
   git tag -a "$VERSION" -m "Release $VERSION" "$PAGE_SHA"
-  git push origin "$VERSION"
+  net 300 git push origin "$VERSION"
   TAG_PUSHED=1
   section "Tag" "$(git tag -n99 "$VERSION")" "tag commit: $PAGE_SHA"
 }
@@ -326,17 +352,17 @@ release_run() {
   wait_for_run --workflow Release --branch "$VERSION"
   local jobs
   local id
-  id=$(gh run list --workflow Release --branch "$VERSION" --limit 1 --json databaseId | jq -r '.[0].databaseId')
-  jobs=$(gh run view "$id" --json conclusion,jobs --jq '.jobs[] | "\(.conclusion)\t\(.name)"')
+  id=$(net 60 gh run list --workflow Release --branch "$VERSION" --limit 1 --json databaseId | jq -r '.[0].databaseId')
+  jobs=$(net 60 gh run view "$id" --json conclusion,jobs --jq '.jobs[] | "\(.conclusion)\t\(.name)"')
   section "Release run $RUN_URL" "conclusion: $RUN_CONCLUSION" "$jobs"
   [ "$RUN_CONCLUSION" = "success" ] || {
     warn "release run failed; step 13 applies: the tag must be deleted before any retry"
     die "release run $RUN_CONCLUSION ($RUN_URL)"
   }
-  cap "image digest" docker buildx imagetools inspect "$IMAGE_REPO:$VERSION"
+  cap "image digest" net 120 docker buildx imagetools inspect "$IMAGE_REPO:$VERSION"
   DIGEST=$(printf '%s' "$CAP" | awk '/Digest:/{print $2; exit}')
   [ -n "$DIGEST" ] || die "no digest found for $IMAGE_REPO:$VERSION"
-  LATEST=$(gh api "repos/$(git remote get-url origin | sed -E 's#.*(github\.com[:/])##; s#\.git$##')/releases/latest" --jq .tag_name)
+  LATEST=$(net 60 gh api "repos/$(git remote get-url origin | sed -E 's#.*(github\.com[:/])##; s#\.git$##')/releases/latest" --jq .tag_name)
   section "Published release" "digest: $DIGEST" "latest release: $LATEST"
   [ "$LATEST" = "$VERSION" ] || warn "GitHub latest is $LATEST, not $VERSION"
 }
@@ -495,7 +521,7 @@ finish() {
 
   git add "docs/release-$VERSION.md"
   git commit -q -m "docs(bmad): close out $VERSION release evidence"
-  git push origin "$BRANCH"
+  net 600 git push origin "$BRANCH"
   log "done. tag $VERSION -> $PAGE_SHA; close-out commit $(git rev-parse --short HEAD) pushed to $BRANCH"
   log "https://github.com/$(git remote get-url origin | sed -E 's#.*(github\.com[:/])##; s#\.git$##')/releases/tag/$VERSION"
 }
