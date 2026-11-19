@@ -218,7 +218,10 @@ preflight() {
     net 30 git ls-remote --exit-code --tags origin "$VERSION" >/dev/null 2>&1; then
     die "tag $VERSION already exists locally or on origin: never reuse a tag; bump the version"
   fi
-  net 300 git fetch origin --tags
+  # --force: tags on this machine are a mirror of origin's, not local work; if one drifted
+  # (old experiments, re-created releases), origin is right and the fetch must say so loudly
+  # by overwriting, not silently by refusing the whole fetch.
+  net 300 git fetch origin --tags --force
   [ -z "$(git status --porcelain)" ] || die "working tree is dirty; commit or stash first"
   local here
   here=$(git rev-parse --abbrev-ref HEAD)
