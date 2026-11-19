@@ -29,7 +29,9 @@
 #     the previous release's render.sh dies on a comma list;
 #   - every network call runs under `timeout`, never to hang: on this host a timeout is usually a
 #     CDN address rotating out of the egress allowlist between re-resolves, so one timeout pokes
-#     pangolin-allowlist.service and retries once before failing.
+#     pangolin-allowlist.service and retries once before failing;
+#   - re-running after a failed CI is supported: if the page draft matches the committed page
+#     byte-for-byte, that page commit is reused rather than duplicated.
 set -Eeuo pipefail
 
 VERSION=""
@@ -54,6 +56,16 @@ CLEAN_COPIES=()
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# step NAME opens a numbered phase so the person running this always knows where the release is,
+# how far it has to go, and which banners are gates that need an answer. The run phase list lives
+# at the bottom of this file; STEP_TOTAL must match it.
+STEP_TOTAL=12
+STEP=0
+step() {
+  STEP=$((STEP + 1))
+  log "[step $STEP/$STEP_TOTAL] $*"
+}
 
 confirm() {
   local reply
@@ -197,7 +209,7 @@ fi
 
 # ---------- phase: pre-flight ----------
 preflight() {
-  log "pre-flight"
+  step "pre-flight: server, tools, auth, branch, tag"
   [ -f "$ENV_FILE" ] || die "$ENV_FILE not found: run this on the app server, not a laptop"
   [ -f "$DB_FILE" ] || die "$DB_FILE not found: is the data disk mounted?"
   local c
@@ -255,7 +267,7 @@ preflight() {
 
 # ---------- phase: real-data migration proof (before the tag) ----------
 real_data_proof() {
-  log "real-data migration proof"
+  step "real-data migration proof (fresh copy, deleted after)"
   local copy="$WORK/pang-dev-copy.sqlite"
   sudo sqlite3 -readonly "$DB_FILE" ".backup '$copy'"
   sudo chown "$(id -u):$(id -g)" "$copy"
@@ -277,7 +289,7 @@ release_notes() {
 }
 
 draft_page() {
-  log "drafting docs/release-$VERSION.md"
+  step "drafting and committing docs/release-$VERSION.md"
   local notes page
   notes=$(release_notes)
   page="# Release $VERSION
@@ -303,6 +315,13 @@ Pending. This draft is replaced by the close-out run; nothing here is proof yet.
   fi
   printf '%s' "$page" >"docs/release-$VERSION.md"
   git add "docs/release-$VERSION.md"
+  if git diff --cached --quiet -- "docs/release-$VERSION.md"; then
+    # A re-run after a failed CI: the previous attempt committed this page and it is byte-for-byte
+    # identical. Keep that commit as the page commit instead of dying on "nothing to commit".
+    PAGE_SHA=$(git rev-parse HEAD)
+    log "page already committed and unchanged: reusing $PAGE_SHA"
+    return 0
+  fi
   git commit -q -m "docs(release): prepare $VERSION release checklist"
   PAGE_SHA=$(git rev-parse HEAD)
   local subject
@@ -349,12 +368,14 @@ wait_for_run() {
 }
 
 push_tag_and_ci() {
-  log "pushing $BRANCH and waiting for CI on $PAGE_SHA"
+  step "push $BRANCH and wait for CI on the page commit"
+  log "page commit under test: $PAGE_SHA"
   net 600 git push origin "$BRANCH"
   wait_for_run --branch "$BRANCH" --event push --commit "$PAGE_SHA"
   section "CI on the page commit" "$RUN_URL -> $RUN_CONCLUSION"
   [ "$RUN_CONCLUSION" = "success" ] ||
-    die "CI on the page commit: $RUN_CONCLUSION ($RUN_URL); fix and re-run, the tag was not pushed"
+    die "CI on the page commit: $RUN_CONCLUSION ($RUN_URL); the tag was not pushed. Fix the cause, push, then re-run: the page commit is reused if unchanged"
+  step "gate 1 of 3: tag $VERSION on the green page commit"
   confirm "CI is green on $PAGE_SHA. Create and push the annotated tag $VERSION?" ||
     die "tagging declined at the gate; the page commit stays on $BRANCH"
   git tag -a "$VERSION" -m "Release $VERSION" "$PAGE_SHA"
@@ -365,7 +386,7 @@ push_tag_and_ci() {
 
 # ---------- phase: release run, digest, published ----------
 release_run() {
-  log "waiting for the release run on $VERSION"
+  step "release run for $VERSION, then image digest and published release"
   wait_for_run --workflow Release --branch "$VERSION"
   local jobs
   local id
@@ -373,7 +394,7 @@ release_run() {
   jobs=$(net 60 gh run view "$id" --json conclusion,jobs --jq '.jobs[] | "\(.conclusion)\t\(.name)"')
   section "Release run $RUN_URL" "conclusion: $RUN_CONCLUSION" "$jobs"
   [ "$RUN_CONCLUSION" = "success" ] || {
-    warn "release run failed; step 13 applies: the tag must be deleted before any retry"
+    warn "release run failed; a failed tag must never be reused: delete it from origin and locally before any retry"
     die "release run $RUN_CONCLUSION ($RUN_URL)"
   }
   cap "image digest" net 120 docker buildx imagetools inspect "$IMAGE_REPO:$VERSION"
@@ -386,7 +407,7 @@ release_run() {
 
 # ---------- phase: manual backup gate ----------
 backup_gate() {
-  log "manual backup (gate for the upgrade)"
+  step "manual backup gate: the upgrade does not start without it"
   cap "sudo pangolin backup (pre-upgrade)" sudo pangolin backup
   BACKUP_ID=$(printf '%s' "$CAP" | sed -n 's/^Backup \([0-9A-Z]*\) started/\1/p')
   SNAP=$(printf '%s' "$CAP" | sed -n 's/^Backup done at \(.*\): snapshot \([0-9a-f]*\)/\2/p')
@@ -397,14 +418,14 @@ backup_gate() {
 
 # ---------- phase: upgrade ----------
 do_upgrade() {
-  log "checking the starting build before upgrading"
+  step "gate 2 of 3: check the starting build, then upgrade $APP_HOST"
   local status now_version
   status=$(sudo pangolin status)
   now_version=$(printf '%s' "$status" | awk '/^Pangolin Money/{print $3; exit}')
   printf '%s\n' "$status" >"$WORK/pre-upgrade-status.txt"
   [ "$now_version" = "$LIVE_VERSION" ] ||
     die "starting build is $now_version, expected $LIVE_VERSION; the plan changed under us"
-  section "Starting build (step 3)" "$status"
+  section "Starting build (checked before the upgrade gate)" "$status"
   confirm "Upgrade $APP_HOST from $LIVE_VERSION to $VERSION now (timeout ${UPGRADE_TIMEOUT}s)?" ||
     die "upgrade declined at the gate; tag $VERSION exists but the host was not touched"
   cap "pangolin upgrade" env PANGOLIN_UPGRADE_TIMEOUT="$UPGRADE_TIMEOUT" sudo pangolin upgrade "$VERSION"
@@ -416,6 +437,7 @@ do_upgrade() {
 
 # ---------- phase: proxy pair (reconfigure, only if needed) ----------
 apply_proxy_pair() {
+  step "proxy pair through pangolin reconfigure (only if .env differs)"
   local want="$PROXY_HOSTS" have=""
   have=$(sed -n 's/^PANGOLIN_PROXY_HOSTS=//p' "$ENV_FILE" | head -1)
   if [ "$have" = "$want" ] && [ "$FORCE_PROXY" = 0 ]; then
@@ -440,6 +462,7 @@ apply_proxy_pair() {
 
 # ---------- phase: pair proof ----------
 pair_proof() {
+  step "pair proof: healthz, then forecast routes anonymously via each node"
   log "waiting for $APP_HOST to answer"
   local ok=0
   for _ in $(seq 1 45); do
@@ -480,6 +503,7 @@ pair_proof() {
 
 # ---------- phase: status, first backup after upgrade, manifest ----------
 post_upgrade_proof() {
+  step "after-upgrade proof: status, first backup, manifest"
   cap "pangolin status (after upgrade)" sudo pangolin status
   local v s
   v=$(printf '%s' "$CAP" | awk '/^Pangolin Money/{print $3; exit}')
@@ -511,6 +535,7 @@ post_upgrade_proof() {
 
 # ---------- phase: cleanup, accept gate, close-out ----------
 finish() {
+  step "gate 3 of 3 and close-out: delete copies, ask acceptance, push the record"
   log "deleting the check:upgrade copies and sidecars (they hold household data)"
   cleanup
   section "Copies deleted" "all check:upgrade copies and sidecars removed at $(date -u '+%Y-%m-%d %H:%M UTC')"
