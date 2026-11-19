@@ -315,19 +315,33 @@ Pending. This draft is replaced by the close-out run; nothing here is proof yet.
 # ---------- phase: push, wait for CI, tag ----------
 wait_for_run() {
   # wait_for_run <selector-args...>: polls gh run list until the run completes; sets RUN_URL,
-  # RUN_CONCLUSION. Selector must yield a single run.
+  # RUN_CONCLUSION. Selector must yield a single run. Prints its own progress: a silent poll
+  # loop here is indistinguishable from the CDN-rotation hangs this host is prone to.
   local deadline=$((SECONDS + CI_TIMEOUT))
+  local seen=""
+  local tick=0
+  local json line id status conclusion
   while :; do
-    local json line
     json=$(net 60 gh run list --limit 1 --json databaseId,status,conclusion,url "$@" || true)
     line=$(printf '%s' "$json" | jq -r '.[0] | "\(.databaseId) \(.status) \(.conclusion) \(.url)"' 2>/dev/null || true)
+    id=""
     if [ -n "$line" ] && [ "$line" != "null null null null" ]; then
-      local id status conclusion
       read -r id status conclusion RUN_URL <<<"$line"
       if [ "$status" = "completed" ]; then
         RUN_CONCLUSION="$conclusion"
         return 0
       fi
+      if [ "$status" != "$seen" ]; then
+        log "run ${id}: ${status}"
+        seen="$status"
+      fi
+    fi
+    tick=$((tick + 1))
+    if [ -z "$id" ] && [ "$tick" -eq 1 ]; then
+      log "no run visible yet; polling every 20s (budget ${CI_TIMEOUT}s)"
+    fi
+    if [ $((tick % 6)) -eq 0 ]; then
+      log "still waiting${id:+ on run $id} (${SECONDS}s elapsed)"
     fi
     [ "$SECONDS" -lt "$deadline" ] || die "timed out after ${CI_TIMEOUT}s waiting for a run"
     sleep 20
