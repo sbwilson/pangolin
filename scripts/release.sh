@@ -348,10 +348,15 @@ wait_for_run() {
       read -r id status conclusion RUN_URL <<<"$line"
       if [ "$status" = "completed" ]; then
         RUN_CONCLUSION="$conclusion"
+        log "run finished: $RUN_URL ($id) -> $conclusion"
         return 0
       fi
       if [ "$status" != "$seen" ]; then
-        log "run ${id}: ${status}"
+        if [ -z "$seen" ]; then
+          log "watching run: $RUN_URL (id $id)"
+        else
+          log "run $id ($RUN_URL): $status"
+        fi
         seen="$status"
       fi
     fi
