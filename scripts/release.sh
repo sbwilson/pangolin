@@ -30,7 +30,7 @@
 #   - every network call runs under `timeout`, never to hang: on this host a timeout is usually a
 #     CDN address rotating out of the egress allowlist between re-resolves, so one timeout pokes
 #     pangolin-allowlist.service and retries once before failing.
-set -euo pipefail
+set -Eeuo pipefail
 
 VERSION=""
 BRANCH="develop"
@@ -218,7 +218,7 @@ preflight() {
     net 30 git ls-remote --exit-code --tags origin "$VERSION" >/dev/null 2>&1; then
     die "tag $VERSION already exists locally or on origin: never reuse a tag; bump the version"
   fi
-  net 300 git fetch origin --quiet --tags
+  net 300 git fetch origin --tags
   [ -z "$(git status --porcelain)" ] || die "working tree is dirty; commit or stash first"
   local here
   here=$(git rev-parse --abbrev-ref HEAD)
