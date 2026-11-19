@@ -97,6 +97,10 @@ net() {
   fi
 }
 
+# read_env KEY prints one key from /opt/pangolin/.env. The file is root-readable (0600), so every
+# read goes through sudo; an unprivileged sed died mid-release once (v0.2.9 step 9).
+read_env() { sudo sed -n "s/^$1=//p" "$ENV_FILE" | head -1; }
+
 # section NAME adds a captured block to the evidence file; stdin or args are the content.
 section() {
   {
@@ -243,9 +247,9 @@ preflight() {
   origin_sha=$(git rev-parse "origin/$BRANCH")
   [ "$local_sha" = "$origin_sha" ] || die "$BRANCH diverges from origin ($local_sha vs $origin_sha); reconcile first"
 
-  [ -n "$APP_HOST" ] || APP_HOST=$(sed -n 's/^PANGOLIN_HOSTNAME=//p' "$ENV_FILE" | head -1)
+  [ -n "$APP_HOST" ] || APP_HOST=$(read_env PANGOLIN_HOSTNAME)
   [ -n "$APP_HOST" ] || die "APP_HOST is unset: set it in $CONF (the public hostname, e.g. money.example.com)"
-  [ -n "$PROXY_HOSTS" ] || PROXY_HOSTS=$(sed -n 's/^PANGOLIN_PROXY_HOSTS=//p' "$ENV_FILE" | head -1)
+  [ -n "$PROXY_HOSTS" ] || PROXY_HOSTS=$(read_env PANGOLIN_PROXY_HOSTS)
   [ -n "$PROXY_HOSTS" ] || die "PROXY_HOSTS is unset: set it in $CONF (comma-separated NPM addresses)"
 
   PREV=$(git describe --tags --abbrev=0 "$BRANCH" 2>/dev/null || true)
@@ -444,7 +448,7 @@ do_upgrade() {
 apply_proxy_pair() {
   step "proxy pair through pangolin reconfigure (only if .env differs)"
   local want="$PROXY_HOSTS" have=""
-  have=$(sed -n 's/^PANGOLIN_PROXY_HOSTS=//p' "$ENV_FILE" | head -1)
+  have=$(read_env PANGOLIN_PROXY_HOSTS)
   if [ "$have" = "$want" ] && [ "$FORCE_PROXY" = 0 ]; then
     log "proxy list already $want; skipping reconfigure"
     section "Proxy pair" "already applied ($want); reconfigure skipped"
@@ -500,7 +504,7 @@ pair_proof() {
   done
   section "Pair proof (healthz, forecast routes via each node)" "$(cat "$WORK/pair-proof.txt")"
   [ "$all_ok" = 1 ] || die "a forecast route did not answer 401 through every node"
-  cap "proxy keys in .env" grep -E 'PANGOLIN_(PROXY_HOSTS|TRUSTED_PROXIES)=' "$ENV_FILE"
+  cap "proxy keys in .env" sudo grep -E 'PANGOLIN_(PROXY_HOSTS|TRUSTED_PROXIES)=' "$ENV_FILE"
   printf '%s\n' "$CAP" | grep -q "PANGOLIN_PROXY_HOSTS=$PROXY_HOSTS" ||
     die "PANGOLIN_PROXY_HOSTS in .env does not match $PROXY_HOSTS"
   cap "nft proxy4 set" sudo nft list set inet pangolin proxy4
@@ -521,11 +525,11 @@ post_upgrade_proof() {
   id2=$(printf '%s' "$CAP" | sed -n 's/^Backup \([0-9A-Z]*\) started/\1/p')
   snap2=$(printf '%s' "$CAP" | sed -n 's/^Backup done at .*: snapshot \([0-9a-f]*\)/\1/p')
   [ -n "$snap2" ] || die "no snapshot id in the first post-upgrade backup"
-  local man envs
-  # shellcheck source=/dev/null
-  envs=$(set -a && . "$ENV_FILE" && printf 'RESTIC_REPOSITORY=%s\nRESTIC_PASSWORD_FILE=%s\n' \
-    "$PANGOLIN_BACKUP_REPOSITORY" "$RESTIC_PASSWORD_FILE")
-  man=$(sudo env $envs restic dump "$snap2" "/data/backup/staging/$id2/manifest.json")
+  local man repo
+  repo=$(read_env PANGOLIN_BACKUP_REPOSITORY)
+  [ -n "$repo" ] || die "PANGOLIN_BACKUP_REPOSITORY is unset in $ENV_FILE"
+  man=$(sudo env "RESTIC_REPOSITORY=$repo" "RESTIC_PASSWORD_FILE=$RESTIC_PASSWORD_FILE" \
+    restic dump "$snap2" "/data/backup/staging/$id2/manifest.json")
   local fields count
   fields=$(printf '%s' "$man" | grep -oE '"(format|schemaVersion|balanceDate)"[^,}]*' | tr -d '"')
   count=$(printf '%s' "$man" | jq '.accounts | length')
