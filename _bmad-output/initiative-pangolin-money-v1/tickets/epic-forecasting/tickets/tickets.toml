@@ -173,3 +173,14 @@ covers = ["CAP-8"]
 after = [10, 11, 13, 14, 15]
 hitl = true
 risk = "medium"
+
+[[entry]]
+id = 16
+type = "story"
+title = "Release driver: --resume so a mid-release crash finishes by machine, not memory"
+description = "The v0.2.9 first run proved scripts/release.sh only works on its happy path: when it died at step 9 (unprivileged read of /opt/pangolin/.env, after tagging and upgrading), pre-flight's 'tag already exists' rule made every remaining step human work. Add a --resume mode that reconstructs progress from origin and the live host instead of a clean slate: skip page draft, CI wait and tagging when the tag exists and points at a commit on the branch whose CI is green (never move an existing tag; the never-reuse rule stays); skip the release-run wait and digest when the workflow on the tag is green and the image is queryable; skip the backup gate and upgrade when pangolin status already reports the target version; still run the proxy pair, pair proof, post-upgrade proof and Gate 3 close-out regardless. Imported evidence from the interrupted run's work directory is appended, not lost, so the close-out page stays complete."
+verify = "Simulating a v0.2.9-style crash (kill after tagging) and re-running with --resume completes every remaining step to Gate 3 without hand-run commands, the page contains both imported and fresh evidence, and --resume with no prior progress dies with the ordinary pre-flight error."
+covers = ["CAP-8"]
+after = [12]
+hitl = true
+risk = "medium"
