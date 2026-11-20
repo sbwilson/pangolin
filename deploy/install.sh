@@ -375,6 +375,13 @@ parse_llm_hosts() {
   done
 }
 
+# proxy_egress_entries: the proxy host list as one host:443 entry per line (empty when unset).
+# The hosts are validated IPv4 before this runs, so the port append cannot hit a bracketed IPv6.
+proxy_egress_entries() {
+  [ -n "${PROXY_HOSTS:-}" ] || return 0
+  printf '%s\n' "$PROXY_HOSTS" | tr ',' '\n' | sed -e '/^[[:space:]]*$/d' -e 's/[[:space:]]*$//' -e 's|$|:443|'
+}
+
 # ---------------------------------------------------------------------------------------------
 # Prompts
 
@@ -1285,6 +1292,11 @@ BUILD_HOSTS="github.com:443 release-assets.githubusercontent.com:443 objects.git
 # allowlist_add (or a fresh allowlist.conf) wrote under it.
 BACKUP_ALLOWLIST_LABEL="Backup server (restic REST)"
 
+# The comment above the proxy nodes' egress entries. The VM's output chain default-drops, and
+# render.sh lists the proxy hosts as ingress actors only, so without these the app server cannot
+# originate traffic to its own reverse proxies — which scripts/release.sh's pair proof does.
+PROXY_EGRESS_LABEL="Proxy pair: egress for the release driver's pair proof"
+
 # allowlist_add FILE COMMENT ENTRY...: appends the entries FILE lacks, under COMMENT. True when it
 # added any.
 allowlist_add() {
@@ -1574,6 +1586,13 @@ write_allowlist() {
       # shellcheck disable=SC2086 # one entry per word
       allowlist_add "$allowlist" "Local LLM servers" $llm_entries || true
     fi
+    # The pair proof in scripts/release.sh originates from this host; render.sh only lists the
+    # proxy hosts for ingress, so their :443 egress has to be in the allowlist explicitly.
+    proxy_egress=$(proxy_egress_entries)
+    if [ -n "$proxy_egress" ]; then
+      # shellcheck disable=SC2086 # one entry per word
+      allowlist_add "$allowlist" "$PROXY_EGRESS_LABEL" $proxy_egress || true
+    fi
   else
     {
       cat "$SUPPORT/allowlist.conf.default"
@@ -1587,6 +1606,11 @@ write_allowlist() {
       if [ -n "$llm_entries" ]; then
         printf '%s\n' "" "# Local LLM servers"
         printf '%s\n' "$llm_entries"
+      fi
+      proxy_egress=$(proxy_egress_entries)
+      if [ -n "$proxy_egress" ]; then
+        printf '%s\n' "" "# $PROXY_EGRESS_LABEL (added by install.sh)"
+        printf '%s\n' "$proxy_egress"
       fi
     } >"$allowlist.new"
     if [ "$PKG" = apt ]; then

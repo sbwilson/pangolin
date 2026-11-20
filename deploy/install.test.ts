@@ -373,6 +373,23 @@ describe("the proxy host list", () => {
     expect(result.stdout).toContain("believes it only from 10.20.5.80,10.20.8.80");
   });
 
+  it("also allows egress to each proxy on 443, once, so the release driver proves the pair here", () => {
+    // The VM's output chain default-drops and render.sh lists proxy hosts as ingress only: the
+    // :443 entries are what scripts/release.sh's pair proof originates through.
+    const result = install("--proxy-host", "10.20.5.80,10.20.8.80");
+    expect(result.status, result.stderr).toBe(0);
+    const allowlist = read("opt/pangolin/allowlist.conf");
+    expect(allowlist).toMatch(/^10\.20\.5\.80:443$/m);
+    expect(allowlist).toMatch(/^10\.20\.8\.80:443$/m);
+    // A re-run keeps exactly one of each: allowlist_add finds them present and stays silent.
+    const again = install("--proxy-host", "10.20.5.80,10.20.8.80");
+    expect(again.status, again.stderr).toBe(0);
+    const kept = read("opt/pangolin/allowlist.conf");
+    expect(kept.match(/^10\.20\.5\.80:443$/gm)).toHaveLength(1);
+    expect(kept.match(/^10\.20\.8\.80:443$/gm)).toHaveLength(1);
+    expect(again.stdout).not.toContain("Added to allowlist.conf");
+  });
+
   it("still accepts --npm-host as an alias, and normalizes a padded, repeated list", () => {
     const result = install("--npm-host", "10.20.5.80 , 10.20.8.80, 10.20.5.80,");
     expect(result.status, result.stderr).toBe(0);
@@ -1040,7 +1057,13 @@ describe("install.sh, re-run", () => {
     writeFileSync(at("opt/pangolin/allowlist.conf"), "# my NAS\nnas.lan:8000\nexample.org:443\n");
     const result = install("--backup-server", "");
     expect(result.status, result.stderr).toBe(0);
-    expect(read("opt/pangolin/allowlist.conf")).toBe("# my NAS\nnas.lan:8000\nexample.org:443\n");
+    // The operator's lines stay untouched; install.sh appends only its own entries: here, the
+    // proxy-pair egress every installed host needs for the release driver's pair proof.
+    expect(read("opt/pangolin/allowlist.conf")).toBe(
+      "# my NAS\nnas.lan:8000\nexample.org:443\n" +
+        "\n# Proxy pair: egress for the release driver's pair proof (added by install.sh)\n" +
+        "192.168.1.10:443\n",
+    );
     expect(result.stdout).toContain(
       "Kept nas.lan:8000 in allowlist.conf: install.sh did not write it there",
     );
