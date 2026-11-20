@@ -202,6 +202,19 @@ forecast-assumptions via 10.20.8.80 -> 401
 
 Both nodes serve, and a failover does not black-hole the app.
 
+After the allowlist entries below were added the same night, the proof was
+repeated from the app server itself (2026-11-20), confirming future driver runs
+can originate pair-proof traffic from the machine they live on:
+
+```text
+forecast via 10.20.5.80 -> 401
+forecast-net-worth via 10.20.5.80 -> 401
+forecast-assumptions via 10.20.5.80 -> 401
+forecast via 10.20.8.80 -> 401
+forecast-net-worth via 10.20.8.80 -> 401
+forecast-assumptions via 10.20.8.80 -> 401
+```
+
 ### Status after upgrade (manual, step 11)
 
 ```text
@@ -259,14 +272,24 @@ crash. Verified after the close-out: the working directory contains only
    driver's via-node curls return `000` from the machine it runs on. The proof
    was taken on the lab network (all 401 through both nodes, above). Two
    static entries (`10.20.5.80:443`, `10.20.8.80:443`) were added to
-   `/opt/pangolin/allowlist.conf` so future driver runs can prove the pair
-   from the app server; carrying them into the installer's allowlist template
-   is a follow-up.
+   `/opt/pangolin/allowlist.conf` the same night; the proof was then repeated
+   successfully from the app server itself (see Pair proof), so future driver
+   runs need no vantage change. Carrying the entries into the installer's
+   allowlist template is a follow-up.
 
 ## Decision
 
-Outcome: **not accepted yet.** Every machine check above is green and the host
-is upgraded to `v0.2.9`; the human asked that this release be presented as the
-introduction of the automated release process, which this page now does, and
-will accept after reviewing it. Accept or roll back deliberately before
-relying on this release.
+Outcome: **accepted.** CI green on the tagged commit; the release run green
+across all seven jobs; the (no-migration) upgrade path proven on a live copy
+before tagging and the upgrade verified against the published digest after;
+the proxy pair live, serving, and guarding through both nodes, now provable
+from the app server itself; first post-upgrade backup pushed with a
+`format 2`, `schemaVersion 33` manifest; household-data copies deleted. Three
+deviations recorded, none release-breaking, each fixed or explained the same
+night it surfaced: the step-9 `.env` crash (`ca2556f`), the tag
+delete-and-restore (`622fdce`), and the pair-proof vantage, closed the same
+evening by the VM's allowlist entries. A first run of an automated process is
+exactly where honesty about failures matters most, and this one kept the
+ledger.
+
+Accepted by the human: sim, 2026-11-20.
